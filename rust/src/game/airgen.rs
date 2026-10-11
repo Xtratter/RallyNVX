@@ -1,7 +1,7 @@
 //! Point generation for air missions (rings, sling pads, recon zones).
 use super::city::City;
 use super::math::{v3, V3};
-use super::missions::nearest_ok;
+use super::missions::{nearest_landing, nearest_ok};
 use super::terrain::{hash01, Terrain};
 use super::world::WORLD_LIMIT;
 
@@ -45,6 +45,37 @@ pub fn recon_points(t: &Terrain, key: u64) -> Vec<V3> {
     }).collect()
 }
 
+
+/// Rescue: `difficulty` survivor sites (1..=3) followed by the base pad, all helicopter landing spots at least 60 m apart.
+pub fn rescue_points(t: &Terrain, key: u64, difficulty: u8) -> Vec<V3> {
+    let n = difficulty.clamp(1, 3) as usize;
+    let mut out: Vec<V3> = Vec::new();
+    for i in 0..=n {
+        let (dist, from) = match i {
+            0 => (200.0 + 300.0 * hash01(key, 61, 1), v3(0.0, 0.0, 0.0)),
+            k if k < n => (150.0 + 250.0 * hash01(key, 61, 10 + k as i32), out[k - 1]),
+            _ => (300.0 + 400.0 * hash01(key, 61, 99), out[i - 1]),
+        };
+        let mut a = hash01(key, 61, 20 + i as i32) * std::f32::consts::TAU;
+        let mut p = nearest_landing(t, clampw(from.x + a.cos() * dist), clampw(from.z + a.sin() * dist));
+        let mut tries = 0;
+        while out.iter().any(|q| (q.x - p.x).hypot(q.z - p.z) < 60.0) && tries < 8 {
+            a += 0.9; tries += 1;
+            p = nearest_landing(t, clampw(from.x + a.cos() * (dist + 120.0)), clampw(from.z + a.sin() * (dist + 120.0)));
+        }
+        out.push(p);
+    }
+    out
+}
+
+/// People waiting at each of `sites` rescue sites: 1..=3 each, at most 4 in total (the helicopter's capacity).
+pub fn rescue_people(seed: u64, sites: usize) -> Vec<u8> {
+    let mut p = vec![1u8; sites];
+    for i in 0..sites {
+        if p.iter().map(|c| *c as u32).sum::<u32>() < 4 && hash01(seed, 62, i as i32) < 0.5 { p[i] += 1; }
+    }
+    p
+}
 
 /// Lifts every ring above the tallest building it would touch (ring radius `r` plus 5 m of margin and 2 m of clearance).
 pub fn clear_of_buildings(t: &Terrain, seed: u64, pts: &mut [V3], r: f32) {

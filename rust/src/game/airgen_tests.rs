@@ -1,4 +1,4 @@
-use crate::game::{flight::AircraftKind, missions::{path_length, ring_normal, roll, MissionKind}, terrain::Terrain, world::WORLD_LIMIT};
+use crate::game::{airgen::*, flight::AircraftKind, missions::{path_length, ring_normal, roll, MissionKind}, terrain::Terrain, world::WORLD_LIMIT};
 
 #[test] fn air_missions_carry_the_right_aircraft_and_valid_points() {
     for ps in 0..200u64 { for r in 0..2u32 { for m in roll(ps * 7919, r, 0).into_iter().filter(|m| m.is_air() && !m.urban) {
@@ -58,4 +58,31 @@ use crate::game::city::City;
         for p in &m.checkpoints { for c in &cities { checked += 1; assert!(c.push_out(*p, r).is_none(), "ring at {p:?} touches a building, seed {ps}"); } }
     } }
     assert!(checked > 500, "{checked}");
+}
+
+mod rescue {
+    use super::*;
+    use crate::game::{math::v3, missions::landing_ok};
+    #[test] fn rescue_points_are_valid_spaced_and_deterministic() {
+        for seed in 1..=60u64 { let t = Terrain::new(seed);
+            for d in 1..=3u8 {
+                let p = rescue_points(&t, seed * 31, d);
+                assert_eq!(p.len(), d as usize + 1, "seed {seed} difficulty {d}");
+                assert_eq!(p.iter().map(|v| (v.x, v.z)).collect::<Vec<_>>(), rescue_points(&t, seed * 31, d).iter().map(|v| (v.x, v.z)).collect::<Vec<_>>());
+                for (i, a) in p.iter().enumerate() {
+                    assert!(landing_ok(&t, *a), "seed {seed} d {d} point {i}: not a landing spot");
+                    for b in &p[i + 1..] { assert!((a.x - b.x).hypot(a.z - b.z) >= 60.0, "seed {seed}: points too close"); }
+                }
+                let first = v3(p[0].x, 0.0, p[0].z).len();
+                assert!(first >= 100.0 && first <= 700.0, "first site {first} m away");
+            } }
+    }
+    #[test] fn people_fit_the_helicopter() {
+        for seed in 0..300u64 { for n in 1..=3usize {
+            let p = rescue_people(seed, n);
+            assert_eq!(p.len(), n); assert!(p.iter().all(|c| (1..=3).contains(c)));
+            assert!(p.iter().map(|c| *c as u32).sum::<u32>() <= 4, "seed {seed} sites {n}: {p:?}");
+            assert_eq!(p, rescue_people(seed, n));
+        } }
+    }
 }

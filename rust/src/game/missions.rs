@@ -68,6 +68,24 @@ pub fn point_ok(t: &Terrain, p: V3) -> bool {
     true
 }
 
+/// A helicopter landing spot: a valid mission point on ground gentler than 14 degrees.
+pub fn landing_ok(t: &Terrain, p: V3) -> bool { point_ok(t, p) && t.normal(p.x, p.z).y >= 0.97 }
+
+/// The point nearest to (x, z) that passes `landing_ok` (rings up to 450 m out), else the nearest ordinary mission point.
+pub(super) fn nearest_landing(t: &Terrain, x: f32, z: f32) -> V3 {
+    let base = at(t, x, z);
+    if landing_ok(t, base) { return base; }
+    for ring in 1..=30 {
+        let r = ring as f32 * 15.0;
+        for d in 0..12 {
+            let a = d as f32 * std::f32::consts::TAU / 12.0;
+            let p = at(t, x + a.cos() * r, z + a.sin() * r);
+            if landing_ok(t, p) { return p; }
+        }
+    }
+    nearest_ok(t, x, z)
+}
+
 /// No 10 m step of the straight line a->b rises or falls more than 8 m (rough reachability check).
 pub fn line_ok(t: &Terrain, a: V3, b: V3) -> bool {
     let len = (b - a).len(); let n = (len / 10.0).ceil().max(1.0) as i32;
