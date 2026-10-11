@@ -1,8 +1,10 @@
 //! Procedural sound: a pure synthesiser (engine, rotor, rolling, wind, one-shot events) driven by `AudioParams` and
 //! `Event`s. No files, no dependencies; the platform glue only pulls PCM from `Synth::render`.
+pub mod director;
 pub mod dsp;
 pub mod synth;
 
+pub use director::Director;
 pub use synth::{engine_freq, Synth};
 
 /// Output sample rate, mono PCM16.
