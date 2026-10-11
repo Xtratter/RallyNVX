@@ -5,7 +5,7 @@ use crate::game::terrain::{Terrain, TILE_SIZE};
     let m = water_mesh(&Terrain::flooded(1.5), 2, -1).expect("flooded tile");
     assert_eq!(m.verts.len(), (CELLS + 1) * (CELLS + 1));
     assert_eq!(m.idx.len(), CELLS * CELLS * 6);
-    for v in &m.verts { assert!((v[1] - 1.5).abs() < 1e-6 && (v[3] - 1.5).abs() < 1e-6 && v[5] == 1.0); }
+    for v in &m.verts { assert!((v[1] - 1.5).abs() < 1e-5 && (v[3] - 1.2).abs() < 1e-5 && v[5] == 1.0); }
     let (x0, x1) = (2.0 * TILE_SIZE, 3.0 * TILE_SIZE);
     assert!(m.verts.iter().all(|v| v[0] >= x0 - 1e-3 && v[0] <= x1 + 1e-3));
 }

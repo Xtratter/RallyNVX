@@ -59,3 +59,14 @@ fn cam_in(c: &City) -> V3 { v3(c.site.centre.x, c.site.centre.y + 5.0, c.site.ce
     assert!(!lamps.is_empty() && lamps.iter().all(|x| (x.pos.x - cam.x).hypot(x.pos.z - cam.z) <= 151.0));
     assert!(lamps.iter().any(|x| x.glow));
 }
+#[test] fn cornices_never_cover_the_roof_pads() {
+    let t = Terrain::new(7); let mut pads = 0;
+    for s in t.sites() { let c = City::build(s, 7);
+        let p = city_parts(&[City::build(s, 7)], v3(s.centre.x, s.centre.y + 5.0, s.centre.z), 700.0, 100_000, 150.0).parts;
+        for r in &c.roofs { pads += 1;
+            for x in p.iter().filter(|x| !x.facade && x.mesh == 0 && (x.scale.y - 0.4).abs() < 1e-4) {
+                let inside = (r.x - x.pos.x).abs() <= x.scale.x * 0.5 && (r.z - x.pos.z).abs() <= x.scale.z * 0.5 && r.y >= x.pos.y - 0.2 && r.y <= x.pos.y + 0.2 + 0.4;
+                assert!(!inside, "a cornice covers the roof pad at {r:?}");
+            } } }
+    assert!(pads > 0);
+}

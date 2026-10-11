@@ -42,9 +42,12 @@ pub fn grass_spots(t: &Terrain, centre: V3, radius: f32, cap: usize) -> Vec<(V3,
         let z = (j as f32 + hash01(0x6B, i, j)) * GRASS_CELL;
         let d = (x - centre.x).hypot(z - centre.z);
         if d > radius { continue; }
-        let Some(nm) = gentle(t, x, z, 0.8) else { continue };
+        // cheap checks first: one height sample, a forward-difference slope (2 more samples)
+        if t.in_city(x, z, 0.0) { continue; }
         let h = t.height(x, z);
-        if terrain_weights(h, nm, x, z)[0] < 128 { continue; }
+        if t.water_level().map_or(false, |l| h < l + 0.3) { continue; }
+        let nm = v3(h - t.height(x + 1.0, z), 1.0, h - t.height(x, z + 1.0)).norm();
+        if nm.y < 0.8 || terrain_weights(h, nm, x, z)[0] < 128 { continue; }
         out.push((d, v3(x, h, z), 0.8 + 0.6 * hash01(0x6C, i, j)));
     } }
     out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));

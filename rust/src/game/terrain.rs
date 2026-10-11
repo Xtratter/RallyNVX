@@ -5,6 +5,8 @@ use super::math::{v3, V3};
 pub const TILE_CELLS: usize = 64;
 pub const CELL: f32 = 2.0;
 pub const TILE_SIZE: f32 = TILE_CELLS as f32 * CELL;
+/// Deepest point of a lake below its surface, metres (the car drives on the bed).
+pub const LAKE_DEPTH: f32 = 1.2;
 
 /// Deterministic hash of (seed, x, z) -> [0, 1). Integer arithmetic only, safe for negative coordinates.
 pub fn hash01(seed: u64, x: i32, z: i32) -> f32 {
@@ -86,6 +88,8 @@ impl Terrain {
             let k = 1.0 - smoothstep(0.0, 100.0, d.max(0.0));
             h += (s.centre.y - h) * k;
         }
+        // lakes are shallow: the lake bed never lies more than LAKE_DEPTH below the surface
+        if let Some(l) = self.water { h = h.max(l - LAKE_DEPTH); }
         h
     }
 

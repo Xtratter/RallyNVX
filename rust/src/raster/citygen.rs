@@ -25,8 +25,12 @@ pub fn city_parts(cities: &[City], cam: V3, radius: f32, budget: usize, shadow_r
             if dist(&p, cam) > radius + size.x.max(size.z) { continue; }
             if size.y > 8.0 {
                 // cornice: a slightly wider dark slab on the roof edge
-                tiles.push(Part { mesh: 0, rot: Q::IDENT, pos: v3(ctr.x, b.max.y + 0.2, ctr.z), scale: v3(size.x + 0.8, 0.4, size.z + 0.8),
-                    color: [col[0] * 0.65, col[1] * 0.65, col[2] * 0.65], glow: false, facade: false, street: false });
+                let (cc, y, w) = ([col[0] * 0.65, col[1] * 0.65, col[2] * 0.65], b.max.y + 0.2, 0.35);
+                for (dx, dz, sx, sz) in [(0.0, 1.0, size.x + 0.8, w), (0.0, -1.0, size.x + 0.8, w), (1.0, 0.0, w, size.z + 0.8 - 2.0 * w), (-1.0, 0.0, w, size.z + 0.8 - 2.0 * w)] {
+                    let rim = Part { mesh: 0, rot: Q::IDENT, pos: v3(ctr.x + dx * (size.x * 0.5 + 0.4 - w * 0.5), y, ctr.z + dz * (size.z * 0.5 + 0.4 - w * 0.5)),
+                        scale: v3(sx, 0.4, sz), color: cc, glow: false, facade: false, street: false };
+                    if dist(&rim, cam) <= radius + sx.max(sz) { tiles.push(rim); }
+                }
             }
             buildings.push(p);
         }

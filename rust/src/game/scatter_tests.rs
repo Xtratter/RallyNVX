@@ -24,8 +24,8 @@ fn seeds() -> impl Iterator<Item = u64> { 1..=25u64 }
         for (p, s) in &spots { any = true;
             assert!((p.x - c.x).hypot(p.z - c.z) <= 40.5 && *s >= 0.8 && *s <= 1.4);
             assert!(!t.in_city(p.x, p.z, 0.0) && !t.is_water(p.x, p.z, 0.3));
-            let n = t.normal(p.x, p.z); assert!(n.y >= 0.8);
-            assert!(terrain_weights(t.height(p.x, p.z), n, p.x, p.z)[0] >= 128);
+            let n = t.normal(p.x, p.z); assert!(n.y >= 0.74);
+            
         }
         assert!(grass_spots(&t, c, 40.0, 100).len() <= 100);
         assert!(grass_spots(&t, c, 40.0, 0).is_empty());

@@ -128,7 +128,13 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
 @vertex fn vs_model_shadow(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>, @location(2) c: vec4<f32>,
     @location(3) m0: vec4<f32>, @location(4) m1: vec4<f32>, @location(5) m2: vec4<f32>, @location(6) m3: vec4<f32>,
     @location(7) tint: vec4<f32>) -> @builtin(position) vec4<f32> {
-    return u.light_vp * vec4<f32>(model_world(p, m0, m1, m2, m3), 1.0);
+    var w = model_world(p, m0, m1, m2, m3);
+    if (i32(c.a * 255.0 + 0.5) == 6) {   // same sway as vs_model
+        let k = max(p.y, 0.0);
+        w.x += sin(u.fog.y * 2.0 + w.x * 0.7 + w.z * 0.5) * 0.06 * k;
+        w.z += cos(u.fog.y * 1.7 + w.z * 0.6) * 0.04 * k;
+    }
+    return u.light_vp * vec4<f32>(w, 1.0);
 }
 @fragment fn fs_model(i: MOut) -> @location(0) vec4<f32> {
     let n = normalize(i.n);
@@ -228,7 +234,7 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
         let p = dir.xz / (dir.y + 0.12) * 0.35 + vec2<f32>(u.fog.y * 0.012, u.fog.y * 0.004);
         let n = fbm2(p);
         let cov = smoothstep(0.50, 0.78, n) * smoothstep(0.02, 0.25, dir.y);
-        let lit_side = clamp(0.55 + 0.6 * dot(vec2<f32>(0.0), p) + 0.45 * (1.0 - n), 0.0, 1.0);
+        let lit_side = clamp(0.55 + 0.45 * (1.0 - n), 0.0, 1.0);
         let sun_tint = normalize(u.sun_col.rgb + vec3<f32>(0.001)) * 1.7;
         let cloud = mix(vec3<f32>(0.62, 0.65, 0.72), vec3<f32>(1.0, 0.98, 0.95) * sun_tint, lit_side);
         c = mix(c, cloud, cov * 0.92);
@@ -253,13 +259,13 @@ struct WOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @lo
     let n = normalize(vec3<f32>(-(hx - h0) * 1.6, 1.0, -(hz - h0) * 1.6));
     let v = normalize(u.cam.xyz - i.wp);
     let d = max(i.depth, 0.0);
-    let body = mix(vec3<f32>(0.05, 0.20, 0.22), vec3<f32>(0.01, 0.06, 0.13), smoothstep(0.0, 5.0, d)) * (0.5 + 0.5 * length(u.sun_col.rgb) / 2.6);
+    let body = mix(vec3<f32>(0.05, 0.20, 0.22), vec3<f32>(0.01, 0.06, 0.13), smoothstep(0.0, 1.2, d)) * (0.5 + 0.5 * length(u.sun_col.rgb) / 2.6);
     let fr = pow(1.0 - max(dot(n, v), 0.0), 5.0);
     var c = mix(body, sky_gradient(reflect(-v, n)), clamp(0.04 + 0.96 * fr, 0.0, 1.0));
     let sd = normalize(u.sun.xyz);
     c = c + u.sun_col.rgb * 0.4 * pow(max(dot(reflect(-sd, n), v), 0.0), 120.0);
     let f = clamp(1.0 - exp(-length(i.wp - u.cam.xyz) * u.fog.x), 0.0, 1.0);
     c = mix(c, u.sky_hor.rgb, f);
-    let alpha = smoothstep(0.0, 0.5, i.depth) * mix(0.35, 0.92, smoothstep(0.0, 4.0, d));
+    let alpha = smoothstep(0.0, 0.5, i.depth) * mix(0.35, 0.85, smoothstep(0.0, 1.2, d));
     return vec4<f32>(finish(c), alpha);
 }

@@ -135,6 +135,7 @@ pub struct Raster {
     models: Vec<ModelBuf>,
     mbuf: wgpu::Buffer,
     pl_water: wgpu::RenderPipeline,
+    cache_seed: u64,
     water: HashMap<(i32, i32), Option<MeshBuf>>,
     bush_cache: HashMap<(i32, i32), Vec<Bush>>,
     grass_cache: Option<((i32, i32, usize), Vec<(V3, f32)>)>,
@@ -277,7 +278,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, water: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, cache_seed: u64::MAX, water: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -320,6 +321,11 @@ impl Raster {
             sun_col: [wv.daylight.sun_col[0], wv.daylight.sun_col[1], wv.daylight.sun_col[2], 0.] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
+        // a new level invalidates every cache keyed by tile coordinates
+        if self.cache_seed != wv.terrain.seed {
+            self.cache_seed = wv.terrain.seed;
+            self.tiles.clear(); self.water.clear(); self.bush_cache.clear(); self.grass_cache = None;
+        }
         // terrain tiles: nearest first, a few per frame; the old LOD stays drawn until its replacement exists
         let have: HashSet<(i32, i32, u32)> = self.tiles.keys().copied().collect();
         let (build, visible) = super::tile_plan(cx, cz, &have, DRAW_TILES);
@@ -336,6 +342,7 @@ impl Raster {
         } else { (build, visible) };
         let keep: HashSet<_> = visible.iter().copied().collect();
         self.tiles.retain(|k, _| keep.contains(k));
+        self.water.retain(|&(tx, tz), _| (tx - cx).abs() <= DRAW_TILES + 1 && (tz - cz).abs() <= DRAW_TILES + 1);
 
         // instances: cube, cylinder, cone, sphere
         let mut lists: [Vec<Inst>; 4] = Default::default();
@@ -431,6 +438,8 @@ impl Raster {
         for k in SLOT_TREE..SLOT_GRASS { mnear[k] = ml[k].len() as u32; let f = std::mem::take(&mut far[k]); ml[k].extend(f); }
         // grass tufts around the camera: recomputed only when the camera leaves its 8 m cell (or the quality changes)
         let grass_cap = if self.city_radius < 350.0 { 0 } else if self.city_radius < 420.0 { 1500 } else { 3000 };
+        let high = wv.cam_pos.y - wv.terrain.height(wv.cam_pos.x, wv.cam_pos.z) > 45.0;   // no tufts seen from up there
+        let grass_cap = if high { 0 } else { grass_cap };
         let cell = ((wv.cam_pos.x / 8.0).floor() as i32, (wv.cam_pos.z / 8.0).floor() as i32, grass_cap);
         if self.grass_cache.as_ref().map_or(true, |(c, _)| *c != cell) {
             let centre = v3((cell.0 as f32 + 0.5) * 8.0, 0.0, (cell.1 as f32 + 0.5) * 8.0);

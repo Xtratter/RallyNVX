@@ -97,3 +97,7 @@ use super::*;
     assert_eq!(Terrain::flat().water_level(), None);
     let f = Terrain::flooded(1.0); assert!(f.is_water(3.0, 4.0, 0.0) && f.water_level() == Some(1.0));
 }
+#[test] fn lakes_are_shallow() {
+    for seed in 1..=40u64 { let t = Terrain::new(seed); let l = t.water_level().unwrap();
+        for i in -30..=30 { for j in -30..=30 { let h = t.height(i as f32 * 41.0, j as f32 * 41.0); assert!(h >= l - 1.2 - 1e-3, "seed {seed}: lake bed {} below the surface", l - h); } } }
+}
