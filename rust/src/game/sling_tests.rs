@@ -49,3 +49,20 @@ fn hang(attach: V3) -> Sling { let mut s = Sling::on_ground(attach - v3(0., ROPE
     assert!((s.relative_speed(v3(10., 0., 0.)) - 10.0).abs() < 0.3);
     assert!(!s.rope_taut(a + v3(0., -5.0, 0.)), "slack when the attach point is closer than the rope length");
 }
+#[test] fn dragging_over_hills_is_not_a_fall() {
+    let t = Terrain::new(3);
+    let mut a = v3(600., t.height(600., -500.) + 9.0, -500.); let mut s = hang(a);
+    let mut worst: f32 = 0.0;
+    for _ in 0..(12.0 / DT) as usize {
+        a.x += 10.0 * DT; a.y = t.height(a.x, a.z) + 7.5;                  // the aircraft follows the terrain 7.5 m above it
+        if let Some(v) = s.step(a, v3(10., 0., 0.), &t, DT) { worst = worst.max(v); }
+    }
+    assert!(worst < 5.0, "cargo never fell that fast, reported {worst}");
+}
+#[test] fn skimming_the_ground_is_not_an_impact() {
+    let t = Terrain::flat();
+    let mut a = v3(0., 8.5, 0.); let mut s = hang(a);
+    let mut hits = 0;
+    for _ in 0..(6.0 / DT) as usize { a.x += 10.0 * DT; if s.step(a, v3(10., 0., 0.), &t, DT).is_some() { hits += 1; } }
+    assert_eq!(hits, 0, "dragging along the ground at 10 m/s is not a fall");
+}

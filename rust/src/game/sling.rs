@@ -36,16 +36,22 @@ impl Sling {
             self.pos = self.pos + self.vel * h;
             let g = t.height(self.pos.x, self.pos.z) + 0.3;
             if self.pos.y < g {
-                if self.vel.y < -0.5 { let v = self.vel.len(); impact = Some(impact.map_or(v, |p: f32| p.max(v))); }
+                let n = t.normal(self.pos.x, self.pos.z);
+                let into = -self.vel.dot(n);                   // speed into the ground; sliding along it is not an impact
+                if into > 0.5 { impact = Some(impact.map_or(into, |p: f32| p.max(into))); }
                 self.pos.y = g;
-                if self.vel.y < 0.0 { self.vel.y = 0.0; }
+                if into > 0.0 { self.vel = self.vel + n * into; }
                 self.vel.x *= 0.8; self.vel.z *= 0.8;
             }
         }
         // hard cap: a teleported attach point must not stretch the rope without bound
         if self.attached {
             let d = attach - self.pos; let dist = d.len();
-            if dist > ROPE * 1.5 { self.pos = attach - d * (1.0 / dist) * (ROPE * 1.5); self.vel = attach_vel; }
+            if dist > ROPE * 1.5 {
+                self.pos = attach - d * (1.0 / dist) * (ROPE * 1.5); self.vel = attach_vel;
+                let g = t.height(self.pos.x, self.pos.z) + 0.3;
+                if self.pos.y < g { self.pos.y = g; }
+            }
         }
         impact
     }

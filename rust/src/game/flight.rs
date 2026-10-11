@@ -88,13 +88,20 @@ impl Aircraft {
             };
             if hit { self.status = Status::Crashed; self.vel = V3::ZERO; return; }
         }
-        // ground
+        // ground (the small epsilon keeps a landed aircraft in contact despite float rounding)
         let g = t.height(self.pos.x, self.pos.z);
-        if self.pos.y - g < 0.3 {
+        if self.pos.y - g < 0.3 + 1e-3 {
+            let n = t.normal(self.pos.x, self.pos.z);
+            let into = -self.vel.dot(n);                       // speed into the ground along its normal (also covers hillsides)
             let tilt = self.pitch.abs().max(self.roll.abs());
-            if -self.vel.y > 3.0 || tilt > 20f32.to_radians() { self.status = Status::Crashed; self.vel = V3::ZERO; return; }
+            let landed = self.status == Status::Landed;
+            if into > 3.0 || (tilt > 20f32.to_radians() && !landed) { self.status = Status::Crashed; self.vel = V3::ZERO; return; }
+            if landed {                                         // sitting on its skids: the stick cannot tip it over
+                let m = 20f32.to_radians();
+                self.pitch = self.pitch.clamp(-m, m); self.roll = self.roll.clamp(-m, m);
+            }
             self.pos.y = g + 0.3;
-            if self.vel.y < 0.0 { self.vel.y = 0.0; }
+            if into > 0.0 { self.vel = self.vel + n * into; }
             let damp = (1.0 - 4.0 * dt).max(0.0);
             self.vel.x *= damp; self.vel.z *= damp;
             self.status = Status::Landed;

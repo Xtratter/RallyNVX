@@ -109,3 +109,26 @@ fn heli(y: f32) -> (Aircraft, Terrain) { (Aircraft::new(AircraftKind::Heli, v3(0
     a.pitch = 0.3;
     assert!(a.rotation().rotate(v3(0., 0., 1.)).y < -0.2);
 }
+#[test] fn flying_into_a_hillside_crashes_instead_of_sliding_up_it() {
+    let t = Terrain::new(3);
+    let (mut crashes, mut sliding_fast) = (0, 0);
+    for d in 0..24 {
+        let ang = d as f32 * std::f32::consts::TAU / 24.0;
+        let mut a = Aircraft::new(AircraftKind::Heli, v3(600.0, t.height(600.0, -500.0) + 1.0, -500.0), ang);
+        a.vel = v3(ang.sin() * 30.0, 0.0, ang.cos() * 30.0);                 // level pass at 30 m/s, 1 m above the ground
+        for _ in 0..(5.0 / DT) as usize { a.step(&t, &[], &FlightInput::default(), DT); if a.status == Status::Crashed { break; } }
+        if a.status == Status::Crashed { crashes += 1; }
+        if a.status == Status::Landed && a.vel.len() > 8.0 { sliding_fast += 1; }
+    }
+    assert_eq!(sliding_fast, 0, "landed and still sliding fast");
+    assert!(crashes > 0, "a fast low pass over hills must hit a slope sometimes");
+}
+#[test] fn pushing_the_stick_while_landed_on_flat_ground_neither_slides_away_nor_crashes() {
+    let (mut a, t) = heli(0.3);
+    fly(&mut a, &t, FlightInput { lift: -0.2, ..Default::default() }, 1.0);
+    assert_eq!(a.status, Status::Landed);
+    fly(&mut a, &t, FlightInput { pitch: 1.0, ..Default::default() }, 3.0);
+    assert_eq!(a.status, Status::Landed, "{:?}", a.status);
+    assert!(a.vel.len() < 2.0, "speed {}", a.vel.len());
+    assert!(a.pitch.abs() <= 20f32.to_radians() + 1e-3, "pitch {}", a.pitch);
+}
