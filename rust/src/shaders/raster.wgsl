@@ -84,6 +84,19 @@ fn inst_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec
     return u.light_vp * vec4<f32>(inst_world(p, m0, m1, m2, m3), 1.0);
 }
 @fragment fn fs_inst(i: IOut) -> @location(0) vec4<f32> {
+    // colour alpha 3 marks buildings: windows on the side faces from the world position
+    if (i.emi > 2.5) {
+        let n = normalize(i.n);
+        var albedo = i.col;
+        if (abs(n.y) < 0.5) {
+            let t = normalize(vec2<f32>(-n.z, n.x));
+            let cell = vec2<f32>(dot(i.wp.xz, t) / 3.0, i.wp.y / 3.5);
+            let f = fract(cell);
+            let win = step(0.25, f.x) * step(f.x, 0.75) * step(0.3, f.y) * step(f.y, 0.75);
+            albedo = mix(albedo, vec3<f32>(0.50, 0.68, 0.80), win * 0.85);
+        }
+        return vec4<f32>(lit(albedo, i.wp, n), 1.0);
+    }
     // colour alpha > 1.5 marks glowing mission markers: unlit and not hidden by fog
     if (i.emi > 1.5) { return vec4<f32>(finish(i.col * 1.6), 1.0); }
     return vec4<f32>(lit(i.col, i.wp, normalize(i.n)), 1.0);

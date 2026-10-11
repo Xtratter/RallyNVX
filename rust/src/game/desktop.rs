@@ -37,6 +37,8 @@ impl State {
         let surface = instance.create_surface(window.clone()).expect("create_surface");
         let raster = Raster::from_surface(instance, surface, Box::new(window.clone()), size.width.max(1), size.height.max(1));
         let mut game = Game::new(raster, seed, Arc::new(Mutex::new([0.0; STAT_LEN])));
+        if let Some(r) = std::env::var("RAYTRACE_CITY_RADIUS").ok().and_then(|s| s.parse::<f32>().ok()) { game.set_city_radius(r); }
+        if std::env::var("RAYTRACE_AT_CITY").map_or(false, |v| v == "1") { game.place_near_city(); }
         if let Some(i) = std::env::var("RAYTRACE_MISSION").ok().and_then(|s| s.parse::<usize>().ok()) {
             game.with_profile(profile_path(), random_seed());
             game.start_mission(i);

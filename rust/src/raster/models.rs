@@ -4,13 +4,13 @@ use crate::game::math::{v3, Q, V3};
 
 /// One primitive: `mesh` indexes the shared meshes (0 cube, 1 cylinder, 2 cone, 3 sphere).
 #[derive(Clone, Copy, Debug)]
-pub struct Part { pub mesh: usize, pub rot: Q, pub pos: V3, pub scale: V3, pub color: [f32; 3], pub glow: bool }
+pub struct Part { pub mesh: usize, pub rot: Q, pub pos: V3, pub scale: V3, pub color: [f32; 3], pub glow: bool, pub facade: bool }
 
 const CUBE: usize = 0;
 const CYL: usize = 1;
 const SPHERE: usize = 3;
 
-fn part(mesh: usize, rot: Q, pos: V3, scale: V3, color: [f32; 3], glow: bool) -> Part { Part { mesh, rot, pos, scale, color, glow } }
+fn part(mesh: usize, rot: Q, pos: V3, scale: V3, color: [f32; 3], glow: bool) -> Part { Part { mesh, rot, pos, scale, color, glow, facade: false } }
 
 /// Rotation taking +Y to `dir` (a unit vector).
 pub fn align_y(dir: V3) -> Q {

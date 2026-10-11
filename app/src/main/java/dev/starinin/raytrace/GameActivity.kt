@@ -181,6 +181,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) {
         if (running) { Native.gameResize(w, hh); return }
         Native.gameStart(h.surface, w, hh, seed, profile, mission)
+        Native.gameQuality(Quality.index(this))
         running = true
         // the engine restarts after a surface loss (screen lock): stay paused if the pause panel is up
         if (mission >= 0 && pausePanel?.visibility == View.VISIBLE) Native.gamePause(true)

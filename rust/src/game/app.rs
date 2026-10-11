@@ -88,6 +88,11 @@ mod game {
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
 
+        /// Quality level 0/1/2 (Low/Medium/High) sets the city draw distance: 400 / 600 / 700 m.
+        pub fn set_quality(&mut self, level: i32) { self.raster.set_city_radius([400.0, 600.0, 700.0][level.clamp(0, 2) as usize]); }
+        pub fn set_city_radius(&mut self, r: f32) { self.raster.set_city_radius(r); }
+        pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }
+
         pub fn new_level(&mut self, seed: u64) {
             let seed = super::level_seed(seed);
             self.world = World::new(seed); self.seed = seed; self.input = Input::default(); self.acc = 0.0;
