@@ -9,10 +9,13 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import io.github.xtratter.uikit.M3
 import io.github.xtratter.uikit.M3Widgets
+import java.io.File
 
-/** Launcher screen: free drive (the game) or the scene viewer. */
+/** Main menu: missions, free drive, scene viewer, quality. */
 class StartActivity : Activity() {
     private lateinit var quality: TextView
+    private lateinit var money: TextView
+    private val profile get() = File(filesDir, "profile.json").path
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -27,9 +30,14 @@ class StartActivity : Activity() {
         col.addView(TextView(this).apply {
             text = "Raytrace"; textSize = 34f; typeface = M3.medium; gravity = Gravity.CENTER; setTextColor(M3.TEXT)
         })
+        money = TextView(this).apply { textSize = 16f; gravity = Gravity.CENTER; setTextColor(M3.TEXT) }
+        col.addView(money)
         fun add(v: android.view.View) = col.addView(v, LinearLayout.LayoutParams(px(280f), px(54f)).apply { topMargin = px(14f) })
-        add(M3Widgets.button(this, t("Free drive", "Свободная езда"), M3Widgets.ButtonKind.FILLED) {
-            startActivity(Intent(this, GameActivity::class.java).putExtra("seed", System.nanoTime() and 0xFFFFFFL))
+        add(M3Widgets.button(this, t("Missions", "Миссии"), M3Widgets.ButtonKind.FILLED) {
+            startActivity(Intent(this, MissionsActivity::class.java))
+        })
+        add(M3Widgets.button(this, t("Free drive", "Свободная езда"), M3Widgets.ButtonKind.TONAL) {
+            startActivity(Intent(this, GameActivity::class.java).putExtra("seed", System.nanoTime() and 0xFFFFFFL).putExtra("profile", profile))
         })
         add(M3Widgets.button(this, t("Scenes", "Сцены"), M3Widgets.ButtonKind.TONAL) {
             startActivity(Intent(this, MainActivity::class.java))
@@ -39,11 +47,17 @@ class StartActivity : Activity() {
             Quality.save(this, i); refresh()
         }
         add(quality)
-        refresh()
         setContentView(col)
+        refresh()
     }
 
-    private fun refresh() { quality.text = t("Quality: ", "Качество: ") + Quality.label(Quality.index(this)) }
+    override fun onResume() { super.onResume(); refresh() }
+
+    private fun refresh() {
+        quality.text = t("Quality: ", "Качество: ") + Quality.label(Quality.index(this))
+        val info = Native.missionsInfo(profile, System.nanoTime() and 0xFFFFFFL, false)
+        money.text = t("Money: ", "Деньги: ") + info[0].toInt()
+    }
 }
 
 /** Game resolution scale: Low / Medium / High, saved in the app prefs. */
