@@ -10,6 +10,7 @@ use super::input::Input;
 use super::missions::{ring_normal, Mission, MissionKind, GOAL_RADIUS, RING_RADIUS_DRONE, RING_RADIUS_HELI, ZONE_RADIUS};
 use super::run::{MissionRun, Outcome, Phase};
 use super::sling::Sling;
+use super::daylight::{daylight, Daylight};
 use super::tracks::Tracks;
 use super::math::{v3, V3};
 use super::props::{tile_props, Prop};
@@ -86,8 +87,10 @@ impl World {
         out
     }
 
+    /// Light and sky colours of the moment (the sun moves while the level runs).
+    pub fn daylight(&self) -> Daylight { daylight(self.terrain.seed, self.time) }
     /// Unit vector towards the sun.
-    pub fn sun_dir(&self) -> V3 { v3(0.45, 0.75, 0.35).norm() }
+    pub fn sun_dir(&self) -> V3 { self.daylight().sun }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum MarkerKind { Beacon, Ring, Next, AirRing, AirNext, Pad, Zone }
@@ -245,7 +248,7 @@ impl World {
 pub struct WorldView<'a> {
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
-    pub props: Vec<&'a Prop>, pub sun: V3, pub markers: Vec<Marker>,
+    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub markers: Vec<Marker>,
     pub aircraft: Option<Aircraft>, pub sling: Option<Sling>, pub time: f32, pub cities: &'a [City], pub tracks: &'a Tracks,
 }
 
@@ -255,7 +258,7 @@ impl World {
         let (cx, cz) = (tile_of(self.cam.pos.x), tile_of(self.cam.pos.z));
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
-        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), markers: self.markers(),
+        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: self.daylight(), markers: self.markers(),
             aircraft: self.aircraft, sling: self.sling, time: self.time, cities: &self.cities, tracks: &self.tracks }
     }
 }
