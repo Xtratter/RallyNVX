@@ -6,6 +6,7 @@ pub mod desktop;
 pub mod input;
 pub mod math;
 pub mod medals;
+pub mod missions;
 pub mod props;
 pub mod terrain;
 pub mod vehicle;
