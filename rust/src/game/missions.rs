@@ -53,6 +53,7 @@ pub fn reward_base_for(len: f32, difficulty: u8) -> f32 {
 /// A mission point must be on gentle ground (normal.y >= 0.94), clear of props (8 m) and inside the world wall.
 pub fn point_ok(t: &Terrain, p: V3) -> bool {
     if p.x.abs() > WORLD_LIMIT - 40.0 || p.z.abs() > WORLD_LIMIT - 40.0 { return false; }
+    if t.in_city(p.x, p.z, 20.0) { return false; }
     if t.normal(p.x, p.z).y < 0.94 { return false; }
     let (tx, tz) = (tile_of(p.x), tile_of(p.z));
     for dz in -1..=1 { for dx in -1..=1 { for pr in tile_props(t, tx + dx, tz + dz) {
@@ -140,7 +141,9 @@ pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
             MissionKind::Race => { let g = pick_goal(&t, key, difficulty); (None, race_points(&t, key, g)) }
             MissionKind::Rings => {
                 let drone = hash01(key, slot as i32, 77) < 0.5;
-                (Some(if drone { AircraftKind::Drone } else { AircraftKind::Heli }), airgen::rings_points(&t, key, drone))
+                let mut pts = airgen::rings_points(&t, key, drone);
+                airgen::clear_of_buildings(&t, seed, &mut pts, if drone { RING_RADIUS_DRONE } else { RING_RADIUS_HELI });
+                (Some(if drone { AircraftKind::Drone } else { AircraftKind::Heli }), pts)
             }
             MissionKind::Sling => (Some(AircraftKind::Heli), airgen::sling_points(&t, key)),
             MissionKind::Recon => (Some(AircraftKind::Drone), airgen::recon_points(&t, key)),

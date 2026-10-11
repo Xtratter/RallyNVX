@@ -42,3 +42,8 @@ fn near(a: V3, b: V3) -> bool { (a - b).len() < 1e-3 }
     assert!(z[24].scale.y > 40.0);
     assert!(!cargo_part(v3(0., 1., 0.)).glow);
 }
+#[test] fn aircraft_and_markers_are_never_facades() {
+    let a = Aircraft::new(AircraftKind::Heli, v3(0., 10., 0.), 0.0);
+    assert!(aircraft_parts(&a, 0.0).iter().all(|p| !p.facade));
+    assert!(ring_parts(v3(0., 10., 0.), v3(0., 0., 1.), 8.0, false).iter().all(|p| !p.facade));
+}

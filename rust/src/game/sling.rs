@@ -1,6 +1,6 @@
 //! Cargo on a rope under the helicopter: a point mass on a one-sided spring-damper (taut only beyond the rest length).
 use super::math::{v3, V3};
-use super::terrain::Terrain;
+use super::ground::Ground;
 
 
 const SUB: usize = 4;
@@ -19,7 +19,7 @@ impl Sling {
     pub fn rope_taut(&self, attach: V3) -> bool { (attach - self.pos).len() >= self.spec.rope - 0.05 }
 
     /// Advances the cargo; returns the speed of a real ground impact (> 0.5 m/s into the ground) in this step.
-    pub fn step(&mut self, attach: V3, attach_vel: V3, t: &Terrain, dt: f32) -> Option<f32> {
+    pub fn step(&mut self, attach: V3, attach_vel: V3, t: &dyn Ground, dt: f32) -> Option<f32> {
         let h = dt / SUB as f32;
         let sp = self.spec;
         let mut impact: Option<f32> = None;

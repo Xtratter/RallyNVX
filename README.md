@@ -19,6 +19,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 - **Game**: off-road free drive on random seeded levels with an arcade car, chase camera and touch or keyboard controls (see [docs/game.md](docs/game.md))
 - **Missions**: a list of random deliveries and checkpoint races with medals, money and a saved profile (see [docs/game.md](docs/game.md))
 - **Flight**: a helicopter and a drone for ring races, sling cargo and recon missions (see [docs/game.md](docs/game.md))
+- **City**: procedural cities with streets, parks and buildings 4-90 m; solid buildings, roof landings (see [docs/game.md](docs/game.md))
 - **Vehicle parameters**: every number of the car, helicopter, drone and sling in one file, `rust/vehicles.json` (see [docs/vehicles.md](docs/vehicles.md))
 - **Scenes**: four built in (Classic, Sun room, Materials, Prism with a dispersed rainbow) plus your own JSON files with spheres, boxes, prisms, sun and lamps, mirror, glossy, tinted and dispersive glass (see [docs/scenes.md](docs/scenes.md))
 - **Two modes**: *Hybrid* (one ray per pixel with shadows, global illumination, caustics, reflections and refraction) and

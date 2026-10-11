@@ -144,3 +144,91 @@ use crate::game::flight::{AircraftKind, FlightInput};
     for _ in 0..600 { w.step_with(&Input::default(), &FlightInput { lift: -0.2, ..Default::default() }, 1.0 / 60.0); }
     assert!(w.cam.pos.y >= w.terrain.height(w.cam.pos.x, w.cam.pos.z) + 0.89);
 }
+use crate::game::city::{Building, City, CitySite};
+fn walled_world() -> World {
+    let mut w = World::new(1);
+    let g = w.terrain.height(0., 40.);
+    w.cities = vec![City::from_buildings(CitySite { centre: v3(0., g, 40.), half: 264.0 }, vec![Building { min: v3(-20., g, 30.), max: v3(20., g + 30.0, 50.), color: 0 }])];
+    w
+}
+#[test] fn worlds_have_cities_matching_the_terrain_sites() {
+    let w = World::new(7);
+    assert_eq!(w.cities.len(), w.terrain.sites().len());
+    assert!(w.cities.iter().all(|c| c.buildings.len() > 60));
+    assert!(World::new(7).cities[0].buildings.len() == w.cities[0].buildings.len());
+}
+#[test] fn the_car_cannot_drive_through_a_building() {
+    let mut w = walled_world();
+    for _ in 0..(8.0 / (1.0 / 60.0)) as usize { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+    assert!(w.vehicle.pos.z <= 30.0 - 0.9, "the car went through the wall: z {}", w.vehicle.pos.z);
+    assert!(w.vehicle.pos.is_finite());
+}
+#[test] fn an_aircraft_that_hits_a_wall_crashes_but_one_above_the_roof_does_not() {
+    use crate::game::flight::{AircraftKind, FlightInput, Status};
+    let m = air(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 100.)]);
+    let mut w2 = World::for_mission(m.clone());
+    w2.cities = walled_world().cities;
+    let g = w2.terrain.height(0., 0.);
+    w2.aircraft.as_mut().unwrap().pos = v3(0., g + 10.0, 0.0);
+    for _ in 0..(6.0 / (1.0 / 60.0)) as usize { w2.step_with(&Input::default(), &FlightInput { pitch: 1.0, ..Default::default() }, 1.0 / 60.0); }
+    assert_eq!(w2.aircraft.as_ref().unwrap().status, Status::Crashed, "flying into the wall");
+    let mut w3 = World::for_mission(m);
+    w3.cities = walled_world().cities;
+    let top = w3.cities[0].buildings[0].max.y;
+    w3.aircraft.as_mut().unwrap().pos = v3(0., top + 12.0, 0.0);
+    for _ in 0..(4.0 / (1.0 / 60.0)) as usize { w3.step_with(&Input::default(), &FlightInput { pitch: 0.4, ..Default::default() }, 1.0 / 60.0); }
+    assert_ne!(w3.aircraft.as_ref().unwrap().status, Status::Crashed);
+}
+#[test] fn cargo_is_pushed_out_of_walls() {
+    use crate::game::flight::{AircraftKind, FlightInput};
+    let mut w = World::for_mission(air(MissionKind::Sling, AircraftKind::Heli, vec![v3(0., 0., 200.), v3(0., 0., 400.)]));
+    w.cities = walled_world().cities;
+    let base = w.cities[0].buildings[0].min.y;
+    w.sling.as_mut().unwrap().pos = v3(0.0, base + 10.0, 40.0);
+    w.step_with(&Input::default(), &FlightInput::default(), 1.0 / 60.0);
+    let p = w.sling.as_ref().unwrap().pos;
+    assert!(!(p.x.abs() < 20.0 && p.z > 30.0 && p.z < 50.0 && p.y < base + 30.0), "cargo still inside the building at {p:?}");
+}
+#[test] fn place_near_city_puts_the_player_outside_the_first_city_facing_it() {
+    let mut w = World::new(7);
+    assert!(w.place_near_city());
+    let s = w.cities[0].site;
+    let (dx, dz) = (s.centre.x - w.vehicle.pos.x, s.centre.z - w.vehicle.pos.z);
+    let f = w.vehicle.forward();
+    assert!((f.x * dx + f.z * dz) / dx.hypot(dz) > 0.99, "facing the centre");
+    assert!(!w.cities[0].inside(w.vehicle.pos.x, w.vehicle.pos.z));
+    assert!(dx.hypot(dz) < s.half * 1.5 + 100.0);
+    let mut flat = World::new(1); flat.terrain = crate::game::terrain::Terrain::flat(); flat.cities.clear();
+    assert!(!flat.place_near_city());
+}
+#[test] fn view_carries_the_cities() { let w = World::new(7); assert_eq!(w.view(1).cities.len(), w.cities.len()); }
+#[test] fn glancing_wall_hits_at_speed_do_not_roll_the_car() {
+    for deg in [20.0f32, 28.0, 35.0] {
+        let mut w = World::new(1);
+        let g = w.terrain.height(0., 40.);
+        w.cities = vec![City::from_buildings(CitySite { centre: v3(0., g, 20.), half: 264.0 }, vec![Building { min: v3(-200., g, 10.), max: v3(200., g + 30.0, 30.), color: 0 }])];
+        let yaw = (deg).to_radians();                          // yaw 0 = +z (towards the wall); 20-35 deg off perpendicular
+        // the whole run stays within 25 m of the origin, where no props are placed
+        w.vehicle = crate::game::vehicle::Vehicle::new(crate::game::vehicle::VehicleSpec::offroader(), v3(0.0, g + 1.1, -12.0), -yaw);
+        w.vehicle.vel = w.vehicle.forward() * 30.0;
+        for _ in 0..240 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+        assert!(w.vehicle.up().y > 0.5, "the car rolled over at {deg} deg: up.y {}", w.vehicle.up().y);
+        assert!(w.vehicle.pos.z <= 10.0 - 0.9 || w.vehicle.pos.z > 30.0 + 0.9 && false, "z {}", w.vehicle.pos.z);
+    }
+}
+#[test] fn place_in_city_puts_the_car_on_a_street_at_the_centre_and_the_aircraft_above_the_roofs() {
+    use crate::game::flight::{AircraftKind, Status};
+    let mut w = World::new(7);
+    assert!(w.place_in_city());
+    let c = &w.cities[0];
+    let p = w.vehicle.pos;
+    assert!(c.inside(p.x, p.z) && (p.x - c.site.centre.x).abs() < 40.0 && (p.z - c.site.centre.z).abs() < 40.0, "{p:?}");
+    assert!(c.roof_at(p.x, p.z).is_none(), "on a street, not inside a building");
+    assert!(c.buildings_near(p, 1.5).is_empty() || !c.touches_side(p + v3(0., 0.5, 0.), 1.5));
+    let mut a = World::for_mission(air(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 100.)]));
+    assert!(a.place_in_city());
+    let top = a.cities[0].buildings.iter().map(|b| b.max.y).fold(0.0f32, f32::max);
+    assert!(a.aircraft.as_ref().unwrap().pos.y > top + 20.0 && a.aircraft.as_ref().unwrap().status == Status::Flying);
+    let mut none = World::new(1); none.cities.clear();
+    assert!(!none.place_in_city());
+}

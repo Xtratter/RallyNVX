@@ -18,6 +18,10 @@ object Native {
     @JvmStatic external fun gameStart(surface: Surface, w: Int, h: Int, seed: Long, profile: String, mission: Int)
     /** Aircraft sticks (air missions): yaw/roll right-positive, lift up-positive, pitch forward-positive; all -1..1. */
     @JvmStatic external fun gameFlight(yaw: Float, lift: Float, pitch: Float, roll: Float)
+    /** City draw distance by quality: 0 Low (300 m), 1 Medium (400 m), 2 High (450 m). */
+    @JvmStatic external fun gameQuality(level: Int)
+    /** Debug placement: 1 = next to the first city, 2 = at its centre (an aircraft 120 m above it). */
+    @JvmStatic external fun gameInCity(mode: Int)
     @JvmStatic external fun gamePause(p: Boolean)
     @JvmStatic external fun gameRestart()
     @JvmStatic external fun gameAbort()

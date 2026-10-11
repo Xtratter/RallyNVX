@@ -3,6 +3,8 @@ use std::collections::HashMap;
 
 use super::airrun::{AirAction, AirRun};
 use super::camera_follow::FollowCam;
+use super::city::City;
+use super::ground::WorldGround;
 use super::flight::{Aircraft, AircraftKind, FlightInput};
 use super::input::Input;
 use super::missions::{ring_normal, Mission, MissionKind, GOAL_RADIUS, RING_RADIUS_DRONE, RING_RADIUS_HELI, ZONE_RADIUS};
@@ -26,6 +28,7 @@ pub struct World {
     pub aircraft: Option<Aircraft>,
     pub sling: Option<Sling>,
     pub air: Option<AirRun>,
+    pub cities: Vec<City>,
     props: HashMap<(i32, i32), Vec<Prop>>,
 }
 
@@ -34,7 +37,8 @@ impl World {
         let terrain = Terrain::new(seed);
         let vehicle = Vehicle::new(VehicleSpec::offroader(), v3(0.0, terrain.height(0.0, 0.0) + 1.1, 0.0), 0.0);
         let cam = FollowCam::new(&vehicle);
-        World { terrain, vehicle, cam, time: 0.0, mission: None, aircraft: None, sling: None, air: None, props: HashMap::new() }
+        let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
+        World { terrain, vehicle, cam, time: 0.0, mission: None, aircraft: None, sling: None, air: None, cities, props: HashMap::new() }
     }
 
     pub fn step(&mut self, inp: &Input, dt: f32) { self.step_with(inp, &FlightInput::default(), dt); }
@@ -53,6 +57,7 @@ impl World {
         v.pos.z = v.pos.z.clamp(-WORLD_LIMIT, WORLD_LIMIT);
         if v.pos.x.abs() >= WORLD_LIMIT { v.vel.x = 0.0; }
         if v.pos.z.abs() >= WORLD_LIMIT { v.vel.z = 0.0; }
+        for c in &self.cities { c.resolve_hull(&mut self.vehicle.pos, &mut self.vehicle.vel, &mut self.vehicle.omega, self.vehicle.rot); }
         self.cam.update(&self.vehicle, &self.terrain, dt);
         if let Some(r) = self.mission.as_mut() { r.update(&self.vehicle, &inp, inp.reset, dt); }
         self.time += dt;
@@ -123,11 +128,18 @@ impl World {
         let pos = self.aircraft.as_ref().map_or(V3::ZERO, |a| a.pos);
         self.ensure_props(tile_of(pos.x), tile_of(pos.z), 1);
         let near = self.nearby_props_at(pos);
+        let g = WorldGround { terrain: &self.terrain, cities: &self.cities };
         let a = self.aircraft.as_mut().unwrap();
-        a.step(&self.terrain, &near, &fi, dt);
+        a.step(&g, &near, &fi, dt);
+        if self.cities.iter().any(|c| c.touches_side(a.pos, a.spec.radius)) { a.status = super::flight::Status::Crashed; a.vel = V3::ZERO; }
         let (ap, av) = (a.pos, a.vel);
         let mut impact = None;
-        if let Some(s) = self.sling.as_mut() { impact = s.step(ap - v3(0.0, 0.8, 0.0), av, &self.terrain, dt); }
+        if let Some(s) = self.sling.as_mut() {
+            impact = s.step(ap - v3(0.0, 0.8, 0.0), av, &g, dt);
+            for c in &self.cities {
+                if let Some((push, n)) = c.push_out(s.pos, 0.6) { s.pos = s.pos + push; let vn = s.vel.dot(n); if vn < 0.0 { s.vel = s.vel - n * vn; } }
+            }
+        }
         let a = *self.aircraft.as_ref().unwrap();
         let (back, up) = if a.kind == AircraftKind::Heli { (9.0, 3.0) } else { (6.0, 2.0) };
         self.cam.follow(a.pos, a.forward(), back, up, &self.terrain, dt);
@@ -137,6 +149,34 @@ impl World {
             }
         }
         self.time += dt;
+    }
+
+    /// Puts the player at a street intersection near the centre of the first city (an aircraft 120 m above it). False without a city.
+    pub fn place_in_city(&mut self) -> bool {
+        let Some(c) = self.cities.first() else { return false };
+        let s = c.site;
+        let (x, z) = (s.centre.x - 24.0, s.centre.z - 24.0);       // the intersection of the 5th street each way
+        if let Some(a) = self.aircraft.as_mut() { *a = Aircraft::new(a.kind, v3(x, s.centre.y + 120.0, z), 0.0); }
+        else {
+            self.vehicle = Vehicle::new(VehicleSpec::offroader(), v3(x, s.centre.y + 1.1, z), 0.0);
+            self.cam = FollowCam::new(&self.vehicle);
+        }
+        true
+    }
+
+    /// Puts the player (the aircraft in an air mission, else the car) 60 m west of the first city facing it. False without a city.
+    pub fn place_near_city(&mut self) -> bool {
+        let Some(c) = self.cities.first() else { return false };
+        let s = c.site;
+        let (x, z) = (s.centre.x - s.half - 60.0, s.centre.z);
+        let yaw = std::f32::consts::FRAC_PI_2;
+        let g = self.terrain.height(x, z);
+        if let Some(a) = self.aircraft.as_mut() { *a = Aircraft::new(a.kind, v3(x, g + 25.0, z), yaw); }
+        else {
+            self.vehicle = Vehicle::new(VehicleSpec::offroader(), v3(x, g + 1.1, z), yaw);
+            self.cam = FollowCam::new(&self.vehicle);
+        }
+        true
     }
 
     /// Where the player is: the aircraft in air missions, else the car.
@@ -206,7 +246,7 @@ pub struct WorldView<'a> {
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
     pub props: Vec<&'a Prop>, pub sun: V3, pub markers: Vec<Marker>,
-    pub aircraft: Option<Aircraft>, pub sling: Option<Sling>, pub time: f32,
+    pub aircraft: Option<Aircraft>, pub sling: Option<Sling>, pub time: f32, pub cities: &'a [City],
 }
 
 impl World {
@@ -216,7 +256,7 @@ impl World {
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
         WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), markers: self.markers(),
-            aircraft: self.aircraft, sling: self.sling, time: self.time }
+            aircraft: self.aircraft, sling: self.sling, time: self.time, cities: &self.cities }
     }
 }
 

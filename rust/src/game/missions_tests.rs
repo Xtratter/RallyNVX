@@ -75,3 +75,9 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
     }
     assert!(flipped > 0, "the probe must actually flip some difficulties");
 }
+#[test] fn ground_mission_points_stay_out_of_cities() {
+    for ps in 0..200u64 { for m in roll(ps * 7919, (ps % 5) as u32, 0).into_iter().filter(|m| !m.is_air()) {
+        let t = Terrain::new(m.seed);
+        for p in &m.checkpoints { assert!(!t.in_city(p.x, p.z, 20.0), "point {p:?} inside a city, seed {ps}"); }
+    } }
+}

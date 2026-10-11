@@ -51,9 +51,13 @@ Air missions use a helicopter or a drone (the card shows which). Sticks released
 - **Recon** (drone): hover for 2 s inside every zone (40 m), in any order.
 - Medals, rewards and the profile work as for ground missions. The drone is faster and tilts more; the helicopter is steadier.
 
+## City
+
+Every level has one or two cities (about 530 x 530 m) standing on a flat plateau a few hundred metres from the start: a grid of streets, blocks, parks and buildings from 4 m to 90 m, the tallest in the centre. Buildings are solid: the car stops at them, an aircraft that touches a wall or the underside of a building crashes. A helicopter or drone can land softly on a roof (descent up to 3 m/s) and take off again; sling cargo rests on roofs. The Quality setting also sets how far the city is drawn: 300 m (Low), 400 m (Medium), 450 m (High). Desktop: `RAYTRACE_AT_CITY=1 raytrace-desktop --game` starts next to the first city, `RAYTRACE_CITY_RADIUS=500` sets the draw distance.
+
 ## Limits of this version
 
-No garage, rescue missions, NPC orders or cities yet, and only the raster renderer (mode C). The ray-traced Scenes mode is unchanged.
+No garage, rescue missions or NPC orders yet, and missions are not city-aware (goals avoid cities), and only the raster renderer (mode C). The ray-traced Scenes mode is unchanged.
 
 ---
 
@@ -108,6 +112,10 @@ No garage, rescue missions, NPC orders or cities yet, and only the raster render
 - **Разведка** (дрон): повисите 2 с в каждой зоне (40 м), в любом порядке.
 - Медали, награды и профиль работают как в наземных миссиях. Дрон быстрее и сильнее наклоняется; вертолёт устойчивее.
 
+## Город
+
+В каждом уровне есть один или два города (около 530 x 530 м) на ровном плато в нескольких сотнях метров от старта: сетка улиц, кварталы, парки и здания от 4 до 90 м, самые высокие в центре. Здания твёрдые: машина упирается в них, аппарат, коснувшийся стены или низа здания, разбивается. Вертолёт или дрон может мягко сесть на крышу (снижение до 3 м/с) и снова взлететь; груз на подвесе лежит на крышах. Настройка «Качество» задаёт и дальность прорисовки города: 300 м (Низкое), 400 м (Среднее), 450 м (Высокое). Десктоп: `RAYTRACE_AT_CITY=1 raytrace-desktop --game` стартует рядом с первым городом, `RAYTRACE_CITY_RADIUS=500` задаёт дальность прорисовки.
+
 ## Ограничения этой версии
 
-Пока нет гаража, спасательных миссий, заказов NPC и городов, и только растровый рендер (режим C). Режим «Сцены» с трассировкой не менялся.
+Пока нет гаража, спасательных миссий и заказов NPC, а миссии не знают о городах (цели обходят города), и только растровый рендер (режим C). Режим «Сцены» с трассировкой не менялся.

@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{meshes, models::{self, Part}};
+use super::{citygen, meshes, models::{self, Part}};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::terrain::{Mesh, TILE_SIZE};
@@ -16,7 +16,8 @@ use crate::game::world::{tile_of, World};
 
 const SHADOW_SIZE: u32 = 2048;
 const DRAW_TILES: i32 = 3;
-const MAX_INST: usize = 4096;
+const MAX_INST: usize = 16384;
+const CITY_BUDGET: usize = 6000;
 const TILE_BUDGET: usize = 3;
 const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -42,8 +43,11 @@ fn inst(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst {
 /// Like `inst`, but flagged as a glowing marker (colour alpha 2): drawn unlit and fog-free.
 fn inst_glow(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = inst(rot, pos, s, color); i.color[3] = 2.0; i }
 
+/// A building: lit like a normal part, with windows drawn by the shader (colour alpha 3).
+fn inst_facade(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = inst(rot, pos, s, color); i.color[3] = 3.0; i }
+
 fn push_part(lists: &mut [Vec<Inst>; 4], p: &Part) {
-    lists[p.mesh].push(if p.glow { inst_glow(p.rot, p.pos, p.scale, p.color) } else { inst(p.rot, p.pos, p.scale, p.color) });
+    lists[p.mesh].push(if p.facade { inst_facade(p.rot, p.pos, p.scale, p.color) } else if p.glow { inst_glow(p.rot, p.pos, p.scale, p.color) } else { inst(p.rot, p.pos, p.scale, p.color) });
 }
 
 struct MeshBuf { vb: wgpu::Buffer, ib: wgpu::Buffer, n: u32 }
@@ -69,6 +73,7 @@ fn depth_tex(dev: &wgpu::Device, w: u32, h: u32, sampled: bool) -> (wgpu::Textur
 }
 
 pub struct Raster {
+    city_radius: f32,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -177,13 +182,16 @@ impl Raster {
         let pl_sky = mk("sky", &lay_main, "vs_sky", Some("fs_sky"), &[], depth_state(false, wgpu::CompareFunction::Always, no_bias));
 
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
-        Raster { surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
+        Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
             pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
     pub fn queue(&self) -> &wgpu::Queue { &self.queue }
     pub fn format(&self) -> wgpu::TextureFormat { self.config.format }
+
+    /// How far from the camera city buildings and tiles are drawn (metres).
+    pub fn set_city_radius(&mut self, r: f32) { self.city_radius = r.clamp(100.0, 2000.0); }
 
     pub fn resize(&mut self, w: u32, h: u32) {
         let (w, h) = (w.max(1), h.max(1));
@@ -280,11 +288,15 @@ impl Raster {
         let mut all: Vec<Inst> = Vec::new();
         let mut ranges = [(0u32, 0u32); 4];
         for k in 0..4 {
-            let room = MAX_INST - all.len();
+            let room = (MAX_INST - CITY_BUDGET) - all.len();
             let take = lists[k].len().min(room);
             ranges[k] = (all.len() as u32, (all.len() + take) as u32);
             all.extend_from_slice(&lists[k][..take]);
         }
+        let cp = citygen::city_parts(wv.cities, wv.cam_pos, self.city_radius, CITY_BUDGET, 150.0);
+        let city_start = all.len() as u32;
+        for p in &cp.parts { all.push(if p.facade { inst_facade(p.rot, p.pos, p.scale, p.color) } else { inst(p.rot, p.pos, p.scale, p.color) }); }
+        let (city_end, city_near_end) = (all.len() as u32, city_start + cp.near as u32);
         if !all.is_empty() { self.queue.write_buffer(&self.ibuf, 0, bytemuck::cast_slice(&all)); }
 
         let near = |tx: i32, tz: i32| {
@@ -313,6 +325,11 @@ impl Raster {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, a..b);
             }
+            if city_near_end > city_start {
+                let m = &self.meshes[0];
+                rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..m.n, 0, city_start..city_near_end);
+            }
         }
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -337,6 +354,11 @@ impl Raster {
                 let m = &self.meshes[k];
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, a..b);
+            }
+            if city_end > city_start {
+                let m = &self.meshes[0];
+                rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..m.n, 0, city_start..city_end);
             }
         }
         self.queue.submit([enc.finish()]);
