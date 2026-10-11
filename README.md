@@ -16,6 +16,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 
 ## Features
 
+- **Game**: off-road free drive on random seeded levels with an arcade car, chase camera and touch or keyboard controls (see [docs/game.md](docs/game.md))
 - **Scenes**: four built in (Classic, Sun room, Materials, Prism with a dispersed rainbow) plus your own JSON files with spheres, boxes, prisms, sun and lamps, mirror, glossy, tinted and dispersive glass (see [docs/scenes.md](docs/scenes.md))
 - **Two modes**: *Hybrid* (one ray per pixel with shadows, global illumination, caustics, reflections and refraction) and
   *Path tracing* (progressive: converges to a clean image when the camera is still)
