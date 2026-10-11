@@ -25,7 +25,7 @@ On Android the start screen has Quality: Low (0.5x), Medium (0.7x) and High (1.0
 
 ## Missions
 
-The main menu opens a list of four random missions: two **deliveries** and two **checkpoint races**. Tap a card for the briefing, then Start. The goal is a tall yellow beacon, race checkpoints are rings (the next one is pink); the HUD shows the timer, an arrow with the distance to the target and, for deliveries, the cargo condition.
+The main menu opens a list of four random missions: two **deliveries** and two **checkpoint races**. Tap a card for the briefing, then Start. The goal is a tall yellow pillar, race checkpoints are rings (the next one is pink); the HUD shows the timer, an arrow with the distance to the target and, for deliveries, the cargo condition.
 
 - **Time limit**: about 1.6 x the path length at 12 m/s plus 20 s. The clock starts with the first throttle.
 - **Cargo** (deliveries only, 100%): a hard hit (horizontal speed change above 6 m/s in a step), a hard landing after a jump, a rollover (8% per second) and the Reset button (5%) damage it; at 0% the mission fails.

@@ -240,7 +240,7 @@ impl Raster {
         for mk in &wv.markers {
             use crate::game::world::MarkerKind;
             match mk.kind {
-                MarkerKind::Beacon => lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 30., 0.), v3(3.0, 60.0, 3.0), [1.0, 0.85, 0.25])),
+                MarkerKind::Beacon => lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 60., 0.), v3(7.0, 120.0, 7.0), [1.0, 0.85, 0.25])),
                 MarkerKind::Ring => lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [0.25, 0.75, 1.0])),
                 MarkerKind::Next => {
                     lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [1.0, 0.35, 0.85]));
