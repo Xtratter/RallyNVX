@@ -82,3 +82,12 @@ fn mk(kind: MissionKind, pts: Vec<V3>) -> Mission {
     let w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
     assert_eq!(w.view(1).markers.len(), 1);
 }
+#[test] fn mission_starts_facing_the_first_target_with_the_camera_behind() {
+    let w = World::for_mission(mk(MissionKind::Race, vec![v3(300., 0., -200.), v3(600., 0., -400.)]));
+    let want = v3(300., 0., -200.).norm();
+    let f = w.vehicle.forward();
+    assert!(f.x * want.x + f.z * want.z > 0.999, "forward {f:?}");
+    assert!(w.vehicle.up().y > 0.99);
+    let to_cam = (w.cam.pos - w.vehicle.pos).norm();
+    assert!(to_cam.x * f.x + to_cam.z * f.z < -0.9, "camera must start behind the car");
+}

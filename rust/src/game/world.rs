@@ -76,6 +76,14 @@ impl World {
 impl World {
     pub fn for_mission(m: Mission) -> World {
         let mut w = World::new(m.seed);
+        // start facing the first target, camera behind
+        if let Some(t) = m.checkpoints.first() {
+            let (dx, dz) = (t.x - w.vehicle.pos.x, t.z - w.vehicle.pos.z);
+            if dx.hypot(dz) > 1.0 {
+                w.vehicle = Vehicle::new(VehicleSpec::offroader(), w.vehicle.pos, dx.atan2(dz));
+                w.cam = FollowCam::new(&w.vehicle);
+            }
+        }
         w.mission = Some(MissionRun::new(m));
         w
     }
