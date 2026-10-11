@@ -1,5 +1,6 @@
 //! Raster renderer (render mode C): tiled terrain, instanced props and vehicle, sky, sun shadow map.
 pub mod meshes;
+pub mod models;
 
 /// Terrain tiles around the camera tile: which to build (nearest first) and which cached meshes to draw
 /// (the wanted LOD, else any cached LOD of the same tile so there are never holes while a tile is rebuilt).
