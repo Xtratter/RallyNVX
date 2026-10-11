@@ -1,4 +1,5 @@
 pub mod adaptive;
+pub mod audio;
 pub mod camera;
 pub mod dispersion;
 pub mod game;
