@@ -14,13 +14,19 @@ object Native {
     @JvmStatic external fun resetCamera()
     /** Parses a scene file (JSON) and switches to it; returns "" on success or a readable error. */
     @JvmStatic external fun loadScene(json: String): String
-    @JvmStatic external fun gameStart(surface: Surface, w: Int, h: Int, seed: Long)
+    /** profile: path of profile.json ("" = none); mission: index in the profile's current list, -1 = free drive. */
+    @JvmStatic external fun gameStart(surface: Surface, w: Int, h: Int, seed: Long, profile: String, mission: Int)
+    @JvmStatic external fun gamePause(p: Boolean)
+    @JvmStatic external fun gameRestart()
+    @JvmStatic external fun gameAbort()
+    /** [money, round, profile_seed, golds] + 4 x [kind(0 cargo/1 race), seed, difficulty, length_m, time_limit, reward_base, best_medal, best_time]. */
+    @JvmStatic external fun missionsInfo(path: String, fresh: Long, refresh: Boolean): FloatArray
     @JvmStatic external fun gameStop()
     @JvmStatic external fun gameResize(w: Int, h: Int)
     @JvmStatic external fun gameInput(throttle: Float, steer: Float, brake: Boolean, handbrake: Boolean)
     @JvmStatic external fun gameReset()
     @JvmStatic external fun gameNewLevel(seed: Long)
-    /** 16 floats: [0] fps, [1] km/h, [2] seed (low 24 bits), [3] frame ms. */
+    /** 64 floats, layout in game::app::fill_state: [0] fps, [1] km/h, [2] seed, [4] phase, [5] time, [6] limit, [7] integrity, [8] distance, [9] bearing, [10]/[11] checkpoint, [12] result, [13] medal, [14] payout, [15] failure, [16] money, [17] kind. */
     @JvmStatic external fun gameStats(): FloatArray
     /** 16 floats: [0..5] fps, gpu ms, w, h, scale, path; [8..15] per-pass GPU ms (trace, gi_trace, gi_temporal, gi_atrous, temporal, atrous, composite, present). */
     @JvmStatic external fun stats(): FloatArray

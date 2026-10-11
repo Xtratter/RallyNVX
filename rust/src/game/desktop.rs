@@ -1,5 +1,5 @@
 //! Desktop game mode: `raytrace-desktop --game [seed]`. Keys: W/Up throttle, S/Down reverse, A/D or Left/Right steer,
-//! Space brake, Left Shift handbrake, R reset, N new random level, Esc quit.
+//! Space brake, Left Shift handbrake, R reset, N new random level, M abort the mission, Esc quit. `RAYTRACE_MISSION=<0..3>` starts a mission.
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
@@ -10,11 +10,18 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
-use super::app::Game;
+use super::app::{Game, STAT_LEN};
 use crate::raster::Raster;
 
 fn random_seed() -> u64 {
     super::app::level_seed(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64))
+}
+
+fn profile_path() -> std::path::PathBuf {
+    if let Some(p) = std::env::var_os("RAYTRACE_PROFILE") { return p.into(); }
+    let base = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))).unwrap_or_default();
+    base.join("raytrace").join("profile.json")
 }
 
 struct State { window: Arc<Window>, game: Game, keys: HashSet<KeyCode>, autodrive: bool }
@@ -29,7 +36,11 @@ impl State {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor { backends: wgpu::Backends::VULKAN, ..Default::default() });
         let surface = instance.create_surface(window.clone()).expect("create_surface");
         let raster = Raster::from_surface(instance, surface, Box::new(window.clone()), size.width.max(1), size.height.max(1));
-        let game = Game::new(raster, seed, Arc::new(Mutex::new([0.0; 16])));
+        let mut game = Game::new(raster, seed, Arc::new(Mutex::new([0.0; STAT_LEN])));
+        if let Some(i) = std::env::var("RAYTRACE_MISSION").ok().and_then(|s| s.parse::<usize>().ok()) {
+            game.with_profile(profile_path(), random_seed());
+            game.start_mission(i);
+        }
         State { window, game, keys: HashSet::new(), autodrive: std::env::var("RAYTRACE_AUTODRIVE").map_or(false, |v| v == "1") }
     }
 
@@ -39,11 +50,15 @@ impl State {
         let throttle = self.held(&[KeyCode::KeyW, KeyCode::ArrowUp]) - self.held(&[KeyCode::KeyS, KeyCode::ArrowDown]);
         let steer = self.held(&[KeyCode::KeyD, KeyCode::ArrowRight]) - self.held(&[KeyCode::KeyA, KeyCode::ArrowLeft]);
         self.game.input.throttle = if self.autodrive { 1.0 } else { throttle };
-        self.game.input.steer = steer;
+        // CI smoke: with RAYTRACE_AUTODRIVE the car steers towards the mission target so the beacon comes into view
+        let st = self.game.stats();
+        self.game.input.steer = if self.autodrive && st[4] > 0.0 { (st[9] * 2.0).clamp(-1.0, 1.0) } else { steer };
         self.game.input.brake = self.keys.contains(&KeyCode::Space);
         self.game.input.handbrake = self.keys.contains(&KeyCode::ShiftLeft);
         self.game.frame();
-        self.window.set_title(&format!("Raytrace - Game | {:.0} km/h | {:.0} fps | seed {}", self.game.speed_kmh(), self.game.fps(), self.game.seed()));
+        let st = self.game.stats();
+        let mission = if st[4] > 0.0 { format!(" | t {:.0}s | cargo {:.0}% | {:.0} m", st[5], st[7], st[8]) } else { String::new() };
+        self.window.set_title(&format!("Raytrace - Game | {:.0} km/h | {:.0} fps | seed {}{}", self.game.speed_kmh(), self.game.fps(), self.game.seed(), mission));
     }
 }
 
@@ -65,6 +80,7 @@ impl ApplicationHandler for App {
                                 KeyCode::Escape => el.exit(),
                                 KeyCode::KeyR => s.game.input.reset = true,
                                 KeyCode::KeyN => s.game.new_level(random_seed()),
+                                KeyCode::KeyM => s.game.abort_mission(),
                                 _ => {}
                             }
                         }
