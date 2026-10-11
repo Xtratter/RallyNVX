@@ -222,6 +222,20 @@ impl World {
             total: r.total(), outcome: r.outcome(), target: r.target(self.player_pos()) })
     }
 
+    /// Rescue: the people still waiting, standing on a small circle around each pending site (ground level).
+    pub fn survivors(&self) -> Vec<V3> {
+        let Some(r) = self.air.as_ref().filter(|r| r.mission().kind == MissionKind::Rescue) else { return Vec::new() };
+        let mut out = Vec::new();
+        for (site, n) in r.rescue_pending() {
+            for k in 0..n {
+                let a = k as f32 * std::f32::consts::TAU / n as f32 + 0.6;
+                let (x, z) = (site.x + a.cos() * 2.5, site.z + a.sin() * 2.5);
+                out.push(v3(x, self.terrain.height(x, z), z));
+            }
+        }
+        out
+    }
+
     /// Beacon at the goal; races also show the remaining checkpoints, the next one highlighted; air missions show rings,
     /// pads or zones. Empty when done.
     pub fn markers(&self) -> Vec<Marker> {
@@ -242,6 +256,12 @@ impl World {
                     if r.next_index() == 0 { out.push(mk(MarkerKind::Pad, m.checkpoints[0], GOAL_RADIUS, V3::ZERO)); }
                     out.push(mk(MarkerKind::Pad, m.checkpoints[1], GOAL_RADIUS, V3::ZERO));
                     out.push(mk(MarkerKind::Beacon, m.checkpoints[1], GOAL_RADIUS, V3::ZERO));
+                }
+                MissionKind::Rescue => {
+                    for (i, p) in m.checkpoints.iter().enumerate().skip(r.next_index()) {
+                        out.push(mk(MarkerKind::Pad, *p, GOAL_RADIUS, V3::ZERO));
+                        if i == r.next_index() { out.push(mk(MarkerKind::Beacon, *p, GOAL_RADIUS, V3::ZERO)); }
+                    }
                 }
                 _ => {
                     for (p, done) in m.checkpoints.iter().zip(r.captured()) {
@@ -270,7 +290,7 @@ impl World {
 pub struct WorldView<'a> {
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
-    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub markers: Vec<Marker>,
+    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub survivors: Vec<V3>, pub markers: Vec<Marker>,
     pub aircraft: Option<Aircraft>, pub sling: Option<Sling>, pub time: f32, pub cities: &'a [City], pub tracks: &'a Tracks,
 }
 
@@ -280,7 +300,7 @@ impl World {
         let (cx, cz) = (tile_of(self.cam.pos.x), tile_of(self.cam.pos.z));
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
-        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: self.daylight(), markers: self.markers(),
+        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: self.daylight(), survivors: self.survivors(), markers: self.markers(),
             aircraft: self.aircraft, sling: self.sling, time: self.time, cities: &self.cities, tracks: &self.tracks }
     }
 }

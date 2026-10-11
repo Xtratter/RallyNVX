@@ -316,3 +316,48 @@ fn hull_free(w: &World) -> bool {
     let f = w.vehicle.forward(); let (wx, wz) = (p.x + f.x * 22.0, p.z + f.z * 22.0);
     assert!(w.terrain.is_water(wx, wz, 0.5), "no lake 22 m ahead");
 }
+
+mod rescue {
+    use super::*;
+    use crate::game::{airgen::rescue_people, app::{fill_state, STAT_LEN}};
+    fn rescue_world() -> World {
+        let pts = vec![v3(0., 0., 120.), v3(0., 0., 240.), v3(150., 0., 120.)];
+        let mut m = air(MissionKind::Rescue, AircraftKind::Heli, pts);
+        m.difficulty = 2;
+        World::for_mission(m)
+    }
+    fn sit_on(w: &mut World, x: f32, z: f32, secs: f32) {
+        let y = w.terrain.height(x, z) + 0.3;
+        let a = w.aircraft.as_mut().unwrap(); a.pos = v3(x, y, z); a.vel = V3::ZERO;
+        for _ in 0..(secs / (1.0 / 60.0)) as usize { w.step_with(&Input::default(), &FlightInput { yaw: 0.2, ..Default::default() }, 1.0 / 60.0); }
+    }
+    #[test] fn rescue_world_is_a_heli_without_cargo_and_marks_every_stop() {
+        let w = rescue_world();
+        assert!(w.aircraft.is_some() && w.sling.is_none());
+        let m = w.markers();
+        assert_eq!(m.iter().filter(|k| k.kind == MarkerKind::Pad).count(), 3);
+        assert_eq!(m.iter().filter(|k| k.kind == MarkerKind::Beacon).count(), 1);
+        assert!(m.iter().filter(|k| k.kind == MarkerKind::Pad).all(|k| k.radius == GOAL_RADIUS));
+        let ri = w.run_info().unwrap();
+        assert_eq!((ri.total, ri.next), (3, 0));
+    }
+    #[test] fn survivors_stand_around_pending_sites_and_vanish_when_boarded() {
+        let mut w = rescue_world();
+        let people = rescue_people(42, 2);
+        let v = w.view(1).survivors;
+        assert_eq!(v.len() as u32, people.iter().map(|c| *c as u32).sum::<u32>());
+        for p in &v { assert!((p.x - 0.0).hypot(p.z - 120.0) < 4.0 || (p.x - 0.0).hypot(p.z - 240.0) < 4.0); assert!((p.y - w.terrain.height(p.x, p.z)).abs() < 1e-3); }
+        sit_on(&mut w, 0.0, 120.0, 3.3);
+        assert_eq!(w.view(1).survivors.len() as u32, people[1] as u32);
+        assert_eq!(w.markers().iter().filter(|k| k.kind == MarkerKind::Pad).count(), 2);
+    }
+    #[test] fn hud_state_reports_people_aboard_and_boarding_progress() {
+        let mut w = rescue_world(); let mut s = [0.0f32; STAT_LEN];
+        sit_on(&mut w, 0.0, 120.0, 1.5);
+        fill_state(&mut s, &w, 0, 0, 60.0, 4.0, 42, 0);
+        assert_eq!(s[17], 5.0); assert!(s[24] > 0.3 && s[24] < 0.7, "{}", s[24]); assert_eq!(s[23], 0.0);
+        sit_on(&mut w, 0.0, 120.0, 2.0);
+        fill_state(&mut s, &w, 0, 0, 60.0, 4.0, 42, 0);
+        assert_eq!((s[23], s[10], s[11]), (rescue_people(42, 2)[0] as f32, 1.0, 3.0));
+    }
+}

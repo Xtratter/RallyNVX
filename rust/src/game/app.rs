@@ -37,6 +37,7 @@ pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, payout: u32,
         out[20] = if a.kind == AircraftKind::Heli { 1.0 } else { 2.0 };
         if let Some(s) = &w.sling { out[21] = if s.attached && s.rope_taut(a.pos - crate::game::math::v3(0.0, 0.8, 0.0)) { 1.0 } else { 0.0 }; }
     }
+    if let Some(r) = &w.air { out[23] = r.rescue_loaded() as f32; out[24] = r.rescue_progress(); }
     let Some(r) = w.run_info() else { return };
     out[4] = match r.phase { Phase::Ready => 1.0, Phase::Running => 2.0, Phase::Done => 3.0 };
     out[5] = r.time; out[6] = r.mission.time_limit; out[7] = r.integrity;
