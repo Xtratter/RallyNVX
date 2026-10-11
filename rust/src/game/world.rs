@@ -182,6 +182,28 @@ impl World {
         true
     }
 
+    /// Debug/test: puts the car (or the aircraft) on dry ground 20 m from the nearest lake, facing it. False without a lake.
+    pub fn place_near_water(&mut self) -> bool {
+        let t = self.terrain;
+        let Some(level) = t.water_level() else { return false };
+        for ring in 1..=80 {
+            let r = ring as f32 * 25.0;
+            for d in 0..16 {
+                let a = d as f32 * std::f32::consts::TAU / 16.0;
+                let (wx, wz) = (a.cos() * r, a.sin() * r);
+                if t.height(wx, wz) > level - 1.0 { continue; }
+                let (x, z) = (wx - a.cos() * 22.0, wz - a.sin() * 22.0);
+                if t.is_water(x, z, 0.3) || t.in_city(x, z, 0.0) { continue; }
+                let yaw = (wx - x).atan2(wz - z);
+                let g = t.height(x, z);
+                if let Some(ac) = self.aircraft.as_mut() { *ac = Aircraft::new(ac.kind, v3(x, g + 25.0, z), yaw); }
+                else { self.vehicle = Vehicle::new(VehicleSpec::offroader(), v3(x, g + 1.1, z), yaw); self.cam = FollowCam::new(&self.vehicle); }
+                return true;
+            }
+        }
+        false
+    }
+
     /// Where the player is: the aircraft in air missions, else the car.
     pub fn player_pos(&self) -> V3 { self.aircraft.as_ref().map_or(self.vehicle.pos, |a| a.pos) }
 

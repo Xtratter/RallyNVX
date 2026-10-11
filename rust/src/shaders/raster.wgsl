@@ -212,3 +212,30 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     c = c + u.sun_col.rgb * 0.4 * (pow(s, 600.0) * 8.0 + pow(s, 12.0) * 0.18);
     return vec4<f32>(finish(c), 1.0);
 }
+
+struct WOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) depth: f32 };
+@vertex fn vs_water(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>) -> WOut {
+    var o: WOut; o.pos = u.vp * vec4<f32>(p, 1.0); o.wp = p; o.depth = n.x; return o;
+}
+@fragment fn fs_water(i: WOut) -> @location(0) vec4<f32> {
+    let t = u.fog.y;
+    // wave normal from two drifting noise layers
+    let e = 0.15;
+    let p1 = i.wp.xz * 0.35 + vec2<f32>(t * 0.15, t * 0.08);
+    let p2 = i.wp.xz * 0.9 + vec2<f32>(-t * 0.2, t * 0.11);
+    let h0 = vnoise2(p1) * 0.6 + vnoise2(p2) * 0.4;
+    let hx = vnoise2(p1 + vec2<f32>(e, 0.0)) * 0.6 + vnoise2(p2 + vec2<f32>(e, 0.0)) * 0.4;
+    let hz = vnoise2(p1 + vec2<f32>(0.0, e)) * 0.6 + vnoise2(p2 + vec2<f32>(0.0, e)) * 0.4;
+    let n = normalize(vec3<f32>(-(hx - h0) * 1.6, 1.0, -(hz - h0) * 1.6));
+    let v = normalize(u.cam.xyz - i.wp);
+    let d = max(i.depth, 0.0);
+    let body = mix(vec3<f32>(0.05, 0.20, 0.22), vec3<f32>(0.01, 0.06, 0.13), smoothstep(0.0, 5.0, d)) * (0.5 + 0.5 * length(u.sun_col.rgb) / 2.6);
+    let fr = pow(1.0 - max(dot(n, v), 0.0), 5.0);
+    var c = mix(body, sky_gradient(reflect(-v, n)), clamp(0.04 + 0.96 * fr, 0.0, 1.0));
+    let sd = normalize(u.sun.xyz);
+    c = c + u.sun_col.rgb * 0.4 * pow(max(dot(reflect(-sd, n), v), 0.0), 120.0);
+    let f = clamp(1.0 - exp(-length(i.wp - u.cam.xyz) * u.fog.x), 0.0, 1.0);
+    c = mix(c, u.sky_hor.rgb, f);
+    let alpha = smoothstep(0.0, 0.5, i.depth) * mix(0.35, 0.92, smoothstep(0.0, 4.0, d));
+    return vec4<f32>(finish(c), alpha);
+}

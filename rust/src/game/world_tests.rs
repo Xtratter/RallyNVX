@@ -308,3 +308,11 @@ fn hull_free(w: &World) -> bool {
     assert_eq!(a.tracks.len(), 0);
 }
 #[test] fn the_view_carries_the_tracks() { let mut w = World::new(1); for _ in 0..120 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); } assert_eq!(w.view(1).tracks.len(), w.tracks.len()); }
+#[test] fn place_near_water_puts_the_car_on_dry_ground_facing_the_lake() {
+    let mut w = World::new(5);
+    assert!(w.place_near_water());
+    let p = w.vehicle.pos;
+    assert!(!w.terrain.is_water(p.x, p.z, 0.0));
+    let f = w.vehicle.forward(); let (wx, wz) = (p.x + f.x * 22.0, p.z + f.z * 22.0);
+    assert!(w.terrain.is_water(wx, wz, 0.5), "no lake 22 m ahead");
+}

@@ -40,3 +40,9 @@ fn drive(secs: f32, throttle: f32) -> (Vehicle, Tracks) {
     let f = q.rotate(v3(0., 0., 1.));
     assert!(f.dot(n).abs() < 1e-3 && f.dot(d) > 0.9, "{f:?}");
 }
+#[test] fn no_tracks_are_left_in_water() {
+    let t = Terrain::flooded(0.5); let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., 1.1, 0.), 0.0); let mut tr = Tracks::new();
+    v.vel = v3(0., 0., 12.0);
+    for _ in 0..120 { v.comp = [0.1; 4]; v.pos.z += 0.2; tr.update(&v, &t, DT); }
+    assert_eq!(tr.len(), 0);
+}

@@ -86,7 +86,7 @@ mod android {
                             Ok(GCmd::Resize(w, h)) => g.resize(w, h),
                             Ok(GCmd::Pause(p)) => g.set_paused(p),
                             Ok(GCmd::Quality(q)) => g.set_quality(q),
-                            Ok(GCmd::InCity(m)) => { if m == 2 { g.place_in_city(); } else { g.place_near_city(); } }
+                            Ok(GCmd::InCity(m)) => { if m == 3 { g.place_near_water(); } else if m == 2 { g.place_in_city(); } else { g.place_near_city(); } }
                             Ok(GCmd::Restart) => g.restart_mission(),
                             Ok(GCmd::Abort) => g.abort_mission(),
                             Err(TryRecvError::Empty) => break,

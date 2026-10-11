@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{citygen, meshes, models::{self, Part}, nature_models, texgen, vehicle_models as vm};
+use super::{citygen, watergen, meshes, models::{self, Part}, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::scatter::{self, Bush};
@@ -131,6 +131,8 @@ pub struct Raster {
     pl_model_sh: wgpu::RenderPipeline,
     models: Vec<ModelBuf>,
     mbuf: wgpu::Buffer,
+    pl_water: wgpu::RenderPipeline,
+    water: HashMap<(i32, i32), Option<MeshBuf>>,
     bush_cache: HashMap<(i32, i32), Vec<Bush>>,
     grass_cache: Option<((i32, i32, usize), Vec<(V3, f32)>)>,
     wheel_spin: f32,
@@ -247,6 +249,13 @@ impl Raster {
         };
         let weight_layout = wgpu::VertexBufferLayout { array_stride: 4, step_mode: wgpu::VertexStepMode::Vertex, attributes: &WEIGHT_ATTRS };
         let pl_terrain = mk("terrain", &lay_main, "vs_terrain", Some("fs_terrain"), &[mesh_layout.clone(), weight_layout], depth_state(true, wgpu::CompareFunction::Less, no_bias));
+        let target_blend = [Some(wgpu::ColorTargetState { format, blend: Some(wgpu::BlendState::ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })];
+        let pl_water = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("water"), layout: Some(&lay_main),
+            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_water"), compilation_options: Default::default(), buffers: &[mesh_layout.clone()] },
+            fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_water"), compilation_options: Default::default(), targets: &target_blend }),
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+        });
         let pl_terrain_sh = mk("terrain_sh", &lay_shadow, "vs_terrain_shadow", None, &[mesh_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
         let pl_inst = mk("inst", &lay_main, "vs_inst", Some("fs_inst"), &[mesh_layout.clone(), inst_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
         let pl_inst_sh = mk("inst_sh", &lay_shadow, "vs_inst_shadow", None, &[mesh_layout, inst_layout], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
@@ -265,7 +274,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, water: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -316,6 +325,7 @@ impl Raster {
             let mut mb = mesh_buf(&self.device, &mesh);
             mb.wb = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("tile_w"), contents: bytemuck::cast_slice(&w), usage: wgpu::BufferUsages::VERTEX }));
             self.tiles.insert((tx, tz, lod), mb);
+            if !self.water.contains_key(&(tx, tz)) { let wm = watergen::water_mesh(wv.terrain, tx, tz).map(|m| mesh_buf(&self.device, &m)); self.water.insert((tx, tz), wm); }
         }
         let (_, visible) = if build.len() > TILE_BUDGET || !build.is_empty() {
             let have: HashSet<(i32, i32, u32)> = self.tiles.keys().copied().collect();
@@ -350,6 +360,21 @@ impl Raster {
             let (bq, bp) = vm::car_body_pose(veh);
             ml[0].push(MInst { m: mmat(bq, bp), tint: [1.0; 4] });
             for p in vm::car_wheel_poses(veh, self.wheel_spin) { ml[1].push(MInst { m: mmat(p.0, p.1), tint: [1.0; 4] }); }
+        }
+        if let (Some(level), None) = (wv.terrain.water_level(), &wv.aircraft) {
+            let veh = wv.vehicle;
+            if veh.speed().abs() > 2.0 {
+                let tick = (wv.time * 16.0) as i32;
+                for (wi, p) in vm::car_wheel_poses(veh, 0.0).iter().enumerate() {
+                    if wv.terrain.height(p.1.x, p.1.z) >= level - 0.05 { continue; }
+                    for n in 0..10i32 {
+                        let h = |k: i32| crate::game::terrain::hash01(0x5B1A + wi as u64, tick.wrapping_mul(31).wrapping_add(n), k);
+                        let (a, r, rise) = (h(1) * std::f32::consts::TAU, 0.3 + h(2) * 0.8, 0.1 + h(3) * 0.6);
+                        let s = 0.04 + 0.06 * h(4);
+                        lists[0].push(inst(Q::IDENT, v3(p.1.x + a.cos() * r, level + rise, p.1.z + a.sin() * r), v3(s, s, s), [0.75, 0.88, 0.95]));
+                    }
+                }
+            }
         }
         for tr in wv.tracks.iter() {
             lists[0].push(inst(crate::game::tracks::track_rot(tr.dir, tr.normal), tr.pos + tr.normal * 0.03, v3(0.3, 0.02, 0.45), [0.10, 0.075, 0.05]));
@@ -515,6 +540,11 @@ impl Raster {
                 let m = &self.meshes[0];
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, city_start..city_end);
+            }
+            rp.set_pipeline(&self.pl_water);
+            for m in self.water.values().flatten() {
+                rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..m.n, 0, 0..1);
             }
         }
         self.queue.submit([enc.finish()]);

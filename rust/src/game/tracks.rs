@@ -31,7 +31,7 @@ impl Tracks {
             let s = &v.spec;
             let p = v.pos + v.rot.rotate(s.wheels[w]) - up * (s.rest + s.radius - v.comp[w]);
             let h = t.height(p.x, p.z); let n = t.normal(p.x, p.z);
-            if rock_dominant(h, n, p.x, p.z) || t.in_city(p.x, p.z, 0.0) { self.last[w] = None; continue; }
+            if rock_dominant(h, n, p.x, p.z) || t.in_city(p.x, p.z, 0.0) || t.is_water(p.x, p.z, 0.0) { self.last[w] = None; continue; }
             let q = v3(p.x, h + 0.03, p.z);
             match self.last[w] {
                 Some(prev) if (q - prev).len() < SPACING => {}

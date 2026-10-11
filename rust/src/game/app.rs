@@ -93,6 +93,7 @@ mod game {
         pub fn set_city_radius(&mut self, r: f32) { self.raster.set_city_radius(r); }
         pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }
         pub fn place_in_city(&mut self) -> bool { self.world.place_in_city() }
+        pub fn place_near_water(&mut self) -> bool { self.world.place_near_water() }
 
         pub fn new_level(&mut self, seed: u64) {
             let seed = super::level_seed(seed);
