@@ -53,7 +53,7 @@ impl Renderer {
     fn apply_scene(&mut self) {
         let i = self.store.get(id::SCENE) as i32;
         if i == self.scene_loaded { return; }
-        if i >= 3 {
+        if i >= crate::scene::CUSTOM_SCENE as i32 {
             let Some(d) = self.custom.take() else { return };
             self.apply(&d);
             self.custom = Some(d);
@@ -69,7 +69,7 @@ impl Renderer {
     pub fn set_custom_scene(&mut self, d: crate::scene::SceneData) {
         self.custom = Some(d);
         self.scene_loaded = -1;
-        self.store.set(id::SCENE as i32, 3.0);
+        self.store.set(id::SCENE as i32, crate::scene::CUSTOM_SCENE as f32);
         self.apply_scene();
     }
 

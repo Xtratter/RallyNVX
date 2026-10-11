@@ -214,7 +214,7 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
         val file = Scenes.currentFile(context)
         val sceneChips = Scenes.NAMES.mapIndexed { i, n -> M3Widgets.chip(context, n, cur == i) { set(Ids.SCENE, i.toFloat(), true) } } +
             Scenes.files(context).map { f ->
-                M3Widgets.chip(context, f.nameWithoutExtension, cur == 3 && file == f.name) {
+                M3Widgets.chip(context, f.nameWithoutExtension, cur == 4 && file == f.name) {
                     val err = Scenes.load(context, s, f)
                     if (err != null) android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
                     else { onChanged(Ids.SCENE); rebuild() }

@@ -47,7 +47,7 @@ pub const DEFS: [Def; N] = [
     d(29, 3.0, 1.0, 5.0),  // look_speed
     d(30, 1.0, 0.0, 2.0),  // gi_res
     d(31, 0.0, 0.0, 1.0),  // ps1 (retro look)
-    d(32, 1.0, 0.0, 3.0),  // scene (0 classic, 1 sun room, 2 materials, 3 loaded file)
+    d(32, 1.0, 0.0, 4.0),  // scene (0 classic, 1 sun room, 2 materials, 3 prism, 4 loaded file)
 ];
 
 pub mod id {

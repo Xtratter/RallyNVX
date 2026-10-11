@@ -85,13 +85,17 @@ impl SceneData {
     pub fn photons(&self) -> bool { self.sun.is_some() && self.prism().is_some() && !self.receivers.is_empty() }
 }
 
+/// `scene` setting value for a user-loaded file (built-in scenes are 0..BUILTIN.len()).
+pub const CUSTOM_SCENE: usize = 4;
+
 /// Scene used until a settings push selects another (matches the `scene` default in params.rs).
 pub const DEFAULT_SCENE: usize = 1;
 
-pub const BUILTIN: [(&str, &str); 3] = [
+pub const BUILTIN: [(&str, &str); 4] = [
     ("Classic", include_str!("../scenes/classic.json")),
     ("Sun room", include_str!("../scenes/sunroom.json")),
     ("Materials", include_str!("../scenes/materials.json")),
+    ("Prism", include_str!("../scenes/prism.json")),
 ];
 
 pub fn builtin(i: usize) -> SceneData {
@@ -397,5 +401,103 @@ mod tests {
     fn only_one_prism() {
         let two = PRISM_BASE.replace(r#""objects":["#, r#""objects":[{"type":"prism","pos":[2,1,0],"size":0.5,"length":1,"material":"g"},"#);
         assert!(parse(&two).unwrap_err().contains("one prism"));
+    }
+
+    fn rot_y(v: [f32; 3], a: f32) -> [f32; 3] { let (s, c) = a.sin_cos(); [c * v[0] + s * v[2], v[1], -s * v[0] + c * v[2]] }
+    fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
+
+    /// Same algorithm as photon.wgsl, on the CPU, for one wavelength: returns the exit (position, direction) in world space.
+    fn trace_prism(sc: &SceneData, lambda: f32) -> Option<([f32; 3], [f32; 3])> {
+        let p = sc.prism()?;
+        let Shape::Prism { side, len, yaw } = p.shape else { return None };
+        let m = &sc.mats[p.mat];
+        let n = crate::dispersion::ior(lambda, m.ior, m.dispersion);
+        let sun = sc.sun.as_ref()?;
+        let d_world = [-sun.dir[0], -sun.dir[1], -sun.dir[2]];
+        let start = [p.pos[0] - 3.0 * d_world[0], p.pos[1] - 3.0 * d_world[1], p.pos[2] - 3.0 * d_world[2]];
+        let r = side * 0.28867513;
+        let planes: [([f32; 3], f32); 5] = [([-0.8660254, 0.5, 0.0], r), ([0.8660254, 0.5, 0.0], r), ([0.0, -1.0, 0.0], r), ([0.0, 0.0, -1.0], len / 2.0), ([0.0, 0.0, 1.0], len / 2.0)];
+        let clip = |o: [f32; 3], d: [f32; 3]| -> Option<(f32, f32, usize, usize)> {
+            let (mut tin, mut tout, mut fin, mut fout) = (-1e9f32, 1e9f32, 0, 0);
+            for (k, (nrm, off)) in planes.iter().enumerate() {
+                let den = dot3(*nrm, d);
+                let num = off - dot3(*nrm, o);
+                if den.abs() < 1e-8 { if num < 0.0 { return None; } continue; }
+                let t = num / den;
+                if den < 0.0 { if t > tin { tin = t; fin = k; } } else if t < tout { tout = t; fout = k; }
+            }
+            if tout > tin { Some((tin, tout, fin, fout)) } else { None }
+        };
+        let refract = |i: [f32; 3], nn: [f32; 3], eta: f32| -> [f32; 3] {
+            let cosi = -dot3(nn, i);
+            let k = 1.0 - eta * eta * (1.0 - cosi * cosi);
+            [eta * i[0] + (eta * cosi - k.sqrt()) * nn[0], eta * i[1] + (eta * cosi - k.sqrt()) * nn[1], eta * i[2] + (eta * cosi - k.sqrt()) * nn[2]]
+        };
+        let mut o = rot_y([start[0] - p.pos[0], start[1] - p.pos[1], start[2] - p.pos[2]], yaw);
+        let mut d = rot_y(d_world, yaw);
+        let (tin, _, fin, _) = clip(o, d)?;
+        if tin < 0.0 { return None; }
+        let nin = planes[fin].0;
+        o = [o[0] + d[0] * tin - nin[0] * 1e-4, o[1] + d[1] * tin - nin[1] * 1e-4, o[2] + d[2] * tin - nin[2] * 1e-4];
+        d = refract(d, nin, 1.0 / n);
+        for _ in 0..5 {
+            let (_, tout, _, fout) = clip(o, d)?;
+            let nout = planes[fout].0;
+            let pos = [o[0] + d[0] * tout, o[1] + d[1] * tout, o[2] + d[2] * tout];
+            let cosi = dot3(d, nout);
+            let sint = n * (1.0 - cosi * cosi).max(0.0).sqrt();
+            if sint > 1.0 {
+                let k = 2.0 * cosi;
+                d = [d[0] - k * nout[0], d[1] - k * nout[1], d[2] - k * nout[2]];
+                o = [pos[0] - nout[0] * 1e-4, pos[1] - nout[1] * 1e-4, pos[2] - nout[2] * 1e-4];
+            } else {
+                let dd = refract(d, [-nout[0], -nout[1], -nout[2]], n);
+                let ow = rot_y([pos[0] + nout[0] * 2e-3, pos[1] + nout[1] * 2e-3, pos[2] + nout[2] * 2e-3], -yaw);
+                return Some(([ow[0] + p.pos[0], ow[1] + p.pos[1], ow[2] + p.pos[2]], rot_y(dd, -yaw)));
+            }
+        }
+        None
+    }
+
+    fn receiver_hit(sc: &SceneData, o: [f32; 3], d: [f32; 3]) -> Option<usize> {
+        for (i, r) in sc.receivers.iter().enumerate() {
+            let n = [r.u[1] * r.v[2] - r.u[2] * r.v[1], r.u[2] * r.v[0] - r.u[0] * r.v[2], r.u[0] * r.v[1] - r.u[1] * r.v[0]];
+            let den = dot3(n, d);
+            if den.abs() < 1e-6 { continue; }
+            let t = dot3(n, [r.origin[0] - o[0], r.origin[1] - o[1], r.origin[2] - o[2]]) / den;
+            if t < 1e-3 { continue; }
+            let q = [o[0] + d[0] * t - r.origin[0], o[1] + d[1] * t - r.origin[1], o[2] + d[2] * t - r.origin[2]];
+            let (a, b) = (dot3(q, r.u) / dot3(r.u, r.u), dot3(q, r.v) / dot3(r.v, r.v));
+            if (0.0..1.0).contains(&a) && (0.0..1.0).contains(&b) { return Some(i); }
+        }
+        None
+    }
+
+    #[test]
+    fn prism_is_builtin_three_and_files_are_four() {
+        assert_eq!(BUILTIN.len(), 4);
+        assert_eq!(BUILTIN[3].0, "Prism");
+        assert_eq!(CUSTOM_SCENE, 4);
+        let s = builtin(3);
+        assert!(s.photons(), "the Prism scene has sun, prism and receivers");
+        let m = &s.mats[s.prism().unwrap().mat];
+        assert!(m.dispersion >= 2.0 && m.kind == 2);
+    }
+
+    #[test]
+    fn prism_scene_sends_a_visible_fan_onto_a_receiver() {
+        let s = builtin(3);
+        let hits: Vec<_> = [400.0, 450.0, 500.0, 550.0, 600.0, 650.0, 700.0].iter().map(|l| {
+            let (o, d) = trace_prism(&s, *l).unwrap_or_else(|| panic!("{l} nm does not leave the prism"));
+            let rx = receiver_hit(&s, o, d).unwrap_or_else(|| panic!("{l} nm misses every receiver"));
+            let t = {
+                let r = &s.receivers[rx];
+                let n = [r.u[1] * r.v[2] - r.u[2] * r.v[1], r.u[2] * r.v[0] - r.u[0] * r.v[2], r.u[0] * r.v[1] - r.u[1] * r.v[0]];
+                dot3(n, [r.origin[0] - o[0], r.origin[1] - o[1], r.origin[2] - o[2]]) / dot3(n, d)
+            };
+            [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t]
+        }).collect();
+        let spread = ((hits[0][0] - hits[6][0]).powi(2) + (hits[0][2] - hits[6][2]).powi(2)).sqrt();
+        assert!(spread > 0.15, "violet and red land only {spread} m apart: {hits:?}");
     }
 }

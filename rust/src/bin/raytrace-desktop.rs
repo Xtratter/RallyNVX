@@ -160,7 +160,7 @@ impl Panel<'_> {
     }
 
     fn scene(&mut self, ui: &mut egui::Ui) {
-        let names = [self.t("Classic", "Классика"), self.t("Sun room", "Солнечная комната"), self.t("Materials", "Витрина материалов")];
+        let names = [self.t("Classic", "Классика"), self.t("Sun room", "Солнечная комната"), self.t("Materials", "Витрина материалов"), self.t("Prism", "Призма")];
         let cur = self.r.store.get(id::SCENE) as usize;
         ui.label(egui::RichText::new(self.t("Scene", "Сцена")).small().weak());
         ui.horizontal_wrapped(|ui| {
@@ -169,7 +169,7 @@ impl Panel<'_> {
             }
             for f in scene_files() {
                 let label = f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-                if ui.selectable_label(cur == 3 && SCENE_FILE.with(|c| c.borrow().as_deref() == Some(f.as_path())), label).clicked() {
+                if ui.selectable_label(cur == 4 && SCENE_FILE.with(|c| c.borrow().as_deref() == Some(f.as_path())), label).clicked() {
                     self.load_file(&f);
                 }
             }
@@ -262,7 +262,7 @@ impl State {
         let egui_rend = egui_wgpu::Renderer::new(gfx.device(), format, None, 1, false);
         let stats = Arc::new(Mutex::new([0.0f32; 16]));
         let mut r = Renderer::new(gfx, (w, h), stats.clone());
-        for (i, v) in load_settings() { if i != id::SCENE || v < 2.5 { r.set_param(i as i32, v); } }
+        for (i, v) in load_settings() { if i != id::SCENE || v < 3.5 { r.set_param(i as i32, v); } }
         if let Some(v) = std::env::var("RAYTRACE_SCENE").ok().and_then(|s| s.parse::<f32>().ok()) { r.set_param(id::SCENE as i32, v); }
         let ctx = egui::Context::default();
         let egui_state = egui_winit::State::new(ctx.clone(), egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, None);
