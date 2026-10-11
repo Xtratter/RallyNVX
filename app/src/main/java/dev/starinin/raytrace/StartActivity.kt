@@ -29,7 +29,7 @@ class StartActivity : Activity() {
         })
         fun add(v: android.view.View) = col.addView(v, LinearLayout.LayoutParams(px(280f), px(54f)).apply { topMargin = px(14f) })
         add(M3Widgets.button(this, t("Free drive", "Свободная езда"), M3Widgets.ButtonKind.FILLED) {
-            startActivity(Intent(this, GameActivity::class.java).putExtra("seed", System.nanoTime()))
+            startActivity(Intent(this, GameActivity::class.java).putExtra("seed", System.nanoTime() and 0xFFFFFFL))
         })
         add(M3Widgets.button(this, t("Scenes", "Сцены"), M3Widgets.ButtonKind.TONAL) {
             startActivity(Intent(this, MainActivity::class.java))

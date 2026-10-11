@@ -47,7 +47,8 @@ impl Vehicle {
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
-    pub fn right(&self) -> V3 { self.rot.rotate(v3(1., 0., 0.)) }
+    /// The car's right-hand side: forward x up = -X for x right / y up / z forward in a right-handed system.
+    pub fn right(&self) -> V3 { self.rot.rotate(v3(-1., 0., 0.)) }
     pub fn speed(&self) -> f32 { self.vel.dot(self.forward()) }
     pub fn flipped(&self) -> bool { self.up().y < -0.17 }
 

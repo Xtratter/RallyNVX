@@ -48,8 +48,6 @@ fn mesh_buf(dev: &wgpu::Device, m: &Mesh) -> MeshBuf {
     }
 }
 
-fn lod_for_ring(ring: i32) -> u32 { if ring <= 1 { 0 } else if ring == 2 { 1 } else { 2 } }
-
 const MESH_ATTRS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
 const INST_ATTRS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4];
 
@@ -211,21 +209,18 @@ impl Raster {
             fog: [1.0 / 330.0, 0., 0., 0.], sky_top: [0.22, 0.42, 0.80, 0.], sky_hor: [0.70, 0.80, 0.90, 0.] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
-        // terrain tiles: wanted set, build a few missing ones per frame
-        let mut wanted: Vec<(i32, i32, u32)> = Vec::new();
-        for dz in -DRAW_TILES..=DRAW_TILES { for dx in -DRAW_TILES..=DRAW_TILES {
-            wanted.push((cx + dx, cz + dz, lod_for_ring(dx.abs().max(dz.abs()))));
-        } }
-        let mut built = 0;
-        for &(tx, tz, lod) in &wanted {
-            if built >= TILE_BUDGET { break; }
-            if !self.tiles.contains_key(&(tx, tz, lod)) {
-                self.tiles.insert((tx, tz, lod), mesh_buf(&self.device, &wv.terrain.tile_mesh(tx, tz, lod)));
-                built += 1;
-            }
+        // terrain tiles: nearest first, a few per frame; the old LOD stays drawn until its replacement exists
+        let have: HashSet<(i32, i32, u32)> = self.tiles.keys().copied().collect();
+        let (build, visible) = super::tile_plan(cx, cz, &have, DRAW_TILES);
+        for &(tx, tz, lod) in build.iter().take(TILE_BUDGET) {
+            self.tiles.insert((tx, tz, lod), mesh_buf(&self.device, &wv.terrain.tile_mesh(tx, tz, lod)));
         }
-        let set: HashSet<_> = wanted.iter().copied().collect();
-        self.tiles.retain(|k, _| set.contains(k));
+        let (_, visible) = if build.len() > TILE_BUDGET || !build.is_empty() {
+            let have: HashSet<(i32, i32, u32)> = self.tiles.keys().copied().collect();
+            super::tile_plan(cx, cz, &have, DRAW_TILES)
+        } else { (build, visible) };
+        let keep: HashSet<_> = visible.iter().copied().collect();
+        self.tiles.retain(|k, _| keep.contains(k));
 
         // instances: cube, cylinder, cone, sphere
         let mut lists: [Vec<Inst>; 4] = Default::default();

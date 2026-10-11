@@ -72,3 +72,12 @@ fn flat_car(y: f32) -> (Vehicle, Terrain) { (Vehicle::new(VehicleSpec::offroader
     let d = (v.pos - rock.pos).len();
     assert!(d > rock.radius + 0.8, "inside rock: {d}");
 }
+#[test] fn positive_steer_turns_towards_the_right_hand_side() {
+    // x right, y up, z forward is what the chase camera sees from behind with look_at (right-handed):
+    // the car's right-hand side is forward x up = -X.
+    let (mut v, t) = flat_car(1.1);
+    run(&mut v, &t, Input { throttle: 1.0, ..Default::default() }, 3.0);
+    run(&mut v, &t, Input { throttle: 0.5, steer: 1.0, ..Default::default() }, 1.5);
+    assert!(v.forward().x < -0.1, "forward.x {}", v.forward().x);
+    assert!(v.right().x < -0.9 || v.right().dot(v.forward().cross(v.up())) > 0.99);
+}

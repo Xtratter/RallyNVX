@@ -31,7 +31,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         super.onCreate(b)
         M3.apply(this, M3.Mode.SYSTEM, translucent = true)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        seed = intent.getLongExtra("seed", System.nanoTime())
+        seed = intent.getLongExtra("seed", System.nanoTime()) and 0xFFFFFFL   // 24-bit: the HUD shows it exactly
         val dp = resources.displayMetrics.density
         fun px(v: Float) = (v * dp).toInt()
         val root = FrameLayout(this)
@@ -52,7 +52,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                 root.addView(it, FrameLayout.LayoutParams(px(120f), px(48f), gravity).apply { setMargins(0, px(24f), px(end), px(bottom)) })
             }
         button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 0f, 16f) { Native.gameReset() }
-        button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 0f, 150f) { Native.gameNewLevel(System.nanoTime()) }
+        button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 0f, 150f) { seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
         button(t("Handbrake", "Ручник"), Gravity.BOTTOM or Gravity.END, 220f, 40f) {}.setOnTouchListener { _, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> { handbrake = true; sendInput() }

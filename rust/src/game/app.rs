@@ -1,6 +1,9 @@
 //! Fixed-step game loop shared by the Android and desktop front ends.
 pub const STEP: f32 = 1.0 / 60.0;
 
+/// Level seeds are 24-bit so the HUD (an f32) shows the exact value and `--game <seed>` replays it.
+pub fn level_seed(raw: u64) -> u64 { raw & 0xFF_FFFF }
+
 /// Accumulates elapsed time (capped at 0.1 s) and returns how many fixed steps to run now.
 pub fn step_budget(acc: &mut f32, dt: f32, max_steps: usize) -> usize {
     if !dt.is_finite() || dt <= 0.0 { return 0; }
@@ -32,6 +35,7 @@ mod game {
 
     impl Game {
         pub fn new(raster: Raster, seed: u64, stats: Arc<Mutex<[f32; 16]>>) -> Game {
+            let seed = super::level_seed(seed);
             Game { world: World::new(seed), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats }
         }
@@ -39,6 +43,7 @@ mod game {
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
 
         pub fn new_level(&mut self, seed: u64) {
+            let seed = super::level_seed(seed);
             self.world = World::new(seed); self.seed = seed; self.input = Input::default(); self.acc = 0.0;
         }
 
@@ -84,5 +89,18 @@ mod tests {
         assert_eq!(step_budget(&mut acc, -1.0, 10), 0);
         assert_eq!(step_budget(&mut acc, f32::NAN, 10), 0);
         assert!(acc.is_finite());
+    }
+}
+
+#[cfg(test)]
+mod seed_tests {
+    use super::*;
+    #[test] fn level_seed_fits_the_hud_and_is_idempotent() {
+        for raw in [0u64, 42, 0xFF_FFFF, 0x100_0000, u64::MAX, 1_234_567_890_123] {
+            let s = level_seed(raw);
+            assert!(s <= 0xFF_FFFF, "{s}");
+            assert_eq!(level_seed(s), s);
+            assert_eq!(s as f32 as u64, s, "exactly representable as the f32 shown in the HUD");
+        }
     }
 }

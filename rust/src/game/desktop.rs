@@ -14,7 +14,7 @@ use super::app::Game;
 use crate::raster::Raster;
 
 fn random_seed() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64)
+    super::app::level_seed(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64))
 }
 
 struct State { window: Arc<Window>, game: Game, keys: HashSet<KeyCode>, autodrive: bool }
@@ -88,7 +88,7 @@ impl ApplicationHandler for App {
 /// Runs the game until the window closes. Seed: argument, else `RAYTRACE_SEED`, else random.
 pub fn run(seed: Option<u64>) {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    let seed = seed.or_else(|| std::env::var("RAYTRACE_SEED").ok().and_then(|s| s.parse().ok())).unwrap_or_else(random_seed);
+    let seed = seed.or_else(|| std::env::var("RAYTRACE_SEED").ok().and_then(|s| s.parse().ok())).map(super::app::level_seed).unwrap_or_else(random_seed);
     log::info!("game seed {seed}");
     let el = EventLoop::new().expect("event loop");
     el.set_control_flow(ControlFlow::Poll);

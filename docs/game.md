@@ -17,7 +17,7 @@ Raytrace has a game mode next to the scene viewer: off-road free drive on a rand
 
 ## Seeds
 
-Every level is generated from a number (seed): the terrain, rocks and trees are the same for the same seed on every device. The seed is shown in the HUD (Android) and the window title (desktop). Replay a level on desktop with `raytrace-desktop --game 42` or `RAYTRACE_SEED=42`.
+Every level is generated from a number (seed): the terrain, rocks and trees are the same for the same seed on every device. The seed is shown in the HUD (Android) and the window title (desktop). Seeds are 0..16777215. Replay a level on desktop with `raytrace-desktop --game 42` or `RAYTRACE_SEED=42`.
 
 ## Quality
 
@@ -46,7 +46,7 @@ Free drive only: no missions, garage, helicopters or cities yet, and only the ra
 
 ## Seed
 
-Каждый уровень строится из числа (seed): ландшафт, камни и деревья на любом устройстве одинаковы для одного seed. Seed виден в HUD (Android) и в заголовке окна (десктоп). Повторить уровень на десктопе: `raytrace-desktop --game 42` или `RAYTRACE_SEED=42`.
+Каждый уровень строится из числа (seed): ландшафт, камни и деревья на любом устройстве одинаковы для одного seed. Seed виден в HUD (Android) и в заголовке окна (десктоп). Seed: 0..16777215. Повторить уровень на десктопе: `raytrace-desktop --game 42` или `RAYTRACE_SEED=42`.
 
 ## Качество
 
