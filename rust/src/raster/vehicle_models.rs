@@ -206,13 +206,24 @@ pub fn car_wheel_poses(v: &Vehicle, spin: f32) -> [(Q, V3); 4] {
     out
 }
 
+/// The helicopter model sits 1 m above the aircraft position so that its skids touch the ground when landed.
+pub const HELI_LIFT: f32 = 1.0;
+
 pub fn heli_poses(a: &Aircraft, t: f32) -> HeliPoses {
     let r = a.rotation();
+    let base = a.pos + r.rotate(v3(0.0, HELI_LIFT, 0.0));
     HeliPoses {
-        body: (r, a.pos),
-        rotor: (r.mul(Q::axis_angle(v3(0., 1., 0.), t * 25.0)), a.pos + r.rotate(v3(0.0, 1.55, 0.0))),
-        tail: (r.mul(Q::axis_angle(v3(1., 0., 0.), t * 30.0)), a.pos + r.rotate(v3(0.15, 0.9, -5.6))),
+        body: (r, base),
+        rotor: (r.mul(Q::axis_angle(v3(0., 1., 0.), t * 25.0)), base + r.rotate(v3(0.0, 1.55, 0.0))),
+        tail: (r.mul(Q::axis_angle(v3(1., 0., 0.), t * 30.0)), base + r.rotate(v3(0.15, 0.9, -5.6))),
     }
+}
+
+/// The car body is drawn this far below the centre of mass (the body mesh starts at y = 0.30 of its own frame) so the
+/// sills clear the ground by about half a metre.
+pub fn car_body_pose(v: &Vehicle) -> (Q, V3) {
+    let sy = v.spec.size.y / 1.4;
+    (v.rot, v.pos + v.rot.rotate(v3(0.0, -0.75 * sy, 0.0)))
 }
 
 pub fn drone_poses(a: &Aircraft, t: f32) -> ((Q, V3), [(Q, V3); 4]) {

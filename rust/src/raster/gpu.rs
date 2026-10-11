@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{citygen, meshes, models::{self, Part}};
+use super::{citygen, meshes, models::{self, Part}, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::terrain::{Mesh, TILE_SIZE};
@@ -50,9 +50,34 @@ fn push_part(lists: &mut [Vec<Inst>; 4], p: &Part) {
     lists[p.mesh].push(if p.facade { inst_facade(p.rot, p.pos, p.scale, p.color) } else if p.glow { inst_glow(p.rot, p.pos, p.scale, p.color) } else { inst(p.rot, p.pos, p.scale, p.color) });
 }
 
-struct MeshBuf { vb: wgpu::Buffer, ib: wgpu::Buffer, n: u32 }
+struct MeshBuf { vb: wgpu::Buffer, ib: wgpu::Buffer, n: u32, wb: Option<wgpu::Buffer> }
+
+/// A vehicle model mesh in the model pipeline's vertex format (28 bytes).
+struct ModelBuf { vb: wgpu::Buffer, ib: wgpu::Buffer, n: u32 }
+fn model_buf(dev: &wgpu::Device, m: &vm::Mesh3) -> ModelBuf {
+    ModelBuf {
+        vb: dev.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("model_v"), contents: bytemuck::cast_slice(&m.verts), usage: wgpu::BufferUsages::VERTEX }),
+        ib: dev.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("model_i"), contents: bytemuck::cast_slice(&m.idx), usage: wgpu::BufferUsages::INDEX }),
+        n: m.idx.len() as u32,
+    }
+}
+
+/// One model instance: a rigid model matrix and a tint (80 bytes).
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct MInst { m: [f32; 16], tint: [f32; 4] }
+fn mmat(q: Q, p: V3) -> [f32; 16] {
+    let (x, y, z) = (q.rotate(v3(1., 0., 0.)), q.rotate(v3(0., 1., 0.)), q.rotate(v3(0., 0., 1.)));
+    [x.x, x.y, x.z, 0., y.x, y.y, y.z, 0., z.x, z.y, z.z, 0., p.x, p.y, p.z, 1.]
+}
+const MODEL_SLOTS: usize = 7;     // car body, wheel, heli body, rotor, tail rotor, drone body, propeller
+const MAX_MODEL_INST: usize = 64;
+const MODEL_ATTRS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4];
+const MINST_ATTRS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4];
+const WEIGHT_ATTRS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![2 => Unorm8x4];
 fn mesh_buf(dev: &wgpu::Device, m: &Mesh) -> MeshBuf {
     MeshBuf {
+        wb: None,
         vb: dev.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("mesh_v"), contents: bytemuck::cast_slice(&m.verts), usage: wgpu::BufferUsages::VERTEX }),
         ib: dev.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("mesh_i"), contents: bytemuck::cast_slice(&m.idx), usage: wgpu::BufferUsages::INDEX }),
         n: m.idx.len() as u32,
@@ -89,6 +114,12 @@ pub struct Raster {
     pl_inst: wgpu::RenderPipeline,
     pl_inst_sh: wgpu::RenderPipeline,
     pl_sky: wgpu::RenderPipeline,
+    pl_model: wgpu::RenderPipeline,
+    pl_model_sh: wgpu::RenderPipeline,
+    models: Vec<ModelBuf>,
+    mbuf: wgpu::Buffer,
+    wheel_spin: f32,
+    last_time: f32,
     meshes: [MeshBuf; 4], // cube, cylinder, cone, sphere
     tiles: HashMap<(i32, i32, u32), MeshBuf>,
     _keep: Box<dyn std::any::Any>, // native window / winit window; dropped after `surface` (field order)
@@ -137,6 +168,24 @@ impl Raster {
         let smp = device.create_sampler(&wgpu::SamplerDescriptor { label: Some("shadow_smp"), mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear, compare: Some(wgpu::CompareFunction::LessEqual), ..Default::default() });
 
+        // generated material maps: one texture array, 5 layers x 9 mips
+        let mat_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("materials"), size: wgpu::Extent3d { width: texgen::SIZE as u32, height: texgen::SIZE as u32, depth_or_array_layers: texgen::LAYERS as u32 },
+            mip_level_count: 9, sample_count: 1, dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, view_formats: &[] });
+        for (layer, m) in texgen::Material::ALL.iter().enumerate() {
+            for (level, data) in texgen::mips(&texgen::make(*m, texgen::SIZE), texgen::SIZE).iter().enumerate() {
+                let s = (texgen::SIZE >> level) as u32;
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo { texture: &mat_tex, mip_level: level as u32, origin: wgpu::Origin3d { x: 0, y: 0, z: layer as u32 }, aspect: wgpu::TextureAspect::All },
+                    data, wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(s * 4), rows_per_image: Some(s) },
+                    wgpu::Extent3d { width: s, height: s, depth_or_array_layers: 1 });
+            }
+        }
+        let mat_view = mat_tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
+        let mat_smp = device.create_sampler(&wgpu::SamplerDescriptor { label: Some("materials_smp"),
+            address_mode_u: wgpu::AddressMode::Repeat, address_mode_v: wgpu::AddressMode::Repeat, address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear, min_filter: wgpu::FilterMode::Linear, mipmap_filter: wgpu::FilterMode::Linear, anisotropy_clamp: 4, ..Default::default() });
         let vf = wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT;
         let ubo = |vis| wgpu::BindGroupLayoutEntry { binding: 0, visibility: vis, count: None,
             ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None } };
@@ -146,12 +195,18 @@ impl Raster {
                 ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false } },
             wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison) },
+            wgpu::BindGroupLayoutEntry { binding: 3, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
+                ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false } },
+            wgpu::BindGroupLayoutEntry { binding: 4, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering) },
         ] });
         let bgl_shadow = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("raster_shadow"), entries: &[ubo(wgpu::ShaderStages::VERTEX)] });
         let bg_main = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("raster_main"), layout: &bgl_main, entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&shadow.1) },
             wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&smp) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&mat_view) },
+            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&mat_smp) },
         ] });
         let bg_shadow = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("raster_shadow"), layout: &bgl_shadow,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() }] });
@@ -175,15 +230,24 @@ impl Raster {
                 primitive: prim, depth_stencil: ds, multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
             })
         };
-        let pl_terrain = mk("terrain", &lay_main, "vs_terrain", Some("fs_terrain"), &[mesh_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
+        let weight_layout = wgpu::VertexBufferLayout { array_stride: 4, step_mode: wgpu::VertexStepMode::Vertex, attributes: &WEIGHT_ATTRS };
+        let pl_terrain = mk("terrain", &lay_main, "vs_terrain", Some("fs_terrain"), &[mesh_layout.clone(), weight_layout], depth_state(true, wgpu::CompareFunction::Less, no_bias));
         let pl_terrain_sh = mk("terrain_sh", &lay_shadow, "vs_terrain_shadow", None, &[mesh_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
         let pl_inst = mk("inst", &lay_main, "vs_inst", Some("fs_inst"), &[mesh_layout.clone(), inst_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
         let pl_inst_sh = mk("inst_sh", &lay_shadow, "vs_inst_shadow", None, &[mesh_layout, inst_layout], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
+        let model_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<vm::Vert>() as u64, step_mode: wgpu::VertexStepMode::Vertex, attributes: &MODEL_ATTRS };
+        let minst_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<MInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &MINST_ATTRS };
+        let pl_model = mk("model", &lay_main, "vs_model", Some("fs_model"), &[model_layout.clone(), minst_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
+        let pl_model_sh = mk("model_sh", &lay_shadow, "vs_model_shadow", None, &[model_layout, minst_layout], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
         let pl_sky = mk("sky", &lay_main, "vs_sky", Some("fs_sky"), &[], depth_state(false, wgpu::CompareFunction::Always, no_bias));
 
+        let (car, heli, drone) = (vm::build_car(&crate::game::vehicle::VehicleSpec::offroader()), vm::build_heli(&crate::game::flight::AircraftSpec::of(crate::game::flight::AircraftKind::Heli)), vm::build_drone(&crate::game::flight::AircraftSpec::of(crate::game::flight::AircraftKind::Drone)));
+        let models: Vec<ModelBuf> = [&car.body, &car.wheel, &heli.body, &heli.rotor, &heli.tail_rotor, &drone.body, &drone.prop].iter().map(|m| model_buf(&device, m)).collect();
+        let mbuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("model_inst"), size: (MAX_MODEL_INST * std::mem::size_of::<MInst>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -228,7 +292,10 @@ impl Raster {
         let have: HashSet<(i32, i32, u32)> = self.tiles.keys().copied().collect();
         let (build, visible) = super::tile_plan(cx, cz, &have, DRAW_TILES);
         for &(tx, tz, lod) in build.iter().take(TILE_BUDGET) {
-            self.tiles.insert((tx, tz, lod), mesh_buf(&self.device, &wv.terrain.tile_mesh(tx, tz, lod)));
+            let (mesh, w) = wv.terrain.tile_mesh_with_weights(tx, tz, lod);
+            let mut mb = mesh_buf(&self.device, &mesh);
+            mb.wb = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("tile_w"), contents: bytemuck::cast_slice(&w), usage: wgpu::BufferUsages::VERTEX }));
+            self.tiles.insert((tx, tz, lod), mb);
         }
         let (_, visible) = if build.len() > TILE_BUDGET || !build.is_empty() {
             let have: HashSet<(i32, i32, u32)> = self.tiles.keys().copied().collect();
@@ -239,20 +306,44 @@ impl Raster {
 
         // instances: cube, cylinder, cone, sphere
         let mut lists: [Vec<Inst>; 4] = Default::default();
-        if wv.aircraft.is_none() {
-            let veh = wv.vehicle;
-            let (rot, sp) = (veh.rot, veh.spec);
-            lists[0].push(inst(rot, veh.pos + rot.rotate(v3(0., 0.35, 0.)), v3(1.9, 0.7, 4.2), [0.75, 0.12, 0.08]));
-            lists[0].push(inst(rot, veh.pos + rot.rotate(v3(0., 0.95, -0.2)), v3(1.7, 0.6, 2.0), [0.12, 0.14, 0.17]));
-            for w in 0..4 {
-                let local = sp.wheels[w] - v3(0., sp.rest - veh.comp[w], 0.);
-                let steer = if w < 2 { veh.steer } else { 0.0 };
-                let r = rot.mul(Q::axis_angle(v3(0., 1., 0.), -steer)).mul(Q::axis_angle(v3(0., 0., 1.), std::f32::consts::FRAC_PI_2));
-                lists[1].push(inst(r, veh.pos + rot.rotate(local), v3(sp.radius * 2.0, 0.35, sp.radius * 2.0), [0.07, 0.07, 0.08]));
-            }
-        }
+        // vehicle models: per slot lists of (rotation, position)
+        let mut ml: [Vec<MInst>; MODEL_SLOTS] = Default::default();
+        let dt = (wv.time - self.last_time).clamp(0.0, 0.1);
+        self.last_time = wv.time;
         if let Some(ac) = &wv.aircraft {
-            for p in models::aircraft_parts(ac, wv.time) { push_part(&mut lists, &p); }
+            let mi = |(q, p): (Q, V3), tint: [f32; 4]| MInst { m: mmat(q, p), tint };
+            match ac.kind {
+                crate::game::flight::AircraftKind::Heli => {
+                    let h = vm::heli_poses(ac, wv.time);
+                    ml[2].push(mi(h.body, [1.0; 4])); ml[3].push(mi(h.rotor, [1.0; 4])); ml[4].push(mi(h.tail, [1.0; 4]));
+                }
+                _ => {
+                    let (body, props) = vm::drone_poses(ac, wv.time);
+                    ml[5].push(mi(body, [1.0; 4]));
+                    for p in props { ml[6].push(mi(p, [1.0; 4])); }
+                }
+            }
+        } else {
+            let veh = wv.vehicle;
+            self.wheel_spin += veh.speed() / veh.spec.radius * dt;
+            self.wheel_spin %= std::f32::consts::TAU;
+            let (bq, bp) = vm::car_body_pose(veh);
+            ml[0].push(MInst { m: mmat(bq, bp), tint: [1.0; 4] });
+            for p in vm::car_wheel_poses(veh, self.wheel_spin) { ml[1].push(MInst { m: mmat(p.0, p.1), tint: [1.0; 4] }); }
+        }
+        for tr in wv.tracks.iter() {
+            let yaw = tr.dir.x.atan2(tr.dir.z);
+            lists[0].push(inst(Q::axis_angle(v3(0., 1., 0.), yaw), tr.pos + tr.normal * 0.03, v3(0.3, 0.02, 0.45), [0.10, 0.075, 0.05]));
+        }
+        let mut mall: Vec<MInst> = Vec::new();
+        let mut mranges = [(0u32, 0u32); MODEL_SLOTS];
+        for k in 0..MODEL_SLOTS {
+            let take = ml[k].len().min(MAX_MODEL_INST - mall.len());
+            mranges[k] = (mall.len() as u32, (mall.len() + take) as u32);
+            mall.extend_from_slice(&ml[k][..take]);
+        }
+        if !mall.is_empty() { self.queue.write_buffer(&self.mbuf, 0, bytemuck::cast_slice(&mall)); }
+        if let Some(ac) = &wv.aircraft {
             if let Some(s) = &wv.sling {
                 if s.attached { push_part(&mut lists, &models::rope_part(ac.pos - v3(0., 0.8, 0.), s.pos)); }
                 push_part(&mut lists, &models::cargo_part(s.pos));
@@ -317,6 +408,14 @@ impl Raster {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, 0..1);
             }
+            rp.set_pipeline(&self.pl_model_sh);
+            rp.set_vertex_buffer(1, self.mbuf.slice(..));
+            for k in 0..MODEL_SLOTS {
+                let (a, b) = mranges[k]; if b == a { continue; }
+                let m = &self.models[k];
+                rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..m.n, 0, a..b);
+            }
             rp.set_pipeline(&self.pl_inst_sh);
             rp.set_vertex_buffer(1, self.ibuf.slice(..));
             for k in 0..4 {
@@ -345,7 +444,16 @@ impl Raster {
             rp.set_pipeline(&self.pl_terrain);
             for m in self.tiles.values() {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
+                if let Some(w) = &m.wb { rp.set_vertex_buffer(1, w.slice(..)); }
                 rp.draw_indexed(0..m.n, 0, 0..1);
+            }
+            rp.set_pipeline(&self.pl_model);
+            rp.set_vertex_buffer(1, self.mbuf.slice(..));
+            for k in 0..MODEL_SLOTS {
+                let (a, b) = mranges[k]; if b == a { continue; }
+                let m = &self.models[k];
+                rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..m.n, 0, a..b);
             }
             rp.set_pipeline(&self.pl_inst);
             rp.set_vertex_buffer(1, self.ibuf.slice(..));
