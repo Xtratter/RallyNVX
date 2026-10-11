@@ -88,10 +88,16 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     @location(3) m0: vec4<f32>, @location(4) m1: vec4<f32>, @location(5) m2: vec4<f32>, @location(6) m3: vec4<f32>,
     @location(7) tint: vec4<f32>) -> MOut {
     var o: MOut;
-    let w = model_world(p, m0, m1, m2, m3);
+    var w = model_world(p, m0, m1, m2, m3);
+    // foliage (material 6) sways in the wind, more towards the top of the model
+    if (i32(c.a * 255.0 + 0.5) == 6) {
+        let k = max(p.y, 0.0);
+        w.x += sin(u.fog.y * 2.0 + w.x * 0.7 + w.z * 0.5) * 0.06 * k;
+        w.z += cos(u.fog.y * 1.7 + w.z * 0.6) * 0.04 * k;
+    }
     o.pos = u.vp * vec4<f32>(w, 1.0);
     o.wp = w;
-    o.n = normalize(m0.xyz * n.x + m1.xyz * n.y + m2.xyz * n.z);   // rigid matrix: rotation only
+    o.n = normalize(m0.xyz * n.x + m1.xyz * n.y + m2.xyz * n.z);   // uniform scale + rotation
     o.col = c.rgb * tint.rgb;
     o.mat = c.a * 255.0;
     return o;
@@ -107,6 +113,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     if (m == 5) { return vec4<f32>(finish(i.col * 2.2), 1.0); }       // lamps
     if (m == 1) { return vec4<f32>(shade(i.col, i.wp, n, 1.2, 90.0), 1.0); }   // glass
     if (m == 4) { return vec4<f32>(shade(i.col, i.wp, n, 0.9, 60.0), 1.0); }   // chrome
+    if (m == 6) { return vec4<f32>(shade(i.col, i.wp, n, 0.0, 0.0), 1.0); }   // foliage
     if (m == 0) { return vec4<f32>(shade(i.col, i.wp, n, 0.5, 40.0), 1.0); }   // paint
     if (m == 2) { return vec4<f32>(shade(i.col, i.wp, n, 0.04, 8.0), 1.0); }   // rubber
     return vec4<f32>(shade(i.col, i.wp, n, 0.15, 16.0), 1.0);                  // plastic

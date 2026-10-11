@@ -86,12 +86,12 @@ fn bush(v: u32) -> Mesh3 {
 
 fn grass_tuft() -> Mesh3 {
     let mut m = Mesh3::default();
-    let (base, top) = ([0.10, 0.22, 0.06], [0.38, 0.58, 0.20]);
+    let (base, top) = ([0.07, 0.17, 0.04], [0.24, 0.42, 0.11]);
     for k in 0..3 {
         let a = std::f32::consts::PI / 3.0 * k as f32;
         let d = v3(a.cos(), 0.0, a.sin());
         let up = v3(0.0, 1.0, 0.0);
-        let ids = [(-0.17f32, 0.0f32, base), (0.17, 0.0, base), (0.04, 0.6, top), (-0.04, 0.6, top)]
+        let ids = [(-0.14f32, 0.0f32, base), (0.14, 0.0, base), (0.02, 0.48, top), (-0.02, 0.48, top)]
             .map(|(x, y, c)| m.vert(d * x + up * y, up, c, MAT_FOLIAGE));
         m.idx.extend_from_slice(&[ids[0], ids[1], ids[2], ids[0], ids[2], ids[3]]);
     }

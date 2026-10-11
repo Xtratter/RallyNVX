@@ -8,9 +8,10 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{citygen, meshes, models::{self, Part}, texgen, vehicle_models as vm};
+use super::{citygen, meshes, models::{self, Part}, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
+use crate::game::scatter::{self, Bush};
 use crate::game::terrain::{Mesh, TILE_SIZE};
 use crate::game::world::{tile_of, World};
 
@@ -66,12 +67,24 @@ fn model_buf(dev: &wgpu::Device, m: &vm::Mesh3) -> ModelBuf {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct MInst { m: [f32; 16], tint: [f32; 4] }
+fn mmat_s(q: Q, p: V3, s: f32) -> [f32; 16] {
+    let m = mmat(q, p);
+    [m[0] * s, m[1] * s, m[2] * s, 0., m[4] * s, m[5] * s, m[6] * s, 0., m[8] * s, m[9] * s, m[10] * s, 0., p.x, p.y, p.z, 1.]
+}
+/// Pseudo-random heading from a position (stable per prop).
+fn yaw_of(p: V3) -> f32 { ((p.x * 12.9898 + p.z * 78.233).sin() * 43758.547).fract().abs() * std::f32::consts::TAU }
 fn mmat(q: Q, p: V3) -> [f32; 16] {
     let (x, y, z) = (q.rotate(v3(1., 0., 0.)), q.rotate(v3(0., 1., 0.)), q.rotate(v3(0., 0., 1.)));
     [x.x, x.y, x.z, 0., y.x, y.y, y.z, 0., z.x, z.y, z.z, 0., p.x, p.y, p.z, 1.]
 }
-const MODEL_SLOTS: usize = 7;     // car body, wheel, heli body, rotor, tail rotor, drone body, propeller
-const MAX_MODEL_INST: usize = 64;
+// slots: car body, wheel, heli body, rotor, tail rotor, drone body, propeller, 4 trees, 2 bushes, 3 rocks, grass tuft
+const SLOT_TREE: usize = 7;
+const SLOT_BUSH: usize = 11;
+const SLOT_ROCK: usize = 13;
+const SLOT_GRASS: usize = 16;
+const MODEL_SLOTS: usize = 17;
+const MAX_MODEL_INST: usize = 6144;
+const NEAR_SHADOW: f32 = 90.0;   // plants within this distance of the car cast shadows
 const MODEL_ATTRS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4];
 const MINST_ATTRS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4];
 const WEIGHT_ATTRS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![2 => Unorm8x4];
@@ -118,6 +131,8 @@ pub struct Raster {
     pl_model_sh: wgpu::RenderPipeline,
     models: Vec<ModelBuf>,
     mbuf: wgpu::Buffer,
+    bush_cache: HashMap<(i32, i32), Vec<Bush>>,
+    grass_cache: Option<((i32, i32, usize), Vec<(V3, f32)>)>,
     wheel_spin: f32,
     last_time: f32,
     meshes: [MeshBuf; 4], // cube, cylinder, cone, sphere
@@ -242,12 +257,15 @@ impl Raster {
         let pl_sky = mk("sky", &lay_main, "vs_sky", Some("fs_sky"), &[], depth_state(false, wgpu::CompareFunction::Always, no_bias));
 
         let (car, heli, drone) = (vm::build_car(&crate::game::vehicle::VehicleSpec::offroader()), vm::build_heli(&crate::game::flight::AircraftSpec::of(crate::game::flight::AircraftKind::Heli)), vm::build_drone(&crate::game::flight::AircraftSpec::of(crate::game::flight::AircraftKind::Drone)));
-        let models: Vec<ModelBuf> = [&car.body, &car.wheel, &heli.body, &heli.rotor, &heli.tail_rotor, &drone.body, &drone.prop].iter().map(|m| model_buf(&device, m)).collect();
+        let nat = nature_models::build_all();
+        let models: Vec<ModelBuf> = [&car.body, &car.wheel, &heli.body, &heli.rotor, &heli.tail_rotor, &drone.body, &drone.prop].into_iter()
+            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain(std::iter::once(&nat.grass)).map(|m| model_buf(&device, m)).collect();
+        assert_eq!(models.len(), MODEL_SLOTS);
         let mbuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("model_inst"), size: (MAX_MODEL_INST * std::mem::size_of::<MInst>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -285,7 +303,7 @@ impl Raster {
         let light_vp = mat_mul(ortho(-70., 70., -70., 70., 1., 300.), look_at(centre + wv.sun * 150.0, centre, up));
         let uni = Uni { vp: flatten(vp), light_vp: flatten(light_vp), inv_vp: flatten(inverse(vp)),
             cam: [wv.cam_pos.x, wv.cam_pos.y, wv.cam_pos.z, 0.], sun: [wv.sun.x, wv.sun.y, wv.sun.z, 0.],
-            fog: [1.0 / 330.0, 0., 0., 0.], sky_top: [0.22, 0.42, 0.80, 0.], sky_hor: [0.70, 0.80, 0.90, 0.] };
+            fog: [1.0 / 330.0, wv.time, 0., 0.], sky_top: [0.22, 0.42, 0.80, 0.], sky_hor: [0.70, 0.80, 0.90, 0.] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // terrain tiles: nearest first, a few per frame; the old LOD stays drawn until its replacement exists
@@ -334,14 +352,6 @@ impl Raster {
         for tr in wv.tracks.iter() {
             lists[0].push(inst(crate::game::tracks::track_rot(tr.dir, tr.normal), tr.pos + tr.normal * 0.03, v3(0.3, 0.02, 0.45), [0.10, 0.075, 0.05]));
         }
-        let mut mall: Vec<MInst> = Vec::new();
-        let mut mranges = [(0u32, 0u32); MODEL_SLOTS];
-        for k in 0..MODEL_SLOTS {
-            let take = ml[k].len().min(MAX_MODEL_INST - mall.len());
-            mranges[k] = (mall.len() as u32, (mall.len() + take) as u32);
-            mall.extend_from_slice(&ml[k][..take]);
-        }
-        if !mall.is_empty() { self.queue.write_buffer(&self.mbuf, 0, bytemuck::cast_slice(&mall)); }
         if let Some(ac) = &wv.aircraft {
             if let Some(s) = &wv.sling {
                 if s.attached { push_part(&mut lists, &models::rope_part(ac.pos + ac.rotation().rotate(v3(0., vm::HELI_LIFT - 1.3, 0.)), s.pos)); }
@@ -362,19 +372,54 @@ impl Raster {
                 }
             }
         }
+        // plants and rocks: generated models, the ones near the car first (they cast shadows)
+        let vpos = wv.vehicle.pos;
+        let draw_r = self.city_radius;
+        let mut far: [Vec<MInst>; MODEL_SLOTS] = Default::default();
+        let mut put = |ml: &mut [Vec<MInst>; MODEL_SLOTS], slot: usize, p: V3, m: MInst| {
+            let d = (p.x - vpos.x).hypot(p.z - vpos.z);
+            if d < NEAR_SHADOW { ml[slot].push(m); } else if d < draw_r { far[slot].push(m); }
+        };
         for p in &wv.props {
+            let yaw = Q::axis_angle(v3(0., 1., 0.), yaw_of(p.pos));
+            let k = nature_models::tint(p.pos); let tint = [k[0], k[1], k[2], 1.0];
             match p.kind {
-                PropKind::Rock => {
-                    let g = 0.35 + 0.15 * (p.pos.x * 0.37 + p.pos.z * 0.11).fract().abs();
-                    lists[3].push(inst(Q::IDENT, p.pos + v3(0., p.radius * 0.4, 0.), v3(p.radius * 2.0, p.radius * 1.4, p.radius * 2.0), [g, g * 0.97, g * 0.93]));
-                }
-                PropKind::Tree => {
-                    lists[1].push(inst(Q::IDENT, p.pos + v3(0., p.height * 0.5, 0.), v3(0.7, p.height, 0.7), [0.30, 0.20, 0.12]));
-                    let t = (p.pos.x * 0.13 + p.pos.z * 0.29).fract().abs();
-                    lists[2].push(inst(Q::IDENT, p.pos + v3(0., p.height * 1.35, 0.), v3(3.2, p.height * 0.9, 3.2), [0.08 + 0.05 * t, 0.28 + 0.1 * t, 0.09]));
-                }
+                PropKind::Rock => put(&mut ml, SLOT_ROCK + nature_models::variant(2, p.pos), p.pos, MInst { m: mmat_s(yaw, p.pos + v3(0., 0.4 * p.radius, 0.), p.radius), tint }),
+                PropKind::Tree => put(&mut ml, SLOT_TREE + nature_models::variant(0, p.pos), p.pos, MInst { m: mmat_s(yaw, p.pos, p.height), tint }),
             }
         }
+        let (bx, bz) = (tile_of(wv.cam_pos.x), tile_of(wv.cam_pos.z));
+        for tz in bz - DRAW_TILES..=bz + DRAW_TILES { for tx in bx - DRAW_TILES..=bx + DRAW_TILES {
+            let bushes = self.bush_cache.entry((tx, tz)).or_insert_with(|| scatter::tile_bushes(wv.terrain, tx, tz));
+            for b in bushes.iter() {
+                let k = nature_models::tint(b.pos);
+                put(&mut ml, SLOT_BUSH + nature_models::variant(1, b.pos), b.pos, MInst { m: mmat_s(Q::axis_angle(v3(0., 1., 0.), yaw_of(b.pos)), b.pos, b.scale), tint: [k[0], k[1], k[2], 1.0] });
+            }
+        } }
+        self.bush_cache.retain(|&(tx, tz), _| (tx - bx).abs() <= DRAW_TILES + 2 && (tz - bz).abs() <= DRAW_TILES + 2);
+        let mut mnear = [0u32; MODEL_SLOTS];
+        for k in SLOT_TREE..SLOT_GRASS { mnear[k] = ml[k].len() as u32; let f = std::mem::take(&mut far[k]); ml[k].extend(f); }
+        // grass tufts around the camera: recomputed only when the camera leaves its 8 m cell (or the quality changes)
+        let grass_cap = if self.city_radius < 350.0 { 0 } else if self.city_radius < 420.0 { 1500 } else { 3000 };
+        let cell = ((wv.cam_pos.x / 8.0).floor() as i32, (wv.cam_pos.z / 8.0).floor() as i32, grass_cap);
+        if self.grass_cache.as_ref().map_or(true, |(c, _)| *c != cell) {
+            let centre = v3((cell.0 as f32 + 0.5) * 8.0, 0.0, (cell.1 as f32 + 0.5) * 8.0);
+            self.grass_cache = Some((cell, scatter::grass_spots(wv.terrain, centre, 48.0, grass_cap)));
+        }
+        if let Some((_, spots)) = &self.grass_cache {
+            for (p, sc) in spots {
+                if (p.x - wv.cam_pos.x).hypot(p.z - wv.cam_pos.z) > 42.0 { continue; }
+                ml[SLOT_GRASS].push(MInst { m: mmat_s(Q::axis_angle(v3(0., 1., 0.), yaw_of(*p)), *p, *sc), tint: [1.0; 4] });
+            }
+        }
+        let mut mall: Vec<MInst> = Vec::new();
+        let mut mranges = [(0u32, 0u32); MODEL_SLOTS];
+        for k in 0..MODEL_SLOTS {
+            let take = ml[k].len().min(MAX_MODEL_INST - mall.len());
+            mranges[k] = (mall.len() as u32, (mall.len() + take) as u32);
+            mall.extend_from_slice(&ml[k][..take]);
+        }
+        if !mall.is_empty() { self.queue.write_buffer(&self.mbuf, 0, bytemuck::cast_slice(&mall)); }
         let mut all: Vec<Inst> = Vec::new();
         let mut ranges = [(0u32, 0u32); 4];
         for k in 0..4 {
@@ -410,7 +455,9 @@ impl Raster {
             rp.set_pipeline(&self.pl_model_sh);
             rp.set_vertex_buffer(1, self.mbuf.slice(..));
             for k in 0..MODEL_SLOTS {
-                let (a, b) = mranges[k]; if b == a { continue; }
+                let (a, mut b) = mranges[k];
+                if k >= SLOT_TREE { b = if k == SLOT_GRASS { a } else { a + mnear[k].min(b - a) }; }
+                if b == a { continue; }
                 let m = &self.models[k];
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, a..b);
