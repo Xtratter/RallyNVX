@@ -59,7 +59,7 @@ pub fn reward_base_for(len: f32, difficulty: u8) -> f32 {
 /// A mission point must be on gentle ground (normal.y >= 0.94), clear of props (8 m) and inside the world wall.
 pub fn point_ok(t: &Terrain, p: V3) -> bool {
     if p.x.abs() > WORLD_LIMIT - 40.0 || p.z.abs() > WORLD_LIMIT - 40.0 { return false; }
-    if t.in_city(p.x, p.z, 20.0) { return false; }
+    if t.in_city(p.x, p.z, 20.0) || t.is_water(p.x, p.z, 2.0) { return false; }
     if t.normal(p.x, p.z).y < 0.94 { return false; }
     let (tx, tz) = (tile_of(p.x), tile_of(p.z));
     for dz in -1..=1 { for dx in -1..=1 { for pr in tile_props(t, tx + dx, tz + dz) {

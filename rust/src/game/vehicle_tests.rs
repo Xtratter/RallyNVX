@@ -114,3 +114,8 @@ fn never_rolls(throttle_pre: f32, secs_pre: f32, steer: f32, thr: f32) -> (bool,
     let half_track = s.wheels[0].x.abs();
     assert!(half_track / h > s.mu * 1.15, "rollover limit {} g vs grip {} g", half_track / h, s.mu);
 }
+#[test] fn water_slows_the_car_down() {
+    let go = |t: &Terrain| { let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., 1.1, 0.), 0.0); run(&mut v, t, Input { throttle: 1.0, ..Default::default() }, 8.0); v.speed() };
+    let (dry, wet) = (go(&Terrain::flat()), go(&Terrain::flooded(1.0)));
+    assert!(wet < dry * 0.7, "dry {dry} wet {wet}");
+}

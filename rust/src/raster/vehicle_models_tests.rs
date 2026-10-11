@@ -3,7 +3,7 @@ use crate::game::{flight::{Aircraft, AircraftKind, AircraftSpec}, input::Input, 
 fn finite_unit(m: &Mesh3, name: &str) {
     assert!(!m.verts.is_empty() && m.idx.len() % 3 == 0, "{name}");
     assert!(m.idx.iter().all(|&i| (i as usize) < m.verts.len()), "{name} indices");
-    for v in &m.verts { assert!(v.pos.iter().all(|c| c.is_finite()), "{name}"); let l = (v.nrm[0].powi(2) + v.nrm[1].powi(2) + v.nrm[2].powi(2)).sqrt(); assert!((l - 1.0).abs() < 1e-3, "{name} normal {l}"); assert!(v.col[3] <= MAT_EMISSIVE, "{name} material"); }
+    for v in &m.verts { assert!(v.pos.iter().all(|c| c.is_finite()), "{name}"); let l = (v.nrm[0].powi(2) + v.nrm[1].powi(2) + v.nrm[2].powi(2)).sqrt(); assert!((l - 1.0).abs() < 1e-3, "{name} normal {l}"); assert!(v.col[3] <= MAT_FOLIAGE, "{name} material"); }
 }
 fn outward(m: &Mesh3, name: &str) { outward_min(m, name, 0.2) }
 fn outward_min(m: &Mesh3, name: &str, min: f32) {

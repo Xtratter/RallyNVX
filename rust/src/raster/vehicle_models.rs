@@ -9,6 +9,7 @@ pub const MAT_RUBBER: u8 = 2;
 pub const MAT_PLASTIC: u8 = 3;
 pub const MAT_CHROME: u8 = 4;
 pub const MAT_EMISSIVE: u8 = 5;
+pub const MAT_FOLIAGE: u8 = 6;
 
 /// One vertex: position, normal, colour (rgb) with the material id in the alpha byte. 28 bytes.
 #[repr(C)]
@@ -29,16 +30,16 @@ impl Mesh3 {
         for v in &self.verts { for (k, c) in v.pos.iter().enumerate() { let (l, h) = match k { 0 => (&mut lo.x, &mut hi.x), 1 => (&mut lo.y, &mut hi.y), _ => (&mut lo.z, &mut hi.z) }; if *c < *l { *l = *c; } if *c > *h { *h = *c; } } }
         (lo, hi)
     }
-    fn vert(&mut self, pos: V3, nrm: V3, col: [f32; 3], mat: u8) -> u32 {
+    pub(crate) fn vert(&mut self, pos: V3, nrm: V3, col: [f32; 3], mat: u8) -> u32 {
         let c = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
         self.verts.push(Vert { pos: [pos.x, pos.y, pos.z], nrm: [nrm.x, nrm.y, nrm.z], col: [c(col[0]), c(col[1]), c(col[2]), mat] });
         (self.verts.len() - 1) as u32
     }
 }
 
-#[derive(Clone, Copy)] enum Axis { X, Y, Z }
+#[derive(Clone, Copy)] pub(crate) enum Axis { X, Y, Z }
 
-fn add_box(m: &mut Mesh3, centre: V3, half: V3, rot: Q, col: [f32; 3], mat: u8) {
+pub(crate) fn add_box(m: &mut Mesh3, centre: V3, half: V3, rot: Q, col: [f32; 3], mat: u8) {
     let faces: [(V3, V3, V3); 6] = [
         (v3(1., 0., 0.), v3(0., 1., 0.), v3(0., 0., 1.)), (v3(-1., 0., 0.), v3(0., 0., 1.), v3(0., 1., 0.)),
         (v3(0., 1., 0.), v3(0., 0., 1.), v3(1., 0., 0.)), (v3(0., -1., 0.), v3(1., 0., 0.), v3(0., 0., 1.)),
@@ -53,7 +54,7 @@ fn add_box(m: &mut Mesh3, centre: V3, half: V3, rot: Q, col: [f32; 3], mat: u8) 
     }
 }
 
-fn add_cylinder(m: &mut Mesh3, centre: V3, axis: Axis, radius: f32, len: f32, segs: usize, col: [f32; 3], mat: u8) {
+pub(crate) fn add_cylinder(m: &mut Mesh3, centre: V3, axis: Axis, radius: f32, len: f32, segs: usize, col: [f32; 3], mat: u8) {
     let (a, b, c) = match axis { Axis::X => (v3(0., 1., 0.), v3(0., 0., 1.), v3(1., 0., 0.)), Axis::Y => (v3(0., 0., 1.), v3(1., 0., 0.), v3(0., 1., 0.)), Axis::Z => (v3(1., 0., 0.), v3(0., 1., 0.), v3(0., 0., 1.)) };
     let ring = |m: &mut Mesh3, off: f32, side: bool| -> Vec<u32> {
         (0..=segs).map(|k| { let th = std::f32::consts::TAU * k as f32 / segs as f32; let n = a * th.cos() + b * th.sin();
@@ -68,7 +69,7 @@ fn add_cylinder(m: &mut Mesh3, centre: V3, axis: Axis, radius: f32, len: f32, se
     }
 }
 
-fn add_sphere(m: &mut Mesh3, centre: V3, radii: V3, rings: usize, segs: usize, col: [f32; 3], mat: u8) {
+pub(crate) fn add_sphere(m: &mut Mesh3, centre: V3, radii: V3, rings: usize, segs: usize, col: [f32; 3], mat: u8) {
     let mut ids = Vec::new();
     for r in 0..=rings { let t = std::f32::consts::PI * r as f32 / rings as f32; for s in 0..=segs {
         let a = std::f32::consts::TAU * s as f32 / segs as f32;
@@ -80,7 +81,7 @@ fn add_sphere(m: &mut Mesh3, centre: V3, radii: V3, rings: usize, segs: usize, c
 }
 
 /// A smooth lofted body through stations `(z, half_width, y_bottom, y_top)` with superellipse cross-sections.
-fn loft(stations: &[(f32, f32, f32, f32)], ring: usize, exp: f32, col: [f32; 3], mat: u8) -> Mesh3 {
+pub(crate) fn loft(stations: &[(f32, f32, f32, f32)], ring: usize, exp: f32, col: [f32; 3], mat: u8) -> Mesh3 {
     let mut pts: Vec<V3> = Vec::new();
     for &(z, hw, y0, y1) in stations {
         let (yc, hh) = ((y0 + y1) * 0.5, (y1 - y0) * 0.5);

@@ -117,3 +117,19 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
     } }
     for k in 0..50u64 { for d in 1..=3u8 { assert_ne!(mission_seed(k * 977, d, true), mission_seed(k * 977, d, false)); } }
 }
+#[test] fn ground_mission_points_are_never_in_a_lake() {
+    let mut wet_levels = 0;
+    for ps in 1..=40u64 { for m in roll(ps, 0, 0) {
+        if m.is_air() { continue; }
+        let t = Terrain::new(m.seed);
+        if t.water_level().is_some() { wet_levels += 1; }
+        for p in std::iter::once(&m.start).chain(m.checkpoints.iter()) { assert!(!t.is_water(p.x, p.z, 1.5), "profile {ps} mission seed {}: point in water", m.seed); }
+    } }
+    assert!(wet_levels > 0);
+}
+#[test] fn a_wet_point_is_not_ok() {
+    for seed in 1..=60u64 { let t = Terrain::new(seed); let Some(l) = t.water_level() else { continue };
+        for i in -20..20 { for j in -20..20 { let (x, z) = (i as f32 * 60.0, j as f32 * 60.0);
+            if t.height(x, z) < l - 0.5 { assert!(!point_ok(&t, v3(x, t.height(x, z), z))); return; } } } }
+    panic!("no wet point found");
+}

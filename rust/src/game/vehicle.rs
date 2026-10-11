@@ -20,6 +20,8 @@ pub struct VehicleSpec {
     /// suspension force cap in car weights per wheel.
     pub steer_max: f32, pub steer_speed_ref: f32, pub steer_rate: f32, pub lateral_k: f32, pub rolling: f32,
     pub aero: f32, pub ang_damp: f32, pub handbrake_grip: f32, pub reverse_factor: f32, pub max_susp_factor: f32,
+    /// Extra drag in water, 1/s with all four wheels wet (see docs/vehicles.md).
+    pub water_drag: f32,
 }
 
 impl VehicleSpec {
@@ -88,6 +90,8 @@ impl Vehicle {
         self.contacts = 0;
         let wheel_mass = s.mass / 4.0;
         let max_susp = s.max_susp_factor * G * wheel_mass;
+        let level = t.water_level();
+        let mut wet = 0;
         for w in 0..4 {
             self.comp[w] = 0.0;
             let front = w < 2;
@@ -95,6 +99,7 @@ impl Vehicle {
             let attach = self.pos + r_att;
             let ground = t.height(attach.x, attach.z);
             let n = t.normal(attach.x, attach.z);
+            if level.map_or(false, |l| ground < l - 0.05) { wet += 1; }
             if up.dot(n) < 0.2 { continue; }
             let d = (attach.y - ground) / up.y.max(0.2);
             let compress = s.rest + s.radius - d;
@@ -125,6 +130,7 @@ impl Vehicle {
             force = force + tire; torque = torque + r_c.cross(tire);
         }
         force = force - self.vel * (self.vel.len() * s.aero);
+        if wet > 0 { force = force - self.vel * (s.mass * s.water_drag * wet as f32 / 4.0); }
         self.vel = self.vel + force * (h / s.mass);
         let wb = self.rot.conj().rotate(self.omega);
         let tb = self.rot.conj().rotate(torque);

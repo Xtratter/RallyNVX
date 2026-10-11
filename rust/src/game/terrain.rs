@@ -38,15 +38,35 @@ fn fbm(seed: u64, x: f32, z: f32, octaves: u32) -> f32 {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Terrain { pub seed: u64, scale: f32, sites: [Option<CitySite>; 2] }
+pub struct Terrain { pub seed: u64, scale: f32, sites: [Option<CitySite>; 2], water: Option<f32> }
 
 impl Terrain {
     pub fn new(seed: u64) -> Terrain {
-        let raw = Terrain { seed, scale: 1.0, sites: [None; 2] };
-        Terrain { sites: city_sites(seed, &raw), ..raw }
+        let raw = Terrain { seed, scale: 1.0, sites: [None; 2], water: None };
+        let with_sites = Terrain { sites: city_sites(seed, &raw), ..raw };
+        Terrain { water: with_sites.pick_water_level(), ..with_sites }
     }
+
+    /// The 12th percentile of heights sampled over the playable area, kept clear of the spawn plateau and the city
+    /// plateaus; `None` for flat levels (a lake needs a clear drop below the spawn height).
+    fn pick_water_level(&self) -> Option<f32> {
+        let mut hs: Vec<f32> = Vec::with_capacity(41 * 41);
+        for j in -20..=20 { for i in -20..=20 { hs.push(self.height(i as f32 * 60.0, j as f32 * 60.0)); } }
+        hs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let cand = hs[hs.len() * 12 / 100];
+        if cand > -1.0 { return None; }
+        let low_city = self.sites.iter().flatten().map(|s| s.centre.y).fold(f32::MAX, f32::min);
+        Some(cand.min(low_city - 1.5))
+    }
+
+    /// The lake surface height of this level, if it has lakes.
+    pub fn water_level(&self) -> Option<f32> { self.water }
+    /// The ground is below the lake surface (plus `margin` metres).
+    pub fn is_water(&self, x: f32, z: f32, margin: f32) -> bool { self.water.map_or(false, |l| self.height(x, z) < l + margin) }
+    /// Flat terrain under water up to `level` (tests).
+    pub fn flooded(level: f32) -> Terrain { Terrain { water: Some(level), ..Terrain::flat() } }
     /// Height 0 everywhere (tests, vehicle tuning).
-    pub fn flat() -> Terrain { Terrain { seed: 0, scale: 0.0, sites: [None; 2] } }
+    pub fn flat() -> Terrain { Terrain { seed: 0, scale: 0.0, sites: [None; 2], water: None } }
 
     /// The heightfield without city plateaus.
     pub fn raw_height(&self, x: f32, z: f32) -> f32 {

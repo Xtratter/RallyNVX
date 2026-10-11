@@ -82,6 +82,7 @@ fn parse_car(id: &str, v: &Value) -> Result<VehicleSpec, String> {
         ang_damp: between(hnd, "angular_damping", ctx, 0.0, 1e3)?, handbrake_grip: between(hnd, "handbrake_grip", ctx, 0.0, 1.0)?,
         reverse_factor: between(hnd, "reverse_speed_factor", ctx, 0.01, 1.0)?,
         max_susp_factor: above(sus, "max_force_factor", ctx, 0.0)?,
+        water_drag: match v.get("water_drag") { None => 0.0, Some(_) => between(v, "water_drag", ctx, 0.0, 1e3)? },
     })
 }
 

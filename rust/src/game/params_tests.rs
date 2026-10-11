@@ -71,3 +71,8 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     let bad2 = EMBEDDED.replacen("\"wheel_width\": 0.32", "\"wheel_width\": 5.0", 1);
     assert!(Params::from_json(&bad2).unwrap_err().contains("wheel_width"));
 }
+#[test] fn water_drag_is_read_and_validated() {
+    assert!(embedded().car("offroader").unwrap().water_drag > 0.0);
+    let bad = EMBEDDED.replacen("\"water_drag\": 1.4", "\"water_drag\": -1.0", 1);
+    let e = Params::from_json(&bad).unwrap_err(); assert!(e.contains("water_drag"), "{e}");
+}

@@ -2,6 +2,7 @@
 pub mod citygen;
 pub mod meshes;
 pub mod models;
+pub mod nature_models;
 pub mod texgen;
 pub mod vehicle_models;
 

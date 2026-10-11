@@ -9,6 +9,7 @@
       "brake_force": 16000,
       "max_speed": 35,
       "grip": 1.1,
+      "water_drag": 1.4,
       "handling": {
         "steer_max": 0.55,
         "steer_speed_ref": 15,

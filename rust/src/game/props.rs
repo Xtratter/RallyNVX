@@ -20,7 +20,7 @@ pub fn tile_props(t: &Terrain, tx: i32, tz: i32) -> Vec<Prop> {
         let c = hash01(t.seed ^ 0x53, tx.wrapping_add(k.wrapping_mul(7)), tz.wrapping_sub(k));
         let (x, z) = ((tx as f32 + a) * TILE_SIZE, (tz as f32 + b) * TILE_SIZE);
         if x.hypot(z) < MIN_PROP_DIST { continue; }
-        if t.in_city(x, z, 100.0) { continue; }
+        if t.in_city(x, z, 100.0) || t.is_water(x, z, 1.0) { continue; }
         if t.normal(x, z).y < 0.85 { continue; }
         let pos = v3(x, t.height(x, z), z);
         if c < 0.45 {

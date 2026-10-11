@@ -76,3 +76,24 @@ use super::*;
 #[test] fn the_spawn_plateau_is_still_flat_with_cities() {
     for seed in [1u64, 7, 99, 12345] { let t = Terrain::new(seed); for (x, z) in [(0.0, 0.0), (5.0, -4.0), (-8.0, 8.0)] { assert!(t.height(x, z).abs() < 0.5); } }
 }
+#[test] fn lakes_never_flood_the_spawn_or_the_cities_and_are_deterministic() {
+    let (mut wet, mut dry) = (0, 0);
+    for seed in 1..=200u64 {
+        let t = Terrain::new(seed);
+        assert_eq!(t.water_level(), Terrain::new(seed).water_level());
+        match t.water_level() {
+            None => dry += 1,
+            Some(l) => {
+                wet += 1;
+                assert!(l < -1.0, "seed {seed}: level {l}");
+                assert!(!t.is_water(0.0, 0.0, 0.0), "seed {seed}: spawn is wet");
+                for s in t.sites() { assert!(!t.is_water(s.centre.x, s.centre.z, 1.0), "seed {seed}: city flooded"); }
+                let mut hi = f32::MIN; for i in -10..=10 { for j in -10..=10 { hi = hi.max(t.height(i as f32 * 150.0, j as f32 * 150.0)); } }
+                assert!(l < hi);
+            }
+        }
+    }
+    assert!(wet >= 150, "wet {wet} dry {dry}");   // the terrain always has a clear drop; flat terrain has no lake
+    assert_eq!(Terrain::flat().water_level(), None);
+    let f = Terrain::flooded(1.0); assert!(f.is_water(3.0, 4.0, 0.0) && f.water_level() == Some(1.0));
+}

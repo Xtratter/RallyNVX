@@ -32,3 +32,9 @@ use crate::game::terrain::TILE_SIZE;
     } } }
     assert!(outside > 0, "props still exist around the city");
 }
+#[test] fn no_prop_stands_in_a_lake() {
+    let mut checked = 0;
+    for seed in 1..=60u64 { let t = Terrain::new(seed); if t.water_level().is_none() { continue; }
+        for tz in -4..4 { for tx in -4..4 { for p in tile_props(&t, tx, tz) { checked += 1; assert!(!t.is_water(p.pos.x, p.pos.z, 1.0), "seed {seed}"); } } } }
+    assert!(checked > 1000);
+}
