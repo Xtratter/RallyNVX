@@ -5,6 +5,7 @@ use super::flight::AircraftKind;
 use super::math::{v3, V3};
 use super::props::tile_props;
 use super::terrain::{hash01, Terrain};
+use super::urban;
 use super::world::{tile_of, WORLD_LIMIT};
 
 pub const GOAL_RADIUS: f32 = 6.0;
@@ -27,6 +28,8 @@ pub struct Mission {
     pub length_m: f32, pub time_limit: f32, pub reward_base: f32,
     /// `None` for ground missions.
     pub aircraft: Option<AircraftKind>,
+    /// An urban mission starts in the city (`start`) and may fix the start heading.
+    pub urban: bool, pub start_yaw: Option<f32>,
 }
 
 impl Mission {
@@ -136,28 +139,43 @@ pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
         h ^= h >> 33; h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD); h ^= h >> 33; h = h.wrapping_mul(0xC4CE_B9FE_1A85_EC53); h ^= h >> 33;
         let seed = level_seed(h);
         let t = Terrain::new(seed);
-        let (aircraft, checkpoints) = match kind {
-            MissionKind::Cargo => (None, vec![pick_goal(&t, key, difficulty)]),
-            MissionKind::Race => { let g = pick_goal(&t, key, difficulty); (None, race_points(&t, key, g)) }
-            MissionKind::Rings => {
+        let city = || super::city::City::build(t.sites()[0], seed);          // every level has at least one city
+        let urban_data = match (slot, kind) {
+            (2, MissionKind::Cargo) => Some(urban::cargo(&city(), key)),
+            (3, MissionKind::Race) => Some(urban::race(&city(), key)),
+            (4, MissionKind::Rings) if hash01(key, slot as i32, 78) < 0.5 => Some(urban::rings(&city(), key)),
+            (5, MissionKind::Sling) => Some(urban::sling(&city(), key)),
+            _ => None,
+        };
+        let urban = urban_data.is_some();
+        let (aircraft, checkpoints) = match (kind, &urban_data) {
+            (MissionKind::Cargo, Some(u)) | (MissionKind::Race, Some(u)) => (None, u.points.clone()),
+            (MissionKind::Rings, Some(u)) => (Some(if hash01(key, slot as i32, 77) < 0.5 { AircraftKind::Drone } else { AircraftKind::Heli }), u.points.clone()),
+            (MissionKind::Sling, Some(u)) => (Some(AircraftKind::Heli), u.points.clone()),
+            (MissionKind::Cargo, None) => (None, vec![pick_goal(&t, key, difficulty)]),
+            (MissionKind::Race, None) => { let g = pick_goal(&t, key, difficulty); (None, race_points(&t, key, g)) }
+            (MissionKind::Rings, None) => {
                 let drone = hash01(key, slot as i32, 77) < 0.5;
                 let mut pts = airgen::rings_points(&t, key, drone);
                 airgen::clear_of_buildings(&t, seed, &mut pts, if drone { RING_RADIUS_DRONE } else { RING_RADIUS_HELI });
                 (Some(if drone { AircraftKind::Drone } else { AircraftKind::Heli }), pts)
             }
-            MissionKind::Sling => (Some(AircraftKind::Heli), airgen::sling_points(&t, key)),
-            MissionKind::Recon => (Some(AircraftKind::Drone), airgen::recon_points(&t, key)),
+            (MissionKind::Sling, None) => (Some(AircraftKind::Heli), airgen::sling_points(&t, key)),
+            (MissionKind::Recon, _) => (Some(AircraftKind::Drone), airgen::recon_points(&t, key)),
         };
         let goal = *checkpoints.last().unwrap();
-        let start = at(&t, 0.0, 0.0);
+        let start = urban_data.as_ref().map_or_else(|| at(&t, 0.0, 0.0), |u| u.start);
+        let start_yaw = urban_data.as_ref().and_then(|u| u.yaw);
         let length_m = path_length(start, &checkpoints);
         let time_limit = match kind {
+            MissionKind::Rings if urban => 1.5 * length_m / 10.0 + 20.0,
             MissionKind::Rings => 1.5 * length_m / if aircraft == Some(AircraftKind::Drone) { 15.0 } else { 18.0 } + 20.0,
             MissionKind::Sling => 1.6 * length_m / 12.0 + 35.0,
             MissionKind::Recon => 1.4 * length_m / 15.0 + 25.0,
+            _ if urban => 1.6 * length_m / 8.0 + 20.0,
             _ => time_limit_for(length_m),
         };
-        Mission { kind, seed, difficulty, start, goal, checkpoints, length_m, time_limit, reward_base: reward_base_for(length_m, difficulty), aircraft }
+        Mission { kind, seed, difficulty, start, goal, checkpoints, length_m, time_limit, reward_base: reward_base_for(length_m, difficulty), aircraft, urban, start_yaw }
     }).collect()
 }
 

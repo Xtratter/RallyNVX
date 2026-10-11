@@ -45,7 +45,7 @@ use crate::game::math::Q;
 use crate::game::missions::{Mission, MissionKind};
 fn mk(kind: MissionKind, pts: Vec<V3>) -> Mission {
     let goal = *pts.last().unwrap();
-    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: None }
+    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: None, urban: false, start_yaw: None }
 }
 #[test] fn for_mission_uses_the_mission_seed_and_starts_ready() {
     let w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
@@ -93,7 +93,7 @@ fn mk(kind: MissionKind, pts: Vec<V3>) -> Mission {
 }
 fn air(kind: MissionKind, ac: crate::game::flight::AircraftKind, pts: Vec<V3>) -> Mission {
     let goal = *pts.last().unwrap();
-    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: Some(ac) }
+    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: Some(ac), urban: false, start_yaw: None }
 }
 use crate::game::flight::{AircraftKind, FlightInput};
 #[test] fn air_mission_starts_with_the_aircraft_3_m_up_facing_the_first_target() {

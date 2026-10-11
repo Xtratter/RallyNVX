@@ -1,7 +1,7 @@
 use super::*;
 use crate::game::{input::Input, math::v3, missions::{Mission, MissionKind}, world::World};
 fn mission() -> Mission {
-    Mission { kind: MissionKind::Cargo, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal: v3(0., 0., 300.), checkpoints: vec![v3(0., 0., 300.)], length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: None }
+    Mission { kind: MissionKind::Cargo, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal: v3(0., 0., 300.), checkpoints: vec![v3(0., 0., 300.)], length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: None, urban: false, start_yaw: None }
 }
 fn gas() -> Input { Input { throttle: 1.0, ..Default::default() } }
 #[test] fn free_drive_state_has_phase_zero() {
@@ -48,7 +48,7 @@ fn gas() -> Input { Input { throttle: 1.0, ..Default::default() } }
 use crate::game::flight::{AircraftKind, FlightInput};
 fn air_mission(kind: MissionKind, ac: AircraftKind, pts: Vec<crate::game::math::V3>) -> Mission {
     let goal = *pts.last().unwrap();
-    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: Some(ac) }
+    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: Some(ac), urban: false, start_yaw: None }
 }
 #[test] fn air_state_reports_altitude_speed_kind_and_target_height() {
     let mut w = World::for_mission(air_mission(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 33., 300.)]));

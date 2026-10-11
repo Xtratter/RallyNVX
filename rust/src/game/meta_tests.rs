@@ -5,7 +5,7 @@ fn tmp(name: &str) -> std::path::PathBuf {
     let _ = std::fs::remove_dir_all(&d); std::fs::create_dir_all(&d).unwrap(); d.join("profile.json")
 }
 fn m(seed: u64, kind: MissionKind) -> Mission {
-    Mission { kind, seed, difficulty: 1, start: v3(0., 0., 0.), goal: v3(0., 0., 100.), checkpoints: vec![v3(0., 0., 100.)], length_m: 100.0, time_limit: 100.0, reward_base: 100.0, aircraft: None }
+    Mission { kind, seed, difficulty: 1, start: v3(0., 0., 0.), goal: v3(0., 0., 100.), checkpoints: vec![v3(0., 0., 100.)], length_m: 100.0, time_limit: 100.0, reward_base: 100.0, aircraft: None, urban: false, start_yaw: None }
 }
 #[test] fn json_roundtrip_keeps_everything() {
     let mut p = Profile::new(1234);
