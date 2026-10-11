@@ -10,6 +10,7 @@ pub mod desktop;
 pub mod flight;
 pub mod ground;
 pub mod input;
+pub mod materials;
 pub mod math;
 pub mod params;
 pub mod medals;
