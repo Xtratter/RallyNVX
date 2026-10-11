@@ -30,6 +30,8 @@ pub struct Mission {
     pub aircraft: Option<AircraftKind>,
     /// An urban mission starts in the city (`start`) and may fix the start heading.
     pub urban: bool, pub start_yaw: Option<f32>,
+    /// Ring plane normals when they are not the path direction (urban rings: flat, along the street); empty otherwise.
+    pub normals: Vec<V3>,
 }
 
 impl Mission {
@@ -38,6 +40,7 @@ impl Mission {
 
 /// Plane normal of ring `i`: along the path from the previous point (or the start).
 pub fn ring_normal(m: &Mission, i: usize) -> V3 {
+    if let Some(n) = m.normals.get(i) { return *n; }
     let prev = if i == 0 { m.start } else { m.checkpoints[i - 1] };
     (m.checkpoints[i] - prev).norm()
 }
@@ -127,6 +130,15 @@ fn race_points(t: &Terrain, key: u64, goal: V3) -> Vec<V3> {
     out
 }
 
+/// The level seed of a mission: depends on the slot key, the difficulty and the urban flag (an urban mission is a
+/// different mission from an open one, so saved results never carry over between them).
+pub fn mission_seed(key: u64, difficulty: u8, urban: bool) -> u64 {
+    let mut h = key.wrapping_add((difficulty as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    if urban { h ^= 0xA5A5_5A5A_C3C3_3C3C; }
+    h ^= h >> 33; h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD); h ^= h >> 33; h = h.wrapping_mul(0xC4CE_B9FE_1A85_EC53); h ^= h >> 33;
+    level_seed(h)
+}
+
 pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
     let kinds = [MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race, MissionKind::Rings,
         if round % 2 == 0 { MissionKind::Sling } else { MissionKind::Recon }];
@@ -135,15 +147,15 @@ pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
         let r = hash01(key, slot as i32, 9);
         let difficulty = if gold_medals >= 3 { 1 + (r * 3.0) as u8 % 3 } else { 1 + (r * 2.0) as u8 % 2 };
         // difficulty is part of the identity: the same slot at another difficulty is a different mission
-        let mut h = key.wrapping_add((difficulty as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
-        h ^= h >> 33; h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD); h ^= h >> 33; h = h.wrapping_mul(0xC4CE_B9FE_1A85_EC53); h ^= h >> 33;
-        let seed = level_seed(h);
+        let urban_slot = matches!((slot, kind), (2, MissionKind::Cargo) | (3, MissionKind::Race) | (5, MissionKind::Sling))
+            || (slot == 4 && kind == MissionKind::Rings && hash01(key, slot as i32, 78) < 0.5);
+        let seed = mission_seed(key, difficulty, urban_slot);
         let t = Terrain::new(seed);
         let city = || super::city::City::build(t.sites()[0], seed);          // every level has at least one city
         let urban_data = match (slot, kind) {
             (2, MissionKind::Cargo) => Some(urban::cargo(&city(), key)),
             (3, MissionKind::Race) => Some(urban::race(&city(), key)),
-            (4, MissionKind::Rings) if hash01(key, slot as i32, 78) < 0.5 => Some(urban::rings(&city(), key)),
+            (4, MissionKind::Rings) if urban_slot => Some(urban::rings(&city(), key)),
             (5, MissionKind::Sling) => Some(urban::sling(&city(), key)),
             _ => None,
         };
@@ -166,16 +178,17 @@ pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
         let goal = *checkpoints.last().unwrap();
         let start = urban_data.as_ref().map_or_else(|| at(&t, 0.0, 0.0), |u| u.start);
         let start_yaw = urban_data.as_ref().and_then(|u| u.yaw);
+        let normals = urban_data.as_ref().map_or_else(Vec::new, |u| u.normals.clone());
         let length_m = path_length(start, &checkpoints);
         let time_limit = match kind {
-            MissionKind::Rings if urban => 1.5 * length_m / 10.0 + 20.0,
+            MissionKind::Rings if urban => 1.5 * (24.0 + 48.0 * (checkpoints.len() as f32 - 1.0)) / 10.0 + 20.0,   // the street length, not the diagonal between rings
             MissionKind::Rings => 1.5 * length_m / if aircraft == Some(AircraftKind::Drone) { 15.0 } else { 18.0 } + 20.0,
-            MissionKind::Sling => 1.6 * length_m / 12.0 + 35.0,
+            MissionKind::Sling => 1.6 * length_m / 12.0 + 35.0 + 0.25 * (checkpoints.iter().map(|p| p.y).fold(f32::MIN, f32::max) - start.y).max(0.0),   // plus the climb to the roofs
             MissionKind::Recon => 1.4 * length_m / 15.0 + 25.0,
             _ if urban => 1.6 * length_m / 8.0 + 20.0,
             _ => time_limit_for(length_m),
         };
-        Mission { kind, seed, difficulty, start, goal, checkpoints, length_m, time_limit, reward_base: reward_base_for(length_m, difficulty), aircraft, urban, start_yaw }
+        Mission { kind, seed, difficulty, start, goal, checkpoints, length_m, time_limit, reward_base: reward_base_for(length_m, difficulty), aircraft, urban, start_yaw, normals }
     }).collect()
 }
 

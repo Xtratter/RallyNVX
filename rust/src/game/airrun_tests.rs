@@ -3,7 +3,7 @@ use crate::game::{flight::{Aircraft, AircraftKind, Status}, math::v3, medals::Me
 const DT: f32 = 1.0 / 60.0;
 fn mission(kind: MissionKind, ac: AircraftKind, pts: Vec<V3>, limit: f32) -> Mission {
     let goal = *pts.last().unwrap();
-    Mission { kind, seed: 1, difficulty: 1, start: v3(0., 0., 0.), goal, length_m: path_length(v3(0., 0., 0.), &pts), checkpoints: pts, time_limit: limit, reward_base: 100.0, aircraft: Some(ac), urban: false, start_yaw: None }
+    Mission { kind, seed: 1, difficulty: 1, start: v3(0., 0., 0.), goal, length_m: path_length(v3(0., 0., 0.), &pts), checkpoints: pts, time_limit: limit, reward_base: 100.0, aircraft: Some(ac), urban: false, start_yaw: None, normals: vec![] }
 }
 fn heli_at(p: V3) -> Aircraft { Aircraft::new(AircraftKind::Heli, p, 0.0) }
 fn rings() -> AirRun { AirRun::new(mission(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 100.), v3(0., 30., 200.), v3(0., 30., 300.)], 100.0)) }

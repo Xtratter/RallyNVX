@@ -85,3 +85,18 @@ fn manhattan(a: V3, b: V3) -> f32 { (a.x - b.x).abs() + (a.z - b.z).abs() }
     let _ = (cargo(&tiny, 1), race(&tiny, 1), rings(&tiny, 1));
     assert_eq!(sling(&tiny, 1).points.len(), 2);
 }
+#[test] fn urban_rings_carry_flat_street_direction_normals() {
+    for key in 0..200u64 {
+        let c = city(key % 11 + 1); let u = rings(&c, key);
+        assert_eq!(u.normals.len(), u.points.len());
+        for n in &u.normals { assert!(n.y == 0.0 && (n.len() - 1.0).abs() < 1e-5 && (n.x.abs() == 1.0 || n.z.abs() == 1.0), "{n:?}"); }
+        assert_eq!(u.normals[0], v3(1.0, 0.0, 0.0), "ring 0 faces east");
+        // each normal is the direction of the street segment its ring hangs over
+        for (p, n) in u.points.iter().zip(&u.normals) {
+            let (u1, w1) = ((p.x - (c.site.centre.x - HALF)) / PITCH, (p.z - (c.site.centre.z - HALF)) / PITCH);
+            let on_x_street = (w1 - w1.round()).abs() * PITCH <= 1e-2;      // the ring is on a street running along x
+            assert!(if on_x_street { n.x.abs() == 1.0 } else { n.z.abs() == 1.0 }, "normal {n:?} at {p:?}");
+            let _ = u1;
+        }
+    }
+}

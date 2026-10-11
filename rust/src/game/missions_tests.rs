@@ -101,8 +101,8 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
     for ps in 0..100u64 { for m in roll(ps * 7919, (ps % 2) as u32, 0).into_iter().filter(|m| m.urban) {
         let want = match m.kind {
             MissionKind::Cargo | MissionKind::Race => 1.6 * m.length_m / 8.0 + 20.0,
-            MissionKind::Rings => 1.5 * m.length_m / 10.0 + 20.0,
-            _ => 1.6 * m.length_m / 12.0 + 35.0,
+            MissionKind::Rings => 1.5 * (24.0 + 48.0 * (m.checkpoints.len() as f32 - 1.0)) / 10.0 + 20.0,   // the street length, not the diagonal
+            _ => 1.6 * m.length_m / 12.0 + 35.0 + 0.25 * (m.checkpoints.iter().map(|p| p.y).fold(f32::MIN, f32::max) - m.start.y),   // plus the climb to the roofs
         };
         assert!((m.time_limit - want).abs() < 1e-2, "{:?} {} vs {}", m.kind, m.time_limit, want);
         assert!((m.length_m - path_length(m.start, &m.checkpoints)).abs() < 1e-2);
@@ -110,4 +110,10 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
 }
 #[test] fn urban_missions_never_panic_for_extreme_arguments() {
     for (ps, r, g) in [(0u64, 0u32, 0u32), (u64::MAX, u32::MAX, u32::MAX), (1, 1, 99)] { assert_eq!(roll(ps, r, g).len(), 6); }
+}
+#[test] fn urban_ring_normals_are_flat_and_the_urban_seed_is_salted() {
+    for ps in 0..100u64 { for m in roll(ps * 31, 0, 0).into_iter().filter(|m| m.urban && m.kind == MissionKind::Rings) {
+        for i in 0..m.checkpoints.len() { let n = ring_normal(&m, i); assert!(n.y == 0.0 && (n.len() - 1.0).abs() < 1e-5, "{n:?}"); }
+    } }
+    for k in 0..50u64 { for d in 1..=3u8 { assert_ne!(mission_seed(k * 977, d, true), mission_seed(k * 977, d, false)); } }
 }

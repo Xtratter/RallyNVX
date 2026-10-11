@@ -71,7 +71,7 @@ class MissionsActivity : Activity() {
             val detail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = if (open == i) View.VISIBLE else View.GONE }
             detail.addView(TextView(this).apply {
                 text = when (kind) {
-                    0 -> if (info[o + 9] > 0.5f) t("Drive through the streets to the goal; buildings are solid.", "Проедь по улицам до цели; здания твёрдые.")
+                    0 -> if (info[o + 9] > 0.5f) t("Drive through the streets to the goal; buildings are solid and hits damage the cargo.", "Проедь по улицам до цели; здания твёрдые, а удары портят груз.")
                          else t("Deliver the cargo before time runs out; hits, hard landings and rollovers damage it.", "Довези груз до конца времени; удары, жёсткие посадки и перевороты его портят.")
                     1 -> if (info[o + 9] > 0.5f) t("Race through the street checkpoints in order.", "Проедь по порядку чекпойнты на улицах.")
                          else t("Pass every checkpoint in order before time runs out.", "Проедь все чекпойнты по порядку до конца времени.")
