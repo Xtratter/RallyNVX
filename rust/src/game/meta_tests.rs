@@ -5,7 +5,7 @@ fn tmp(name: &str) -> std::path::PathBuf {
     let _ = std::fs::remove_dir_all(&d); std::fs::create_dir_all(&d).unwrap(); d.join("profile.json")
 }
 fn m(seed: u64, kind: MissionKind) -> Mission {
-    Mission { kind, seed, difficulty: 1, start: v3(0., 0., 0.), goal: v3(0., 0., 100.), checkpoints: vec![v3(0., 0., 100.)], length_m: 100.0, time_limit: 100.0, reward_base: 100.0 }
+    Mission { kind, seed, difficulty: 1, start: v3(0., 0., 0.), goal: v3(0., 0., 100.), checkpoints: vec![v3(0., 0., 100.)], length_m: 100.0, time_limit: 100.0, reward_base: 100.0, aircraft: None }
 }
 #[test] fn json_roundtrip_keeps_everything() {
     let mut p = Profile::new(1234);
@@ -49,4 +49,20 @@ fn m(seed: u64, kind: MissionKind) -> Mission {
 #[test] fn negative_and_huge_numbers_do_not_panic() {
     assert!(Profile::from_json("{\"version\":1,\"money\":-5,\"profile_seed\":1,\"round\":0,\"results\":[]}").is_err());
     assert!(Profile::from_json("{\"version\":1,\"money\":1e30,\"profile_seed\":1,\"round\":0,\"results\":[]}").is_err());
+}
+#[test] fn old_profiles_with_kind_ids_0_and_1_still_load() {
+    let p = Profile::from_json("{\"version\":1,\"money\":10,\"profile_seed\":5,\"round\":2,\"results\":[{\"seed\":1,\"kind\":0,\"medal\":2,\"best_time\":30.0},{\"seed\":2,\"kind\":1,\"medal\":3,\"best_time\":20.0}]}").unwrap();
+    assert_eq!((p.best_medal(1, MissionKind::Cargo), p.best_medal(2, MissionKind::Race)), (Medal::Silver, Medal::Gold));
+}
+#[test] fn air_kinds_round_trip() {
+    let mut p = Profile::new(3);
+    p.record(&m(7, MissionKind::Rings), Medal::Gold, 40.0);
+    p.record(&m(8, MissionKind::Recon), Medal::Bronze, 90.0);
+    p.record(&m(9, MissionKind::Sling), Medal::Silver, 70.0);
+    let q = Profile::from_json(&p.to_json()).unwrap();
+    assert_eq!((q.best_medal(7, MissionKind::Rings), q.best_medal(8, MissionKind::Recon), q.best_medal(9, MissionKind::Sling)), (Medal::Gold, Medal::Bronze, Medal::Silver));
+    assert_eq!(q.best_medal(7, MissionKind::Race), Medal::None);
+}
+#[test] fn unknown_kind_id_5_is_rejected() {
+    assert!(Profile::from_json("{\"version\":1,\"money\":1,\"profile_seed\":1,\"round\":0,\"results\":[{\"seed\":1,\"kind\":5,\"medal\":1,\"best_time\":1.0}]}").is_err());
 }

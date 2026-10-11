@@ -34,9 +34,26 @@ The main menu opens a list of four random missions: two **deliveries** and two *
 - **Refresh** rolls a new list. Progress is saved in `files/profile.json` (desktop: `~/.config/raytrace/profile.json`); a damaged file is kept as `profile.json.bak`.
 - Desktop: `RAYTRACE_MISSION=0..3 raytrace-desktop --game` starts a mission, `M` abandons it.
 
+## Flight
+
+Air missions use a helicopter or a drone (the card shows which). Sticks released = the aircraft hovers and holds its altitude.
+
+| | Android | Desktop |
+|---|---|---|
+| Turn | left stick left / right | Q / E |
+| Climb / descend | left stick up / down | Up / Down |
+| Forward / back | right stick up / down | W / S |
+| Strafe | right stick left / right | A / D |
+
+- **Landing**: soft (descent up to 3 m/s, tilt up to 20 degrees) is fine; a harder touchdown, a steep tilt at contact or hitting a tree or rock is a crash and the mission fails.
+- **Rings**: fly through every ring in order (helicopter ring radius 8 m, drone 6 m).
+- **Sling** (helicopter): hover lower than 4 m above the cargo for 1.5 s to hook it, carry it to the green pad and set it down gently inside the circle; ground impacts and wild swinging damage the cargo.
+- **Recon** (drone): hover for 2 s inside every zone (40 m), in any order.
+- Medals, rewards and the profile work as for ground missions. The drone is faster and tilts more; the helicopter is steadier.
+
 ## Limits of this version
 
-No garage, rescue missions, NPC orders, helicopters or cities yet, and only the raster renderer (mode C). The ray-traced Scenes mode is unchanged.
+No garage, rescue missions, NPC orders or cities yet, and only the raster renderer (mode C). The ray-traced Scenes mode is unchanged.
 
 ---
 
@@ -74,6 +91,23 @@ No garage, rescue missions, NPC orders, helicopters or cities yet, and only the 
 - **Обновить** создаёт новый список. Прогресс хранится в `files/profile.json` (десктоп: `~/.config/raytrace/profile.json`); повреждённый файл сохраняется как `profile.json.bak`.
 - Десктоп: `RAYTRACE_MISSION=0..3 raytrace-desktop --game` запускает миссию, `M` прерывает.
 
+## Полёт
+
+В воздушных миссиях вы летите на вертолёте или дроне (на карточке указано, на каком). Стики отпущены — аппарат висит и держит высоту.
+
+| | Android | Десктоп |
+|---|---|---|
+| Поворот | левый стик влево / вправо | Q / E |
+| Набор / снижение | левый стик вверх / вниз | Up / Down |
+| Вперёд / назад | правый стик вверх / вниз | W / S |
+| Сдвиг вбок | правый стик влево / вправо | A / D |
+
+- **Посадка**: мягкая (снижение до 3 м/с, наклон до 20 градусов) — нормально; жёстче, крутой наклон при касании или удар о дерево или камень — авария, миссия провалена.
+- **Кольца**: пролетите все кольца по порядку (радиус кольца у вертолёта 8 м, у дрона 6 м).
+- **Подвес** (вертолёт): повисите ниже 4 м над грузом 1,5 с, чтобы зацепить, довезите до зелёной площадки и мягко опустите внутри круга; удары о землю и сильное раскачивание портят груз.
+- **Разведка** (дрон): повисите 2 с в каждой зоне (40 м), в любом порядке.
+- Медали, награды и профиль работают как в наземных миссиях. Дрон быстрее и сильнее наклоняется; вертолёт устойчивее.
+
 ## Ограничения этой версии
 
-Пока нет гаража, спасательных миссий, заказов NPC, вертолётов и городов, и только растровый рендер (режим C). Режим «Сцены» с трассировкой не менялся.
+Пока нет гаража, спасательных миссий, заказов NPC и городов, и только растровый рендер (режим C). Режим «Сцены» с трассировкой не менялся.

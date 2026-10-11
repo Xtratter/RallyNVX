@@ -11,8 +11,9 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
 }
 #[test] fn roll_is_deterministic_and_shaped() {
     let a = roll(77, 0, 0); let b = roll(77, 0, 0);
-    assert_eq!(a.len(), 4);
-    assert_eq!(a.iter().map(|m| m.kind).collect::<Vec<_>>(), vec![MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race]);
+    assert_eq!(a.len(), 6);
+    assert_eq!(a.iter().map(|m| m.kind).collect::<Vec<_>>(), vec![MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race, MissionKind::Rings, MissionKind::Sling]);
+    assert_eq!(roll(77, 1, 0)[5].kind, MissionKind::Recon);
     for (x, y) in a.iter().zip(&b) { assert_eq!((x.seed, x.goal, x.checkpoints.len()), (y.seed, y.goal, y.checkpoints.len())); }
     let c = roll(77, 1, 0);
     assert!(a.iter().zip(&c).any(|(x, y)| x.seed != y.seed), "refresh must change the list");
@@ -21,14 +22,16 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
     for r in 0..20 { for m in roll(5, r, 0) {
         match m.kind {
             MissionKind::Cargo => assert_eq!(m.checkpoints, vec![m.goal]),
-            MissionKind::Race => assert!((5..=8).contains(&m.checkpoints.len()), "{}", m.checkpoints.len()),
+            MissionKind::Race | MissionKind::Rings => assert!((5..=8).contains(&m.checkpoints.len()), "{}", m.checkpoints.len()),
+            MissionKind::Sling => assert_eq!(m.checkpoints.len(), 2),
+            MissionKind::Recon => assert!((3..=5).contains(&m.checkpoints.len())),
         }
         assert_eq!(*m.checkpoints.last().unwrap(), m.goal);
         assert!(m.seed <= 0xFF_FFFF);
     } }
 }
 #[test] fn generated_points_obey_the_rules_over_many_seeds() {
-    for ps in 0..200u64 { for m in roll(ps * 7919, (ps % 5) as u32, 0) {
+    for ps in 0..200u64 { for m in roll(ps * 7919, (ps % 5) as u32, 0).into_iter().filter(|m| !m.is_air()) {
         let t = Terrain::new(m.seed);
         for p in &m.checkpoints {
             assert!(t.normal(p.x, p.z).y >= 0.94, "slope at {p:?} seed {ps}");
@@ -52,7 +55,7 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
     assert!(hard > 0, "3-star missions should appear after 3 golds");
 }
 #[test] fn extreme_inputs_do_not_panic() {
-    for (ps, r) in [(0u64, 0u32), (u64::MAX, u32::MAX), (1, u32::MAX)] { assert_eq!(roll(ps, r, 99).len(), 4); }
+    for (ps, r) in [(0u64, 0u32), (u64::MAX, u32::MAX), (1, u32::MAX)] { assert_eq!(roll(ps, r, 99).len(), 6); }
 }
 #[test] fn point_and_line_checks_accept_flat_ground() {
     let t = Terrain::flat();

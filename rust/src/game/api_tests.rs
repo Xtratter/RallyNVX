@@ -5,9 +5,9 @@ fn dir(name: &str) -> std::path::PathBuf {
 #[test] fn menu_info_has_the_documented_layout_and_persists_the_seed() {
     let path = dir("a");
     let a = menu_info(&path, 0x1234, false);
-    assert_eq!(a.len(), 36);
+    assert_eq!(a.len(), 58);
     assert_eq!((a[0], a[1], a[2], a[3]), (0.0, 0.0, 4660.0, 0.0));
-    assert_eq!((a[4], a[12], a[20], a[28]), (0.0, 1.0, 0.0, 1.0));
+    assert_eq!((a[4], a[13], a[22], a[31], a[40], a[49]), (0.0, 1.0, 0.0, 1.0, 2.0, 3.0));
     let b = menu_info(&path, 0x9999, false);
     assert_eq!(b, a);
 }

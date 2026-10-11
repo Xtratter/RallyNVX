@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::meshes;
+use super::{meshes, models::{self, Part}};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::terrain::{Mesh, TILE_SIZE};
@@ -41,6 +41,10 @@ fn inst(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst {
 
 /// Like `inst`, but flagged as a glowing marker (colour alpha 2): drawn unlit and fog-free.
 fn inst_glow(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = inst(rot, pos, s, color); i.color[3] = 2.0; i }
+
+fn push_part(lists: &mut [Vec<Inst>; 4], p: &Part) {
+    lists[p.mesh].push(if p.glow { inst_glow(p.rot, p.pos, p.scale, p.color) } else { inst(p.rot, p.pos, p.scale, p.color) });
+}
 
 struct MeshBuf { vb: wgpu::Buffer, ib: wgpu::Buffer, n: u32 }
 fn mesh_buf(dev: &wgpu::Device, m: &Mesh) -> MeshBuf {
@@ -227,21 +231,33 @@ impl Raster {
 
         // instances: cube, cylinder, cone, sphere
         let mut lists: [Vec<Inst>; 4] = Default::default();
-        let veh = wv.vehicle;
-        let (rot, sp) = (veh.rot, veh.spec);
-        lists[0].push(inst(rot, veh.pos + rot.rotate(v3(0., 0.35, 0.)), v3(1.9, 0.7, 4.2), [0.75, 0.12, 0.08]));
-        lists[0].push(inst(rot, veh.pos + rot.rotate(v3(0., 0.95, -0.2)), v3(1.7, 0.6, 2.0), [0.12, 0.14, 0.17]));
-        for w in 0..4 {
-            let local = sp.wheels[w] - v3(0., sp.rest - veh.comp[w], 0.);
-            let steer = if w < 2 { veh.steer } else { 0.0 };
-            let r = rot.mul(Q::axis_angle(v3(0., 1., 0.), -steer)).mul(Q::axis_angle(v3(0., 0., 1.), std::f32::consts::FRAC_PI_2));
-            lists[1].push(inst(r, veh.pos + rot.rotate(local), v3(sp.radius * 2.0, 0.35, sp.radius * 2.0), [0.07, 0.07, 0.08]));
+        if wv.aircraft.is_none() {
+            let veh = wv.vehicle;
+            let (rot, sp) = (veh.rot, veh.spec);
+            lists[0].push(inst(rot, veh.pos + rot.rotate(v3(0., 0.35, 0.)), v3(1.9, 0.7, 4.2), [0.75, 0.12, 0.08]));
+            lists[0].push(inst(rot, veh.pos + rot.rotate(v3(0., 0.95, -0.2)), v3(1.7, 0.6, 2.0), [0.12, 0.14, 0.17]));
+            for w in 0..4 {
+                let local = sp.wheels[w] - v3(0., sp.rest - veh.comp[w], 0.);
+                let steer = if w < 2 { veh.steer } else { 0.0 };
+                let r = rot.mul(Q::axis_angle(v3(0., 1., 0.), -steer)).mul(Q::axis_angle(v3(0., 0., 1.), std::f32::consts::FRAC_PI_2));
+                lists[1].push(inst(r, veh.pos + rot.rotate(local), v3(sp.radius * 2.0, 0.35, sp.radius * 2.0), [0.07, 0.07, 0.08]));
+            }
+        }
+        if let Some(ac) = &wv.aircraft {
+            for p in models::aircraft_parts(ac, wv.time) { push_part(&mut lists, &p); }
+            if let Some(s) = &wv.sling {
+                if s.attached { push_part(&mut lists, &models::rope_part(ac.pos - v3(0., 0.8, 0.), s.pos)); }
+                push_part(&mut lists, &models::cargo_part(s.pos));
+            }
         }
         for mk in &wv.markers {
             use crate::game::world::MarkerKind;
             match mk.kind {
                 MarkerKind::Beacon => lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 60., 0.), v3(7.0, 120.0, 7.0), [1.0, 0.85, 0.25])),
                 MarkerKind::Ring => lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [0.25, 0.75, 1.0])),
+                MarkerKind::AirRing | MarkerKind::AirNext => for p in models::ring_parts(mk.pos, mk.normal, mk.radius, mk.kind == MarkerKind::AirNext) { push_part(&mut lists, &p); },
+                MarkerKind::Pad => push_part(&mut lists, &models::pad_part(mk.pos, mk.radius)),
+                MarkerKind::Zone => for p in models::zone_parts(mk.pos, wv.terrain.height(mk.pos.x, mk.pos.z), mk.radius) { push_part(&mut lists, &p); },
                 MarkerKind::Next => {
                     lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [1.0, 0.35, 0.85]));
                     lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 7.5, 0.), v3(1.5, 15.0, 1.5), [1.0, 0.35, 0.85]));

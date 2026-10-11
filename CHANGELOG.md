@@ -2,6 +2,13 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.2.0 - flight
+
+- Added: a helicopter and a drone with arcade controls (sticks released = hover, soft landing or crash) and three air missions: ring races, cargo on a sling (helicopter) and drone recon
+- Added: the mission list now has six missions; new flight HUD (altitude, speed, rope state), goal rings, pads and recon zones in the world
+- Desktop: flight keys (W/S pitch, A/D roll, Q/E yaw, Up/Down lift); `RAYTRACE_MISSION=4` starts the ring mission
+- Known: no cities and no rescue yet; locking the screen mid-mission restarts it
+
 ## 2.1.0 - missions
 
 - Added: missions: a list of four random missions (two cargo deliveries, two checkpoint races) with a goal beacon and checkpoint rings, a timer, cargo integrity (hits, hard landings and rollovers damage it), an arrow and distance to the target, pause and results screens
