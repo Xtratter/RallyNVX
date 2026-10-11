@@ -91,3 +91,56 @@ fn mk(kind: MissionKind, pts: Vec<V3>) -> Mission {
     let to_cam = (w.cam.pos - w.vehicle.pos).norm();
     assert!(to_cam.x * f.x + to_cam.z * f.z < -0.9, "camera must start behind the car");
 }
+fn air(kind: MissionKind, ac: crate::game::flight::AircraftKind, pts: Vec<V3>) -> Mission {
+    let goal = *pts.last().unwrap();
+    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: Some(ac) }
+}
+use crate::game::flight::{AircraftKind, FlightInput};
+#[test] fn air_mission_starts_with_the_aircraft_3_m_up_facing_the_first_target() {
+    let w = World::for_mission(air(MissionKind::Rings, AircraftKind::Heli, vec![v3(300., 30., -200.), v3(600., 40., -400.)]));
+    let a = w.aircraft.as_ref().unwrap();
+    assert!((a.pos.y - (w.terrain.height(0., 0.) + 3.0)).abs() < 0.01);
+    let want = v3(300., 0., -200.).norm(); let f = a.forward();
+    assert!(f.x * want.x + f.z * want.z > 0.999);
+    assert!(w.air.is_some() && w.mission.is_none());
+    assert_eq!(w.player_pos(), a.pos);
+}
+#[test] fn air_steps_feed_the_aircraft_and_the_run() {
+    let mut w = World::for_mission(air(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 300.)]));
+    for _ in 0..60 { w.step_with(&Input::default(), &FlightInput { pitch: 1.0, ..Default::default() }, 1.0 / 60.0); }
+    assert!(w.aircraft.as_ref().unwrap().vel.len() > 1.0);
+    assert!(w.air.as_ref().unwrap().time() > 0.9);
+    assert!(w.run_info().is_some());
+}
+#[test] fn the_car_does_not_move_in_an_air_mission() {
+    let mut w = World::for_mission(air(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 300.)]));
+    let p = w.vehicle.pos;
+    for _ in 0..120 { w.step_with(&Input { throttle: 1.0, ..Default::default() }, &FlightInput::default(), 1.0 / 60.0); }
+    assert_eq!(w.vehicle.pos, p);
+}
+#[test] fn sling_missions_spawn_the_cargo_on_pad_a_and_attach_it_after_the_hover() {
+    let mut w = World::for_mission(air(MissionKind::Sling, AircraftKind::Heli, vec![v3(0., 0., 60.), v3(0., 0., 400.)]));
+    assert!(w.sling.as_ref().map_or(false, |s| !s.attached));
+    w.aircraft.as_mut().unwrap().pos = v3(0., w.terrain.height(0., 60.) + 2.5, 60.);
+    for _ in 0..140 { w.step_with(&Input::default(), &FlightInput { yaw: 0.2, ..Default::default() }, 1.0 / 60.0); }
+    assert!(w.sling.as_ref().unwrap().attached);
+}
+#[test] fn air_markers_and_run_info() {
+    let mut w = World::for_mission(air(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 100.), v3(0., 30., 200.)]));
+    let k = |w: &World| w.markers().iter().map(|m| m.kind).collect::<Vec<_>>();
+    assert_eq!(k(&w), vec![MarkerKind::AirNext, MarkerKind::AirRing]);
+    assert!((w.markers()[0].normal.len() - 1.0).abs() < 1e-3);
+    let ri = w.run_info().unwrap();
+    assert_eq!((ri.total, ri.next, ri.phase), (2, 0, crate::game::run::Phase::Ready));
+    let w2 = World::for_mission(air(MissionKind::Sling, AircraftKind::Heli, vec![v3(0., 0., 60.), v3(0., 0., 400.)]));
+    assert_eq!(w2.markers().iter().filter(|m| m.kind == MarkerKind::Pad).count(), 2);
+    let w3 = World::for_mission(air(MissionKind::Recon, AircraftKind::Drone, vec![v3(0., 40., 100.), v3(100., 50., 100.)]));
+    assert_eq!(w3.markers().iter().filter(|m| m.kind == MarkerKind::Zone).count(), 2);
+    w.abandon_mission();
+    assert!(w.markers().is_empty());
+}
+#[test] fn the_chase_camera_stays_above_the_terrain_for_an_aircraft_on_the_ground() {
+    let mut w = World::for_mission(air(MissionKind::Rings, AircraftKind::Drone, vec![v3(0., 30., 300.)]));
+    for _ in 0..600 { w.step_with(&Input::default(), &FlightInput { lift: -0.2, ..Default::default() }, 1.0 / 60.0); }
+    assert!(w.cam.pos.y >= w.terrain.height(w.cam.pos.x, w.cam.pos.z) + 0.89);
+}

@@ -242,6 +242,7 @@ impl Raster {
             match mk.kind {
                 MarkerKind::Beacon => lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 60., 0.), v3(7.0, 120.0, 7.0), [1.0, 0.85, 0.25])),
                 MarkerKind::Ring => lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [0.25, 0.75, 1.0])),
+                MarkerKind::AirRing | MarkerKind::AirNext | MarkerKind::Pad | MarkerKind::Zone => {} // drawn from raster::models (Task 6)
                 MarkerKind::Next => {
                     lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [1.0, 0.35, 0.85]));
                     lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 7.5, 0.), v3(1.5, 15.0, 1.5), [1.0, 0.35, 0.85]));

@@ -6,22 +6,27 @@ use super::vehicle::Vehicle;
 pub struct FollowCam { pub pos: V3, pub target: V3, heading: V3 }
 
 impl FollowCam {
-    pub fn new(v: &Vehicle) -> FollowCam {
-        let f = v.forward(); let heading = v3(f.x, 0.0, f.z).norm();
-        FollowCam { pos: v.pos - heading * 8.0 + v3(0.0, 3.5, 0.0), target: v.pos + v3(0.0, 1.2, 0.0), heading }
+    pub fn new(v: &Vehicle) -> FollowCam { FollowCam::new_for(v.pos, v.forward(), 8.0, 3.5) }
+
+    pub fn new_for(pos: V3, forward: V3, back: f32, up: f32) -> FollowCam {
+        let heading = v3(forward.x, 0.0, forward.z).norm();
+        FollowCam { pos: pos - heading * back + v3(0.0, up, 0.0), target: pos + v3(0.0, 1.2, 0.0), heading }
     }
 
-    pub fn update(&mut self, v: &Vehicle, t: &Terrain, dt: f32) {
-        let f = v.forward(); let want = v3(f.x, 0.0, f.z).norm();
+    pub fn update(&mut self, v: &Vehicle, t: &Terrain, dt: f32) { self.follow(v.pos, v.forward(), 8.0, 3.5, t, dt); }
+
+    /// Chase any target: `back` metres behind its smoothed heading and `up` metres above it, never under the terrain.
+    pub fn follow(&mut self, pos: V3, forward: V3, back: f32, up: f32, t: &Terrain, dt: f32) {
+        let want = v3(forward.x, 0.0, forward.z).norm();
         let k_h = 1.0 - (-4.0 * dt).exp();
         let h = self.heading + (want - self.heading) * k_h;
         if h.len() > 1e-3 { self.heading = h.norm(); }
-        let desired = v.pos - self.heading * 8.0 + v3(0.0, 3.5, 0.0);
+        let desired = pos - self.heading * back + v3(0.0, up, 0.0);
         let k = 1.0 - (-6.0 * dt).exp();
         self.pos = self.pos + (desired - self.pos) * k;
         let floor = t.height(self.pos.x, self.pos.z) + 0.9;
         if self.pos.y < floor { self.pos.y = floor; }
-        self.target = v.pos + v3(0.0, 1.2, 0.0) + self.heading * 3.0;
+        self.target = pos + v3(0.0, 1.2, 0.0) + self.heading * 3.0;
     }
 }
 

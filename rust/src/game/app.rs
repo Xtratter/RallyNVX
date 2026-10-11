@@ -22,23 +22,34 @@ pub const STAT_LEN: usize = 64;
 /// 2 running, 3 done), `[5]` time, `[6]` time limit, `[7]` integrity, `[8]` distance to the target, `[9]` bearing to the
 /// target (rad, relative to the camera heading, positive = right), `[10]` next checkpoint, `[11]` checkpoint total,
 /// `[12]` result (0 none, 1 passed, 2 failed), `[13]` medal 0..3, `[14]` payout, `[15]` failure (1 time, 2 cargo,
-/// 3 abandoned), `[16]` money, `[17]` mission kind (0 cargo, 1 race), `[18]` run counter (bumped on every mission start).
+/// 3 abandoned, 4 crashed), `[16]` money, `[17]` mission kind (0 cargo, 1 race, 2 rings, 3 sling, 4 recon), `[18]` run counter
+/// (bumped on every mission start), `[19]` altitude above ground, `[20]` aircraft (0 none, 1 heli, 2 drone), `[21]` rope taut,
+/// `[22]` target height above the aircraft.
 pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, payout: u32, fps: f32, frame_ms: f32, seed: u64, run: u32) {
+    use crate::game::flight::AircraftKind;
     use crate::game::missions::MissionKind;
     use crate::game::run::{bearing, Failure, Outcome, Phase};
     *out = [0.0; STAT_LEN];
     out[0] = fps; out[1] = w.vehicle.vel.len() * 3.6; out[2] = (seed & 0xFF_FFFF) as f32; out[3] = frame_ms; out[16] = money as f32; out[18] = run as f32;
-    let Some(r) = &w.mission else { return };
-    out[4] = match r.phase() { Phase::Ready => 1.0, Phase::Running => 2.0, Phase::Done => 3.0 };
-    out[5] = r.time(); out[6] = r.mission().time_limit; out[7] = r.integrity();
-    out[10] = r.next_index() as f32; out[11] = r.mission().checkpoints.len() as f32;
-    out[17] = if r.mission().kind == MissionKind::Cargo { 0.0 } else { 1.0 };
-    if let Some(t) = r.target() {
-        out[8] = (t - w.vehicle.pos).len();
-        let h = (w.cam.target - w.cam.pos).norm();
-        out[9] = bearing(h.x, h.z, w.vehicle.pos, t);
+    if let Some(a) = &w.aircraft {
+        out[1] = a.vel.len() * 3.6;
+        out[19] = a.pos.y - w.terrain.height(a.pos.x, a.pos.z);
+        out[20] = if a.kind == AircraftKind::Heli { 1.0 } else { 2.0 };
+        if let Some(s) = &w.sling { out[21] = if s.attached && s.rope_taut(a.pos - crate::game::math::v3(0.0, 0.8, 0.0)) { 1.0 } else { 0.0 }; }
     }
-    match r.outcome() {
+    let Some(r) = w.run_info() else { return };
+    out[4] = match r.phase { Phase::Ready => 1.0, Phase::Running => 2.0, Phase::Done => 3.0 };
+    out[5] = r.time; out[6] = r.mission.time_limit; out[7] = r.integrity;
+    out[10] = r.next as f32; out[11] = r.total as f32;
+    out[17] = match r.mission.kind { MissionKind::Cargo => 0.0, MissionKind::Race => 1.0, MissionKind::Rings => 2.0, MissionKind::Sling => 3.0, MissionKind::Recon => 4.0 };
+    if let Some(t) = r.target {
+        let me = w.player_pos();
+        out[8] = (t - me).len();
+        let h = (w.cam.target - w.cam.pos).norm();
+        out[9] = bearing(h.x, h.z, me, t);
+        out[22] = t.y - me.y;
+    }
+    match r.outcome {
         Some(Outcome::Passed { medal, .. }) => { out[12] = 1.0; out[13] = medal as u8 as f32; out[14] = payout as f32; }
         Some(Outcome::Failed(f)) => { out[12] = 2.0; out[15] = match f { Failure::TimeUp => 1.0, Failure::CargoDestroyed => 2.0, Failure::Abandoned => 3.0, Failure::Crashed => 4.0 }; }
         None => {}
@@ -55,12 +66,12 @@ mod game {
     use std::time::Instant;
 
     use super::{fill_state, step_budget, STAT_LEN, STEP};
-    use crate::game::{input::Input, meta::Profile, missions::{roll, Mission}, run::{Outcome, Phase}, world::World};
+    use crate::game::{flight::FlightInput, input::Input, meta::Profile, missions::{roll, Mission}, run::{Outcome, Phase}, world::World};
     use crate::raster::Raster;
 
     /// World + renderer + fixed-step loop + optional profile and mission list. State layout: see `fill_state`.
     pub struct Game {
-        world: World, raster: Raster, pub input: Input,
+        world: World, raster: Raster, pub input: Input, pub flight: FlightInput,
         acc: f32, last: Instant, fps_n: u32, fps_t: Instant, fps: f32, seed: u64, frame_ms: f32,
         stats: Arc<Mutex<[f32; STAT_LEN]>>,
         profile: Option<Profile>, profile_path: Option<PathBuf>, missions: Vec<Mission>,
@@ -70,7 +81,7 @@ mod game {
     impl Game {
         pub fn new(raster: Raster, seed: u64, stats: Arc<Mutex<[f32; STAT_LEN]>>) -> Game {
             let seed = super::level_seed(seed);
-            Game { world: World::new(seed), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
+            Game { world: World::new(seed), raster, input: Input::default(), flight: FlightInput::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
                 profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0, run_id: 0 }
         }
@@ -95,11 +106,11 @@ mod game {
             let Some(m) = self.missions.get(index).cloned() else { return };
             self.seed = m.seed;
             self.world = World::for_mission(m);
-            self.input = Input::default();
+            self.input = Input::default(); self.flight = FlightInput::default();
             self.acc = 0.0; self.recorded = false; self.payout = 0; self.current = Some(index); self.paused = false; self.run_id = self.run_id.wrapping_add(1);
         }
         pub fn restart_mission(&mut self) { if let Some(i) = self.current { self.start_mission(i); } }
-        pub fn abort_mission(&mut self) { if let Some(r) = self.world.mission.as_mut() { r.abandon(); } }
+        pub fn abort_mission(&mut self) { self.world.abandon_mission(); }
         pub fn set_paused(&mut self, p: bool) { self.paused = p; self.last = Instant::now(); self.acc = 0.0; }
 
         pub fn speed_kmh(&self) -> f32 { self.world.vehicle.vel.len() * 3.6 }
@@ -110,12 +121,12 @@ mod game {
         /// A passed mission is recorded once (money, best medal, saved); failures are never recorded.
         fn record_if_done(&mut self) {
             if self.recorded { return; }
-            let Some(r) = &self.world.mission else { return };
-            if let (Some(Outcome::Passed { medal, time, .. }), Some(p)) = (r.outcome(), self.profile.as_mut()) {
-                self.payout = p.record(r.mission(), medal, time);
+            let Some(r) = self.world.run_info() else { return };
+            if let (Some(Outcome::Passed { medal, time, .. }), Some(p)) = (r.outcome, self.profile.as_mut()) {
+                self.payout = p.record(r.mission, medal, time);
                 if let Some(path) = &self.profile_path { let _ = p.save(path); }
                 self.recorded = true;
-            } else if r.phase() == Phase::Done { self.recorded = true; }
+            } else if r.phase == Phase::Done { self.recorded = true; }
         }
 
         pub fn frame(&mut self) {
@@ -124,7 +135,7 @@ mod game {
             self.last = now;
             if !self.paused {
                 for _ in 0..step_budget(&mut self.acc, dt, 6) {
-                    self.world.step(&self.input, STEP);
+                    self.world.step_with(&self.input, &self.flight, STEP);
                     self.input.reset = false;
                 }
                 self.record_if_done();
