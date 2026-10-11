@@ -72,6 +72,7 @@ fn mat_sample(layer: i32, uv: vec2<f32>) -> vec3<f32> {
     var a = mat_sample(0, uv) * w.x + mat_sample(1, uv) * w.y + mat_sample(2, uv) * w.z + mat_sample(3, uv) * w.w;
     let far = mat_sample(0, uv2) * w.x + mat_sample(1, uv2) * w.y + mat_sample(2, uv2) * w.z + mat_sample(3, uv2) * w.w;
     a = a * (0.65 + 0.7 * dot(far, vec3<f32>(0.33)) / max(dot(a, vec3<f32>(0.33)), 0.05) * 0.5);
+    a = pow(a, vec3<f32>(1.35));   // the maps are stored linear and bright; this deepens and saturates them
     let snow = smoothstep(34.0, 44.0, i.wp.y) * (1.0 - smoothstep(0.1, 0.3, 1.0 - n.y));
     a = mix(a, vec3<f32>(0.85, 0.86, 0.90), snow);
     return vec4<f32>(lit(a, i.wp, n), 1.0);
