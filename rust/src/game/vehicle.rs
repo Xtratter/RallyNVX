@@ -13,19 +13,17 @@ pub struct VehicleSpec {
     pub wheels: [V3; 4],
     pub rest: f32, pub radius: f32, pub spring: f32, pub damper: f32,
     pub engine_force: f32, pub brake_force: f32, pub max_speed: f32, pub mu: f32,
+    /// Handling constants (see docs/vehicles.md): steering angle limit and its speed fade, steering rate, lateral tyre
+    /// stiffness, rolling resistance, air drag, angular damping, handbrake rear grip factor, reverse speed factor,
+    /// suspension force cap in car weights per wheel.
+    pub steer_max: f32, pub steer_speed_ref: f32, pub steer_rate: f32, pub lateral_k: f32, pub rolling: f32,
+    pub aero: f32, pub ang_damp: f32, pub handbrake_grip: f32, pub reverse_factor: f32, pub max_susp_factor: f32,
 }
 
 impl VehicleSpec {
-    pub fn offroader() -> VehicleSpec {
-        let (m, w, h, l) = (1500.0f32, 2.0f32, 1.4f32, 4.2f32);
-        VehicleSpec {
-            mass: m,
-            inertia: v3(m / 12.0 * (h * h + l * l), m / 12.0 * (w * w + l * l), m / 12.0 * (w * w + h * h)),
-            wheels: [v3(-0.95, 0.0, 1.4), v3(0.95, 0.0, 1.4), v3(-0.95, 0.0, -1.4), v3(0.95, 0.0, -1.4)],
-            rest: 0.6, radius: 0.45, spring: 30000.0, damper: 3500.0,
-            engine_force: 14000.0, brake_force: 16000.0, max_speed: 35.0, mu: 1.1,
-        }
-    }
+    /// The off-roader, from `vehicles.json` (see docs/vehicles.md).
+    pub fn offroader() -> VehicleSpec { Self::by_id("offroader").expect("vehicles.json must define cars.offroader") }
+    pub fn by_id(id: &str) -> Option<VehicleSpec> { super::params::get().car(id) }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -63,8 +61,8 @@ impl Vehicle {
 
     pub fn step(&mut self, t: &Terrain, props: &[Prop], inp: &Input, dt: f32) {
         let inp = inp.sanitized();
-        let max_a = 0.55 / (1.0 + self.vel.len() / 15.0);
-        let rate = 3.0 * dt;
+        let max_a = self.spec.steer_max / (1.0 + self.vel.len() / self.spec.steer_speed_ref);
+        let rate = self.spec.steer_rate * dt;
         self.steer += (inp.steer * max_a - self.steer).clamp(-rate, rate);
         let h = dt / SUB as f32;
         for _ in 0..SUB { self.substep(t, &inp, h); }
@@ -87,7 +85,7 @@ impl Vehicle {
         let mut torque = V3::ZERO;
         self.contacts = 0;
         let wheel_mass = s.mass / 4.0;
-        let max_susp = 5.0 * G * wheel_mass;
+        let max_susp = s.max_susp_factor * G * wheel_mass;
         for w in 0..4 {
             self.comp[w] = 0.0;
             let front = w < 2;
@@ -112,11 +110,11 @@ impl Vehicle {
             let fw = (base - n * base.dot(n)).norm();
             let rw = n.cross(fw);
             let (vl, vf) = (vc.dot(rw), vc.dot(fw));
-            let lat_mu = if !front && inp.handbrake { s.mu * 0.4 } else { s.mu };
-            let mut fl = -vl * wheel_mass * 12.0;
-            let lim_speed = if inp.throttle >= 0.0 { s.max_speed } else { s.max_speed * 0.4 };
+            let lat_mu = if !front && inp.handbrake { s.mu * s.handbrake_grip } else { s.mu };
+            let mut fl = -vl * wheel_mass * s.lateral_k;
+            let lim_speed = if inp.throttle >= 0.0 { s.max_speed } else { s.max_speed * s.reverse_factor };
             let taper = (1.0 - (fspeed * inp.throttle.signum()).max(0.0) / lim_speed).clamp(0.0, 1.0);
-            let mut fx = inp.throttle * s.engine_force / 4.0 * taper - vf * 40.0;
+            let mut fx = inp.throttle * s.engine_force / 4.0 * taper - vf * s.rolling;
             if inp.brake || (inp.handbrake && !front) { fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0; }
             let lim = lat_mu * fs;
             let mag = fl.hypot(fx);
@@ -124,14 +122,14 @@ impl Vehicle {
             let tire = rw * fl + fw * fx;
             force = force + tire; torque = torque + r_c.cross(tire);
         }
-        force = force - self.vel * (self.vel.len() * 0.35);
+        force = force - self.vel * (self.vel.len() * s.aero);
         self.vel = self.vel + force * (h / s.mass);
         let wb = self.rot.conj().rotate(self.omega);
         let tb = self.rot.conj().rotate(torque);
         let iw = v3(s.inertia.x * wb.x, s.inertia.y * wb.y, s.inertia.z * wb.z);
         let gyro = wb.cross(iw);
         let acc_b = v3((tb.x - gyro.x) / s.inertia.x, (tb.y - gyro.y) / s.inertia.y, (tb.z - gyro.z) / s.inertia.z);
-        self.omega = (self.omega + self.rot.rotate(acc_b) * h) * (1.0 - 0.8 * h);
+        self.omega = (self.omega + self.rot.rotate(acc_b) * h) * (1.0 - s.ang_damp * h);
         self.pos = self.pos + self.vel * h;
         self.rot = self.rot.integrate(self.omega, h);
     }

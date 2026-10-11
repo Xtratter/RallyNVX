@@ -4,7 +4,6 @@ use super::props::{Prop, PropKind};
 use super::terrain::Terrain;
 use super::world::WORLD_LIMIT;
 
-pub const CEILING: f32 = 400.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum AircraftKind { Heli, Drone }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum Status { Flying, Landed, Crashed }
@@ -21,14 +20,15 @@ impl FlightInput {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct AircraftSpec { pub max_tilt: f32, pub tilt_lag: f32, pub max_speed: f32, pub drag: f32, pub vmax: f32, pub vacc: f32, pub yaw_rate: f32, pub yaw_lag: f32, pub radius: f32 }
+pub struct AircraftSpec {
+    pub max_tilt: f32, pub tilt_lag: f32, pub max_speed: f32, pub drag: f32, pub vmax: f32, pub vacc: f32, pub yaw_rate: f32, pub yaw_lag: f32, pub radius: f32,
+    /// Flight rules shared by all aircraft (from the `flight` section): ceiling in metres, the highest soft touchdown
+    /// speed along the ground normal (m/s), the largest soft tilt (rad) and the ground friction (1/s).
+    pub ceiling: f32, pub soft_speed: f32, pub soft_tilt: f32, pub ground_damp: f32,
+}
 impl AircraftSpec {
-    pub fn of(kind: AircraftKind) -> AircraftSpec {
-        match kind {
-            AircraftKind::Heli => AircraftSpec { max_tilt: 25f32.to_radians(), tilt_lag: 0.25, max_speed: 35.0, drag: 0.13, vmax: 6.0, vacc: 4.0, yaw_rate: 1.6, yaw_lag: 0.3, radius: 1.8 },
-            AircraftKind::Drone => AircraftSpec { max_tilt: 40f32.to_radians(), tilt_lag: 0.25, max_speed: 28.0, drag: 0.29, vmax: 10.0, vacc: 12.0, yaw_rate: 3.0, yaw_lag: 0.15, radius: 0.7 },
-        }
-    }
+    /// From `vehicles.json` (see docs/vehicles.md).
+    pub fn of(kind: AircraftKind) -> AircraftSpec { super::params::get().aircraft(kind) }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -73,7 +73,7 @@ impl Aircraft {
         if sp > s.max_speed { vh = vh * (s.max_speed / sp); }
         // vertical motion
         let mut vy = self.vel.y + (inp.lift * s.vmax - self.vel.y).clamp(-s.vacc * dt, s.vacc * dt);
-        if self.pos.y >= CEILING && vy > 0.0 { vy = 0.0; }
+        if self.pos.y >= s.ceiling && vy > 0.0 { vy = 0.0; }
         self.vel = v3(vh.x, vy, vh.z);
         self.pos = self.pos + self.vel * dt;
         // world wall
@@ -95,14 +95,14 @@ impl Aircraft {
             let into = -self.vel.dot(n);                       // speed into the ground along its normal (also covers hillsides)
             let tilt = self.pitch.abs().max(self.roll.abs());
             let landed = self.status == Status::Landed;
-            if into > 3.0 || (tilt > 20f32.to_radians() && !landed) { self.status = Status::Crashed; self.vel = V3::ZERO; return; }
+            if into > s.soft_speed || (tilt > s.soft_tilt && !landed) { self.status = Status::Crashed; self.vel = V3::ZERO; return; }
             if landed {                                         // sitting on its skids: the stick cannot tip it over
-                let m = 20f32.to_radians();
+                let m = s.soft_tilt;
                 self.pitch = self.pitch.clamp(-m, m); self.roll = self.roll.clamp(-m, m);
             }
             self.pos.y = g + 0.3;
             if into > 0.0 { self.vel = self.vel + n * into; }
-            let damp = (1.0 - 4.0 * dt).max(0.0);
+            let damp = (1.0 - s.ground_damp * dt).max(0.0);
             self.vel.x *= damp; self.vel.z *= damp;
             self.status = Status::Landed;
         } else if (self.status == Status::Landed && self.vel.y > 0.0) || self.pos.y - g > 0.5 {
