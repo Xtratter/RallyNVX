@@ -299,3 +299,12 @@ fn hull_free(w: &World) -> bool {
     let w = World::for_mission(m);
     assert!(w.vehicle.pos.x.abs() < 1e-3 && w.vehicle.pos.z.abs() < 1e-3);
 }
+#[test] fn driving_leaves_tracks_in_the_world_but_not_in_air_missions() {
+    let mut w = World::new(1);
+    for _ in 0..180 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+    assert!(w.tracks.len() > 0);
+    let mut a = World::for_mission(air(MissionKind::Rings, crate::game::flight::AircraftKind::Heli, vec![v3(0., 30., 100.)]));
+    for _ in 0..180 { a.step_with(&Input { throttle: 1.0, ..Default::default() }, &crate::game::flight::FlightInput::default(), 1.0 / 60.0); }
+    assert_eq!(a.tracks.len(), 0);
+}
+#[test] fn the_view_carries_the_tracks() { let mut w = World::new(1); for _ in 0..120 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); } assert_eq!(w.view(1).tracks.len(), w.tracks.len()); }

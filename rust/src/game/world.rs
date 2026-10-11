@@ -10,6 +10,7 @@ use super::input::Input;
 use super::missions::{ring_normal, Mission, MissionKind, GOAL_RADIUS, RING_RADIUS_DRONE, RING_RADIUS_HELI, ZONE_RADIUS};
 use super::run::{MissionRun, Outcome, Phase};
 use super::sling::Sling;
+use super::tracks::Tracks;
 use super::math::{v3, V3};
 use super::props::{tile_props, Prop};
 use super::terrain::{Terrain, TILE_SIZE};
@@ -29,6 +30,7 @@ pub struct World {
     pub sling: Option<Sling>,
     pub air: Option<AirRun>,
     pub cities: Vec<City>,
+    pub tracks: Tracks,
     props: HashMap<(i32, i32), Vec<Prop>>,
 }
 
@@ -38,7 +40,7 @@ impl World {
         let vehicle = Vehicle::new(VehicleSpec::offroader(), v3(0.0, terrain.height(0.0, 0.0) + 1.1, 0.0), 0.0);
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
-        World { terrain, vehicle, cam, time: 0.0, mission: None, aircraft: None, sling: None, air: None, cities, props: HashMap::new() }
+        World { terrain, vehicle, cam, time: 0.0, mission: None, aircraft: None, sling: None, air: None, cities, tracks: Tracks::new(), props: HashMap::new() }
     }
 
     pub fn step(&mut self, inp: &Input, dt: f32) { self.step_with(inp, &FlightInput::default(), dt); }
@@ -58,6 +60,7 @@ impl World {
         if v.pos.x.abs() >= WORLD_LIMIT { v.vel.x = 0.0; }
         if v.pos.z.abs() >= WORLD_LIMIT { v.vel.z = 0.0; }
         for c in &self.cities { c.resolve_hull(&mut self.vehicle.pos, &mut self.vehicle.vel, &mut self.vehicle.omega, self.vehicle.rot); }
+        self.tracks.update(&self.vehicle, &self.terrain, dt);
         self.cam.update(&self.vehicle, &self.terrain, dt);
         if let Some(r) = self.mission.as_mut() { r.update(&self.vehicle, &inp, inp.reset, dt); }
         self.time += dt;
@@ -243,7 +246,7 @@ pub struct WorldView<'a> {
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
     pub props: Vec<&'a Prop>, pub sun: V3, pub markers: Vec<Marker>,
-    pub aircraft: Option<Aircraft>, pub sling: Option<Sling>, pub time: f32, pub cities: &'a [City],
+    pub aircraft: Option<Aircraft>, pub sling: Option<Sling>, pub time: f32, pub cities: &'a [City], pub tracks: &'a Tracks,
 }
 
 impl World {
@@ -253,7 +256,7 @@ impl World {
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
         WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), markers: self.markers(),
-            aircraft: self.aircraft, sling: self.sling, time: self.time, cities: &self.cities }
+            aircraft: self.aircraft, sling: self.sling, time: self.time, cities: &self.cities, tracks: &self.tracks }
     }
 }
 
