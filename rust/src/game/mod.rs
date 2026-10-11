@@ -4,6 +4,7 @@ pub mod api;
 pub mod camera_follow;
 #[cfg(feature = "desktop")]
 pub mod desktop;
+pub mod flight;
 pub mod input;
 pub mod math;
 pub mod medals;
