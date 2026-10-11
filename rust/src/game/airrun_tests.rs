@@ -166,3 +166,85 @@ fn attached_run() -> (AirRun, Aircraft, Sling) {
     let (r, ..) = attached_run(); assert_eq!(r.target(V3::ZERO), Some(v3(500., 0., 0.)));
     assert_eq!((rings().total(), recon().total(), sling_run().total()), (3, 3, 2));
 }
+
+mod rescue {
+    use super::*;
+    use crate::game::airgen::rescue_people;
+    fn run(sites: usize, limit: f32) -> AirRun {
+        let mut pts: Vec<V3> = (0..sites).map(|i| v3(0., 0.3, 200.0 * (i as f32 + 1.0))).collect();
+        pts.push(v3(300., 0.3, 0.));
+        AirRun::new(mission(MissionKind::Rescue, AircraftKind::Heli, pts, limit))
+    }
+    fn land(r: &mut AirRun, a: &mut Aircraft, p: V3, secs: f32) { a.pos = p; a.vel = V3::ZERO; a.status = Status::Landed; for _ in 0..(secs / DT) as usize { r.update(a, None, None, true, DT); } }
+    fn fly(r: &mut AirRun, a: &mut Aircraft, p: V3, vy: f32) { a.pos = p; a.vel = v3(0., vy, 0.); a.status = Status::Flying; r.update(a, None, None, true, DT); }
+    #[test] fn boarding_takes_three_seconds_landed_inside_the_circle() {
+        let mut r = run(1, 300.0); let mut a = heli_at(v3(0., 20., 0.));
+        fly(&mut r, &mut a, v3(0., 20., 200.), 0.0);
+        land(&mut r, &mut a, v3(0., 0.3, 200.0), 1.5);
+        assert!(r.rescue_progress() > 0.4 && r.rescue_progress() < 0.6, "{}", r.rescue_progress());
+        assert_eq!((r.next_index(), r.rescue_loaded()), (0, 0));
+        land(&mut r, &mut a, v3(0., 0.3, 200.0), 1.6);
+        assert_eq!(r.next_index(), 1);
+        assert_eq!(r.rescue_loaded(), rescue_people(1, 1)[0]);
+        assert_eq!(r.rescue_progress(), 0.0);
+    }
+    #[test] fn leaving_the_circle_or_taking_off_resets_the_dwell() {
+        let mut r = run(1, 300.0); let mut a = heli_at(v3(0., 0., 0.));
+        land(&mut r, &mut a, v3(0., 0.3, 200.0), 2.0);
+        land(&mut r, &mut a, v3(9., 0.3, 200.0), 0.1);     // 9 m off the site
+        assert_eq!(r.rescue_progress(), 0.0);
+        land(&mut r, &mut a, v3(0., 0.3, 200.0), 2.0);
+        fly(&mut r, &mut a, v3(0., 3.0, 200.0), 1.0);      // takeoff
+        assert_eq!(r.rescue_progress(), 0.0);
+        land(&mut r, &mut a, v3(0., 0.3, 200.0), 2.5);
+        assert_eq!(r.next_index(), 0, "a bounce must not keep progress");
+    }
+    #[test] fn sites_are_served_in_order_and_the_base_only_counts_at_the_end() {
+        let mut r = run(2, 600.0); let mut a = heli_at(v3(0., 0., 0.));
+        land(&mut r, &mut a, v3(300., 0.3, 0.0), 3.0);     // the base before the sites: nothing
+        assert_eq!((r.next_index(), r.phase()), (0, Phase::Running));
+        land(&mut r, &mut a, v3(0., 0.3, 400.0), 3.5);     // site 2 before site 1: nothing
+        assert_eq!(r.next_index(), 0);
+        land(&mut r, &mut a, v3(0., 0.3, 200.0), 3.1);
+        land(&mut r, &mut a, v3(0., 0.3, 400.0), 3.1);
+        assert_eq!(r.next_index(), 2);
+        let want: u8 = rescue_people(1, 2).iter().sum();
+        assert_eq!(r.rescue_loaded(), want);
+        assert_eq!(r.target(a.pos), Some(v3(300., 0.3, 0.)));
+        land(&mut r, &mut a, v3(300., 0.3, 0.0), 1.0);
+        assert_eq!(r.phase(), Phase::Running, "unloading takes 2 s");
+        land(&mut r, &mut a, v3(300., 0.3, 0.0), 1.2);
+        assert_eq!(r.phase(), Phase::Done);
+        assert!(matches!(r.outcome(), Some(Outcome::Passed { medal: Medal::Gold, .. })));
+        assert_eq!(r.total(), 3);
+    }
+    #[test] fn a_hard_touchdown_hurts_the_passengers_a_soft_one_does_not() {
+        let mut r = run(1, 300.0); let mut a = heli_at(v3(0., 20., 0.));
+        fly(&mut r, &mut a, v3(0., 5., 100.0), -2.5); land(&mut r, &mut a, v3(0., 0.3, 100.0), 0.05);
+        assert_eq!(r.integrity(), 100.0);
+        fly(&mut r, &mut a, v3(0., 5., 100.0), -6.0); land(&mut r, &mut a, v3(0., 0.3, 100.0), 0.05);
+        assert!((r.integrity() - 76.0).abs() < 1e-3, "{}", r.integrity());
+        for _ in 0..4 { fly(&mut r, &mut a, v3(0., 5., 100.0), -9.0); land(&mut r, &mut a, v3(0., 0.3, 100.0), 0.02); }
+        assert_eq!(r.phase(), Phase::Done);
+        assert!(matches!(r.outcome(), Some(Outcome::Failed(Failure::CargoDestroyed))));
+    }
+    #[test] fn crash_time_up_and_abandon_end_the_run() {
+        let mut r = run(1, 300.0); let mut a = heli_at(v3(0., 20., 0.));
+        a.status = Status::Crashed; r.update(&a, None, None, true, DT);
+        assert!(matches!(r.outcome(), Some(Outcome::Failed(Failure::Crashed))));
+        let mut r = run(1, 2.0); let a = heli_at(v3(0., 20., 0.));
+        for _ in 0..200 { r.update(&a, None, None, true, DT); }
+        assert!(matches!(r.outcome(), Some(Outcome::Failed(Failure::TimeUp))));
+        let mut r = run(1, 300.0); r.abandon();
+        assert!(matches!(r.outcome(), Some(Outcome::Failed(Failure::Abandoned))));
+    }
+    #[test] fn pending_sites_list_their_people_and_shrink() {
+        let mut r = run(2, 600.0); let mut a = heli_at(v3(0., 0., 0.));
+        let ppl = rescue_people(1, 2);
+        let p = r.rescue_pending();
+        assert_eq!(p.iter().map(|x| x.1).collect::<Vec<_>>(), ppl);
+        assert_eq!(p[0].0, v3(0., 0.3, 200.));
+        land(&mut r, &mut a, v3(0., 0.3, 200.0), 3.1);
+        assert_eq!(r.rescue_pending().len(), 1);
+    }
+}
