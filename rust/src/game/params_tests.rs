@@ -8,7 +8,7 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     let (m, w, h, l) = (1500.0f32, 2.0f32, 1.4f32, 4.2f32);
     assert_eq!(c.mass, 1500.0);
     assert_eq!(c.inertia, v3(m / 12.0 * (h * h + l * l), m / 12.0 * (w * w + l * l), m / 12.0 * (w * w + h * h)));
-    assert_eq!(c.wheels, [v3(-0.95, 0.0, 1.4), v3(0.95, 0.0, 1.4), v3(-0.95, 0.0, -1.4), v3(0.95, 0.0, -1.4)]);
+    assert_eq!(c.wheels, [v3(-0.95, 0.35, 1.4), v3(0.95, 0.35, 1.4), v3(-0.95, 0.35, -1.4), v3(0.95, 0.35, -1.4)]);
     assert_eq!((c.rest, c.radius, c.spring, c.damper), (0.6, 0.45, 30000.0, 3500.0));
     assert_eq!((c.engine_force, c.brake_force, c.max_speed, c.mu), (14000.0, 16000.0, 35.0, 1.1));
     assert_eq!((c.steer_max, c.steer_speed_ref, c.steer_rate, c.lateral_k, c.rolling), (0.55, 15.0, 3.0, 12.0, 40.0));
@@ -48,7 +48,7 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     let rope0 = EMBEDDED.replacen("\"rope\": 8.0", "\"rope\": 0.0", 1);
     assert_ne!(rope0, EMBEDDED);
     let e = Params::from_json(&rope0).unwrap_err(); assert!(e.contains("rope"), "{e}");
-    let bad_wheels = EMBEDDED.replacen("[-0.95, 0.0, 1.4]", "[-0.95, 0.0]", 1);
+    let bad_wheels = EMBEDDED.replacen("[-0.95, 0.35, 1.4]", "[-0.95, 0.0]", 1);
     let e = Params::from_json(&bad_wheels).unwrap_err(); assert!(e.contains("wheel"), "{e}");
 }
 #[test] fn look_parses_with_defaults_overrides_and_readable_errors() {

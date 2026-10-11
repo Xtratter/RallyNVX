@@ -3,7 +3,7 @@
     "offroader": {
       "mass": 1500,
       "size": { "width": 2.0, "height": 1.4, "length": 4.2 },
-      "wheels": [[-0.95, 0.0, 1.4], [0.95, 0.0, 1.4], [-0.95, 0.0, -1.4], [0.95, 0.0, -1.4]],
+      "wheels": [[-0.95, 0.35, 1.4], [0.95, 0.35, 1.4], [-0.95, 0.35, -1.4], [0.95, 0.35, -1.4]],
       "suspension": { "rest": 0.6, "radius": 0.45, "spring": 30000, "damper": 3500, "max_force_factor": 5.0 },
       "engine_force": 14000,
       "brake_force": 16000,

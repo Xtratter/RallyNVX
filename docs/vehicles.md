@@ -10,7 +10,7 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 |---|---|
 | `mass` | kg; the moments of inertia are computed from it and `size` |
 | `size.width/height/length` | m, the body box used for inertia |
-| `wheels` | four `[x, y, z]` suspension mounts in the body frame: front left, front right, rear left, rear right (+z forward, +x to the car's left) |
+| `wheels` | four `[x, y, z]` suspension mounts in the body frame: front left, front right, rear left, rear right (+z forward, +x to the car's left). The centre of mass is at the body origin, so the mount height `y` sets how low it sits: the ground is `rest + radius - y` below it. Rollover needs `half_track / that height` above `grip`, otherwise the car rolls before it slides (offroader: 0.95 / 0.70 = 1.36 against 1.1) |
 | `suspension.rest` | spring rest length, m |
 | `suspension.radius` | wheel radius, m |
 | `suspension.spring`, `damper` | N/m and N·s/m per wheel |
@@ -55,7 +55,7 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 |---|---|
 | `mass` | кг; по ней и по `size` считаются моменты инерции |
 | `size.width/height/length` | м, габаритный бокс для инерции |
-| `wheels` | четыре точки подвески `[x, y, z]` в системе кузова: переднее левое, переднее правое, заднее левое, заднее правое (+z вперёд, +x влево от машины) |
+| `wheels` | четыре точки подвески `[x, y, z]` в системе кузова: переднее левое, переднее правое, заднее левое, заднее правое (+z вперёд, +x влево от машины). Центр масс находится в начале координат кузова, поэтому высота точки `y` задаёт, насколько он низко: земля ниже него на `rest + radius - y`. Чтобы машина скользила раньше, чем опрокинется, `полуколея / эта высота` должна быть больше `grip` (внедорожник: 0,95 / 0,70 = 1,36 против 1,1) |
 | `suspension.rest` | длина пружины в покое, м |
 | `suspension.radius` | радиус колеса, м |
 | `suspension.spring`, `damper` | Н/м и Н·с/м на колесо |

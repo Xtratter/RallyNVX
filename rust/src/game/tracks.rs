@@ -27,7 +27,7 @@ impl Tracks {
     pub fn update(&mut self, v: &Vehicle, t: &Terrain, _dt: f32) {
         let up = v.up();
         for w in 0..4 {
-            if v.comp[w] <= 0.0 || v.vel.len() < 2.0 { self.last[w] = None; continue; }
+            if v.comp[w] <= 0.0 || v.vel.x.hypot(v.vel.z) < 2.0 { self.last[w] = None; continue; }
             let s = &v.spec;
             let p = v.pos + v.rot.rotate(s.wheels[w]) - up * (s.rest + s.radius - v.comp[w]);
             let h = t.height(p.x, p.z); let n = t.normal(p.x, p.z);

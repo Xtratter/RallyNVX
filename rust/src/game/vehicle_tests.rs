@@ -6,14 +6,14 @@ fn flat_car(y: f32) -> (Vehicle, Terrain) { (Vehicle::new(VehicleSpec::offroader
     let (mut v, t) = flat_car(1.1);
     run(&mut v, &t, Input::default(), 4.0);
     assert!(v.vel.len() < 0.15, "vel {}", v.vel.len());
-    assert!(v.pos.y > 0.8 && v.pos.y < 1.1, "y {}", v.pos.y);
+    assert!(v.pos.y > 0.5 && v.pos.y < 0.8, "y {}", v.pos.y);
     assert!(v.up().y > 0.99);
 }
 #[test] fn accelerates_to_a_sane_top_speed() {
     let (mut v, t) = flat_car(1.1);
     run(&mut v, &t, Input { throttle: 1.0, ..Default::default() }, 15.0);
     assert!(v.speed() > 18.0 && v.speed() < 40.0, "speed {}", v.speed());
-    assert!(v.pos.y > 0.7 && v.pos.y < 1.4, "y {}", v.pos.y);
+    assert!(v.pos.y > 0.4 && v.pos.y < 1.1, "y {}", v.pos.y);
     assert!(v.up().y > 0.95);
 }
 #[test] fn brakes_to_a_stop() {
@@ -40,7 +40,7 @@ fn flat_car(y: f32) -> (Vehicle, Terrain) { (Vehicle::new(VehicleSpec::offroader
 #[test] fn lands_from_a_drop_without_exploding() {
     let (mut v, t) = flat_car(6.0);
     run(&mut v, &t, Input::default(), 4.0);
-    assert!(v.pos.is_finite() && v.pos.y > 0.8 && v.pos.y < 1.1, "y {}", v.pos.y);
+    assert!(v.pos.is_finite() && v.pos.y > 0.5 && v.pos.y < 0.8, "y {}", v.pos.y);
     assert!(v.vel.len() < 0.5);
 }
 #[test] fn big_steps_stay_finite() {
@@ -87,4 +87,30 @@ fn flat_car(y: f32) -> (Vehicle, Terrain) { (Vehicle::new(VehicleSpec::offroader
     v.vel = v3(0., 0., 6.);
     run(&mut v, &t, Input::default(), 4.0);
     assert!(v.vel.len() < 0.5, "still sliding at {}", v.vel.len());
+}
+fn never_rolls(throttle_pre: f32, secs_pre: f32, steer: f32, thr: f32) -> (bool, f32) {
+    let (mut v, t) = flat_car(1.1);
+    run(&mut v, &t, Input { throttle: throttle_pre, ..Default::default() }, secs_pre);
+    let mut worst: f32 = 1.0;
+    for _ in 0..(5.0 / DT) as usize {
+        v.step(&t, &[], &Input { throttle: thr, steer, ..Default::default() }, DT);
+        worst = worst.min(v.up().y);
+    }
+    (worst > 0.7, worst)
+}
+#[test] fn hard_turns_on_flat_ground_do_not_roll_the_car() {
+    for (pre, secs) in [(0.4, 3.0), (0.7, 5.0), (1.0, 8.0), (1.0, 15.0)] {
+        for steer in [1.0, -1.0] {
+            for thr in [1.0, 0.0] {
+                let (ok, worst) = never_rolls(pre, secs, steer, thr);
+                assert!(ok, "rolled: pre {pre}/{secs}s steer {steer} throttle {thr}: up.y min {worst}");
+            }
+        }
+    }
+}
+#[test] fn centre_of_mass_is_low_enough_to_slide_before_it_rolls() {
+    let s = VehicleSpec::offroader();
+    let h = s.rest + s.radius - s.wheels[0].y;                    // centre of mass above the ground at rest
+    let half_track = s.wheels[0].x.abs();
+    assert!(half_track / h > s.mu * 1.15, "rollover limit {} g vs grip {} g", half_track / h, s.mu);
 }
