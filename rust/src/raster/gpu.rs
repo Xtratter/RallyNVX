@@ -26,9 +26,9 @@ const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Uni {
     vp: [f32; 16], light_vp: [f32; 16], inv_vp: [f32; 16],
-    cam: [f32; 4], sun: [f32; 4], fog: [f32; 4], sky_top: [f32; 4], sky_hor: [f32; 4],
+    cam: [f32; 4], sun: [f32; 4], fog: [f32; 4], sky_top: [f32; 4], sky_hor: [f32; 4], sun_col: [f32; 4],
 }
-const _: () = assert!(std::mem::size_of::<Uni>() == 272);
+const _: () = assert!(std::mem::size_of::<Uni>() == 288);
 
 /// One instance: model matrix, per-axis scale (for normals), colour. Matches the instance vertex layout (96 bytes).
 #[repr(C)]
@@ -303,7 +303,9 @@ impl Raster {
         let light_vp = mat_mul(ortho(-70., 70., -70., 70., 1., 300.), look_at(centre + wv.sun * 150.0, centre, up));
         let uni = Uni { vp: flatten(vp), light_vp: flatten(light_vp), inv_vp: flatten(inverse(vp)),
             cam: [wv.cam_pos.x, wv.cam_pos.y, wv.cam_pos.z, 0.], sun: [wv.sun.x, wv.sun.y, wv.sun.z, 0.],
-            fog: [1.0 / 330.0, wv.time, 0., 0.], sky_top: [0.22, 0.42, 0.80, 0.], sky_hor: [0.70, 0.80, 0.90, 0.] };
+            fog: [1.0 / 330.0, wv.time, 0., 0.], sky_top: [wv.daylight.sky_top[0], wv.daylight.sky_top[1], wv.daylight.sky_top[2], 0.],
+            sky_hor: [wv.daylight.sky_hor[0], wv.daylight.sky_hor[1], wv.daylight.sky_hor[2], 0.],
+            sun_col: [wv.daylight.sun_col[0], wv.daylight.sun_col[1], wv.daylight.sun_col[2], 0.] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // terrain tiles: nearest first, a few per frame; the old LOD stays drawn until its replacement exists
@@ -480,7 +482,7 @@ impl Raster {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.5, g: 0.6, b: 0.7, a: 1.0 }), store: wgpu::StoreOp::Store } })],
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: wv.daylight.sky_hor[0] as f64 * 0.7, g: wv.daylight.sky_hor[1] as f64 * 0.7, b: wv.daylight.sky_hor[2] as f64 * 0.7, a: 1.0 }), store: wgpu::StoreOp::Store } })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.depth.1,
                     depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }), stencil_ops: None }),
                 timestamp_writes: None, occlusion_query_set: None });

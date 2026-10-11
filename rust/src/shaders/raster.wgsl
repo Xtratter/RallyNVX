@@ -1,12 +1,34 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
-    cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>,
+    cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
 @group(0) @binding(2) var shadow_smp: sampler_comparison;
 @group(0) @binding(3) var mat_tex: texture_2d_array<f32>;
 @group(0) @binding(4) var mat_smp: sampler;
+
+fn hash2(p: vec2<f32>) -> f32 { return fract(sin(dot(p, vec2<f32>(12.9898, 78.233))) * 43758.5453); }
+
+fn sky_gradient(dir: vec3<f32>) -> vec3<f32> {
+    let t = clamp(dir.y * 1.6, 0.0, 1.0);
+    let c = mix(u.sky_hor.rgb, u.sky_top.rgb, sqrt(t));
+    return mix(c, u.sky_hor.rgb * 1.05, (1.0 - smoothstep(0.0, 0.12, dir.y)) * 0.6);
+}
+
+fn vnoise2(p: vec2<f32>) -> f32 {
+    let i = floor(p); let f = fract(p);
+    let s = f * f * (3.0 - 2.0 * f);
+    let a = hash2(i); let b = hash2(i + vec2<f32>(1.0, 0.0));
+    let c = hash2(i + vec2<f32>(0.0, 1.0)); let d = hash2(i + vec2<f32>(1.0, 1.0));
+    return mix(mix(a, b, s.x), mix(c, d, s.x), s.y);
+}
+
+fn fbm2(p0: vec2<f32>) -> f32 {
+    var p = p0; var a = 0.5; var s = 0.0;
+    for (var i = 0; i < 4; i++) { s += a * vnoise2(p); p = p * 2.03 + vec2<f32>(17.0, 9.0); a *= 0.5; }
+    return s;
+}
 
 fn finish(c: vec3<f32>) -> vec3<f32> {
     let t = vec3<f32>(1.0) - exp(-c * 1.15);
@@ -37,11 +59,13 @@ fn shade(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: f32) 
     let sh = shadow_at(wp, n);
     let diff = max(dot(n, sun), 0.0) * sh;
     let amb = mix(vec3<f32>(0.20, 0.22, 0.26), u.sky_top.rgb * 0.55, n.y * 0.5 + 0.5);
-    var c = albedo * (vec3<f32>(1.0, 0.93, 0.80) * 2.6 * diff + amb);
+    var c = albedo * (u.sun_col.rgb * diff + amb);
     if (sharp > 0.0) {
         let v = normalize(u.cam.xyz - wp);
         let h = normalize(sun + v);
-        c = c + vec3<f32>(1.0, 0.95, 0.85) * spec * pow(max(dot(n, h), 0.0), sharp) * sh * step(0.0, dot(n, sun));
+        c = c + u.sun_col.rgb * 0.4 * spec * pow(max(dot(n, h), 0.0), sharp) * sh * step(0.0, dot(n, sun));
+        let fr = pow(1.0 - max(dot(n, v), 0.0), 4.0);
+        c = c + sky_gradient(reflect(-v, n)) * fr * spec * 0.5;
     }
     let d = length(wp - u.cam.xyz);
     let f = 1.0 - exp(-d * u.fog.x);
@@ -58,7 +82,6 @@ struct TOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @lo
     return u.light_vp * vec4<f32>(p, 1.0);
 }
 
-fn hash2(p: vec2<f32>) -> f32 { return fract(sin(dot(p, vec2<f32>(12.9898, 78.233))) * 43758.5453); }
 
 fn mat_sample(layer: i32, uv: vec2<f32>) -> vec3<f32> {
     return textureSample(mat_tex, mat_smp, uv, layer).rgb;
@@ -173,10 +196,19 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     let ndc = vec4<f32>(i.uv.x * 2.0 - 1.0, 1.0 - i.uv.y * 2.0, 1.0, 1.0);
     let w = u.inv_vp * ndc;
     let dir = normalize(w.xyz / w.w - u.cam.xyz);
-    let t = clamp(dir.y * 1.6, 0.0, 1.0);
-    var c = mix(u.sky_hor.rgb, u.sky_top.rgb, sqrt(t));
-    c = mix(c, u.sky_hor.rgb * 1.05, (1.0 - smoothstep(0.0, 0.12, dir.y)) * 0.6);
-    let s = max(dot(dir, normalize(u.sun.xyz)), 0.0);
-    c = c + vec3<f32>(1.0, 0.85, 0.6) * (pow(s, 600.0) * 8.0 + pow(s, 12.0) * 0.18);
+    var c = sky_gradient(dir);
+    let sd = normalize(u.sun.xyz);
+    let s = max(dot(dir, sd), 0.0);
+    // clouds: noise on a plane above the viewer, drifting with the wind
+    if (dir.y > 0.02) {
+        let p = dir.xz / (dir.y + 0.12) * 0.35 + vec2<f32>(u.fog.y * 0.012, u.fog.y * 0.004);
+        let n = fbm2(p);
+        let cov = smoothstep(0.50, 0.78, n) * smoothstep(0.02, 0.25, dir.y);
+        let lit_side = clamp(0.55 + 0.6 * dot(vec2<f32>(0.0), p) + 0.45 * (1.0 - n), 0.0, 1.0);
+        let sun_tint = normalize(u.sun_col.rgb + vec3<f32>(0.001)) * 1.7;
+        let cloud = mix(vec3<f32>(0.62, 0.65, 0.72), vec3<f32>(1.0, 0.98, 0.95) * sun_tint, lit_side);
+        c = mix(c, cloud, cov * 0.92);
+    }
+    c = c + u.sun_col.rgb * 0.4 * (pow(s, 600.0) * 8.0 + pow(s, 12.0) * 0.18);
     return vec4<f32>(finish(c), 1.0);
 }
