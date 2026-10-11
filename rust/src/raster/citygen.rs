@@ -23,7 +23,7 @@ pub fn city_parts(cities: &[City], cam: V3, radius: f32, budget: usize, shadow_r
         for t in &c.tiles {
             let (cx, cz) = ((t.min_x + t.max_x) * 0.5, (t.min_z + t.max_z) * 0.5);
             let (sx, sz) = (t.max_x - t.min_x, t.max_z - t.min_z);
-            let (h, color) = match t.kind { TileKind::Asphalt => (0.1, [0.16, 0.16, 0.18]), TileKind::Slab => (0.25, [0.55, 0.55, 0.52]), TileKind::Park => (0.3, [0.22, 0.45, 0.20]) };
+            let (h, color) = match t.kind { TileKind::Asphalt => (0.04, [0.16, 0.16, 0.18]), TileKind::Slab => (0.12, [0.55, 0.55, 0.52]), TileKind::Park => (0.15, [0.22, 0.45, 0.20]) };
             let lift = if t.kind == TileKind::Asphalt { 0.02 } else { 0.0 };
             let p = Part { mesh: 0, rot: Q::IDENT, pos: v3(cx, t.y + h * 0.5 + lift, cz), scale: v3(sx, h, sz), color, glow: false, facade: false };
             if dist(&p, cam) <= radius + sx.max(sz) * 0.5 { tiles.push(p); }

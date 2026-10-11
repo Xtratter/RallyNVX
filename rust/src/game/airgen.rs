@@ -1,4 +1,5 @@
 //! Point generation for air missions (rings, sling pads, recon zones).
+use super::city::City;
 use super::math::{v3, V3};
 use super::missions::nearest_ok;
 use super::terrain::{hash01, Terrain};
@@ -42,6 +43,22 @@ pub fn recon_points(t: &Terrain, key: u64) -> Vec<V3> {
         let (x, z) = (clampw(centre.x + r * th.cos()), clampw(centre.z + r * th.sin()));
         v3(x, t.height(x, z) + 20.0 + 80.0 * hash01(key, 300 + i as i32, 6), z)
     }).collect()
+}
+
+
+/// Lifts every ring above the tallest building it would touch (ring radius `r` plus 5 m of margin and 2 m of clearance).
+pub fn clear_of_buildings(t: &Terrain, seed: u64, pts: &mut [V3], r: f32) {
+    let cities: Vec<City> = t.sites().iter().map(|s| City::build(*s, seed)).collect();
+    for p in pts.iter_mut() {
+        for c in &cities {
+            loop {
+                let top = c.buildings_near(*p, r + 6.0).into_iter()
+                    .filter(|b| p.x >= b.min.x - r - 5.0 && p.x <= b.max.x + r + 5.0 && p.z >= b.min.z - r - 5.0 && p.z <= b.max.z + r + 5.0 && p.y - r - 2.0 < b.max.y)
+                    .map(|b| b.max.y).fold(None, |a: Option<f32>, h| Some(a.map_or(h, |x| x.max(h))));
+                match top { Some(h) => p.y = h + r + 3.0, None => break }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

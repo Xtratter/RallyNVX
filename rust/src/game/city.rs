@@ -105,17 +105,22 @@ impl City {
     }
 
     /// Deepest overlap of a sphere with a building: (push-out vector, surface normal).
-    pub fn push_out(&self, p: V3, r: f32) -> Option<(V3, V3)> {
+    pub fn push_out(&self, p: V3, r: f32) -> Option<(V3, V3)> { self.overlap(p, r, true) }
+
+    fn overlap(&self, p: V3, r: f32, roofs: bool) -> Option<(V3, V3)> {
         let mut best: Option<(f32, V3, V3)> = None;
         for b in self.buildings_near(p, r + 1.0) {
             let q = v3(p.x.clamp(b.min.x, b.max.x), p.y.clamp(b.min.y, b.max.y), p.z.clamp(b.min.z, b.max.z));
             let d = p - q; let dist = d.len();
             let (depth, normal) = if dist > 1e-5 {
                 if dist >= r { continue; }
-                (r - dist, d * (1.0 / dist))
+                let n = d * (1.0 / dist);
+                if !roofs && n.y > 0.5 { continue; }               // the car never rides on a roof: ignore contacts from above
+                (r - dist, n)
             } else {
-                // centre inside the box: leave through the nearest face
-                let faces = [(p.x - b.min.x, v3(-1., 0., 0.)), (b.max.x - p.x, v3(1., 0., 0.)), (p.z - b.min.z, v3(0., 0., -1.)), (b.max.z - p.z, v3(0., 0., 1.)), (b.max.y - p.y, v3(0., 1., 0.))];
+                // centre inside the box: leave through the nearest face (the top face only when roofs count)
+                let mut faces = vec![(p.x - b.min.x, v3(-1., 0., 0.)), (b.max.x - p.x, v3(1., 0., 0.)), (p.z - b.min.z, v3(0., 0., -1.)), (b.max.z - p.z, v3(0., 0., 1.))];
+                if roofs { faces.push((b.max.y - p.y, v3(0., 1., 0.))); }
                 let (pen, n) = faces.iter().cloned().fold((f32::MAX, V3::ZERO), |a, f| if f.0 < a.0 { f } else { a });
                 (pen + r, n)
             };
@@ -134,16 +139,20 @@ impl City {
         })
     }
 
-    /// Pushes the car hull (three spheres along the body) out of the buildings and removes the velocity into the wall.
-    pub fn resolve_hull(&self, pos: &mut V3, vel: &mut V3, rot: Q) {
+    /// Pushes the car hull (three spheres along the body) out of the buildings sideways, removes the velocity into the
+    /// wall, damps the slip along it and the rotation (so glancing hits do not trip the car).
+    pub fn resolve_hull(&self, pos: &mut V3, vel: &mut V3, omega: &mut V3, rot: Q) {
         for _ in 0..3 {
             let mut moved = false;
             for z in [-1.4f32, 0.0, 1.4] {
                 let c = *pos + rot.rotate(v3(0.0, 0.5, z));
-                if let Some((push, n)) = self.push_out(c, 1.0) {
+                if let Some((push, n)) = self.overlap(c, 1.0, false) {
                     *pos = *pos + push;
                     let vn = vel.dot(n);
                     if vn < 0.0 { *vel = *vel - n * (vn * 1.2); }
+                    let tangent = *vel - n * vel.dot(n);
+                    *vel = *vel - tangent * 0.4;
+                    *omega = *omega * 0.4;
                     moved = true;
                 }
             }
@@ -169,7 +178,10 @@ pub fn city_sites(seed: u64, raw: &Terrain) -> [Option<CitySite>; 2] {
     let first = cands[0].1;
     let mut out = [Some(first), None];
     if hash01(key, 90, 0) >= 0.6 {
-        out[1] = cands.iter().skip(1).map(|c| c.1).find(|s| (s.centre - first.centre).len() >= 800.0);
+        out[1] = cands.iter().skip(1).map(|c| c.1).find(|s| {
+            let (dx, dz) = ((s.centre.x - first.centre.x).abs(), (s.centre.z - first.centre.z).abs());
+            (s.centre - first.centre).len() >= 800.0 && (dx >= 2.0 * HALF + 200.0 || dz >= 2.0 * HALF + 200.0)   // rims never overlap
+        });
     }
     out
 }

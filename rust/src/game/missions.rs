@@ -141,7 +141,9 @@ pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
             MissionKind::Race => { let g = pick_goal(&t, key, difficulty); (None, race_points(&t, key, g)) }
             MissionKind::Rings => {
                 let drone = hash01(key, slot as i32, 77) < 0.5;
-                (Some(if drone { AircraftKind::Drone } else { AircraftKind::Heli }), airgen::rings_points(&t, key, drone))
+                let mut pts = airgen::rings_points(&t, key, drone);
+                airgen::clear_of_buildings(&t, seed, &mut pts, if drone { RING_RADIUS_DRONE } else { RING_RADIUS_HELI });
+                (Some(if drone { AircraftKind::Drone } else { AircraftKind::Heli }), pts)
             }
             MissionKind::Sling => (Some(AircraftKind::Heli), airgen::sling_points(&t, key)),
             MissionKind::Recon => (Some(AircraftKind::Drone), airgen::recon_points(&t, key)),

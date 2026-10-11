@@ -6,7 +6,7 @@
 
 - Added: every level now has one or two procedural cities (about 530 x 530 m on a flat plateau): a grid of streets, blocks, parks and buildings of 4-90 m with windows; the tall buildings stand in the centre
 - Added: buildings are solid: the car cannot drive through them, an aircraft that touches a wall or underside crashes, and a helicopter or drone can land softly on a roof (so can the sling cargo)
-- Added: the quality setting also sets the city draw distance (400 / 600 / 700 m)
+- Added: the quality setting also sets the city draw distance (300 / 400 / 450 m)
 - Changed: levels look different from earlier versions for every seed (the terrain is flattened under cities); props and mission goals stay out of cities. City missions come next
 
 ## 2.2.1 - vehicle parameters in one file

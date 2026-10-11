@@ -14,7 +14,7 @@ use crate::game::{flight::AircraftKind, missions::{path_length, ring_normal, rol
             }
         }
         match m.kind {
-            MissionKind::Rings => { let hmax = if m.aircraft == Some(AircraftKind::Drone) { 120.0 } else { 90.0 };
+            MissionKind::Rings => { let hmax = (if m.aircraft == Some(AircraftKind::Drone) { 120.0 } else { 90.0f32 }).max(112.0);   // rings are lifted above tall buildings
                 assert!(m.checkpoints.iter().all(|p| p.y - t.height(p.x, p.z) <= hmax + 0.01)); assert!(m.length_m >= 450.0 && m.length_m <= 1700.0, "{}", m.length_m); }
             MissionKind::Sling => { let d = (m.checkpoints[1] - m.checkpoints[0]).len(); assert!(d >= 350.0 && d <= 1350.0, "{d}"); }
             MissionKind::Recon => { assert!(m.checkpoints.iter().all(|p| p.y - t.height(p.x, p.z) <= 100.01)); }
@@ -47,4 +47,15 @@ use crate::game::{flight::AircraftKind, missions::{path_length, ring_normal, rol
 #[test] fn rings_aircraft_varies_with_the_seed() {
     let kinds: std::collections::HashSet<_> = (0..40u64).map(|ps| roll(ps * 31, 0, 0)[4].aircraft.unwrap() as u8).collect();
     assert_eq!(kinds.len(), 2, "both heli and drone rings should occur");
+}
+use crate::game::city::City;
+#[test] fn rings_never_intersect_buildings() {
+    let mut checked = 0;
+    for ps in 0..300u64 { for m in roll(ps * 7919, (ps % 3) as u32, 0).into_iter().filter(|m| m.kind == MissionKind::Rings) {
+        let t = Terrain::new(m.seed);
+        let cities: Vec<City> = t.sites().iter().map(|s| City::build(*s, m.seed)).collect();
+        let r = if m.aircraft == Some(AircraftKind::Drone) { 6.0 } else { 8.0 };
+        for p in &m.checkpoints { for c in &cities { checked += 1; assert!(c.push_out(*p, r).is_none(), "ring at {p:?} touches a building, seed {ps}"); } }
+    } }
+    assert!(checked > 500, "{checked}");
 }

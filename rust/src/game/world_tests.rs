@@ -202,3 +202,17 @@ fn walled_world() -> World {
     assert!(!flat.place_near_city());
 }
 #[test] fn view_carries_the_cities() { let w = World::new(7); assert_eq!(w.view(1).cities.len(), w.cities.len()); }
+#[test] fn glancing_wall_hits_at_speed_do_not_roll_the_car() {
+    for deg in [20.0f32, 28.0, 35.0] {
+        let mut w = World::new(1);
+        let g = w.terrain.height(0., 40.);
+        w.cities = vec![City::from_buildings(CitySite { centre: v3(0., g, 20.), half: 264.0 }, vec![Building { min: v3(-200., g, 10.), max: v3(200., g + 30.0, 30.), color: 0 }])];
+        let yaw = (deg).to_radians();                          // yaw 0 = +z (towards the wall); 20-35 deg off perpendicular
+        // the whole run stays within 25 m of the origin, where no props are placed
+        w.vehicle = crate::game::vehicle::Vehicle::new(crate::game::vehicle::VehicleSpec::offroader(), v3(0.0, g + 1.1, -12.0), -yaw);
+        w.vehicle.vel = w.vehicle.forward() * 30.0;
+        for _ in 0..240 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+        assert!(w.vehicle.up().y > 0.5, "the car rolled over at {deg} deg: up.y {}", w.vehicle.up().y);
+        assert!(w.vehicle.pos.z <= 10.0 - 0.9 || w.vehicle.pos.z > 30.0 + 0.9 && false, "z {}", w.vehicle.pos.z);
+    }
+}

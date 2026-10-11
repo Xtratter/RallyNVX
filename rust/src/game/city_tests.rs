@@ -1,5 +1,5 @@
 use super::*;
-use crate::game::math::{v3, Q};
+use crate::game::math::{v3, Q, V3};
 fn site() -> CitySite { CitySite { centre: v3(1000.0, 20.0, -700.0), half: HALF } }
 fn rect_overlap(a: &Building, b: &Building) -> bool { a.min.x < b.max.x && a.max.x > b.min.x && a.min.z < b.max.z && a.max.z > b.min.z }
 
@@ -76,17 +76,17 @@ fn wall() -> City { City::from_buildings(site(), vec![Building { min: v3(990.0, 
 #[test] fn the_car_hull_stops_at_a_wall_even_at_speed_and_slides_along_it() {
     let c = wall();
     let mut pos = v3(960.0, 21.0, -680.0); let mut vel = v3(30.0, 0.0, 0.0);
-    for _ in 0..400 { pos = pos + vel * (1.0 / 60.0); c.resolve_hull(&mut pos, &mut vel, Q::axis_angle(v3(0., 1., 0.), std::f32::consts::FRAC_PI_2)); }
+    for _ in 0..400 { pos = pos + vel * (1.0 / 60.0); c.resolve_hull(&mut pos, &mut vel, &mut V3::ZERO, Q::axis_angle(v3(0., 1., 0.), std::f32::consts::FRAC_PI_2)); }
     assert!(pos.x <= 990.0 - 0.9, "the hull must stay outside the wall: x {}", pos.x);
     assert!(vel.x < 3.0, "velocity into the wall is removed: {}", vel.x);
     let mut pos = v3(985.0, 21.0, -700.0); let mut vel = v3(0.0, 0.0, 10.0);
-    for _ in 0..60 { pos = pos + vel * (1.0 / 60.0); c.resolve_hull(&mut pos, &mut vel, Q::IDENT); }
+    for _ in 0..60 { pos = pos + vel * (1.0 / 60.0); c.resolve_hull(&mut pos, &mut vel, &mut V3::ZERO, Q::IDENT); }
     assert!(vel.z > 8.0 && pos.z > -692.0, "sliding keeps most of the speed: {vel:?} {pos:?}");
 }
 #[test] fn a_car_teleported_inside_a_building_is_lifted_out() {
     let c = wall();
     let mut pos = v3(1000.0, 21.0, -680.0); let mut vel = v3(0.0, 0.0, 0.0);
-    for _ in 0..10 { c.resolve_hull(&mut pos, &mut vel, Q::IDENT); }
+    for _ in 0..10 { c.resolve_hull(&mut pos, &mut vel, &mut V3::ZERO, Q::IDENT); }
     let inside = pos.x > 990.0 - 1.0 && pos.x < 1010.0 + 1.0 && pos.z > -690.0 - 1.0 && pos.z < -670.0 + 1.0 && pos.y < 60.0;
     assert!(!inside, "still inside the box at {pos:?}");
 }
@@ -110,7 +110,11 @@ fn spread(t: &Terrain, s: &CitySite) -> f32 {
             assert!(s.centre.x.is_finite() && s.centre.y.is_finite());
             assert!(!t.in_city(0.0, 0.0, 100.0), "the spawn plateau must stay outside the cities");
         }
-        if sites.len() == 2 { assert!((sites[0].centre - sites[1].centre).len() >= 800.0, "sites too close"); }
+        if sites.len() == 2 {
+            assert!((sites[0].centre - sites[1].centre).len() >= 800.0, "sites too close");
+            let (dx, dz) = ((sites[0].centre.x - sites[1].centre.x).abs(), (sites[0].centre.z - sites[1].centre.z).abs());
+            assert!(dx >= 2.0 * HALF + 200.0 || dz >= 2.0 * HALF + 200.0, "plateau rims overlap: dx {dx} dz {dz}");
+        }
         for s in &sites { assert!(spread(&t, s) < 60.0, "seed {seed}: spread {}", spread(&t, s)); }
     }
     assert!(ones > 60 && twos > 60, "ones {ones} twos {twos}");
@@ -126,4 +130,24 @@ fn spread(t: &Terrain, s: &CitySite) -> f32 {
         if spread(&t, &c) < spread(&t, &s) - 1e-3 { flatter += 1; }
     }
     assert_eq!(flatter, 0, "a flatter candidate existed");
+}
+#[test] fn a_car_over_a_low_roof_is_never_pushed_up_onto_it() {
+    let c = City::from_buildings(site(), vec![Building { min: v3(990.0, 20.0, -690.0), max: v3(1010.0, 25.0, -670.0), color: 0 }]);
+    let mut pos = v3(1000.0, 25.5, -680.0); let mut vel = V3::ZERO;
+    c.resolve_hull(&mut pos, &mut vel, &mut V3::ZERO, Q::IDENT);
+    assert!(pos.y <= 25.5 + 1e-4, "the hull must not be lifted onto the roof, y {}", pos.y);
+    // teleported into the middle of a 4 m building: leaves sideways, not through the roof
+    let c = City::from_buildings(site(), vec![Building { min: v3(990.0, 20.0, -690.0), max: v3(1010.0, 24.0, -670.0), color: 0 }]);
+    let mut pos = v3(1000.0, 21.0, -680.0); let mut vel = V3::ZERO;
+    for _ in 0..30 { c.resolve_hull(&mut pos, &mut vel, &mut V3::ZERO, Q::IDENT); }
+    assert!(pos.y < 22.0, "popped onto the roof: y {}", pos.y);
+    assert!(pos.x < 990.0 || pos.x > 1010.0 || pos.z < -690.0 || pos.z > -670.0, "still inside the footprint at {pos:?}");
+}
+#[test] fn contact_damps_the_slip_and_the_rotation_so_glancing_hits_do_not_roll_the_car() {
+    let c = City::from_buildings(site(), vec![Building { min: v3(800.0, 20.0, -690.0), max: v3(1200.0, 60.0, -670.0), color: 0 }]);
+    let mut pos = v3(1000.0, 21.0, -692.0); let mut vel = v3(10.0, 0.0, 20.0);         // 26 deg into the -z face
+    let mut omega = v3(0.0, 0.0, 2.0);
+    c.resolve_hull(&mut pos, &mut vel, &mut omega, Q::IDENT);
+    assert!(omega.len() < 2.0 * 0.6, "rotation must be damped on contact: {omega:?}");
+    assert!(vel.x < 10.0, "tangential slip is reduced too: {vel:?}");
 }

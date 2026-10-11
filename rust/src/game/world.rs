@@ -57,7 +57,7 @@ impl World {
         v.pos.z = v.pos.z.clamp(-WORLD_LIMIT, WORLD_LIMIT);
         if v.pos.x.abs() >= WORLD_LIMIT { v.vel.x = 0.0; }
         if v.pos.z.abs() >= WORLD_LIMIT { v.vel.z = 0.0; }
-        for c in &self.cities { c.resolve_hull(&mut self.vehicle.pos, &mut self.vehicle.vel, self.vehicle.rot); }
+        for c in &self.cities { c.resolve_hull(&mut self.vehicle.pos, &mut self.vehicle.vel, &mut self.vehicle.omega, self.vehicle.rot); }
         self.cam.update(&self.vehicle, &self.terrain, dt);
         if let Some(r) = self.mission.as_mut() { r.update(&self.vehicle, &inp, inp.reset, dt); }
         self.time += dt;

@@ -182,7 +182,7 @@ impl Raster {
         let pl_sky = mk("sky", &lay_main, "vs_sky", Some("fs_sky"), &[], depth_state(false, wgpu::CompareFunction::Always, no_bias));
 
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
-        Raster { city_radius: 700.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
+        Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
             pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
