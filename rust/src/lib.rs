@@ -7,6 +7,7 @@ pub mod halton;
 pub mod params;
 pub mod presets;
 pub mod profile;
+pub mod raster;
 pub mod reproj;
 pub mod scene;
 pub mod scenegen;

@@ -66,6 +66,23 @@ impl World {
     pub fn sun_dir(&self) -> V3 { v3(0.45, 0.75, 0.35).norm() }
 }
 
+/// What a render backend may read; gameplay never touches the GPU.
+pub struct WorldView<'a> {
+    pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
+    pub cam_pos: V3, pub cam_target: V3,
+    pub props: Vec<&'a Prop>, pub sun: V3,
+}
+
+impl World {
+    /// Loaded props of the tiles within `r` of the camera tile.
+    pub fn view(&self, r: i32) -> WorldView<'_> {
+        let (cx, cz) = (tile_of(self.cam.pos.x), tile_of(self.cam.pos.z));
+        let mut props = Vec::new();
+        for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
+        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir() }
+    }
+}
+
 #[cfg(test)]
 #[path = "world_tests.rs"]
 mod tests;

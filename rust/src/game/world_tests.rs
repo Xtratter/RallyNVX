@@ -35,3 +35,10 @@ use crate::game::math::Q;
     let w = World::new(1); let s = w.sun_dir();
     assert!((s.len() - 1.0).abs() < 1e-4 && s.y > 0.3);
 }
+#[test] fn world_view_lists_props_and_vehicle() {
+    let mut w = World::new(17);
+    w.ensure_props(0, 0, 3);
+    let v = w.view(3);
+    assert!(!v.props.is_empty());
+    assert!(v.sun.len() > 0.99);
+}
