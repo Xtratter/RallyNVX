@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.5.1 - stability
+
+- Changed: the off-roader's centre of mass is 0.35 m lower relative to the wheels, so hard turns make it slide instead of rolling over (rollover limit 1.36 g against the tyre limit 1.1 g, before 0.9 g); the look is unchanged
+- Fixed: tyre tracks no longer appear while the car only drops straight down
+
 ## 2.5.0 - graphics I
 
 - Added: generated material textures for the terrain (grass, dirt, sand, rock) blended by height, slope and noise, with a second scale against visible tiling

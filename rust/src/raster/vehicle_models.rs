@@ -219,11 +219,11 @@ pub fn heli_poses(a: &Aircraft, t: f32) -> HeliPoses {
     }
 }
 
-/// The car body is drawn this far below the centre of mass (the body mesh starts at y = 0.30 of its own frame) so the
-/// sills clear the ground by about half a metre.
+/// The body mesh is drawn 0.75 body-heights below the suspension attachment height (its own frame starts at y = 0.30)
+/// so the sills clear the ground by about half a metre; the attachment height itself sits above the centre of mass.
 pub fn car_body_pose(v: &Vehicle) -> (Q, V3) {
     let sy = v.spec.size.y / 1.4;
-    (v.rot, v.pos + v.rot.rotate(v3(0.0, -0.75 * sy, 0.0)))
+    (v.rot, v.pos + v.rot.rotate(v3(0.0, v.spec.wheels[0].y - 0.75 * sy, 0.0)))
 }
 
 pub fn drone_poses(a: &Aircraft, t: f32) -> ((Q, V3), [(Q, V3); 4]) {
