@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.8.0 - sound
+
+- Added: procedural sound without files: car engine (pitch follows speed and throttle), rolling noise on ground and in water, tyre squeal, helicopter rotor, drone buzz, wind
+- Added: one-shot sounds for touchdown, crash, splash, checkpoint, boarding and mission success or failure
+- Added: a sound on/off button (remembered); the sound fades out on pause and when leaving the screen
+
 ## 2.7.0 - rescue
 
 - Added: helicopter rescue missions: fly to 1-3 survivor sites, land and wait while the people board, then land on the base pad and wait to unload; hard touchdowns hurt the passengers; reward +50 per person

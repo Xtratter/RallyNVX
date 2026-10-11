@@ -58,6 +58,10 @@ Air missions use a helicopter or a drone (the card shows which). Sticks released
 
 The sixth mission card rotates with each Refresh: sling, recon, **rescue**. In a rescue you fly the helicopter to 1-3 survivor sites (more on higher difficulty; 1-3 people each, at most 4 aboard), land inside the green circle and wait 3 seconds while they board, then land on the base pad and wait 2 seconds to unload. People waiting at a site are shown as orange-vested figures. A touchdown faster than 1.2 m/s hurts the passengers (integrity falls by 12 per m/s over 1.2; 3 m/s is already a crash); at 0 the mission fails. The medal uses time and integrity like the sling cargo; the reward adds 50 per person. The HUD shows sites done, people aboard and the boarding progress.
 
+## Sound
+
+All sound is synthesised in code (mono, 44.1 kHz, no files). The car has an engine whose pitch follows the speed and throttle, rolling noise on the ground and in water and tyre squeal in slides; the helicopter has blade thumps and a rotor hum, the drone a high buzz; wind grows with speed and height. One-shot sounds: touchdown, crash, splash, checkpoint chime, boarding tick, mission success and failure tunes. The 🔊/🔇 button at the top left (under the pause button) switches sound off and on and remembers the choice; the sound fades out while the game is paused or the screen is left. There is no music and no desktop sound yet; a volume slider comes with the settings screen.
+
 ## City
 
 Every level has one or two cities (about 530 x 530 m) standing on a flat plateau a few hundred metres from the start: a grid of streets, blocks, parks and buildings from 4 m to 90 m, the tallest in the centre. Buildings are solid: the car stops at them, an aircraft that touches a wall or the underside of a building crashes. A helicopter or drone can land softly on a roof (descent up to 3 m/s) and take off again; sling cargo rests on roofs. The Quality setting also sets how far the city is drawn: 300 m (Low), 400 m (Medium), 450 m (High). Desktop: `RAYTRACE_AT_CITY=1 raytrace-desktop --game` starts next to the first city, `RAYTRACE_CITY_RADIUS=500` sets the draw distance.
@@ -129,6 +133,10 @@ No garage, rescue missions or NPC orders yet, and only the raster renderer (mode
 ## Спасение
 
 Шестая карточка миссий меняется при каждом обновлении: подвес, разведка, **спасение**. В спасении вертолёт летит к 1–3 площадкам со спасёнными (на высокой сложности больше; по 1–3 человека, на борту не больше 4), садится в зелёный круг и ждёт 3 секунды, пока люди садятся, затем садится на площадку базы и ждёт 2 секунды высадки. Ждущие люди — фигурки в оранжевых жилетах. Касание быстрее 1,2 м/с ранит пассажиров (целостность падает на 12 за каждый м/с сверх 1,2; 3 м/с — уже авария); при нуле миссия проваливается. Медаль по времени и целостности, как у груза на подвесе; награда плюс 50 за человека. В HUD видно пройденные площадки, людей на борту и прогресс посадки.
+
+## Звук
+
+Весь звук синтезируется кодом (моно, 44,1 кГц, без файлов). У машины двигатель, тон которого следует за скоростью и газом, шум качения по земле и по воде и визг шин в заносе; у вертолёта хлопки лопастей и гул ротора, у дрона высокое жужжание; ветер растёт со скоростью и высотой. Разовые звуки: касание, авария, брызги, сигнал чекпойнта, щелчок посадки людей, мелодии успеха и провала миссии. Кнопка 🔊/🔇 слева сверху (под кнопкой паузы) включает и выключает звук и запоминает выбор; на паузе и при выходе с экрана звук затухает. Музыки и звука на десктопе пока нет; регулятор громкости появится с экраном настроек.
 
 ## Город
 
