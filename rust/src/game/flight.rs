@@ -1,7 +1,7 @@
 //! Arcade helicopter / drone: tilt-driven acceleration, auto-hover, soft landing vs crash.
 use super::math::{v3, Q, V3};
 use super::props::{Prop, PropKind};
-use super::terrain::Terrain;
+use super::ground::Ground;
 use super::world::WORLD_LIMIT;
 
 
@@ -53,7 +53,7 @@ impl Aircraft {
         Q::axis_angle(v3(0., 1., 0.), self.yaw).mul(Q::axis_angle(v3(1., 0., 0.), self.pitch)).mul(Q::axis_angle(v3(0., 0., 1.), self.roll))
     }
 
-    pub fn step(&mut self, t: &Terrain, props: &[Prop], inp: &FlightInput, dt: f32) {
+    pub fn step(&mut self, t: &dyn Ground, props: &[Prop], inp: &FlightInput, dt: f32) {
         if self.status == Status::Crashed { return; }
         let inp = inp.sanitized();
         let s = self.spec;
