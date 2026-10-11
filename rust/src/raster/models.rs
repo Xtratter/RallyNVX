@@ -65,7 +65,7 @@ pub fn ring_parts(centre: V3, normal: V3, radius: f32, next: bool) -> Vec<Part> 
     let color = if next { [1.0, 0.35, 0.85] } else { [0.25, 0.75, 1.0] };
     (0..16).map(|i| {
         let a = i as f32 / 16.0 * std::f32::consts::TAU;
-        part(CUBE, Q::IDENT, centre + (u * a.cos() + v * a.sin()) * radius, v3(1.1, 1.1, 1.1), color, true)
+        part(CUBE, Q::IDENT, centre + (u * a.cos() + v * a.sin()) * radius, v3(1.6, 1.6, 1.6), color, true)
     }).collect()
 }
 
