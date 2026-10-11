@@ -22,12 +22,12 @@ pub const STAT_LEN: usize = 64;
 /// 2 running, 3 done), `[5]` time, `[6]` time limit, `[7]` integrity, `[8]` distance to the target, `[9]` bearing to the
 /// target (rad, relative to the camera heading, positive = right), `[10]` next checkpoint, `[11]` checkpoint total,
 /// `[12]` result (0 none, 1 passed, 2 failed), `[13]` medal 0..3, `[14]` payout, `[15]` failure (1 time, 2 cargo,
-/// 3 abandoned), `[16]` money, `[17]` mission kind (0 cargo, 1 race).
-pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, payout: u32, fps: f32, frame_ms: f32, seed: u64) {
+/// 3 abandoned), `[16]` money, `[17]` mission kind (0 cargo, 1 race), `[18]` run counter (bumped on every mission start).
+pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, payout: u32, fps: f32, frame_ms: f32, seed: u64, run: u32) {
     use crate::game::missions::MissionKind;
     use crate::game::run::{bearing, Failure, Outcome, Phase};
     *out = [0.0; STAT_LEN];
-    out[0] = fps; out[1] = w.vehicle.vel.len() * 3.6; out[2] = (seed & 0xFF_FFFF) as f32; out[3] = frame_ms; out[16] = money as f32;
+    out[0] = fps; out[1] = w.vehicle.vel.len() * 3.6; out[2] = (seed & 0xFF_FFFF) as f32; out[3] = frame_ms; out[16] = money as f32; out[18] = run as f32;
     let Some(r) = &w.mission else { return };
     out[4] = match r.phase() { Phase::Ready => 1.0, Phase::Running => 2.0, Phase::Done => 3.0 };
     out[5] = r.time(); out[6] = r.mission().time_limit; out[7] = r.integrity();
@@ -64,7 +64,7 @@ mod game {
         acc: f32, last: Instant, fps_n: u32, fps_t: Instant, fps: f32, seed: u64, frame_ms: f32,
         stats: Arc<Mutex<[f32; STAT_LEN]>>,
         profile: Option<Profile>, profile_path: Option<PathBuf>, missions: Vec<Mission>,
-        current: Option<usize>, paused: bool, recorded: bool, payout: u32,
+        current: Option<usize>, paused: bool, recorded: bool, payout: u32, run_id: u32,
     }
 
     impl Game {
@@ -72,7 +72,7 @@ mod game {
             let seed = super::level_seed(seed);
             Game { world: World::new(seed), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0 }
+                profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0, run_id: 0 }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
@@ -96,7 +96,7 @@ mod game {
             self.seed = m.seed;
             self.world = World::for_mission(m);
             self.input = Input::default();
-            self.acc = 0.0; self.recorded = false; self.payout = 0; self.current = Some(index); self.paused = false;
+            self.acc = 0.0; self.recorded = false; self.payout = 0; self.current = Some(index); self.paused = false; self.run_id = self.run_id.wrapping_add(1);
         }
         pub fn restart_mission(&mut self) { if let Some(i) = self.current { self.start_mission(i); } }
         pub fn abort_mission(&mut self) { if let Some(r) = self.world.mission.as_mut() { r.abandon(); } }
@@ -136,7 +136,7 @@ mod game {
             let el = self.fps_t.elapsed().as_secs_f32();
             if el >= 0.5 { self.fps = self.fps_n as f32 / el; self.fps_n = 0; self.fps_t = Instant::now(); }
             let mut s = [0.0f32; STAT_LEN];
-            fill_state(&mut s, &self.world, self.profile.as_ref().map_or(0, |p| p.money), self.payout, self.fps, self.frame_ms, self.seed);
+            fill_state(&mut s, &self.world, self.profile.as_ref().map_or(0, |p| p.money), self.payout, self.fps, self.frame_ms, self.seed, self.run_id);
             *self.stats.lock().unwrap() = s;
         }
     }

@@ -105,9 +105,12 @@ pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
     let kinds = [MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race];
     kinds.iter().enumerate().map(|(slot, &kind)| {
         let key = profile_seed ^ ((round as u64) << 20) ^ ((slot as u64 + 1) * 0x9E37_79B9);
-        let seed = level_seed(key.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 8);
         let r = hash01(key, slot as i32, 9);
         let difficulty = if gold_medals >= 3 { 1 + (r * 3.0) as u8 % 3 } else { 1 + (r * 2.0) as u8 % 2 };
+        // difficulty is part of the identity: the same slot at another difficulty is a different mission
+        let mut h = key.wrapping_add((difficulty as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        h ^= h >> 33; h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD); h ^= h >> 33; h = h.wrapping_mul(0xC4CE_B9FE_1A85_EC53); h ^= h >> 33;
+        let seed = level_seed(h);
         let t = Terrain::new(seed);
         let goal = pick_goal(&t, key, difficulty);
         let checkpoints = if kind == MissionKind::Race { race_points(&t, key, goal) } else { vec![goal] };

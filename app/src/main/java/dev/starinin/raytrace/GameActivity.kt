@@ -38,6 +38,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var pausePanel: View? = null
     private var resultPanel: FrameLayout? = null
     private var resultShown = false
+    private var ignoreRun = -1f   // run counter ([18]) whose stale result must not reopen the panel after Retry
 
     private val tick = object : Runnable {
         override fun run() {
@@ -121,7 +122,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         pc.addView(label(t("Paused", "Пауза"), 22f))
         fun pbtn(text: String, onClick: () -> Unit) = pc.addView(M3Widgets.button(this, text, M3Widgets.ButtonKind.TONAL, onClick), LinearLayout.LayoutParams(px(220f), px(48f)).apply { topMargin = px(10f) })
         pbtn(t("Resume", "Продолжить")) { hidePause() }
-        pbtn(t("Restart", "Заново")) { Native.gameRestart(); resultShown = false; hidePause() }
+        pbtn(t("Restart", "Заново")) { ignoreRun = Native.gameStats()[18]; Native.gameRestart(); resultShown = false; hidePause() }
         pbtn(t("Abandon", "Бросить")) { Native.gameAbort(); finish() }
         pausePanel = panel(pc)
         // result panel (content filled when the result arrives)
@@ -141,7 +142,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         bar?.visibility = if (kind == 0) View.VISIBLE else View.GONE
         bar?.progress = s[7].toInt()
         arrow?.setAngle(s[9]); dist?.text = "${s[8].toInt()} m"
-        if (s[12] != 0f && !resultShown) showResult(s)
+        if (s[12] != 0f && !resultShown && s[18] != ignoreRun) showResult(s)
         if (s[12] == 0f && resultShown) { resultShown = false; resultPanel?.visibility = View.GONE }
     }
 
@@ -161,7 +162,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             val why = when (s[15].toInt()) { 1 -> t("Out of time", "Время вышло"); 2 -> t("Cargo destroyed", "Груз разбит"); else -> t("Abandoned", "Миссия брошена") }
             c.addView(label(t("Failed", "Провал") + ": " + why, 22f))
         }
-        c.addView(M3Widgets.button(this, t("Retry", "Ещё раз"), M3Widgets.ButtonKind.FILLED) { Native.gameRestart(); resultShown = false; p.visibility = View.GONE },
+        c.addView(M3Widgets.button(this, t("Retry", "Ещё раз"), M3Widgets.ButtonKind.FILLED) { ignoreRun = Native.gameStats()[18]; Native.gameRestart(); resultShown = false; p.visibility = View.GONE },
             LinearLayout.LayoutParams(px(220f), px(48f)).apply { topMargin = px(12f) })
         c.addView(M3Widgets.button(this, t("To missions", "К миссиям"), M3Widgets.ButtonKind.TONAL) { finish() },
             LinearLayout.LayoutParams(px(220f), px(48f)).apply { topMargin = px(8f) })
@@ -175,6 +176,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         if (running) { Native.gameResize(w, hh); return }
         Native.gameStart(h.surface, w, hh, seed, profile, mission)
         running = true
+        // the engine restarts after a surface loss (screen lock): stay paused if the pause panel is up
+        if (mission >= 0 && pausePanel?.visibility == View.VISIBLE) Native.gamePause(true)
     }
     override fun surfaceDestroyed(h: SurfaceHolder) { Native.gameStop(); running = false }
 

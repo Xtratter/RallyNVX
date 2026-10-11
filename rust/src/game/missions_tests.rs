@@ -60,3 +60,15 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
     assert!(line_ok(&t, v3(0., 0., 0.), v3(500., 0., 500.)));
     assert!(!point_ok(&t, v3(5000., 0., 0.)));
 }
+#[test] fn changing_difficulty_changes_the_mission_identity() {
+    // when a gold-medal count flips a slot's difficulty, the level seed must change too, so results
+    // recorded for the easier mission are not attached to the harder one
+    let mut flipped = 0;
+    for r in 0..60 {
+        let (a, b) = (roll(3, r, 2), roll(3, r, 3));
+        for (x, y) in a.iter().zip(&b) {
+            if x.difficulty != y.difficulty { flipped += 1; assert_ne!(x.seed, y.seed, "round {r}"); }
+        }
+    }
+    assert!(flipped > 0, "the probe must actually flip some difficulties");
+}

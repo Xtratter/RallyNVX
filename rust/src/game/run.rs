@@ -42,11 +42,13 @@ impl MissionRun {
         self.time += dt;
         let cargo = self.m.kind == MissionKind::Cargo;
         if cargo {
-            if !self.first {
+            // a reset zeroes the velocity: that is not an impact or a landing, it costs only its own 5
+            if reset_pressed { self.air_time = 0.0; }
+            else if !self.first {
                 let dv = (v.vel.x - self.prev_vel.x).hypot(v.vel.z - self.prev_vel.z);
                 if dv > 6.0 { self.integrity -= (dv - 6.0) * 2.5; }
             }
-            if v.contacts == 0 { self.air_time += dt; } else {
+            if reset_pressed { /* handled above */ } else if v.contacts == 0 { self.air_time += dt; } else {
                 if self.air_time > 0.4 && self.prev_vel.y < -7.0 { self.integrity -= (-self.prev_vel.y - 7.0) * 3.0; }
                 self.air_time = 0.0;
             }

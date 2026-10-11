@@ -131,3 +131,16 @@ fn cargo() -> MissionRun { MissionRun::new(mission(MissionKind::Cargo, vec![v3(0
     assert!((b(v3(10., 0., 0.)) + std::f32::consts::FRAC_PI_2).abs() < 1e-4);
     assert!((b(v3(0., 0., -10.)).abs() - std::f32::consts::PI).abs() < 1e-4);
 }
+#[test] fn reset_costs_only_5_even_at_speed_and_in_the_air() {
+    let mut r = cargo(); let mut v = car(0., 0.);
+    v.vel = v3(0., 0., 30.); r.update(&v, &gas(), false, DT);
+    v.vel = V3::ZERO; r.update(&v, &gas(), true, DT);              // reset zeroes the velocity at 30 m/s
+    assert!((r.integrity() - 95.0).abs() < 1e-3, "{}", r.integrity());
+    // reset while airborne after a fall: the landing rule must not fire on the zeroed velocity
+    let mut r = cargo(); let mut v = car(0., 0.);
+    v.contacts = 0; v.vel = v3(0., -15.0, 10.0);
+    for _ in 0..40 { r.update(&v, &gas(), false, DT); }
+    let before = r.integrity();
+    v.contacts = 4; v.vel = V3::ZERO; r.update(&v, &gas(), true, DT);
+    assert!((r.integrity() - (before - 5.0)).abs() < 1e-3, "{} vs {}", r.integrity(), before);
+}
