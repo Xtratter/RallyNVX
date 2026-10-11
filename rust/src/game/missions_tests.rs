@@ -22,6 +22,7 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
     for r in 0..20 { for m in roll(5, r, 0) {
         match m.kind {
             MissionKind::Cargo => assert_eq!(m.checkpoints, vec![m.goal]),
+            MissionKind::Race if m.urban => assert!((6..=10).contains(&m.checkpoints.len()), "{}", m.checkpoints.len()),
             MissionKind::Race | MissionKind::Rings => assert!((5..=8).contains(&m.checkpoints.len()), "{}", m.checkpoints.len()),
             MissionKind::Sling => assert_eq!(m.checkpoints.len(), 2),
             MissionKind::Recon => assert!((3..=5).contains(&m.checkpoints.len())),
@@ -31,7 +32,7 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
     } }
 }
 #[test] fn generated_points_obey_the_rules_over_many_seeds() {
-    for ps in 0..200u64 { for m in roll(ps * 7919, (ps % 5) as u32, 0).into_iter().filter(|m| !m.is_air()) {
+    for ps in 0..200u64 { for m in roll(ps * 7919, (ps % 5) as u32, 0).into_iter().filter(|m| !m.is_air() && !m.urban) {
         let t = Terrain::new(m.seed);
         for p in &m.checkpoints {
             assert!(t.normal(p.x, p.z).y >= 0.94, "slope at {p:?} seed {ps}");
@@ -76,8 +77,43 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
     assert!(flipped > 0, "the probe must actually flip some difficulties");
 }
 #[test] fn ground_mission_points_stay_out_of_cities() {
-    for ps in 0..200u64 { for m in roll(ps * 7919, (ps % 5) as u32, 0).into_iter().filter(|m| !m.is_air()) {
+    for ps in 0..200u64 { for m in roll(ps * 7919, (ps % 5) as u32, 0).into_iter().filter(|m| !m.is_air() && !m.urban) {
         let t = Terrain::new(m.seed);
         for p in &m.checkpoints { assert!(!t.in_city(p.x, p.z, 20.0), "point {p:?} inside a city, seed {ps}"); }
     } }
+}
+#[test] fn the_list_has_the_urban_slots_and_open_missions_are_unchanged() {
+    for ps in 0..100u64 {
+        let l = roll(ps * 7919, (ps % 4) as u32, 0);
+        assert_eq!(l.iter().map(|m| m.urban).collect::<Vec<_>>()[..4], [false, false, true, true], "slots 0-3");
+        assert!(l[5].urban == (l[5].kind == MissionKind::Sling), "sling is urban, recon is open");
+        for m in l.iter().filter(|m| m.urban) {
+            let t = Terrain::new(m.seed); let c = crate::game::city::City::build(t.sites()[0], m.seed);
+            assert!((m.start.x - c.site.centre.x).abs() <= c.site.half + 0.01 && c.roof_at(m.start.x, m.start.z).is_none(), "urban start in the city, seed {ps}");
+            assert!(m.start_yaw.is_some() == matches!(m.kind, MissionKind::Cargo | MissionKind::Race));
+        }
+        for m in l.iter().filter(|m| !m.urban) { assert!(m.start_yaw.is_none() && m.start.x == 0.0 && m.start.z == 0.0); }
+    }
+    let rings_urban = (0..200u64).filter(|ps| roll(ps * 31, 0, 0)[4].urban).count();
+    assert!(rings_urban > 60 && rings_urban < 140, "about half of the rings are urban: {rings_urban}");
+}
+#[test] fn urban_time_limits_follow_the_formulas() {
+    for ps in 0..100u64 { for m in roll(ps * 7919, (ps % 2) as u32, 0).into_iter().filter(|m| m.urban) {
+        let want = match m.kind {
+            MissionKind::Cargo | MissionKind::Race => 1.6 * m.length_m / 8.0 + 20.0,
+            MissionKind::Rings => 1.5 * (24.0 + 48.0 * (m.checkpoints.len() as f32 - 1.0)) / 10.0 + 20.0,   // the street length, not the diagonal
+            _ => 1.6 * m.length_m / 12.0 + 35.0 + 0.25 * (m.checkpoints.iter().map(|p| p.y).fold(f32::MIN, f32::max) - m.start.y),   // plus the climb to the roofs
+        };
+        assert!((m.time_limit - want).abs() < 1e-2, "{:?} {} vs {}", m.kind, m.time_limit, want);
+        assert!((m.length_m - path_length(m.start, &m.checkpoints)).abs() < 1e-2);
+    } }
+}
+#[test] fn urban_missions_never_panic_for_extreme_arguments() {
+    for (ps, r, g) in [(0u64, 0u32, 0u32), (u64::MAX, u32::MAX, u32::MAX), (1, 1, 99)] { assert_eq!(roll(ps, r, g).len(), 6); }
+}
+#[test] fn urban_ring_normals_are_flat_and_the_urban_seed_is_salted() {
+    for ps in 0..100u64 { for m in roll(ps * 31, 0, 0).into_iter().filter(|m| m.urban && m.kind == MissionKind::Rings) {
+        for i in 0..m.checkpoints.len() { let n = ring_normal(&m, i); assert!(n.y == 0.0 && (n.len() - 1.0).abs() < 1e-5, "{n:?}"); }
+    } }
+    for k in 0..50u64 { for d in 1..=3u8 { assert_ne!(mission_seed(k * 977, d, true), mission_seed(k * 977, d, false)); } }
 }

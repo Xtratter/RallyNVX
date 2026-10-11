@@ -25,7 +25,7 @@ object Native {
     @JvmStatic external fun gamePause(p: Boolean)
     @JvmStatic external fun gameRestart()
     @JvmStatic external fun gameAbort()
-    /** [money, round, profile_seed, golds] + 6 x [kind(0 cargo/1 race/2 rings/3 sling/4 recon), seed, difficulty, length_m, time_limit, reward_base, best_medal, best_time, aircraft(0 none/1 heli/2 drone)]. */
+    /** [money, round, profile_seed, golds] + 6 x [kind(0 cargo/1 race/2 rings/3 sling/4 recon), seed, difficulty, length_m, time_limit, reward_base, best_medal, best_time, aircraft(0 none/1 heli/2 drone), urban(0/1)]. */
     @JvmStatic external fun missionsInfo(path: String, fresh: Long, refresh: Boolean): FloatArray
     @JvmStatic external fun gameStop()
     @JvmStatic external fun gameResize(w: Int, h: Int)

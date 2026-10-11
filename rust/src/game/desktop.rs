@@ -1,5 +1,5 @@
 //! Desktop game mode: `raytrace-desktop --game [seed]`. Keys: W/Up throttle, S/Down reverse, A/D or Left/Right steer,
-//! Space brake, Left Shift handbrake, R reset, N new random level, M abort the mission, Esc quit. `RAYTRACE_MISSION=<0..3>` starts a mission.
+//! Space brake, Left Shift handbrake, R reset, N new random level, M abort the mission, Esc quit. `RAYTRACE_MISSION=<0..5>` starts a mission.
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 

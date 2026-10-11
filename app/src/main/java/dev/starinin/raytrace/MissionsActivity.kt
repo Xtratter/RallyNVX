@@ -50,7 +50,7 @@ class MissionsActivity : Activity() {
         header.text = t("Missions", "Миссии") + "  ·  " + info[0].toInt() + " $"
         list.removeAllViews()
         for (i in 0 until 6) {
-            val o = 4 + i * 9
+            val o = 4 + i * 10
             val kind = info[o].toInt(); val diff = info[o + 2].toInt(); val len = info[o + 3]; val limit = info[o + 4]
             val base = info[o + 5]; val best = info[o + 6].toInt(); val bestT = info[o + 7]
             val card = LinearLayout(this).apply {
@@ -60,7 +60,8 @@ class MissionsActivity : Activity() {
                 val air = info[o + 8].toInt()
                 val kindName = when (kind) { 0 -> t("Delivery", "Доставка"); 1 -> t("Race", "Гонка"); 2 -> t("Rings", "Кольца"); 3 -> t("Sling", "Подвес"); else -> t("Recon", "Разведка") }
                 val acName = when (air) { 1 -> " · " + t("Helicopter", "Вертолёт"); 2 -> " · " + t("Drone", "Дрон"); else -> "" }
-                text = kindName + acName + "   " + "★".repeat(diff)
+                val urban = info[o + 9] > 0.5f
+                text = kindName + acName + (if (urban) " · " + t("City", "Город") else "") + "   " + "★".repeat(diff)
                 textSize = 18f; typeface = M3.medium; setTextColor(M3.TEXT)
             })
             card.addView(TextView(this).apply {
@@ -70,10 +71,13 @@ class MissionsActivity : Activity() {
             val detail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = if (open == i) View.VISIBLE else View.GONE }
             detail.addView(TextView(this).apply {
                 text = when (kind) {
-                    0 -> t("Deliver the cargo before time runs out; hits, hard landings and rollovers damage it.", "Довези груз до конца времени; удары, жёсткие посадки и перевороты его портят.")
-                    1 -> t("Pass every checkpoint in order before time runs out.", "Проедь все чекпойнты по порядку до конца времени.")
-                    2 -> t("Fly through every ring in order before time runs out.", "Пролети все кольца по порядку до конца времени.")
-                    3 -> t("Hover over the cargo, then carry it to the green pad and set it down gently; swinging and bumps damage it.", "Зависни над грузом, довези до зелёной площадки и мягко опусти; раскачивание и удары его портят.")
+                    0 -> if (info[o + 9] > 0.5f) t("Drive through the streets to the goal; buildings are solid and hits damage the cargo.", "Проедь по улицам до цели; здания твёрдые, а удары портят груз.")
+                         else t("Deliver the cargo before time runs out; hits, hard landings and rollovers damage it.", "Довези груз до конца времени; удары, жёсткие посадки и перевороты его портят.")
+                    1 -> if (info[o + 9] > 0.5f) t("Race through the street checkpoints in order.", "Проедь по порядку чекпойнты на улицах.")
+                         else t("Pass every checkpoint in order before time runs out.", "Проедь все чекпойнты по порядку до конца времени.")
+                    2 -> if (info[o + 9] > 0.5f) t("Fly through the rings over the street, between the houses.", "Пролети кольца над улицей между домами.")
+                         else t("Fly through every ring in order before time runs out.", "Пролети все кольца по порядку до конца времени.")
+                    3 -> t("Hook the cargo on one roof and set it down on the green pad of another roof; swinging and bumps damage it.", "Зацепи груз на одной крыше и опусти на зелёную площадку другой крыши; раскачивание и удары его портят.")
                     else -> t("Hover inside each zone for 2 seconds, in any order.", "Повисите в каждой зоне 2 секунды, в любом порядке.")
                 } + "\n" +
                     t("Reward: ", "Награда: ") + "🥉 ${base.toInt()}  🥈 ${(base * 1.5f).toInt()}  🥇 ${(base * 2.2f).toInt()}"

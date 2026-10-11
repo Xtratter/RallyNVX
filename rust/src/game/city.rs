@@ -9,6 +9,7 @@ pub const PITCH: f32 = 48.0;
 pub const STREET: f32 = 12.0;
 pub const BLOCK: f32 = 36.0;
 pub const HALF: f32 = BLOCKS as f32 * PITCH / 2.0;
+pub const GRID: i32 = BLOCKS + 1;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CitySite { pub centre: V3, pub half: f32 }
@@ -107,6 +108,9 @@ impl City {
     /// Deepest overlap of a sphere with a building: (push-out vector, surface normal).
     pub fn push_out(&self, p: V3, r: f32) -> Option<(V3, V3)> { self.overlap(p, r, true) }
 
+    /// Like `push_out` but ignoring contacts from above (roofs): for things that may rest on a roof (the sling cargo).
+    pub fn push_out_sides(&self, p: V3, r: f32) -> Option<(V3, V3)> { self.overlap(p, r, false) }
+
     fn overlap(&self, p: V3, r: f32, roofs: bool) -> Option<(V3, V3)> {
         let mut best: Option<(f32, V3, V3)> = None;
         for b in self.buildings_near(p, r + 1.0) {
@@ -158,6 +162,36 @@ impl City {
             }
             if !moved { break; }
         }
+    }
+}
+
+impl City {
+    pub fn intersection(&self, i: i32, j: i32) -> V3 {
+        v3(self.site.centre.x - self.site.half + i as f32 * PITCH, self.site.centre.y, self.site.centre.z - self.site.half + j as f32 * PITCH)
+    }
+    pub fn west_edge(&self, row: i32) -> V3 { self.intersection(0, row) }
+    pub fn roof_pads(&self) -> &[V3] { &self.roofs }
+
+    /// A self-avoiding walk over the intersection grid (the points after `from`); the first step is east.
+    pub fn route(&self, key: u64, from: (i32, i32), segments: usize) -> Vec<(i32, i32)> {
+        let mut out: Vec<(i32, i32)> = Vec::new();
+        let mut cur = from; let mut dir = (1, 0);
+        let free = |p: (i32, i32), seen: &[(i32, i32)]| p.0 >= 0 && p.0 < GRID && p.1 >= 0 && p.1 < GRID && p != from && !seen.contains(&p);
+        for step in 0..segments {
+            let next = if step == 0 { (cur.0 + 1, cur.1) } else {
+                let turn = hash01(key, step as i32, 31) < 0.5;
+                let left = (-dir.1, dir.0); let right = (dir.1, -dir.0);
+                let flip = hash01(key, step as i32, 32) < 0.5;
+                let back = (-dir.0, -dir.1);
+                let order: [(i32, i32); 4] = if turn {
+                    if flip { [left, right, dir, back] } else { [right, left, dir, back] }
+                } else { [dir, if flip { left } else { right }, if flip { right } else { left }, back] };
+                match order.iter().map(|d| (cur.0 + d.0, cur.1 + d.1)).find(|p| free(*p, &out)) { Some(p) => p, None => break }
+            };
+            if !free(next, &out) { break; }
+            dir = (next.0 - cur.0, next.1 - cur.1); cur = next; out.push(next);
+        }
+        out
     }
 }
 

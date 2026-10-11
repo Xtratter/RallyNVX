@@ -45,7 +45,7 @@ use crate::game::math::Q;
 use crate::game::missions::{Mission, MissionKind};
 fn mk(kind: MissionKind, pts: Vec<V3>) -> Mission {
     let goal = *pts.last().unwrap();
-    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: None }
+    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: None, urban: false, start_yaw: None, normals: vec![] }
 }
 #[test] fn for_mission_uses_the_mission_seed_and_starts_ready() {
     let w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
@@ -93,7 +93,7 @@ fn mk(kind: MissionKind, pts: Vec<V3>) -> Mission {
 }
 fn air(kind: MissionKind, ac: crate::game::flight::AircraftKind, pts: Vec<V3>) -> Mission {
     let goal = *pts.last().unwrap();
-    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: Some(ac) }
+    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: Some(ac), urban: false, start_yaw: None, normals: vec![] }
 }
 use crate::game::flight::{AircraftKind, FlightInput};
 #[test] fn air_mission_starts_with_the_aircraft_3_m_up_facing_the_first_target() {
@@ -231,4 +231,71 @@ fn walled_world() -> World {
     assert!(a.aircraft.as_ref().unwrap().pos.y > top + 20.0 && a.aircraft.as_ref().unwrap().status == Status::Flying);
     let mut none = World::new(1); none.cities.clear();
     assert!(!none.place_in_city());
+}
+use crate::game::{missions::roll, run::bearing};
+fn urban_missions(kind: MissionKind, n: u64) -> Vec<Mission> {
+    (0..n).flat_map(|ps| roll(ps * 7919, 0, 0)).filter(|m| m.urban && m.kind == kind).collect()
+}
+fn hull_free(w: &World) -> bool {
+    let v = &w.vehicle;
+    [-1.4f32, 0.0, 1.4].iter().all(|z| { let c = v.pos + v.rot.rotate(v3(0.0, 0.5, *z)); w.cities.iter().all(|ct| ct.push_out(c, 1.0).is_none()) })
+}
+#[test] fn urban_cars_start_on_the_street_outside_buildings_facing_east() {
+    for m in urban_missions(MissionKind::Cargo, 40).into_iter().chain(urban_missions(MissionKind::Race, 40)) {
+        let w = World::for_mission(m.clone());
+        assert!((w.vehicle.pos.x - m.start.x).abs() < 1e-3 && (w.vehicle.pos.z - m.start.z).abs() < 1e-3);
+        assert!(w.vehicle.forward().x > 0.99, "east: {:?}", w.vehicle.forward());
+        assert!(hull_free(&w), "the hull overlaps a building at the start");
+    }
+}
+#[test] fn a_simple_autopilot_reaches_the_first_urban_race_checkpoint_along_the_street() {
+    let mut reached = 0; let races = urban_missions(MissionKind::Race, 60);
+    assert!(races.len() >= 30);
+    let n = races.len();
+    for m in races {
+        let mut w = World::for_mission(m.clone());
+        let target = m.checkpoints[0];
+        for _ in 0..(40.0 / (1.0 / 60.0)) as usize {
+            let f = w.vehicle.forward();
+            let steer = (bearing(f.x, f.z, w.vehicle.pos, target) * 2.0).clamp(-1.0, 1.0);
+            w.step(&Input { throttle: 0.5, steer, ..Default::default() }, 1.0 / 60.0);
+            if (w.vehicle.pos - target).len() <= 6.0 { reached += 1; break; }
+        }
+    }
+    assert!(reached * 10 >= n * 9, "reached the first checkpoint in {reached}/{n} races");
+}
+#[test] fn urban_aircraft_start_above_the_street_and_reach_the_first_ring() {
+    use crate::game::flight::FlightInput;
+    let rings: Vec<Mission> = (0..80u64).flat_map(|ps| roll(ps * 31, 0, 0)).filter(|m| m.urban && m.kind == MissionKind::Rings).collect();
+    assert!(rings.len() >= 20);
+    let mut passed = 0;
+    for m in &rings {
+        let mut w = World::for_mission(m.clone());
+        assert!((w.aircraft.as_ref().unwrap().pos.y - (w.terrain.height(m.start.x, m.start.z) + 3.0)).abs() < 1e-3);
+        let target = m.checkpoints[0];
+        for _ in 0..(40.0 / (1.0 / 60.0)) as usize {
+            let a = *w.aircraft.as_ref().unwrap();
+            let f = a.forward();
+            let fi = FlightInput { yaw: (bearing(f.x, f.z, a.pos, target) * 2.0).clamp(-1.0, 1.0), pitch: 0.35, lift: ((target.y - a.pos.y) * 0.15).clamp(-1.0, 1.0), roll: 0.0 };
+            w.step_with(&Input::default(), &fi, 1.0 / 60.0);
+            if w.air.as_ref().unwrap().next_index() >= 1 { passed += 1; break; }
+            if w.aircraft.as_ref().unwrap().status == crate::game::flight::Status::Crashed { break; }
+        }
+    }
+    assert!(passed * 10 >= rings.len() * 8, "first ring passed in {passed}/{}", rings.len());
+}
+#[test] fn the_sling_cargo_spawns_on_the_roof_pad_and_stays() {
+    let slings: Vec<Mission> = (0..40u64).flat_map(|ps| roll(ps * 7919, 0, 0)).filter(|m| m.kind == MissionKind::Sling).collect();
+    assert!(!slings.is_empty());
+    for m in slings {
+        let mut w = World::for_mission(m.clone());
+        for _ in 0..180 { w.step_with(&Input::default(), &crate::game::flight::FlightInput::default(), 1.0 / 60.0); }
+        let s = w.sling.as_ref().unwrap();
+        assert!((s.pos.y - (m.checkpoints[0].y + 0.3)).abs() < 0.2 && s.vel.len() < 0.2 && !s.attached, "cargo drifted: {:?} vs pad {:?}", s.pos, m.checkpoints[0]);
+    }
+}
+#[test] fn open_missions_still_start_on_the_origin_plateau() {
+    let m = roll(5, 0, 0).into_iter().find(|m| !m.urban && !m.is_air()).unwrap();
+    let w = World::for_mission(m);
+    assert!(w.vehicle.pos.x.abs() < 1e-3 && w.vehicle.pos.z.abs() < 1e-3);
 }

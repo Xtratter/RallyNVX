@@ -1,7 +1,7 @@
 use crate::game::{flight::AircraftKind, missions::{path_length, ring_normal, roll, MissionKind}, terrain::Terrain, world::WORLD_LIMIT};
 
 #[test] fn air_missions_carry_the_right_aircraft_and_valid_points() {
-    for ps in 0..200u64 { for r in 0..2u32 { for m in roll(ps * 7919, r, 0).into_iter().filter(|m| m.is_air()) {
+    for ps in 0..200u64 { for r in 0..2u32 { for m in roll(ps * 7919, r, 0).into_iter().filter(|m| m.is_air() && !m.urban) {
         let t = Terrain::new(m.seed);
         assert!(m.aircraft.is_some());
         match m.kind { MissionKind::Sling => assert_eq!(m.aircraft, Some(AircraftKind::Heli)), MissionKind::Recon => assert_eq!(m.aircraft, Some(AircraftKind::Drone)), _ => {} }
@@ -51,7 +51,7 @@ use crate::game::{flight::AircraftKind, missions::{path_length, ring_normal, rol
 use crate::game::city::City;
 #[test] fn rings_never_intersect_buildings() {
     let mut checked = 0;
-    for ps in 0..300u64 { for m in roll(ps * 7919, (ps % 3) as u32, 0).into_iter().filter(|m| m.kind == MissionKind::Rings) {
+    for ps in 0..300u64 { for m in roll(ps * 7919, (ps % 3) as u32, 0).into_iter().filter(|m| m.kind == MissionKind::Rings && !m.urban) {
         let t = Terrain::new(m.seed);
         let cities: Vec<City> = t.sites().iter().map(|s| City::build(*s, m.seed)).collect();
         let r = if m.aircraft == Some(AircraftKind::Drone) { 6.0 } else { 8.0 };
