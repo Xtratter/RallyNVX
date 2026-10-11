@@ -1,0 +1,49 @@
+//! Point generation for air missions (rings, sling pads, recon zones).
+use super::math::{v3, V3};
+use super::missions::nearest_ok;
+use super::terrain::{hash01, Terrain};
+use super::world::WORLD_LIMIT;
+
+fn clampw(v: f32) -> f32 { v.clamp(-(WORLD_LIMIT - 40.0), WORLD_LIMIT - 40.0) }
+
+/// 5-8 rings along a 500-1400 m path with a zigzag of at most 80 m; heights above ground 15..90 (drone ..120).
+pub fn rings_points(t: &Terrain, key: u64, drone: bool) -> Vec<V3> {
+    let len = 500.0 + 900.0 * hash01(key, 31, 1);
+    let a = hash01(key, 31, 2) * std::f32::consts::TAU;
+    let dir = v3(a.cos(), 0.0, a.sin()); let side = v3(-dir.z, 0.0, dir.x);
+    let n = 5 + (hash01(key, 31, 3) * 4.0) as usize % 4;
+    let hmax = if drone { 120.0 } else { 90.0 };
+    (1..=n).map(|i| {
+        let k = i as f32 / n as f32;
+        let zig = if i % 2 == 0 { 1.0 } else { -1.0 } * 80.0 * hash01(key, 100 + i as i32, 4);
+        let (x, z) = (clampw(dir.x * len * k + side.x * zig), clampw(dir.z * len * k + side.z * zig));
+        v3(x, t.height(x, z) + 15.0 + (hmax - 15.0) * hash01(key, 200 + i as i32, 5), z)
+    }).collect()
+}
+
+/// Pick-up pad A (80-200 m from the start) and drop pad B (400-1000 m from A), both on gentle ground.
+pub fn sling_points(t: &Terrain, key: u64) -> Vec<V3> {
+    let a1 = hash01(key, 41, 1) * std::f32::consts::TAU; let d1 = 80.0 + 120.0 * hash01(key, 41, 2);
+    let pa = nearest_ok(t, a1.cos() * d1, a1.sin() * d1);
+    let a2 = hash01(key, 41, 3) * std::f32::consts::TAU; let d2 = 400.0 + 600.0 * hash01(key, 41, 4);
+    let pb = nearest_ok(t, clampw(pa.x + a2.cos() * d2), clampw(pa.z + a2.sin() * d2));
+    vec![pa, pb]
+}
+
+/// 3-5 capture points at 20..100 m height around a loop of 600-1200 m that passes the start.
+pub fn recon_points(t: &Terrain, key: u64) -> Vec<V3> {
+    let len = 600.0 + 600.0 * hash01(key, 51, 1);
+    let r = len / std::f32::consts::TAU;
+    let a = hash01(key, 51, 2) * std::f32::consts::TAU;
+    let centre = v3(a.cos(), 0.0, a.sin()) * r;
+    let n = 3 + (hash01(key, 51, 3) * 3.0) as usize % 3;
+    (1..=n).map(|i| {
+        let th = a + std::f32::consts::PI + i as f32 * std::f32::consts::TAU / (n as f32 + 1.0);
+        let (x, z) = (clampw(centre.x + r * th.cos()), clampw(centre.z + r * th.sin()));
+        v3(x, t.height(x, z) + 20.0 + 80.0 * hash01(key, 300 + i as i32, 6), z)
+    }).collect()
+}
+
+#[cfg(test)]
+#[path = "airgen_tests.rs"]
+mod tests;

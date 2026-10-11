@@ -1,7 +1,7 @@
 use super::*;
 use crate::game::{input::Input, math::v3, missions::{Mission, MissionKind}, world::World};
 fn mission() -> Mission {
-    Mission { kind: MissionKind::Cargo, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal: v3(0., 0., 300.), checkpoints: vec![v3(0., 0., 300.)], length_m: 300.0, time_limit: 100.0, reward_base: 100.0 }
+    Mission { kind: MissionKind::Cargo, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal: v3(0., 0., 300.), checkpoints: vec![v3(0., 0., 300.)], length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: None }
 }
 fn gas() -> Input { Input { throttle: 1.0, ..Default::default() } }
 #[test] fn free_drive_state_has_phase_zero() {

@@ -1,5 +1,7 @@
 //! Mission model and deterministic generation of the mission list.
+use super::airgen;
 use super::app::level_seed;
+use super::flight::AircraftKind;
 use super::math::{v3, V3};
 use super::props::tile_props;
 use super::terrain::{hash01, Terrain};
@@ -8,13 +10,33 @@ use super::world::{tile_of, WORLD_LIMIT};
 pub const GOAL_RADIUS: f32 = 6.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MissionKind { Cargo, Race }
+pub enum MissionKind { Cargo, Race, Rings, Sling, Recon }
+
+impl MissionKind {
+    pub fn is_air(self) -> bool { matches!(self, MissionKind::Rings | MissionKind::Sling | MissionKind::Recon) }
+}
+
+pub const RING_RADIUS_HELI: f32 = 8.0;
+pub const RING_RADIUS_DRONE: f32 = 6.0;
+pub const ZONE_RADIUS: f32 = 40.0;
 
 #[derive(Clone, Debug)]
 pub struct Mission {
     pub kind: MissionKind, pub seed: u64, pub difficulty: u8,
     pub start: V3, pub goal: V3, pub checkpoints: Vec<V3>,
     pub length_m: f32, pub time_limit: f32, pub reward_base: f32,
+    /// `None` for ground missions.
+    pub aircraft: Option<AircraftKind>,
+}
+
+impl Mission {
+    pub fn is_air(&self) -> bool { self.kind.is_air() }
+}
+
+/// Plane normal of ring `i`: along the path from the previous point (or the start).
+pub fn ring_normal(m: &Mission, i: usize) -> V3 {
+    let prev = if i == 0 { m.start } else { m.checkpoints[i - 1] };
+    (m.checkpoints[i] - prev).norm()
 }
 
 pub fn path_length(start: V3, pts: &[V3]) -> f32 {
@@ -52,10 +74,10 @@ pub fn line_ok(t: &Terrain, a: V3, b: V3) -> bool {
     true
 }
 
-fn at(t: &Terrain, x: f32, z: f32) -> V3 { v3(x, t.height(x, z), z) }
+pub(super) fn at(t: &Terrain, x: f32, z: f32) -> V3 { v3(x, t.height(x, z), z) }
 
 /// The point nearest to (x, z) that passes `point_ok`, searching rings of 8 directions up to 300 m out.
-fn nearest_ok(t: &Terrain, x: f32, z: f32) -> V3 {
+pub(super) fn nearest_ok(t: &Terrain, x: f32, z: f32) -> V3 {
     let base = at(t, x, z);
     if point_ok(t, base) { return base; }
     for ring in 1..=20 {
@@ -102,7 +124,8 @@ fn race_points(t: &Terrain, key: u64, goal: V3) -> Vec<V3> {
 }
 
 pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
-    let kinds = [MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race];
+    let kinds = [MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race, MissionKind::Rings,
+        if round % 2 == 0 { MissionKind::Sling } else { MissionKind::Recon }];
     kinds.iter().enumerate().map(|(slot, &kind)| {
         let key = profile_seed ^ ((round as u64) << 20) ^ ((slot as u64 + 1) * 0x9E37_79B9);
         let r = hash01(key, slot as i32, 9);
@@ -112,12 +135,26 @@ pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
         h ^= h >> 33; h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD); h ^= h >> 33; h = h.wrapping_mul(0xC4CE_B9FE_1A85_EC53); h ^= h >> 33;
         let seed = level_seed(h);
         let t = Terrain::new(seed);
-        let goal = pick_goal(&t, key, difficulty);
-        let checkpoints = if kind == MissionKind::Race { race_points(&t, key, goal) } else { vec![goal] };
+        let (aircraft, checkpoints) = match kind {
+            MissionKind::Cargo => (None, vec![pick_goal(&t, key, difficulty)]),
+            MissionKind::Race => { let g = pick_goal(&t, key, difficulty); (None, race_points(&t, key, g)) }
+            MissionKind::Rings => {
+                let drone = hash01(key, slot as i32, 77) < 0.5;
+                (Some(if drone { AircraftKind::Drone } else { AircraftKind::Heli }), airgen::rings_points(&t, key, drone))
+            }
+            MissionKind::Sling => (Some(AircraftKind::Heli), airgen::sling_points(&t, key)),
+            MissionKind::Recon => (Some(AircraftKind::Drone), airgen::recon_points(&t, key)),
+        };
+        let goal = *checkpoints.last().unwrap();
         let start = at(&t, 0.0, 0.0);
         let length_m = path_length(start, &checkpoints);
-        Mission { kind, seed, difficulty, start, goal, checkpoints, length_m,
-            time_limit: time_limit_for(length_m), reward_base: reward_base_for(length_m, difficulty) }
+        let time_limit = match kind {
+            MissionKind::Rings => 1.5 * length_m / if aircraft == Some(AircraftKind::Drone) { 15.0 } else { 18.0 } + 20.0,
+            MissionKind::Sling => 1.6 * length_m / 12.0 + 35.0,
+            MissionKind::Recon => 1.4 * length_m / 15.0 + 25.0,
+            _ => time_limit_for(length_m),
+        };
+        Mission { kind, seed, difficulty, start, goal, checkpoints, length_m, time_limit, reward_base: reward_base_for(length_m, difficulty), aircraft }
     }).collect()
 }
 

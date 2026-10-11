@@ -45,7 +45,7 @@ use crate::game::math::Q;
 use crate::game::missions::{Mission, MissionKind};
 fn mk(kind: MissionKind, pts: Vec<V3>) -> Mission {
     let goal = *pts.last().unwrap();
-    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0 }
+    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: None }
 }
 #[test] fn for_mission_uses_the_mission_seed_and_starts_ready() {
     let w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
