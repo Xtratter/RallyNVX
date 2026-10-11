@@ -58,3 +58,10 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
     assert!((body.1 - d.pos).len() < 0.3);
     for pr in props { assert!((pr.1 - d.pos).len() < 1.2 && pr.1.y > d.pos.y - 0.2); }
 }
+#[test] fn drone_arms_run_along_the_diagonals_to_the_motors() {
+    let m = build_drone(&AircraftSpec::of(AircraftKind::Drone));
+    for (sx, sz) in [(1.0f32, 1.0f32), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
+        let near = m.body.verts.iter().any(|v| (v.pos[1].abs() - 0.02).abs() < 1e-3 && (v.pos[0] - sx * 0.62).abs() < 0.08 && (v.pos[2] - sz * 0.62).abs() < 0.08);
+        assert!(near, "no arm reaches the motor at ({sx},{sz})");
+    }
+}

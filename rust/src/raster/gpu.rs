@@ -171,7 +171,7 @@ impl Raster {
         // generated material maps: one texture array, 5 layers x 9 mips
         let mat_tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("materials"), size: wgpu::Extent3d { width: texgen::SIZE as u32, height: texgen::SIZE as u32, depth_or_array_layers: texgen::LAYERS as u32 },
-            mip_level_count: 9, sample_count: 1, dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            mip_level_count: 9, sample_count: 1, dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, view_formats: &[] });
         for (layer, m) in texgen::Material::ALL.iter().enumerate() {
             for (level, data) in texgen::mips(&texgen::make(*m, texgen::SIZE), texgen::SIZE).iter().enumerate() {
@@ -332,8 +332,7 @@ impl Raster {
             for p in vm::car_wheel_poses(veh, self.wheel_spin) { ml[1].push(MInst { m: mmat(p.0, p.1), tint: [1.0; 4] }); }
         }
         for tr in wv.tracks.iter() {
-            let yaw = tr.dir.x.atan2(tr.dir.z);
-            lists[0].push(inst(Q::axis_angle(v3(0., 1., 0.), yaw), tr.pos + tr.normal * 0.03, v3(0.3, 0.02, 0.45), [0.10, 0.075, 0.05]));
+            lists[0].push(inst(crate::game::tracks::track_rot(tr.dir, tr.normal), tr.pos + tr.normal * 0.03, v3(0.3, 0.02, 0.45), [0.10, 0.075, 0.05]));
         }
         let mut mall: Vec<MInst> = Vec::new();
         let mut mranges = [(0u32, 0u32); MODEL_SLOTS];
@@ -345,7 +344,7 @@ impl Raster {
         if !mall.is_empty() { self.queue.write_buffer(&self.mbuf, 0, bytemuck::cast_slice(&mall)); }
         if let Some(ac) = &wv.aircraft {
             if let Some(s) = &wv.sling {
-                if s.attached { push_part(&mut lists, &models::rope_part(ac.pos - v3(0., 0.8, 0.), s.pos)); }
+                if s.attached { push_part(&mut lists, &models::rope_part(ac.pos + ac.rotation().rotate(v3(0., vm::HELI_LIFT - 1.3, 0.)), s.pos)); }
                 push_part(&mut lists, &models::cargo_part(s.pos));
             }
         }

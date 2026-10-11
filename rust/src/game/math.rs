@@ -26,6 +26,25 @@ impl Q {
         let n = axis.norm(); let s = (a * 0.5).sin();
         Q { w: (a * 0.5).cos(), x: n.x * s, y: n.y * s, z: n.z * s }
     }
+    /// Rotation taking local x, y, z to the orthonormal right-handed basis (x, y, z).
+    pub fn from_basis(x: V3, y: V3, z: V3) -> Q {
+        let (m00, m11, m22) = (x.x, y.y, z.z);
+        let tr = m00 + m11 + m22;
+        let q = if tr > 0.0 {
+            let s = (tr + 1.0).sqrt() * 2.0;
+            Q { w: 0.25 * s, x: (y.z - z.y) / s, y: (z.x - x.z) / s, z: (x.y - y.x) / s }
+        } else if m00 > m11 && m00 > m22 {
+            let s = (1.0 + m00 - m11 - m22).sqrt() * 2.0;
+            Q { w: (y.z - z.y) / s, x: 0.25 * s, y: (y.x + x.y) / s, z: (z.x + x.z) / s }
+        } else if m11 > m22 {
+            let s = (1.0 + m11 - m00 - m22).sqrt() * 2.0;
+            Q { w: (z.x - x.z) / s, x: (y.x + x.y) / s, y: 0.25 * s, z: (z.y + y.z) / s }
+        } else {
+            let s = (1.0 + m22 - m00 - m11).sqrt() * 2.0;
+            Q { w: (x.y - y.x) / s, x: (z.x + x.z) / s, y: (z.y + y.z) / s, z: 0.25 * s }
+        };
+        q.normalize()
+    }
     pub fn mul(self, o: Q) -> Q {
         Q { w: self.w * o.w - self.x * o.x - self.y * o.y - self.z * o.z,
             x: self.w * o.x + self.x * o.w + self.y * o.z - self.z * o.y,

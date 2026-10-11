@@ -183,7 +183,7 @@ pub fn build_drone(spec: &AircraftSpec) -> DroneModel {
     let mut body = Mesh3::default();
     body.append(&loft(&[(0.35, 0.12, -0.04, 0.06), (0.15, 0.3, -0.07, 0.1), (-0.2, 0.3, -0.07, 0.1), (-0.35, 0.12, -0.04, 0.06)], 12, 2.6, l.body, MAT_PAINT));
     for (sx, sz) in [(1.0f32, 1.0f32), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
-        let rot = Q::axis_angle(v3(0., 1., 0.), if sx * sz > 0.0 { 0.785 } else { -0.785 });
+        let rot = Q::axis_angle(v3(0., 1., 0.), if sx * sz > 0.0 { -0.785 } else { 0.785 });
         add_box(&mut body, v3(sx * 0.32, 0.0, sz * 0.32), v3(0.45, 0.02, 0.025), rot, l.accent, MAT_PLASTIC);
         add_cylinder(&mut body, v3(sx * 0.62, 0.05, sz * 0.62), Axis::Y, 0.07, 0.1, 10, [0.1, 0.1, 0.12], MAT_PLASTIC);
         add_cylinder(&mut body, v3(sx * 0.2, -0.12, sz * 0.2), Axis::Y, 0.015, 0.2, 6, CHROME, MAT_CHROME);
@@ -230,7 +230,7 @@ pub fn drone_poses(a: &Aircraft, t: f32) -> ((Q, V3), [(Q, V3); 4]) {
     let r = a.rotation();
     let mut props = [(Q::IDENT, V3::ZERO); 4];
     for (i, (sx, sz)) in [(1.0f32, 1.0f32), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)].into_iter().enumerate() {
-        let dir = if (i % 2 == 0) == (sx * sz > 0.0) { 1.0 } else { -1.0 };
+        let dir = if sx * sz > 0.0 { 1.0 } else { -1.0 };
         props[i] = (r.mul(Q::axis_angle(v3(0., 1., 0.), t * 40.0 * dir)), a.pos + r.rotate(v3(sx * 0.62, 0.12, sz * 0.62)));
     }
     ((r, a.pos), props)

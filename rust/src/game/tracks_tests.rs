@@ -33,3 +33,10 @@ fn drive(secs: f32, throttle: f32) -> (Vehicle, Tracks) {
     assert!(rock_dominant(3.0, v3(0.7, 0.55, 0.0).norm(), 0.0, 0.0));
     assert!(!rock_dominant(3.0, v3(0.0, 1.0, 0.0), 0.0, 0.0));
 }
+#[test] fn track_rotation_lies_on_the_slope_and_follows_the_heading() {
+    let n = v3(0.3, 0.9, 0.1).norm(); let d = v3(0.0, 0.0, 1.0);
+    let q = track_rot(d, n);
+    assert!((q.rotate(v3(0., 1., 0.)) - n).len() < 1e-3);
+    let f = q.rotate(v3(0., 0., 1.));
+    assert!(f.dot(n).abs() < 1e-3 && f.dot(d) > 0.9, "{f:?}");
+}

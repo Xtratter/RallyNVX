@@ -1,11 +1,19 @@
 //! Wheel tracks: a ring buffer of dark ground marks left by wheels in contact with the ground.
 use super::materials::rock_dominant;
-use super::math::{v3, V3};
+use super::math::{v3, Q, V3};
 use super::terrain::Terrain;
 use super::vehicle::Vehicle;
 
 pub const MAX_TRACKS: usize = 256;
 pub const SPACING: f32 = 0.35;
+
+/// Orientation of a track mark: local y on the ground normal, local z along the travel direction projected onto the slope.
+pub fn track_rot(dir: V3, normal: V3) -> Q {
+    let n = normal.norm();
+    let f = (dir - n * dir.dot(n)).norm();
+    let r = n.cross(f);
+    Q::from_basis(r, n, f)
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Track { pub pos: V3, pub dir: V3, pub normal: V3 }
