@@ -14,7 +14,7 @@ pub struct MissionResult { pub seed: u64, pub kind: MissionKind, pub medal: Meda
 #[derive(Clone, Debug)]
 pub struct Profile { pub version: u32, pub money: u32, pub profile_seed: u64, pub round: u32, pub results: Vec<MissionResult> }
 
-pub(super) fn kind_id(k: MissionKind) -> u64 { match k { MissionKind::Cargo => 0, MissionKind::Race => 1, MissionKind::Rings => 2, MissionKind::Sling => 3, MissionKind::Recon => 4 } }
+pub(super) fn kind_id(k: MissionKind) -> u64 { match k { MissionKind::Cargo => 0, MissionKind::Race => 1, MissionKind::Rings => 2, MissionKind::Sling => 3, MissionKind::Recon => 4, MissionKind::Rescue => 5 } }
 
 impl Profile {
     pub fn new(seed: u64) -> Profile { Profile { version: PROFILE_VERSION, money: 0, profile_seed: seed, round: 0, results: Vec::new() } }
@@ -35,7 +35,7 @@ impl Profile {
         let mut results = Vec::new();
         for r in v.get("results").and_then(Value::as_array).ok_or("bad results")? {
             let seed = r.get("seed").and_then(Value::as_u64).ok_or("bad result seed")?;
-            let kind = match r.get("kind").and_then(Value::as_u64) { Some(0) => MissionKind::Cargo, Some(1) => MissionKind::Race, Some(2) => MissionKind::Rings, Some(3) => MissionKind::Sling, Some(4) => MissionKind::Recon, _ => return Err("bad result kind".into()) };
+            let kind = match r.get("kind").and_then(Value::as_u64) { Some(0) => MissionKind::Cargo, Some(1) => MissionKind::Race, Some(2) => MissionKind::Rings, Some(3) => MissionKind::Sling, Some(4) => MissionKind::Recon, Some(5) => MissionKind::Rescue, _ => return Err("bad result kind".into()) };
             let medal = Medal::from_u8(r.get("medal").and_then(Value::as_u64).unwrap_or(0).min(3) as u8);
             let best_time = r.get("best_time").and_then(Value::as_f64).unwrap_or(0.0) as f32;
             results.push(MissionResult { seed, kind, medal, best_time });

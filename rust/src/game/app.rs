@@ -41,7 +41,7 @@ pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, payout: u32,
     out[4] = match r.phase { Phase::Ready => 1.0, Phase::Running => 2.0, Phase::Done => 3.0 };
     out[5] = r.time; out[6] = r.mission.time_limit; out[7] = r.integrity;
     out[10] = r.next as f32; out[11] = r.total as f32;
-    out[17] = match r.mission.kind { MissionKind::Cargo => 0.0, MissionKind::Race => 1.0, MissionKind::Rings => 2.0, MissionKind::Sling => 3.0, MissionKind::Recon => 4.0 };
+    out[17] = match r.mission.kind { MissionKind::Cargo => 0.0, MissionKind::Race => 1.0, MissionKind::Rings => 2.0, MissionKind::Sling => 3.0, MissionKind::Recon => 4.0, MissionKind::Rescue => 5.0 };
     if let Some(t) = r.target {
         let me = w.player_pos();
         out[8] = (t - me).len();

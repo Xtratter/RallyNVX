@@ -11,10 +11,10 @@ use super::world::{tile_of, WORLD_LIMIT};
 pub const GOAL_RADIUS: f32 = 6.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MissionKind { Cargo, Race, Rings, Sling, Recon }
+pub enum MissionKind { Cargo, Race, Rings, Sling, Recon, Rescue }
 
 impl MissionKind {
-    pub fn is_air(self) -> bool { matches!(self, MissionKind::Rings | MissionKind::Sling | MissionKind::Recon) }
+    pub fn is_air(self) -> bool { matches!(self, MissionKind::Rings | MissionKind::Sling | MissionKind::Recon | MissionKind::Rescue) }
 }
 
 pub const RING_RADIUS_HELI: f32 = 8.0;
@@ -159,7 +159,7 @@ pub fn mission_seed(key: u64, difficulty: u8, urban: bool) -> u64 {
 
 pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
     let kinds = [MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race, MissionKind::Rings,
-        if round % 2 == 0 { MissionKind::Sling } else { MissionKind::Recon }];
+        match round % 3 { 0 => MissionKind::Sling, 1 => MissionKind::Recon, _ => MissionKind::Rescue }];
     kinds.iter().enumerate().map(|(slot, &kind)| {
         let key = profile_seed ^ ((round as u64) << 20) ^ ((slot as u64 + 1) * 0x9E37_79B9);
         let r = hash01(key, slot as i32, 9);
@@ -192,6 +192,7 @@ pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
             }
             (MissionKind::Sling, None) => (Some(AircraftKind::Heli), airgen::sling_points(&t, key)),
             (MissionKind::Recon, _) => (Some(AircraftKind::Drone), airgen::recon_points(&t, key)),
+            (MissionKind::Rescue, _) => (Some(AircraftKind::Heli), airgen::rescue_points(&t, key, difficulty)),
         };
         let goal = *checkpoints.last().unwrap();
         let start = urban_data.as_ref().map_or_else(|| at(&t, 0.0, 0.0), |u| u.start);
@@ -203,10 +204,12 @@ pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
             MissionKind::Rings => 1.5 * length_m / if aircraft == Some(AircraftKind::Drone) { 15.0 } else { 18.0 } + 20.0,
             MissionKind::Sling => 1.6 * length_m / 12.0 + 35.0 + 0.25 * (checkpoints.iter().map(|p| p.y).fold(f32::MIN, f32::max) - start.y).max(0.0),   // plus the climb to the roofs
             MissionKind::Recon => 1.4 * length_m / 15.0 + 25.0,
+            MissionKind::Rescue => 1.5 * length_m / 14.0 + 25.0 + 12.0 * (checkpoints.len() as f32 - 1.0) + 8.0,
             _ if urban => 1.6 * length_m / 8.0 + 20.0,
             _ => time_limit_for(length_m),
         };
-        Mission { kind, seed, difficulty, start, goal, checkpoints, length_m, time_limit, reward_base: reward_base_for(length_m, difficulty), aircraft, urban, start_yaw, normals }
+        let people_bonus = if kind == MissionKind::Rescue { 50.0 * airgen::rescue_people(seed, checkpoints.len() - 1).iter().map(|c| *c as f32).sum::<f32>() } else { 0.0 };
+        Mission { kind, seed, difficulty, start, goal, checkpoints, length_m, time_limit, reward_base: reward_base_for(length_m, difficulty) + people_bonus, aircraft, urban, start_yaw, normals }
     }).collect()
 }
 

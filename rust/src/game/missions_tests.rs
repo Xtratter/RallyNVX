@@ -26,6 +26,7 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
             MissionKind::Race | MissionKind::Rings => assert!((5..=8).contains(&m.checkpoints.len()), "{}", m.checkpoints.len()),
             MissionKind::Sling => assert_eq!(m.checkpoints.len(), 2),
             MissionKind::Recon => assert!((3..=5).contains(&m.checkpoints.len())),
+            MissionKind::Rescue => assert!((2..=4).contains(&m.checkpoints.len())),
         }
         assert_eq!(*m.checkpoints.last().unwrap(), m.goal);
         assert!(m.seed <= 0xFF_FFFF);
@@ -132,4 +133,26 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
         for i in -20..20 { for j in -20..20 { let (x, z) = (i as f32 * 60.0, j as f32 * 60.0);
             if t.height(x, z) < l - 0.5 { assert!(!point_ok(&t, v3(x, t.height(x, z), z))); return; } } } }
     panic!("no wet point found");
+}
+#[test] fn the_sixth_slot_rotates_sling_recon_rescue() {
+    for r in 0..9u32 {
+        let want = match r % 3 { 0 => MissionKind::Sling, 1 => MissionKind::Recon, _ => MissionKind::Rescue };
+        assert_eq!(roll(77, r, 0)[5].kind, want, "round {r}");
+        assert_eq!(roll(77, r, 0).len(), 6);
+    }
+}
+#[test] fn rescue_missions_have_sites_a_base_and_the_documented_numbers() {
+    let mut seen = 0;
+    for ps in 0..40u64 { for m in roll(ps * 131, 2, 0).into_iter().filter(|m| m.kind == MissionKind::Rescue) {
+        seen += 1;
+        assert_eq!(m.aircraft, Some(crate::game::flight::AircraftKind::Heli)); assert!(!m.urban && m.is_air());
+        let sites = m.difficulty.clamp(1, 3) as usize;
+        assert_eq!(m.checkpoints.len(), sites + 1);
+        assert_eq!(m.goal, *m.checkpoints.last().unwrap());
+        let people: u32 = crate::game::airgen::rescue_people(m.seed, sites).iter().map(|c| *c as u32).sum();
+        let want_t = 1.5 * m.length_m / 14.0 + 25.0 + 12.0 * sites as f32 + 8.0;
+        assert!((m.time_limit - want_t).abs() < 1e-2, "{} vs {}", m.time_limit, want_t);
+        assert!((m.reward_base - (reward_base_for(m.length_m, m.difficulty) + 50.0 * people as f32)).abs() < 1e-2);
+    } }
+    assert!(seen > 20);
 }

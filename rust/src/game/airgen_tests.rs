@@ -39,11 +39,6 @@ use crate::game::{airgen::*, flight::AircraftKind, missions::{path_length, ring_
         assert!(n.dot((m.checkpoints[i] - prev).norm()) > 0.999);
     }
 }
-#[test] fn sling_and_recon_alternate_by_round_parity() {
-    for r in 0..10u32 {
-        assert_eq!(roll(5, r, 0)[5].kind, if r % 2 == 0 { MissionKind::Sling } else { MissionKind::Recon }, "round {r}");
-    }
-}
 #[test] fn rings_aircraft_varies_with_the_seed() {
     let kinds: std::collections::HashSet<_> = (0..40u64).map(|ps| roll(ps * 31, 0, 0)[4].aircraft.unwrap() as u8).collect();
     assert_eq!(kinds.len(), 2, "both heli and drone rings should occur");

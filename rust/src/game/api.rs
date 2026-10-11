@@ -6,7 +6,7 @@ use super::meta::{kind_id, Profile};
 use super::missions::roll;
 
 /// `[money, round, profile_seed, gold_count]` followed by 6 missions x
-/// `[kind(0 cargo/1 race/2 rings/3 sling/4 recon), seed, difficulty, length_m, time_limit, reward_base, best_medal, best_time, aircraft(0 none/1 heli/2 drone), urban(0/1)]`.
+/// `[kind(0 cargo/1 race/2 rings/3 sling/4 recon/5 rescue), seed, difficulty, length_m, time_limit, reward_base, best_medal, best_time, aircraft(0 none/1 heli/2 drone), urban(0/1)]`.
 pub fn menu_info(path: &Path, fresh_seed: u64, refresh: bool) -> Vec<f32> {
     let mut p = Profile::load_or_new(path, fresh_seed);
     if refresh { p.round = p.round.wrapping_add(1); let _ = p.save(path); }

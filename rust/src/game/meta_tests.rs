@@ -63,6 +63,12 @@ fn m(seed: u64, kind: MissionKind) -> Mission {
     assert_eq!((q.best_medal(7, MissionKind::Rings), q.best_medal(8, MissionKind::Recon), q.best_medal(9, MissionKind::Sling)), (Medal::Gold, Medal::Bronze, Medal::Silver));
     assert_eq!(q.best_medal(7, MissionKind::Race), Medal::None);
 }
-#[test] fn unknown_kind_id_5_is_rejected() {
-    assert!(Profile::from_json("{\"version\":1,\"money\":1,\"profile_seed\":1,\"round\":0,\"results\":[{\"seed\":1,\"kind\":5,\"medal\":1,\"best_time\":1.0}]}").is_err());
+#[test] fn unknown_kind_id_6_is_rejected() {
+    assert!(Profile::from_json("{\"version\":1,\"money\":1,\"profile_seed\":1,\"round\":0,\"results\":[{\"seed\":1,\"kind\":6,\"medal\":1,\"best_time\":1.0}]}").is_err());
+}
+#[test] fn rescue_kind_round_trips() {
+    let mut p = Profile::new(3);
+    p.record(&m(11, MissionKind::Rescue), Medal::Gold, 77.0);
+    let q = Profile::from_json(&p.to_json()).unwrap();
+    assert_eq!(q.best_medal(11, MissionKind::Rescue), Medal::Gold);
 }
