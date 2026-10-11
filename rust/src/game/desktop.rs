@@ -50,7 +50,9 @@ impl State {
         let throttle = self.held(&[KeyCode::KeyW, KeyCode::ArrowUp]) - self.held(&[KeyCode::KeyS, KeyCode::ArrowDown]);
         let steer = self.held(&[KeyCode::KeyD, KeyCode::ArrowRight]) - self.held(&[KeyCode::KeyA, KeyCode::ArrowLeft]);
         self.game.input.throttle = if self.autodrive { 1.0 } else { throttle };
-        self.game.input.steer = steer;
+        // CI smoke: with RAYTRACE_AUTODRIVE the car steers towards the mission target so the beacon comes into view
+        let st = self.game.stats();
+        self.game.input.steer = if self.autodrive && st[4] > 0.0 { (st[9] * 2.0).clamp(-1.0, 1.0) } else { steer };
         self.game.input.brake = self.keys.contains(&KeyCode::Space);
         self.game.input.handbrake = self.keys.contains(&KeyCode::ShiftLeft);
         self.game.frame();
