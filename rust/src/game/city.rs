@@ -60,7 +60,7 @@ impl City {
                 let mut height = 8.0 + 82.0 * falloff * falloff * hh;
                 if falloff < 0.35 && hash01(key ^ 4, i * 4 + n as i32, j) < 0.15 { height = 4.0 + 2.0 * hh; }
                 let height = height.clamp(4.0, 90.0);
-                buildings.push(Building { min: v3(x0, y0, z0), max: v3(x1, y0 + height, z1), color: (hash01(key ^ 5, i * 4 + n as i32, j) * 6.0) as u8 % 6 });
+                buildings.push(Building { min: v3(x0, y0, z0), max: v3(x1, y0 + height, z1), color: (hash01(key ^ 5, i * 4 + n as i32, j) * 10.0) as u8 % 10 });
                 if height >= 20.0 && x1 - x0 >= 14.0 && z1 - z0 >= 14.0 { roofs.push(v3((x0 + x1) / 2.0, y0 + height, (z0 + z1) / 2.0)); }
             }
         } }

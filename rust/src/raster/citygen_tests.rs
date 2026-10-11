@@ -24,7 +24,7 @@ fn cam_in(c: &City) -> V3 { v3(c.site.centre.x, c.site.centre.y + 5.0, c.site.ce
     let p = city_parts(&cs, cam, 700.0, 100_000, 150.0).parts;
     assert!(p.iter().any(|x| x.facade) && p.iter().any(|x| !x.facade));
     for x in p.iter().filter(|x| x.facade) { assert!(PALETTE.contains(&x.color) && !x.glow && x.mesh == 0 && x.scale.y >= 4.0 - 1e-3); }
-    for x in p.iter().filter(|x| !x.facade) { assert!(x.scale.y <= 1.0 && x.mesh == 0); }
+    for x in p.iter().filter(|x| !x.facade && x.mesh == 0) { assert!(x.scale.y <= 1.0); }
 }
 #[test] fn near_counts_the_leading_shadow_casters_and_a_far_camera_sees_nothing() {
     let cs = real_city(); let cam = cam_in(&cs[0]);
@@ -38,4 +38,24 @@ fn cam_in(c: &City) -> V3 { v3(c.site.centre.x, c.site.centre.y + 5.0, c.site.ce
     let cs = real_city(); let cam = cam_in(&cs[0]);
     let p = city_parts(&cs, cam, 700.0, 6000, 150.0);
     assert!(p.parts.len() <= 6000 && p.parts.len() > 100, "{}", p.parts.len());
+}
+#[test] fn palette_has_ten_colours_and_all_are_used() {
+    assert_eq!(PALETTE.len(), 10);
+    let mut seen = [false; 10];
+    for seed in [7u64, 8, 9, 10] { let t = Terrain::new(seed);
+        for s in t.sites() { for b in &City::build(s, seed).buildings { assert!((b.color as usize) < 10); seen[b.color as usize] = true; } } }
+    assert!(seen.iter().all(|x| *x), "{seen:?}");
+}
+#[test] fn tall_buildings_get_cornices_streets_are_flagged_and_lamps_are_near() {
+    let cs = real_city(); let cam = cam_in(&cs[0]);
+    let p = city_parts(&cs, cam, 700.0, 100_000, 150.0).parts;
+    let tall = cs[0].buildings.iter().filter(|b| b.max.y - b.min.y > 8.0).count();
+    let cornices = p.iter().filter(|x| !x.facade && x.mesh == 0 && (x.scale.y - 0.4).abs() < 1e-4).count();
+    assert!(cornices >= tall / 2 && cornices > 0, "cornices {cornices} tall {tall}");
+    let streets: Vec<_> = p.iter().filter(|x| x.street).collect();
+    assert!(!streets.is_empty() && streets.iter().all(|x| !x.facade && (x.scale.y - 0.04).abs() < 1e-4));
+    assert!(p.iter().filter(|x| !x.street && x.mesh == 0 && !x.facade && (x.scale.y - 0.04).abs() < 1e-4).count() == 0);
+    let lamps: Vec<_> = p.iter().filter(|x| x.mesh == 1 || x.mesh == 3).collect();
+    assert!(!lamps.is_empty() && lamps.iter().all(|x| (x.pos.x - cam.x).hypot(x.pos.z - cam.z) <= 151.0));
+    assert!(lamps.iter().any(|x| x.glow));
 }

@@ -47,6 +47,9 @@ fn inst_glow(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = inst
 /// A building: lit like a normal part, with windows drawn by the shader (colour alpha 3).
 fn inst_facade(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = inst(rot, pos, s, color); i.color[3] = 3.0; i }
 
+/// A street strip: even asphalt with lane marks drawn by the shader (colour alpha 4).
+fn inst_street(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = inst(rot, pos, s, color); i.color[3] = 4.0; i }
+
 fn push_part(lists: &mut [Vec<Inst>; 4], p: &Part) {
     lists[p.mesh].push(if p.facade { inst_facade(p.rot, p.pos, p.scale, p.color) } else if p.glow { inst_glow(p.rot, p.pos, p.scale, p.color) } else { inst(p.rot, p.pos, p.scale, p.color) });
 }
@@ -457,7 +460,7 @@ impl Raster {
         }
         let cp = citygen::city_parts(wv.cities, wv.cam_pos, self.city_radius, CITY_BUDGET, 150.0);
         let city_start = all.len() as u32;
-        for p in &cp.parts { all.push(if p.facade { inst_facade(p.rot, p.pos, p.scale, p.color) } else { inst(p.rot, p.pos, p.scale, p.color) }); }
+        for p in &cp.parts { all.push(if p.facade { inst_facade(p.rot, p.pos, p.scale, p.color) } else if p.glow { inst_glow(p.rot, p.pos, p.scale, p.color) } else if p.street { inst_street(p.rot, p.pos, p.scale, p.color) } else { inst(p.rot, p.pos, p.scale, p.color) }); }
         let (city_end, city_near_end) = (all.len() as u32, city_start + cp.near as u32);
         if !all.is_empty() { self.queue.write_buffer(&self.ibuf, 0, bytemuck::cast_slice(&all)); }
 

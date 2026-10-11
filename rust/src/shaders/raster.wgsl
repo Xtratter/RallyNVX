@@ -142,7 +142,8 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     return vec4<f32>(shade(i.col, i.wp, n, 0.15, 16.0), 1.0);                  // plastic
 }
 
-struct IOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) emi: f32 };
+struct IOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) emi: f32,
+    @location(4) ctr: vec3<f32>, @location(5) size: vec3<f32> };
 
 fn inst_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec4<f32>) -> vec3<f32> {
     return (mat4x4<f32>(m0, m1, m2, m3) * vec4<f32>(p, 1.0)).xyz;
@@ -158,6 +159,8 @@ fn inst_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec
     o.n = normalize((m0.xyz / sc.x) * (n.x / sc.x) + (m1.xyz / sc.y) * (n.y / sc.y) + (m2.xyz / sc.z) * (n.z / sc.z));
     o.col = col.rgb;
     o.emi = col.a;
+    o.ctr = m3.xyz;
+    o.size = sc.xyz;
     return o;
 }
 @vertex fn vs_inst_shadow(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>,
@@ -166,6 +169,25 @@ fn inst_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec
     return u.light_vp * vec4<f32>(inst_world(p, m0, m1, m2, m3), 1.0);
 }
 @fragment fn fs_inst(i: IOut) -> @location(0) vec4<f32> {
+    // colour alpha 4 marks street strips: even asphalt with lane marks (strip start is a crossing centre, pitch 48, street 12)
+    if (i.emi > 3.5) {
+        let n = normalize(i.n);
+        var a = vec3<f32>(0.17, 0.17, 0.19) * (0.92 + 0.16 * hash2(floor(i.wp.xz * 9.0)));
+        if (n.y > 0.5) {
+            let ax = i.size.x > i.size.z;
+            let along = select(i.wp.z - (i.ctr.z - i.size.z * 0.5), i.wp.x - (i.ctr.x - i.size.x * 0.5), ax);
+            let lat = select(i.wp.x - i.ctr.x, i.wp.z - i.ctr.z, ax);
+            let m = along - floor(along / 48.0) * 48.0;
+            let crossing = m < 6.0 || m > 42.0;
+            if (!crossing) {
+                let dash = step(fract(along / 6.0), 0.5) * step(abs(lat), 0.12);
+                let edge = step(abs(abs(lat) - 5.3), 0.1);
+                a = mix(a, vec3<f32>(0.85, 0.80, 0.55), dash);
+                a = mix(a, vec3<f32>(0.80, 0.80, 0.80), edge);
+            }
+        }
+        return vec4<f32>(lit(a, i.wp, n), 1.0);
+    }
     // colour alpha 3 marks buildings: windows on the side faces from the world position
     if (i.emi > 2.5) {
         let n = normalize(i.n);
@@ -175,7 +197,9 @@ fn inst_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec
             let cell = vec2<f32>(dot(i.wp.xz, t) / 3.0, i.wp.y / 3.5);
             let f = fract(cell);
             let win = step(0.25, f.x) * step(f.x, 0.75) * step(0.3, f.y) * step(f.y, 0.75);
-            albedo = mix(albedo, vec3<f32>(0.50, 0.68, 0.80), win * 0.85);
+            let v = normalize(u.cam.xyz - i.wp);
+            let fr = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+            albedo = mix(albedo, vec3<f32>(0.50, 0.68, 0.80) * 0.8 + sky_gradient(reflect(-v, n)) * (0.1 + 0.5 * fr), win * 0.85);
         }
         return vec4<f32>(lit(albedo, i.wp, n), 1.0);
     }
