@@ -58,7 +58,7 @@ class MissionsActivity : Activity() {
             }
             card.addView(TextView(this).apply {
                 val air = info[o + 8].toInt()
-                val kindName = when (kind) { 0 -> t("Delivery", "Доставка"); 1 -> t("Race", "Гонка"); 2 -> t("Rings", "Кольца"); 3 -> t("Sling", "Подвес"); else -> t("Recon", "Разведка") }
+                val kindName = when (kind) { 0 -> t("Delivery", "Доставка"); 1 -> t("Race", "Гонка"); 2 -> t("Rings", "Кольца"); 3 -> t("Sling", "Подвес"); 5 -> t("Rescue", "Спасение"); else -> t("Recon", "Разведка") }
                 val acName = when (air) { 1 -> " · " + t("Helicopter", "Вертолёт"); 2 -> " · " + t("Drone", "Дрон"); else -> "" }
                 val urban = info[o + 9] > 0.5f
                 text = kindName + acName + (if (urban) " · " + t("City", "Город") else "") + "   " + "★".repeat(diff)
@@ -78,6 +78,7 @@ class MissionsActivity : Activity() {
                     2 -> if (info[o + 9] > 0.5f) t("Fly through the rings over the street, between the houses.", "Пролети кольца над улицей между домами.")
                          else t("Fly through every ring in order before time runs out.", "Пролети все кольца по порядку до конца времени.")
                     3 -> t("Hook the cargo on one roof and set it down on the green pad of another roof; swinging and bumps damage it.", "Зацепи груз на одной крыше и опусти на зелёную площадку другой крыши; раскачивание и удары его портят.")
+                    5 -> t("Land at each survivor site and wait for the people to board, then land on the base pad and wait to unload; hard landings hurt the passengers.", "Сядь на каждой площадке спасённых и дождись посадки людей, затем сядь на площадку базы и дождись высадки; жёсткие посадки ранят пассажиров.")
                     else -> t("Hover inside each zone for 2 seconds, in any order.", "Повисите в каждой зоне 2 секунды, в любом порядке.")
                 } + "\n" +
                     t("Reward: ", "Награда: ") + "🥉 ${base.toInt()}  🥈 ${(base * 1.5f).toInt()}  🥇 ${(base * 2.2f).toInt()}"

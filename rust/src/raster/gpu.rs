@@ -85,7 +85,8 @@ const SLOT_TREE: usize = 7;
 const SLOT_BUSH: usize = 11;
 const SLOT_ROCK: usize = 13;
 const SLOT_GRASS: usize = 16;
-const MODEL_SLOTS: usize = 17;
+const SLOT_PERSON: usize = 17;
+const MODEL_SLOTS: usize = 18;
 const MAX_MODEL_INST: usize = 6144;
 const NEAR_SHADOW: f32 = 90.0;   // plants within this distance of the car cast shadows
 const MODEL_ATTRS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4];
@@ -272,7 +273,7 @@ impl Raster {
         let (car, heli, drone) = (vm::build_car(&crate::game::vehicle::VehicleSpec::offroader()), vm::build_heli(&crate::game::flight::AircraftSpec::of(crate::game::flight::AircraftKind::Heli)), vm::build_drone(&crate::game::flight::AircraftSpec::of(crate::game::flight::AircraftKind::Drone)));
         let nat = nature_models::build_all();
         let models: Vec<ModelBuf> = [&car.body, &car.wheel, &heli.body, &heli.rotor, &heli.tail_rotor, &drone.body, &drone.prop].into_iter()
-            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain(std::iter::once(&nat.grass)).map(|m| model_buf(&device, m)).collect();
+            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass, &nat.person]).map(|m| model_buf(&device, m)).collect();
         assert_eq!(models.len(), MODEL_SLOTS);
         let mbuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("model_inst"), size: (MAX_MODEL_INST * std::mem::size_of::<MInst>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
@@ -452,6 +453,9 @@ impl Raster {
             }
         }
         let mut mall: Vec<MInst> = Vec::new();
+        // rescue: the survivors waiting at the pending sites (they cast shadows like the plants near the car)
+        for p in &wv.survivors { ml[SLOT_PERSON].push(MInst { m: mmat_s(Q::axis_angle(v3(0., 1., 0.), yaw_of(*p)), *p, 1.0), tint: [1.0; 4] }); }
+        mnear[SLOT_PERSON] = ml[SLOT_PERSON].len() as u32;
         let mut mranges = [(0u32, 0u32); MODEL_SLOTS];
         for k in 0..MODEL_SLOTS {
             let take = ml[k].len().min(MAX_MODEL_INST - mall.len());

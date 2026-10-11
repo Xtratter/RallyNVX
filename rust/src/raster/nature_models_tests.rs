@@ -41,3 +41,11 @@ fn check(m: &Mesh3, name: &str) {
     }
     for i in 0..200 { let t = tint(v3(i as f32, 0.0, 2.0 * i as f32)); assert!(t.iter().all(|c| *c >= 0.7 && *c <= 1.3)); }
 }
+#[test] fn the_person_model_is_small_upright_and_orange() {
+    let n = build_all(); let m = &n.person;
+    check(m, "person"); assert!(m.tris() <= 200, "{}", m.tris());
+    let (lo, hi) = m.bounds();
+    assert!(lo.y > -0.02 && hi.y > 1.6 && hi.y < 1.8, "height {}", hi.y);
+    assert!(hi.x < 0.5 && lo.x > -0.5 && hi.z < 0.4 && lo.z > -0.4);
+    assert!(m.verts.iter().any(|v| v.col[0] > 200 && v.col[1] > 90 && v.col[1] < 140 && v.col[2] < 40), "an orange vest");
+}

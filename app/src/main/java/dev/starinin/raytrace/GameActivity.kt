@@ -141,10 +141,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val left = (s[6] - s[5]).coerceAtLeast(0f)
         val kind = s[17].toInt()
         timer?.text = (if (phase == 1) t("Go!", "Вперёд!") else "%d:%02d".format(left.toInt() / 60, left.toInt() % 60)) +
-            (if (kind == 1 || kind == 2) "  ·  ${minOf(s[10].toInt() + 1, s[11].toInt())}/${s[11].toInt()}" else if (kind == 4) "  ·  ${s[10].toInt()}/${s[11].toInt()}" else "")
-        bar?.visibility = if (kind == 0 || kind == 3) View.VISIBLE else View.GONE
+            (if (kind == 1 || kind == 2) "  ·  ${minOf(s[10].toInt() + 1, s[11].toInt())}/${s[11].toInt()}" else if (kind == 4) "  ·  ${s[10].toInt()}/${s[11].toInt()}" else if (kind == 5) "  ·  ${s[10].toInt()}/${(s[11].toInt() - 1).coerceAtLeast(1)}  ·  👥 ${s[23].toInt()}" else "")
+        bar?.visibility = if (kind == 0 || kind == 3 || kind == 5) View.VISIBLE else View.GONE
         bar?.progress = s[7].toInt()
-        arrow?.setAngle(s[9]); dist?.text = (if (s[21] > 0.5f) "📦 " else "") + "${s[8].toInt()} m"
+        arrow?.setAngle(s[9]); dist?.text = (if (s[21] > 0.5f) "📦 " else "") + "${s[8].toInt()} m" + (if (s[24] > 0f) "  ·  ${(s[24] * 100).toInt()}%" else "")
         if (s[12] != 0f && !resultShown && s[18] != ignoreRun) showResult(s)
         if (s[12] == 0f && resultShown) { resultShown = false; resultPanel?.visibility = View.GONE }
     }
@@ -162,7 +162,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             c.addView(label(t("Time: ", "Время: ") + "%d:%02d".format(s[5].toInt() / 60, s[5].toInt() % 60) + if (s[17] == 0f || s[17] == 3f) "   " + t("Cargo: ", "Груз: ") + "${s[7].toInt()}%" else ""))
             c.addView(label(t("Reward: ", "Награда: ") + "+${s[14].toInt()} $   ·   " + t("Money: ", "Деньги: ") + "${s[16].toInt()} $"))
         } else {
-            val why = when (s[15].toInt()) { 1 -> t("Out of time", "Время вышло"); 2 -> t("Cargo destroyed", "Груз разбит"); 4 -> t("Crashed", "Авария"); else -> t("Abandoned", "Миссия брошена") }
+            val why = when (s[15].toInt()) { 1 -> t("Out of time", "Время вышло"); 2 -> if (s[17].toInt() == 5) t("Passengers hurt", "Пассажиры пострадали") else t("Cargo destroyed", "Груз разбит"); 4 -> t("Crashed", "Авария"); else -> t("Abandoned", "Миссия брошена") }
             c.addView(label(t("Failed", "Провал") + ": " + why, 22f))
         }
         c.addView(M3Widgets.button(this, t("Retry", "Ещё раз"), M3Widgets.ButtonKind.FILLED) { ignoreRun = Native.gameStats()[18]; Native.gameRestart(); resultShown = false; p.visibility = View.GONE },
