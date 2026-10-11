@@ -104,6 +104,64 @@ pub fn scene_wgsl(sc: &SceneData) -> String {
     s
 }
 
+pub const PHOTONS: u32 = 65536;
+/// Fixed-point scale of the photon counters (u32): power * FIXED.
+pub const FIXED: f32 = 1_048_576.0;
+
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] { [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]] }
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
+fn unit(a: [f32; 3]) -> [f32; 3] { let l = dot(a, a).sqrt(); [a[0] / l, a[1] / l, a[2] / l] }
+
+pub fn total_cells(sc: &SceneData) -> u32 { sc.receivers.iter().map(|r| r.cells[0] * r.cells[1]).sum() }
+pub fn receiver_offset(sc: &SceneData, i: usize) -> u32 { sc.receivers.iter().take(i).map(|r| r.cells[0] * r.cells[1]).sum() }
+
+/// `caustic_at(p)`: the photon map's irradiance / pi at world point p (zero off the receivers). with_map: the module declares CMAP.
+pub fn caustic_at_wgsl(sc: &SceneData, with_map: bool) -> String {
+    let mut s = String::new();
+    if with_map && sc.photons() {
+        s.push_str("@group(0) @binding(4) var<storage, read> CMAP: array<vec4<f32>>;\n");
+        s.push_str("fn cmap_cell(off: u32, nu: u32, nv: u32, a: f32, b: f32) -> vec3<f32> {\n  let x = clamp(a * f32(nu) - 0.5, 0.0, f32(nu) - 1.0);\n  let y = clamp(b * f32(nv) - 0.5, 0.0, f32(nv) - 1.0);\n  let x0 = u32(floor(x));\n  let y0 = u32(floor(y));\n  let x1 = min(x0 + 1u, nu - 1u);\n  let y1 = min(y0 + 1u, nv - 1u);\n  let fx = x - floor(x);\n  let fy = y - floor(y);\n  let c00 = CMAP[off + y0 * nu + x0].xyz;\n  let c10 = CMAP[off + y0 * nu + x1].xyz;\n  let c01 = CMAP[off + y1 * nu + x0].xyz;\n  let c11 = CMAP[off + y1 * nu + x1].xyz;\n  return mix(mix(c00, c10, fx), mix(c01, c11, fx), fy);\n}\n");
+        s.push_str("fn caustic_at(p: vec3<f32>) -> vec3<f32> {\n");
+        for (i, r) in sc.receivers.iter().enumerate() {
+            let n = unit(cross(r.u, r.v));
+            let _ = writeln!(s, "  {{\n    let q = p - {o};\n    if (abs(dot(q, {n})) < 0.004) {{\n      let a = dot(q, {u}) / {uu};\n      let b = dot(q, {v}) / {vv};\n      if (a >= 0.0 && a < 1.0 && b >= 0.0 && b < 1.0) {{ return cmap_cell({off}u, {nu}u, {nv}u, a, b); }}\n    }}\n  }}",
+                o = v3(r.origin), n = v3(n), u = v3(r.u), v = v3(r.v), uu = f(dot(r.u, r.u)), vv = f(dot(r.v, r.v)),
+                off = receiver_offset(sc, i), nu = r.cells[0], nv = r.cells[1]);
+        }
+        s.push_str("  return vec3<f32>(0.0);\n}\n");
+    } else {
+        s.push_str("fn caustic_at(p: vec3<f32>) -> vec3<f32> {\n  return vec3<f32>(0.0);\n}\n");
+    }
+    s
+}
+
+/// Constants and receiver helpers of the photon and resolve passes (the scene must have a prism and receivers).
+pub fn photon_wgsl(sc: &SceneData) -> String {
+    let p = sc.prism().expect("photon_wgsl needs a prism");
+    let m = &sc.mats[p.mat];
+    let Shape::Prism { side, len, yaw } = p.shape else { unreachable!() };
+    let mut s = format!(
+        "const PR_C: vec3<f32> = {};\nconst PR_SIDE: f32 = {};\nconst PR_LEN: f32 = {};\nconst PR_YAW: f32 = {};\nconst PR_SPIN: f32 = {};\nconst PR_BOUND: f32 = {};\nconst PR_IOR: f32 = {};\nconst PR_DISP: f32 = {};\nconst PHOTONS: f32 = {};\nconst FIXED: f32 = {};\nconst TOTAL_CELLS: u32 = {}u;\n",
+        v3(p.pos), f(side), f(len), f(yaw), f(p.spin), f(p.bound), f(m.ior), f(m.dispersion), f(PHOTONS as f32), f(FIXED), total_cells(sc));
+    // rx_hit: nearest receiver hit by the ray (p, d): (counter cell index, t); index -1 on a miss
+    s.push_str("fn rx_hit(p: vec3<f32>, d: vec3<f32>) -> vec2<f32> {\n  var best = vec2<f32>(-1.0, 1e9);\n");
+    for (i, r) in sc.receivers.iter().enumerate() {
+        let n = unit(cross(r.u, r.v));
+        let _ = writeln!(s, "  {{\n    let den = dot({n}, d);\n    if (abs(den) > 1e-6) {{\n      let t = dot({o} - p, {n}) / den;\n      if (t > 1e-3 && t < best.y) {{\n        let q = p + d * t - {o};\n        let a = dot(q, {u}) / {uu};\n        let b = dot(q, {v}) / {vv};\n        if (a >= 0.0 && a < 1.0 && b >= 0.0 && b < 1.0) {{\n          let cx = min(u32(a * {nu}.0), {nu1}u);\n          let cy = min(u32(b * {nv}.0), {nv1}u);\n          best = vec2<f32>(f32({off}u + cy * {nu}u + cx), t);\n        }}\n      }}\n    }}\n  }}",
+            n = v3(n), o = v3(r.origin), u = v3(r.u), v = v3(r.v), uu = f(dot(r.u, r.u)), vv = f(dot(r.v, r.v)),
+            nu = r.cells[0], nv = r.cells[1], nu1 = r.cells[0] - 1, nv1 = r.cells[1] - 1, off = receiver_offset(sc, i));
+    }
+    s.push_str("  return best;\n}\n");
+    // cell_area: area of one cell of the receiver that owns counter cell i
+    s.push_str("fn cell_area(i: u32) -> f32 {\n");
+    for (i, r) in sc.receivers.iter().enumerate() {
+        let area = dot(cross(r.u, r.v), cross(r.u, r.v)).sqrt() / (r.cells[0] * r.cells[1]) as f32;
+        let _ = writeln!(s, "  if (i < {}u) {{ return {}; }}", receiver_offset(sc, i) + r.cells[0] * r.cells[1], f(area));
+    }
+    s.push_str("  return 1.0;\n}\n");
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,5 +202,42 @@ mod tests {
         assert!(g.contains("m.ior = 1.62; m.disp = 2.0;"), "{g}");
         assert!(g.contains("m.ior = 1.5; m.disp = 0.0;"));
         crate::shaders::validate_for_tests("trace/ior", crate::shaders::trace(&sc));
+    }
+
+    #[test]
+    fn photon_shaders_generate_and_validate_for_the_prism_scene() {
+        let sc = crate::scene::builtin(3);
+        assert!(sc.photons());
+        crate::shaders::validate_for_tests("photon", crate::shaders::photon(&sc));
+        crate::shaders::validate_for_tests("caustic_resolve", crate::shaders::caustic_resolve(&sc));
+        crate::shaders::validate_for_tests("trace/prism+map", crate::shaders::trace(&sc));
+        crate::shaders::validate_for_tests("gi_trace/prism+map", crate::shaders::gi_trace(&sc));
+    }
+
+    #[test]
+    fn scenes_without_photons_have_a_stub_lookup() {
+        let sc = crate::scene::builtin(0);
+        assert!(!sc.photons());
+        assert!(caustic_at_wgsl(&sc, true).contains("return vec3<f32>(0.0);"));
+        assert!(!caustic_at_wgsl(&sc, true).contains("CMAP"));
+        crate::shaders::validate_for_tests("trace/no-photons", crate::shaders::trace(&sc));
+    }
+
+    #[test]
+    fn photon_budget_and_fixed_point_cannot_overflow() {
+        // worst case: sun colour 10 with the light setting at 2x, a prism bound radius of 1.5 m, every photon into one cell
+        let e_perp = std::f32::consts::PI * 10.0 * 2.0;
+        let beam_area = std::f32::consts::PI * 1.5 * 1.5;
+        let per_photon = e_perp * beam_area / PHOTONS as f32;
+        assert!((per_photon * FIXED) as f64 * PHOTONS as f64 * 2.0 <= u32::MAX as f64, "2x headroom lost");
+    }
+
+    #[test]
+    fn receiver_offsets_are_packed_back_to_back() {
+        let sc = crate::scene::builtin(3);
+        let cells: Vec<u32> = sc.receivers.iter().map(|r| r.cells[0] * r.cells[1]).collect();
+        assert_eq!(total_cells(&sc), cells.iter().sum::<u32>());
+        assert_eq!(receiver_offset(&sc, 1), cells[0]);
+        assert_eq!(receiver_offset(&sc, 0), 0);
     }
 }

@@ -6,7 +6,17 @@ const SCENE: &str = include_str!("shaders/scene.wgsl");
 
 fn join(body: &str) -> String { format!("{}\n{}", COMMON, body) }
 fn join_scene(sc: &crate::scene::SceneData, body: &str) -> String {
-    format!("{}\n{}\n{}\n{}\n{}", COMMON, SCENE, crate::scenegen::scene_wgsl(sc), crate::dispersion::spectrum_wgsl(), body)
+    format!("{}\n{}\n{}\n{}\n{}\n{}", COMMON, SCENE, crate::scenegen::scene_wgsl(sc), crate::scenegen::caustic_at_wgsl(sc, true), crate::dispersion::spectrum_wgsl(), body)
+}
+
+/// Photon pass: sun photons through the prism into the receivers' counters (scene must satisfy `SceneData::photons`).
+pub fn photon(sc: &crate::scene::SceneData) -> String {
+    format!("{}\n{}\n{}\n{}\n{}\n{}\n{}", COMMON, SCENE, crate::scenegen::scene_wgsl(sc), crate::scenegen::caustic_at_wgsl(sc, false), crate::dispersion::spectrum_wgsl(), crate::scenegen::photon_wgsl(sc), include_str!("shaders/photon.wgsl"))
+}
+
+/// Resolve pass: counters -> exponentially averaged irradiance map.
+pub fn caustic_resolve(sc: &crate::scene::SceneData) -> String {
+    format!("{}\nconst PI: f32 = 3.14159265;\n{}\n{}", COMMON, crate::scenegen::photon_wgsl(sc), include_str!("shaders/caustic_resolve.wgsl"))
 }
 
 pub fn trace(sc: &crate::scene::SceneData) -> String { join_scene(sc, include_str!("shaders/trace.wgsl")) }

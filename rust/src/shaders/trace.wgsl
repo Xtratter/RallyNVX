@@ -72,7 +72,8 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
     let nf = select(-n, n, front);
 
     if (m.kind == 0u) {
-      let dl = direct_light(p, nf, h.y); // one call site: the GPU compiler inlines every call
+      let ca = select(vec3<f32>(0.0), caustic_at(p), has(F_CAUSTICS)); // photon map (prism spectrum)
+      let dl = direct_light(p, nf, h.y) + ca; // one call site: the GPU compiler inlines every call
       if (!pt) {
         var lo = dl;
         if (has(F_CAUSTICS)) { lo += caustic(p, nf); }

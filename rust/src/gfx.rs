@@ -50,6 +50,9 @@ struct Targets {
     gi: Option<GiTargets>,
 }
 
+/// Photon passes of a scene with a prism: counters, the averaged map the trace passes read, and the two pipelines.
+struct Photon { counts: wgpu::Buffer, map: wgpu::Buffer, photon_pl: wgpu::ComputePipeline, photon_bgl: wgpu::BindGroupLayout, resolve_pl: wgpu::ComputePipeline, resolve_bgl: wgpu::BindGroupLayout, cells: u32 }
+
 /// GPU timestamp queries (only when the adapter supports TIMESTAMP_QUERY). Two query slots per pass slot.
 struct Prof { qs: wgpu::QuerySet, resolve: wgpu::Buffer, read: wgpu::Buffer, period: f32 }
 
@@ -73,12 +76,18 @@ pub struct Gfx {
     present_pl: wgpu::RenderPipeline, present_bgl: wgpu::BindGroupLayout,
     targets: Option<Targets>,
     prof: Option<Prof>,
+    photon: Option<Photon>,
+    dummy_map: wgpu::Buffer,
     pass_ms: [f32; 8],
     _window: Box<dyn std::any::Any>, // keeps the native window alive; dropped after `surface` (field order)
 }
 
 fn shader(dev: &wgpu::Device, name: &str, src: String) -> wgpu::ShaderModule {
     dev.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(name), source: wgpu::ShaderSource::Wgsl(src.into()) })
+}
+fn storage(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry { binding, visibility: wgpu::ShaderStages::COMPUTE, count: None,
+        ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only }, has_dynamic_offset: false, min_binding_size: None } }
 }
 fn uniform(binding: u32, vis: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry { binding, visibility: vis, count: None,
@@ -161,7 +170,7 @@ impl Gfx {
 
         let cs = wgpu::ShaderStages::COMPUTE;
         let fs = wgpu::ShaderStages::FRAGMENT;
-        let trace_bgl = bgl(&device, "trace", &[uniform(0, cs), tex_out(1, wgpu::TextureFormat::Rgba16Float), tex_out(2, wgpu::TextureFormat::Rgba32Float), tex_out(3, wgpu::TextureFormat::Rgba16Float)]);
+        let trace_bgl = bgl(&device, "trace", &[uniform(0, cs), tex_out(1, wgpu::TextureFormat::Rgba16Float), tex_out(2, wgpu::TextureFormat::Rgba32Float), tex_out(3, wgpu::TextureFormat::Rgba16Float), storage(4, true)]);
         let temporal_bgl = bgl(&device, "temporal", &[
             uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_in(3, cs, false), tex_in(4, cs, false),
             tex_out(5, wgpu::TextureFormat::Rgba16Float),
@@ -171,7 +180,7 @@ impl Gfx {
             tex_out(3, wgpu::TextureFormat::Rgba16Float), uniform(4, cs),
         ]);
         let f16 = wgpu::TextureFormat::Rgba16Float;
-        let gi_trace_bgl = bgl(&device, "gi_trace", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_out(3, f16)]);
+        let gi_trace_bgl = bgl(&device, "gi_trace", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_out(3, f16), storage(4, true)]);
         let gi_temporal_bgl = bgl(&device, "gi_temporal", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_in(3, cs, false), tex_in(4, cs, false), tex_out(5, f16)]);
         let gi_atrous_bgl = bgl(&device, "gi_atrous", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_out(3, f16), uniform(4, cs)]);
         let composite_bgl = bgl(&device, "composite", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_in(3, cs, false), tex_in(4, cs, false), tex_out(5, f16)]);
@@ -253,15 +262,43 @@ impl Gfx {
         } else { None };
         log::info!("gpu timestamps: {}", has_ts);
 
-        Gfx {
+        let dummy_map = device.create_buffer(&wgpu::BufferDescriptor { label: Some("no_map"), size: 16, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
+        let mut g = Gfx {
             surface, device, queue, config, modes: caps.present_modes, params_buf, step_bufs, gi_step_bufs, sampler,
             gi_trace_pl, gi_trace_bgl, gi_temporal_pl, gi_temporal_bgl, gi_atrous_pl, gi_atrous_bgl, composite_pl, composite_bgl,
-            trace_pl, trace_bgl, temporal_pl, temporal_bgl, atrous_pl, atrous_bgl, present_pl, present_bgl, targets: None, prof, pass_ms: [0.0; 8], _window: keep,
-        }
+            trace_pl, trace_bgl, temporal_pl, temporal_bgl, atrous_pl, atrous_bgl, present_pl, present_bgl, targets: None, prof, pass_ms: [0.0; 8], _window: keep, photon: None, dummy_map,
+        };
+        g.photon = g.build_photon(&scene0);
+        g
     }
 
     /// Per-pass GPU ms of the last frame (slots: trace, gi_trace, gi_temporal, gi_atrous, temporal, atrous, composite, present); 0 = unsupported/unmeasured.
     pub fn pass_ms(&self) -> [f32; 8] { self.pass_ms }
+
+    fn map_binding(&self) -> wgpu::BindingResource<'_> {
+        self.photon.as_ref().map(|p| p.map.as_entire_binding()).unwrap_or_else(|| self.dummy_map.as_entire_binding())
+    }
+
+    /// Counters, map and pipelines of the photon passes; None when the scene has no sun, prism or receivers.
+    fn build_photon(&self, sc: &crate::scene::SceneData) -> Option<Photon> {
+        if !sc.photons() { return None; }
+        let cells = crate::scenegen::total_cells(sc);
+        let cs = wgpu::ShaderStages::COMPUTE;
+        let counts = self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("photon_counts"), size: cells as u64 * 12, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
+        let map = self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("photon_map"), size: cells as u64 * 16, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
+        let photon_bgl = bgl(&self.device, "photon", &[uniform(0, cs), storage(1, false)]);
+        let resolve_bgl = bgl(&self.device, "caustic_resolve", &[uniform(0, cs), storage(1, false), storage(2, false)]);
+        let mk = |name: &str, src: String, l: &wgpu::BindGroupLayout| {
+            let m = shader(&self.device, name, src);
+            self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(name), layout: Some(&layout(&self.device, l)), module: &m,
+                entry_point: Some("main"), compilation_options: Default::default(), cache: None,
+            })
+        };
+        let photon_pl = mk("photon", crate::shaders::photon(sc), &photon_bgl);
+        let resolve_pl = mk("caustic_resolve", crate::shaders::caustic_resolve(sc), &resolve_bgl);
+        Some(Photon { counts, map, photon_pl, photon_bgl, resolve_pl, resolve_bgl, cells })
+    }
 
     /// Compiles the scene into the trace and GI passes (the scene's numbers become shader constants; takes a moment).
     pub fn set_scene(&mut self, sc: &crate::scene::SceneData) {
@@ -277,6 +314,7 @@ impl Gfx {
         let g = mk("gi_trace", crate::shaders::gi_trace(sc), &self.gi_trace_bgl);
         self.trace_pl = t;
         self.gi_trace_pl = g;
+        self.photon = self.build_photon(sc);
         log::info!("scene \"{}\" compiled in {:.0} ms", sc.name, t0.elapsed().as_secs_f32() * 1000.0);
     }
 
@@ -365,6 +403,7 @@ impl Gfx {
             (1, wgpu::BindingResource::TextureView(&t.raw.view)),
             (2, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
             (3, wgpu::BindingResource::TextureView(&t.alb.view)),
+            (4, self.map_binding()),
         ]);
         let temporal_bg = bg(dev, &self.temporal_bgl, &[
             (0, pb.clone()),
@@ -400,6 +439,7 @@ impl Gfx {
                 (1, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
                 (2, wgpu::BindingResource::TextureView(&t.alb.view)),
                 (3, wgpu::BindingResource::TextureView(&g.raw.view)),
+                (4, self.map_binding()),
                 ]);
             let b = bg(dev, &self.gi_temporal_bgl, &[
                 (0, pb.clone()),
@@ -435,7 +475,7 @@ impl Gfx {
         }
         let shown = if gi_on { &t.comp.view } else { out };
         let present_bg = bg(dev, &self.present_bgl, &[
-            (0, pb),
+            (0, pb.clone()),
             (1, wgpu::BindingResource::TextureView(shown)),
             (2, wgpu::BindingResource::Sampler(&self.sampler)),
         ]);
@@ -446,6 +486,20 @@ impl Gfx {
             query_set: &p.qs, beginning_of_pass_write_index: b, end_of_pass_write_index: e }));
         let slot = |s: u32| cts(Some(2 * s), Some(2 * s + 1));
         let mut enc = dev.create_command_encoder(&Default::default());
+        if let Some(ph) = &self.photon {
+            let pbg = bg(dev, &ph.photon_bgl, &[(0, pb.clone()), (1, ph.counts.as_entire_binding())]);
+            let rbg = bg(dev, &ph.resolve_bgl, &[(0, pb.clone()), (1, ph.counts.as_entire_binding()), (2, ph.map.as_entire_binding())]);
+            {
+                let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("photon"), timestamp_writes: None });
+                cp.set_pipeline(&ph.photon_pl);
+                cp.set_bind_group(0, &pbg, &[]);
+                cp.dispatch_workgroups(crate::scenegen::PHOTONS / 64, 1, 1);
+            }
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("caustic_resolve"), timestamp_writes: None });
+            cp.set_pipeline(&ph.resolve_pl);
+            cp.set_bind_group(0, &rbg, &[]);
+            cp.dispatch_workgroups(ph.cells.div_ceil(64), 1, 1);
+        }
         {
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("trace"), timestamp_writes: slot(0) });
             cp.set_pipeline(&self.trace_pl);
