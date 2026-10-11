@@ -34,6 +34,13 @@ A file with an error is not loaded; the reason is shown (a toast on Android, red
   - `torus`: `pos`, `radii` [major, minor]; `menger`: `pos`, `size` (half size), `spin`; `blobs`: `pos`, `pos2`, `radii` [r1, r2], `smooth`
   - thin **glass boxes** act as coloured filters: sunlight and lamp light passing through them is tinted, so they cast coloured light. Glass spheres block direct light; their focused light (caustic) is added for the first glass sphere.
 
+### Prisms, dispersion and rainbow caustics
+
+- `prism`: an equilateral glass prism with the apex up: `pos`, `size` (side of the triangle), `length`, `yaw` (rotation about the vertical axis, radians), optional `spin`. At most one per scene.
+- A glass material gets `ior` (refractive index at 589 nm, default 1.5) and `dispersion` (0 = none, 1 = ordinary crown glass, 2.5-4 = a vivid fan). Violet is bent more than red: `n = ior + 0.012 * dispersion * ((0.589 / wavelength_um)^2 - 1)`.
+- `caustic_receivers` (at most 2): the surfaces the spectrum can land on, each `{"origin": [x,y,z], "u": [..], "v": [..], "cells": [nu, nv]}` (a parallelogram origin + u + v, up to 256 x 256 cells). The scene needs a `sun`, a `prism` and at least one receiver; the sun's photons are traced through the prism onto them and accumulate over a few frames, so the rainbow settles after a moment.
+- Tips: a prism with its apex up deflects light towards its base, and light that meets the second face too obliquely is totally reflected. The built-in Prism scene lets the sun travel slightly upward (a sun below the horizon, never seen) through a low slit, which gives a 40 degree incidence. Check your own scene with the unit test pattern in `rust/src/scene.rs` (`prism_scene_sends_a_visible_fan_onto_a_receiver`).
+
 Walls are just boxes; leave a gap (for example two ceiling boxes with a slit between them) to let the sun in.
 
 ## Русский
@@ -58,5 +65,12 @@ Walls are just boxes; leave a gap (for example two ceiling boxes with a slit bet
   - `sphere`: `pos`, `radius`; `box`: `pos`, `size` (половинные размеры), `round` (скругление), `spin` (рад/с вокруг вертикали)
   - `torus`: `pos`, `radii` [большой, малый]; `menger`: `pos`, `size` (полуразмер), `spin`; `blobs`: `pos`, `pos2`, `radii` [r1, r2], `smooth`
   - тонкие **стеклянные боксы** работают как цветные фильтры: солнечный и ламповый свет, прошедший через них, окрашивается, поэтому они отбрасывают цветной свет. Стеклянные сферы блокируют прямой свет; их фокусированный свет (каустика) добавляется для первой стеклянной сферы.
+
+### Призмы, дисперсия и радужные каустики
+
+- `prism`: равносторонняя стеклянная призма вершиной вверх: `pos`, `size` (сторона треугольника), `length`, `yaw` (поворот вокруг вертикали, радианы), необязательно `spin`. Не более одной в сцене.
+- У стеклянного материала есть `ior` (показатель преломления для 589 нм, по умолчанию 1.5) и `dispersion` (0 — нет, 1 — обычное крон-стекло, 2.5–4 — яркий веер). Фиолетовый преломляется сильнее красного: `n = ior + 0.012 * dispersion * ((0.589 / длина_волны_мкм)^2 - 1)`.
+- `caustic_receivers` (до 2): поверхности, на которые может лечь спектр, каждая `{"origin": [x,y,z], "u": [..], "v": [..], "cells": [nu, nv]}` (параллелограмм origin + u + v, до 256 x 256 ячеек). Нужны `sun`, `prism` и хотя бы один приёмник; фотоны солнца проходят через призму и копятся несколько кадров, поэтому радуга устанавливается не сразу.
+- Советы: призма вершиной вверх отклоняет свет к основанию, а свет, подошедший ко второй грани слишком полого, полностью отражается. В встроенной сцене «Призма» солнце идёт чуть вверх (оно «под горизонтом» и не видно) через низкую щель, это даёт угол падения 40 градусов. Свою сцену можно проверить по образцу теста `prism_scene_sends_a_visible_fan_onto_a_receiver` в `rust/src/scene.rs`.
 
 Стены — это просто боксы; оставьте щель (например, два бокса потолка с зазором), чтобы впустить солнце.

@@ -16,6 +16,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 
 ## Features
 
+- **Scenes**: four built in (Classic, Sun room, Materials, Prism with a dispersed rainbow) plus your own JSON files with spheres, boxes, prisms, sun and lamps, mirror, glossy, tinted and dispersive glass (see [docs/scenes.md](docs/scenes.md))
 - **Two modes**: *Hybrid* (one ray per pixel with shadows, global illumination, caustics, reflections and refraction) and
   *Path tracing* (progressive: converges to a clean image when the camera is still)
 - **Temporal reprojection**: history is reprojected with the previous camera, validated by depth, normal and material id,
