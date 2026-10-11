@@ -43,7 +43,7 @@ fn occ(o: &Obj) -> String {
 }
 
 fn material_case(m: &Material) -> String {
-    let mut s = format!("m.albedo = {}; m.kind = {}u; m.rough = {};", v3(m.color), m.kind, f(m.rough));
+    let mut s = format!("m.albedo = {}; m.kind = {}u; m.rough = {}; m.ior = {}; m.disp = {};", v3(m.color), m.kind, f(m.rough), f(m.ior), f(m.dispersion));
     if let Some((c2, k)) = m.checker {
         let _ = write!(s, " if (((i32(floor(p.x * {k})) + i32(floor(p.z * {k}))) & 1) == 1) {{ m.albedo = {c2}; }}", c2 = v3(c2), k = f(k));
     }
@@ -96,7 +96,7 @@ pub fn scene_wgsl(sc: &SceneData) -> String {
         }
         s.push_str("  return tr;\n}\n");
     }
-    s.push_str("fn material(p: vec3<f32>, id: f32) -> Mat {\n  var m: Mat;\n  m.albedo = vec3<f32>(0.8);\n  m.emit = vec3<f32>(0.0);\n  m.kind = 0u;\n  m.rough = 0.0;\n  switch (i32(id + 0.5)) {\n");
+    s.push_str("fn material(p: vec3<f32>, id: f32) -> Mat {\n  var m: Mat;\n  m.albedo = vec3<f32>(0.8);\n  m.emit = vec3<f32>(0.0);\n  m.kind = 0u;\n  m.rough = 0.0;\n  m.ior = 1.5;\n  m.disp = 0.0;\n  switch (i32(id + 0.5)) {\n");
     for (i, o) in sc.objs.iter().enumerate() {
         let _ = writeln!(s, "    case {i}: {{ {} }}", material_case(&sc.mats[o.mat]));
     }
@@ -134,5 +134,15 @@ mod tests {
         let g = scene_wgsl(&sc);
         assert!(g.contains("d_prism(p,") && g.contains("occ_prism(ro,"), "{g}");
         crate::shaders::validate_for_tests("trace/prism", crate::shaders::trace(&sc));
+    }
+
+    #[test]
+    fn material_code_carries_ior_and_dispersion() {
+        let sc = crate::scene::parse(r#"{"materials":[{"name":"g","kind":"glass","ior":1.62,"dispersion":2.0},{"name":"w"}],
+            "objects":[{"type":"sphere","pos":[0,1,0],"material":"g"},{"type":"sphere","pos":[3,1,0],"material":"w"}]}"#).unwrap();
+        let g = scene_wgsl(&sc);
+        assert!(g.contains("m.ior = 1.62; m.disp = 2.0;"), "{g}");
+        assert!(g.contains("m.ior = 1.5; m.disp = 0.0;"));
+        crate::shaders::validate_for_tests("trace/ior", crate::shaders::trace(&sc));
     }
 }

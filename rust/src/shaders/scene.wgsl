@@ -282,6 +282,8 @@ struct Mat {
   emit: vec3<f32>,
   kind: u32,
   rough: f32,
+  ior: f32,
+  disp: f32,
 };
 
 // material(p, id) is generated per scene (id = object index).

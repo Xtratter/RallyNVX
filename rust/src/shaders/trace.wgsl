@@ -21,6 +21,7 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
   var col = vec3<f32>(0.0);
   var inside = false;
   var spec = true; // only specular vertices since camera / last diffuse vertex
+  var lam = 0.0; // hero wavelength (nm) of this sample once it met dispersive glass
   let pt = P.mode == 1u;
   let max_b = i32(P.bounces);
   var diff_seen = false;
@@ -106,11 +107,22 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
       rd = r;
       spec = true;
     } else {
-      if (diff_seen && !has(F_CAUSTICS)) { break; }
+      // dispersive glass: one hero wavelength per camera sample (its colour goes into the throughput); the light such glass
+      // throws onto diffuse surfaces comes from the photon map, so paths that reach it after a diffuse vertex end here
+      var nidx = m.ior;
+      if (m.disp > 0.0) {
+        if (lam == 0.0) {
+          lam = 380.0 + 400.0 * rnd();
+          thr = thr * wavelength_rgb(lam);
+        }
+        nidx = ior_l(lam, m.ior, m.disp);
+      }
+      if (diff_seen && (!has(F_CAUSTICS) || m.disp > 0.0)) { break; }
       let cosi = clamp(-dot(rd, nf), 0.0, 1.0);
-      let eta = select(1.5, 1.0 / 1.5, front);
+      let f0 = (nidx - 1.0) / (nidx + 1.0);
+      let eta = select(nidx, 1.0 / nidx, front);
       let rr = refract(rd, nf, eta);
-      var fr = schlick(cosi, 0.04);
+      var fr = schlick(cosi, f0 * f0);
       if (dot(rr, rr) < 0.5) {
         fr = 1.0;
       }
