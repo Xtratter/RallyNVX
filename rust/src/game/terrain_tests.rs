@@ -30,3 +30,25 @@ use super::*;
     assert_eq!(t.height(123.0, -45.0), 0.0);
     assert!((t.normal(1.0, 1.0).y - 1.0).abs() < 1e-6);
 }
+#[test] fn mesh_indices_are_valid_and_counts_match() {
+    let t = Terrain::new(5);
+    for lod in 0..=2u32 {
+        let m = t.tile_mesh(-2, 3, lod);
+        let n = (TILE_CELLS >> lod) + 1;
+        assert!(m.verts.len() >= n * n);
+        assert_eq!(m.idx.len() % 3, 0);
+        assert!(m.idx.iter().all(|&i| (i as usize) < m.verts.len()));
+        assert!(m.verts.iter().all(|v| v.iter().all(|c| c.is_finite())));
+    }
+}
+#[test] fn neighbouring_tiles_share_edge_heights() {
+    let t = Terrain::new(11);
+    let a = t.tile_mesh(0, 0, 0); let b = t.tile_mesh(1, 0, 0);
+    let n = TILE_CELLS + 1;
+    for j in 0..n { assert_eq!(a.verts[j * n + TILE_CELLS][1], b.verts[j * n][1], "row {j}"); }
+}
+#[test] fn mesh_normals_are_unit_and_point_up() {
+    let m = Terrain::new(2).tile_mesh(4, -1, 1);
+    let n = (TILE_CELLS >> 1) + 1;
+    for v in &m.verts[..n * n] { let l = (v[3] * v[3] + v[4] * v[4] + v[5] * v[5]).sqrt(); assert!((l - 1.0).abs() < 1e-3 && v[4] > 0.0); }
+}

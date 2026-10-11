@@ -58,6 +58,45 @@ impl Terrain {
     }
 }
 
+/// Vertices are `[x, y, z, nx, ny, nz]`.
+pub struct Mesh { pub verts: Vec<[f32; 6]>, pub idx: Vec<u32> }
+
+impl Terrain {
+    /// Grid of `TILE_CELLS >> lod` cells over tile (tx, tz), plus downward skirts on all four edges
+    /// (hide cracks between tiles of different LOD).
+    pub fn tile_mesh(&self, tx: i32, tz: i32, lod: u32) -> Mesh {
+        let n = TILE_CELLS >> lod;
+        let step = TILE_SIZE / n as f32;
+        let (ox, oz) = (tx as f32 * TILE_SIZE, tz as f32 * TILE_SIZE);
+        let mut verts = Vec::with_capacity((n + 1) * (n + 1) + 4 * (n + 1));
+        for j in 0..=n { for i in 0..=n {
+            let (x, z) = (ox + i as f32 * step, oz + j as f32 * step);
+            let nm = self.normal(x, z);
+            verts.push([x, self.height(x, z), z, nm.x, nm.y, nm.z]);
+        } }
+        let w = (n + 1) as u32;
+        let mut idx = Vec::with_capacity(n * n * 6 + 4 * n * 6);
+        for j in 0..n as u32 { for i in 0..n as u32 {
+            let a = j * w + i; let (b, c, d) = (a + 1, a + w, a + w + 1);
+            idx.extend_from_slice(&[a, c, b, b, c, d]);
+        } }
+        let drop = 2.0 * step + 2.0;
+        let mut skirt = |edge: Vec<u32>| {
+            let base = verts.len() as u32;
+            for &v in &edge { let mut p = verts[v as usize]; p[1] -= drop; verts.push(p); }
+            for k in 0..edge.len() - 1 {
+                let (a, b, c, d) = (edge[k], edge[k + 1], base + k as u32, base + k as u32 + 1);
+                idx.extend_from_slice(&[a, c, b, b, c, d]);
+            }
+        };
+        skirt((0..w).collect());
+        skirt((0..w).map(|i| n as u32 * w + i).collect());
+        skirt((0..w).map(|j| j * w).collect());
+        skirt((0..w).map(|j| j * w + n as u32).collect());
+        Mesh { verts, idx }
+    }
+}
+
 #[cfg(test)]
 #[path = "terrain_tests.rs"]
 mod tests;
