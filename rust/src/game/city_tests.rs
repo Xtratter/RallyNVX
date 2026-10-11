@@ -151,3 +151,36 @@ fn spread(t: &Terrain, s: &CitySite) -> f32 {
     assert!(omega.len() < 2.0 * 0.6, "rotation must be damped on contact: {omega:?}");
     assert!(vel.x < 10.0, "tangential slip is reduced too: {vel:?}");
 }
+#[test] fn intersections_sit_on_the_street_centre_lines_at_the_plateau_height() {
+    let c = City::build(site(), 4);
+    let p = c.intersection(3, 7);
+    assert_eq!((p.x, p.z, p.y), (1000.0 - HALF + 3.0 * PITCH, -700.0 - HALF + 7.0 * PITCH, 20.0));
+    assert_eq!(c.west_edge(5), c.intersection(0, 5));
+    assert!(c.inside(c.west_edge(5).x, c.west_edge(5).z));
+    for (i, j) in [(0, 0), (GRID - 1, GRID - 1), (4, 9)] { let q = c.intersection(i, j); assert!(c.roof_at(q.x, q.z).is_none(), "intersection ({i},{j}) must be free of buildings"); }
+    assert_eq!(c.roof_pads().len(), c.roofs.len());
+}
+#[test] fn routes_are_self_avoiding_street_walks_that_start_east() {
+    let c = City::build(site(), 4);
+    let mut turned = 0; let mut total_len = 0;
+    for key in 0..200u64 {
+        let from = (0, 1 + (key % 10) as i32);
+        let r = c.route(key, from, 12);
+        assert_eq!(r, c.route(key, from, 12), "deterministic");
+        assert!(r.len() <= 12 && !r.is_empty());
+        assert_eq!(r[0], (from.0 + 1, from.1), "the first step is east");
+        let mut seen = vec![from];
+        let pts: Vec<(i32, i32)> = std::iter::once(from).chain(r.iter().copied()).collect();
+        for w in pts.windows(2) {
+            assert_eq!((w[1].0 - w[0].0).abs() + (w[1].1 - w[0].1).abs(), 1, "one block per step");
+            assert!(w[1].0 >= 0 && w[1].0 < GRID && w[1].1 >= 0 && w[1].1 < GRID, "inside the grid");
+            assert!(!seen.contains(&w[1]), "revisited {:?}", w[1]);
+            seen.push(w[1]);
+        }
+        total_len += r.len();
+        let dirs: Vec<(i32, i32)> = pts.windows(2).map(|w| (w[1].0 - w[0].0, w[1].1 - w[0].1)).collect();
+        if dirs.windows(2).any(|d| d[0] != d[1]) { turned += 1; }
+    }
+    assert!(turned > 150, "routes must turn: {turned}/200");
+    assert!(total_len > 200 * 9, "routes are rarely boxed in early: {total_len}");
+}
