@@ -29,6 +29,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var lx = 0f; private var ly = 0f; private var ry = 0f
     private var seed = 0L
     private var mission = -1
+    private var air = false
+    private var rx = 0f
     private var profile = ""
 
     private var timer: Hud? = null
@@ -43,7 +45,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private val tick = object : Runnable {
         override fun run() {
             val s = Native.gameStats()
-            hud.text = "${s[1].toInt()} km/h · ${s[0].toInt()} fps · seed ${s[2].toInt()}"
+            hud.text = (if (s[20] > 0f) "${s[1].toInt()} km/h · ${s[19].toInt()} m" else "${s[1].toInt()} km/h") + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}"
             if (mission >= 0) updateMission(s)
             handler.postDelayed(this, if (mission >= 0) 100 else 250)
         }
@@ -55,6 +57,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         seed = intent.getLongExtra("seed", System.nanoTime()) and 0xFFFFFFL   // 24-bit: the HUD shows it exactly
         mission = intent.getIntExtra("mission", -1)
+        air = intent.getBooleanExtra("air", false)
         profile = intent.getStringExtra("profile") ?: ""
         val dp = resources.displayMetrics.density
         fun px(v: Float) = (v * dp).toInt()
@@ -67,7 +70,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             sv.holder.setFixedSize((dm.widthPixels * scale).toInt().coerceAtLeast(2), (dm.heightPixels * scale).toInt().coerceAtLeast(2))
         }
         root.addView(sv, FrameLayout.LayoutParams(-1, -1))
-        sticks = SticksLayer(this).also { it.onChange = { x, y, _, rY -> lx = x; ly = y; ry = rY; sendInput() } }
+        sticks = SticksLayer(this).also { it.onChange = { x, y, rX, rY -> lx = x; ly = y; rx = rX; ry = rY; sendInput() } }
         root.addView(sticks, FrameLayout.LayoutParams(-1, -1))
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
@@ -75,9 +78,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             M3Widgets.button(this, label, M3Widgets.ButtonKind.TONAL, onClick).also {
                 root.addView(it, FrameLayout.LayoutParams(px(w), px(48f), gravity).apply { setMargins(0, px(top), px(end), 0) })
             }
-        button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { Native.gameReset() }
+        if (!air) button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { Native.gameReset() }
         if (mission < 0) button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
-        button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
+        if (!air) button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
             (layoutParams as FrameLayout.LayoutParams).gravity = Gravity.BOTTOM or Gravity.END
             (layoutParams as FrameLayout.LayoutParams).setMargins(0, 0, px(40f), px(220f))
             setOnTouchListener { _, e ->
@@ -138,10 +141,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val left = (s[6] - s[5]).coerceAtLeast(0f)
         val kind = s[17].toInt()
         timer?.text = (if (phase == 1) t("Go!", "Вперёд!") else "%d:%02d".format(left.toInt() / 60, left.toInt() % 60)) +
-            (if (kind == 1) "  ·  ${minOf(s[10].toInt() + 1, s[11].toInt())}/${s[11].toInt()}" else "")
-        bar?.visibility = if (kind == 0) View.VISIBLE else View.GONE
+            (if (kind == 1 || kind == 2) "  ·  ${minOf(s[10].toInt() + 1, s[11].toInt())}/${s[11].toInt()}" else if (kind == 4) "  ·  ${s[10].toInt()}/${s[11].toInt()}" else "")
+        bar?.visibility = if (kind == 0 || kind == 3) View.VISIBLE else View.GONE
         bar?.progress = s[7].toInt()
-        arrow?.setAngle(s[9]); dist?.text = "${s[8].toInt()} m"
+        arrow?.setAngle(s[9]); dist?.text = (if (s[21] > 0.5f) "📦 " else "") + "${s[8].toInt()} m"
         if (s[12] != 0f && !resultShown && s[18] != ignoreRun) showResult(s)
         if (s[12] == 0f && resultShown) { resultShown = false; resultPanel?.visibility = View.GONE }
     }
@@ -156,10 +159,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         fun px(v: Float) = (v * dp).toInt()
         if (s[12] == 1f) {
             c.addView(label(arrayOf("", "🥉", "🥈", "🥇")[s[13].toInt().coerceIn(0, 3)] + "  " + t("Mission complete", "Миссия выполнена"), 22f))
-            c.addView(label(t("Time: ", "Время: ") + "%d:%02d".format(s[5].toInt() / 60, s[5].toInt() % 60) + if (s[17] == 0f) "   " + t("Cargo: ", "Груз: ") + "${s[7].toInt()}%" else ""))
+            c.addView(label(t("Time: ", "Время: ") + "%d:%02d".format(s[5].toInt() / 60, s[5].toInt() % 60) + if (s[17] == 0f || s[17] == 3f) "   " + t("Cargo: ", "Груз: ") + "${s[7].toInt()}%" else ""))
             c.addView(label(t("Reward: ", "Награда: ") + "+${s[14].toInt()} $   ·   " + t("Money: ", "Деньги: ") + "${s[16].toInt()} $"))
         } else {
-            val why = when (s[15].toInt()) { 1 -> t("Out of time", "Время вышло"); 2 -> t("Cargo destroyed", "Груз разбит"); else -> t("Abandoned", "Миссия брошена") }
+            val why = when (s[15].toInt()) { 1 -> t("Out of time", "Время вышло"); 2 -> t("Cargo destroyed", "Груз разбит"); 4 -> t("Crashed", "Авария"); else -> t("Abandoned", "Миссия брошена") }
             c.addView(label(t("Failed", "Провал") + ": " + why, 22f))
         }
         c.addView(M3Widgets.button(this, t("Retry", "Ещё раз"), M3Widgets.ButtonKind.FILLED) { ignoreRun = Native.gameStats()[18]; Native.gameRestart(); resultShown = false; p.visibility = View.GONE },
@@ -169,7 +172,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         p.visibility = View.VISIBLE
     }
 
-    private fun sendInput() { if (running) Native.gameInput(ly, lx, ry < -0.5f, handbrake) }
+    private fun sendInput() {
+        if (!running) return
+        if (air) Native.gameFlight(lx, ly, ry, rx) else Native.gameInput(ly, lx, ry < -0.5f, handbrake)
+    }
 
     override fun surfaceCreated(h: SurfaceHolder) { running = false }
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) {
