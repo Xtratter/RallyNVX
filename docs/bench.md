@@ -120,3 +120,7 @@ Lesson: the Adreno 650 does not turn stochastic or tiled skipping of a small bra
 ## Tried after 1.3.0: integer (fixed-point) Menger sponge (08.10.2026)
 
 - `sd_menger` in Q16 fixed point (one float->int conversion, `& mask` instead of `floor`, integer divide by the level scale, i32 `abs`/`max`): same picture, but SLOWER on the Adreno 650. A/B back to back at fixed 0.33x hybrid (1=1 2=0 18=0 19=0): float 42.6-44.2 ms GPU (trace pass 33-35 ms), integer 66-72 ms (trace pass 57-62 ms), about +60%. The first float run after an install was 65 ms (cold); every later float run was 43 ms. Dropped.
+
+## 1.8.0: Prism scene on the phone (11.10.2026)
+
+POCO F3, hybrid, adaptive 0.24x (264x600), Balanced defaults: Prism 56-57 fps / GPU 15-16 ms (trace pass 7-8 ms, photon and resolve passes included in the total), Sun room 21.9 fps / 45 ms. The first frame of every scene came up without device loss (the scene is compiled into the shader in about a second). The data-driven uniform variant of the scene system was about 15x slower on this GPU, which is why scenes are baked into the shader as constants.
