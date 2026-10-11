@@ -37,12 +37,11 @@ phone (no CI screenshots). Gameplay physics, missions and collision shapes do no
 
 - Lakes fill low ground: the level has one water height chosen from the seed (the 12th percentile of sampled terrain
   heights, flat plateaus under cities excluded). `Terrain`/`World` expose `water_level() -> Option<f32>`.
-- Rendering: one large quad per frame centred on the camera at the water height; fragment shader: depth fade from the
-  terrain height (sampled analytically with the terrain function is not possible on GPU, so the fade uses the
-  distance of the pixel below the surface via the depth buffer copy is NOT used; instead the mesh is the terrain
-  itself): water is drawn as a second pass of the terrain tiles clipped to `y < water_level` (flat colour plane with
-  depth-based alpha from `water_level - terrain_y` per vertex, interpolated). Wave normals from two scrolling
-  noise layers, fresnel mix of sky colour and dark water colour, sun glint.
+- Rendering: for every terrain tile whose lowest vertex is below the water height the renderer builds a flat water
+  mesh at that height (same grid as the tile, coarse LOD only is enough), with a per-vertex depth
+  `water_level - terrain_y` (clamped at 0). Drawn after the terrain with alpha blending and depth test, no depth write.
+  Fragment shader: alpha and colour from the interpolated depth (clear and light at the shore, darker and opaque in
+  the deep), two scrolling noise layers for wave normals, fresnel mix of sky colour and water colour, sun glint, fog.
 - Gameplay: ground vehicle in water (terrain height below the level at the wheel): rolling drag factor up
   (`vehicles.json cars.*.water_drag`) and splash particles (cube instances) while moving; aircraft are unaffected.
 - Mission goals, rings, pads and the start are never placed in water (same filter style as `clear_of_buildings`).
