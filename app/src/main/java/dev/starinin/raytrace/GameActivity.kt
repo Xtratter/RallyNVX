@@ -159,7 +159,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         fun px(v: Float) = (v * dp).toInt()
         if (s[12] == 1f) {
             c.addView(label(arrayOf("", "🥉", "🥈", "🥇")[s[13].toInt().coerceIn(0, 3)] + "  " + t("Mission complete", "Миссия выполнена"), 22f))
-            c.addView(label(t("Time: ", "Время: ") + "%d:%02d".format(s[5].toInt() / 60, s[5].toInt() % 60) + if (s[17] == 0f || s[17] == 3f) "   " + t("Cargo: ", "Груз: ") + "${s[7].toInt()}%" else ""))
+            c.addView(label(t("Time: ", "Время: ") + "%d:%02d".format(s[5].toInt() / 60, s[5].toInt() % 60) + if (s[17] == 0f || s[17] == 3f || s[17] == 5f) "   " + t("Cargo: ", "Груз: ") + "${s[7].toInt()}%" else ""))
             c.addView(label(t("Reward: ", "Награда: ") + "+${s[14].toInt()} $   ·   " + t("Money: ", "Деньги: ") + "${s[16].toInt()} $"))
         } else {
             val why = when (s[15].toInt()) { 1 -> t("Out of time", "Время вышло"); 2 -> if (s[17].toInt() == 5) t("Passengers hurt", "Пассажиры пострадали") else t("Cargo destroyed", "Груз разбит"); 4 -> t("Crashed", "Авария"); else -> t("Abandoned", "Миссия брошена") }

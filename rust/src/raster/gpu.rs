@@ -458,7 +458,8 @@ impl Raster {
         mnear[SLOT_PERSON] = ml[SLOT_PERSON].len() as u32;
         let mut mranges = [(0u32, 0u32); MODEL_SLOTS];
         for k in 0..MODEL_SLOTS {
-            let take = ml[k].len().min(MAX_MODEL_INST - mall.len());
+            let reserve = if k == SLOT_GRASS { ml[SLOT_PERSON].len() } else { 0 };   // the survivors must not lose their place to grass
+            let take = ml[k].len().min((MAX_MODEL_INST - mall.len()).saturating_sub(reserve));
             mranges[k] = (mall.len() as u32, (mall.len() + take) as u32);
             mall.extend_from_slice(&ml[k][..take]);
         }

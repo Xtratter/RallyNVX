@@ -22,7 +22,7 @@ pub const STAT_LEN: usize = 64;
 /// 2 running, 3 done), `[5]` time, `[6]` time limit, `[7]` integrity, `[8]` distance to the target, `[9]` bearing to the
 /// target (rad, relative to the camera heading, positive = right), `[10]` next checkpoint, `[11]` checkpoint total,
 /// `[12]` result (0 none, 1 passed, 2 failed), `[13]` medal 0..3, `[14]` payout, `[15]` failure (1 time, 2 cargo,
-/// 3 abandoned, 4 crashed), `[16]` money, `[17]` mission kind (0 cargo, 1 race, 2 rings, 3 sling, 4 recon), `[18]` run counter
+/// 3 abandoned, 4 crashed), `[16]` money, `[17]` mission kind (0 cargo, 1 race, 2 rings, 3 sling, 4 recon, 5 rescue), `[18]` run counter
 /// (bumped on every mission start), `[19]` altitude above ground, `[20]` aircraft (0 none, 1 heli, 2 drone), `[21]` rope taut,
 /// `[22]` target height above the aircraft.
 pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, payout: u32, fps: f32, frame_ms: f32, seed: u64, run: u32) {

@@ -1,15 +1,15 @@
 use crate::game::{airgen::*, flight::AircraftKind, missions::{path_length, ring_normal, roll, MissionKind}, terrain::Terrain, world::WORLD_LIMIT};
 
 #[test] fn air_missions_carry_the_right_aircraft_and_valid_points() {
-    for ps in 0..200u64 { for r in 0..2u32 { for m in roll(ps * 7919, r, 0).into_iter().filter(|m| m.is_air() && !m.urban) {
+    for ps in 0..200u64 { for r in 0..3u32 { for m in roll(ps * 7919, r, 0).into_iter().filter(|m| m.is_air() && !m.urban) {
         let t = Terrain::new(m.seed);
         assert!(m.aircraft.is_some());
-        match m.kind { MissionKind::Sling => assert_eq!(m.aircraft, Some(AircraftKind::Heli)), MissionKind::Recon => assert_eq!(m.aircraft, Some(AircraftKind::Drone)), _ => {} }
+        match m.kind { MissionKind::Sling | MissionKind::Rescue => assert_eq!(m.aircraft, Some(AircraftKind::Heli)), MissionKind::Recon => assert_eq!(m.aircraft, Some(AircraftKind::Drone)), _ => {} }
         for p in &m.checkpoints {
             assert!(p.x.abs() <= WORLD_LIMIT - 40.0 && p.z.abs() <= WORLD_LIMIT - 40.0, "wall, seed {ps}");
             let agl = p.y - t.height(p.x, p.z);
             match m.kind {
-                MissionKind::Sling => assert!(agl.abs() < 1e-3 && t.normal(p.x, p.z).y >= 0.94, "pad on gentle ground, seed {ps}"),
+                MissionKind::Sling | MissionKind::Rescue => assert!(agl.abs() < 1e-3 && t.normal(p.x, p.z).y >= 0.94, "pad on gentle ground, seed {ps}"),
                 _ => assert!(agl >= 14.99, "air point at {agl} m, seed {ps}"),
             }
         }
@@ -18,6 +18,7 @@ use crate::game::{airgen::*, flight::AircraftKind, missions::{path_length, ring_
                 assert!(m.checkpoints.iter().all(|p| p.y - t.height(p.x, p.z) <= hmax + 0.01)); assert!(m.length_m >= 450.0 && m.length_m <= 1700.0, "{}", m.length_m); }
             MissionKind::Sling => { let d = (m.checkpoints[1] - m.checkpoints[0]).len(); assert!(d >= 350.0 && d <= 1350.0, "{d}"); }
             MissionKind::Recon => { assert!(m.checkpoints.iter().all(|p| p.y - t.height(p.x, p.z) <= 100.01)); }
+            MissionKind::Rescue => { assert_eq!(m.checkpoints.len(), m.difficulty.clamp(1, 3) as usize + 1); }
             _ => unreachable!(),
         }
         assert_eq!(*m.checkpoints.last().unwrap(), m.goal);
@@ -25,6 +26,7 @@ use crate::game::{airgen::*, flight::AircraftKind, missions::{path_length, ring_
         let want = match m.kind {
             MissionKind::Rings => { let v = if m.aircraft == Some(AircraftKind::Drone) { 15.0 } else { 18.0 }; 1.5 * m.length_m / v + 20.0 }
             MissionKind::Sling => 1.6 * m.length_m / 12.0 + 35.0,
+            MissionKind::Rescue => 1.5 * m.length_m / 14.0 + 25.0 + 12.0 * (m.checkpoints.len() as f32 - 1.0) + 8.0,
             _ => 1.4 * m.length_m / 15.0 + 25.0,
         };
         assert!((m.time_limit - want).abs() < 1e-2, "{:?} {} vs {}", m.kind, m.time_limit, want);

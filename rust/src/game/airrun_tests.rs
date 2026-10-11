@@ -220,11 +220,11 @@ mod rescue {
     }
     #[test] fn a_hard_touchdown_hurts_the_passengers_a_soft_one_does_not() {
         let mut r = run(1, 300.0); let mut a = heli_at(v3(0., 20., 0.));
-        fly(&mut r, &mut a, v3(0., 5., 100.0), -2.5); land(&mut r, &mut a, v3(0., 0.3, 100.0), 0.05);
+        fly(&mut r, &mut a, v3(0., 5., 100.0), -1.0); land(&mut r, &mut a, v3(0., 0.3, 100.0), 0.05);
         assert_eq!(r.integrity(), 100.0);
-        fly(&mut r, &mut a, v3(0., 5., 100.0), -6.0); land(&mut r, &mut a, v3(0., 0.3, 100.0), 0.05);
-        assert!((r.integrity() - 76.0).abs() < 1e-3, "{}", r.integrity());
-        for _ in 0..4 { fly(&mut r, &mut a, v3(0., 5., 100.0), -9.0); land(&mut r, &mut a, v3(0., 0.3, 100.0), 0.02); }
+        fly(&mut r, &mut a, v3(0., 5., 100.0), -2.7); land(&mut r, &mut a, v3(0., 0.3, 100.0), 0.05);
+        assert!((r.integrity() - 82.0).abs() < 1e-3, "{}", r.integrity());   // (2.7 - 1.2) * 12 = 18
+        for _ in 0..8 { fly(&mut r, &mut a, v3(0., 5., 100.0), -2.9); land(&mut r, &mut a, v3(0., 0.3, 100.0), 0.02); }
         assert_eq!(r.phase(), Phase::Done);
         assert!(matches!(r.outcome(), Some(Outcome::Failed(Failure::CargoDestroyed))));
     }

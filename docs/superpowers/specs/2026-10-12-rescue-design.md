@@ -10,7 +10,7 @@ Out of scope: urban/rooftop rescue, ground evacuation, fire or obstacles, winch,
 - Kind `Rescue`, air mission, aircraft always the helicopter. `Mission.checkpoints` = survivor sites then the base pad (last).
 - Sites: difficulty 1/2/3 gives 1/2/3 sites. Each has 1-3 people, at most 4 in total (capacity 4). Site 1 is 200-500 m from the start, each next site 150-400 m from the previous, the base 300-700 m from the last site; all points on dry, gentle ground with `normal.y >= 0.97` outside cities (`point_ok` plus the stricter slope), at least 60 m apart.
 - Boarding: the helicopter is `Status::Landed` with its position within 6 m (horizontal) of the current site for 3 s (progress 0..1); the dwell resets when it takes off or leaves the circle. Unloading at the base: the same with 2 s. People board only the current target, sites are done in order.
-- Integrity (people's comfort, 100): a touchdown vertical speed above 3 m/s costs `(v - 3) * 8` per landing; at 0 the mission fails (`Failure::CargoDestroyed`, shown as "passengers hurt"). Crash and time up fail as usual.
+- Integrity (people's comfort, 100): a touchdown vertical speed above 1.2 m/s costs `(v - 1.2) * 12` per landing (the helicopter already crashes at 3 m/s, so the review moved the threshold down); at 0 the mission fails (`Failure::CargoDestroyed`, shown as "passengers hurt"). Crash and time up fail as usual.
 - Time limit: `1.5 * length / 14 + 25 + 12 * sites + 8` seconds. Medal: `grade_cargo(time, limit, integrity)`. Reward base: `reward_base_for(length, difficulty) + 50 * people`.
 - List: the sixth slot rotates by refresh round: `round % 3` = 0 Sling (urban), 1 Recon, 2 Rescue. Slot 5 stays one card; list size stays six, the menu array unchanged (kind id 5).
 

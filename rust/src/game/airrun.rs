@@ -7,6 +7,11 @@ use super::missions::{ring_normal, Mission, MissionKind, RING_RADIUS_DRONE, RING
 use super::run::{Failure, Outcome, Phase};
 use super::sling::Sling;
 
+/// Rescue: a touchdown faster than this (m/s) hurts the passengers, `TOUCHDOWN_COST` integrity per m/s above it
+/// (the helicopter crashes at `soft_speed`, 3 m/s, so the useful range is 1.2..3).
+const TOUCHDOWN_SOFT: f32 = 1.2;
+const TOUCHDOWN_COST: f32 = 12.0;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum AirAction { AttachCargo }
 
 pub struct AirRun {
@@ -55,7 +60,7 @@ impl AirRun {
         }
     }
     pub fn abandon(&mut self) { if self.phase != Phase::Done { self.finish(Outcome::Failed(Failure::Abandoned)); } }
-    fn finish(&mut self, o: Outcome) { self.phase = Phase::Done; self.outcome = Some(o); }
+    fn finish(&mut self, o: Outcome) { self.phase = Phase::Done; self.outcome = Some(o); self.rdwell = 0.0; }
     fn pass(&mut self) {
         let medal = if matches!(self.m.kind, MissionKind::Sling | MissionKind::Rescue) { grade_cargo(self.time, self.m.time_limit, self.integrity) } else { grade_race(self.time, self.m.time_limit) };
         self.finish(Outcome::Passed { medal, time: self.time, integrity: self.integrity.max(0.0) });
@@ -115,7 +120,7 @@ impl AirRun {
                 else if a.status == Status::Landed && self.was_flying {
                     self.was_flying = false;
                     let v = -self.last_vy;
-                    if v > 3.0 { self.integrity -= (v - 3.0) * 8.0; }
+                    if v > TOUCHDOWN_SOFT { self.integrity -= (v - TOUCHDOWN_SOFT) * TOUCHDOWN_COST; }
                 }
                 if self.integrity <= 0.0 { self.integrity = 0.0; self.finish(Outcome::Failed(Failure::CargoDestroyed)); return None; }
                 let target = self.m.checkpoints[self.stop.min(self.m.checkpoints.len() - 1)];

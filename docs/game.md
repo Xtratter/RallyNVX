@@ -56,7 +56,7 @@ Air missions use a helicopter or a drone (the card shows which). Sticks released
 
 ## Rescue
 
-The sixth mission card rotates with each Refresh: sling, recon, **rescue**. In a rescue you fly the helicopter to 1-3 survivor sites (more on higher difficulty; 1-3 people each, at most 4 aboard), land inside the green circle and wait 3 seconds while they board, then land on the base pad and wait 2 seconds to unload. People waiting at a site are shown as orange-vested figures. A touchdown faster than 3 m/s hurts the passengers (integrity falls by 8 per m/s over 3); at 0 the mission fails. The medal uses time and integrity like the sling cargo; the reward adds 50 per person. The HUD shows sites done, people aboard and the boarding progress.
+The sixth mission card rotates with each Refresh: sling, recon, **rescue**. In a rescue you fly the helicopter to 1-3 survivor sites (more on higher difficulty; 1-3 people each, at most 4 aboard), land inside the green circle and wait 3 seconds while they board, then land on the base pad and wait 2 seconds to unload. People waiting at a site are shown as orange-vested figures. A touchdown faster than 1.2 m/s hurts the passengers (integrity falls by 12 per m/s over 1.2; 3 m/s is already a crash); at 0 the mission fails. The medal uses time and integrity like the sling cargo; the reward adds 50 per person. The HUD shows sites done, people aboard and the boarding progress.
 
 ## City
 
@@ -128,7 +128,7 @@ No garage, rescue missions or NPC orders yet, and only the raster renderer (mode
 
 ## Спасение
 
-Шестая карточка миссий меняется при каждом обновлении: подвес, разведка, **спасение**. В спасении вертолёт летит к 1–3 площадкам со спасёнными (на высокой сложности больше; по 1–3 человека, на борту не больше 4), садится в зелёный круг и ждёт 3 секунды, пока люди садятся, затем садится на площадку базы и ждёт 2 секунды высадки. Ждущие люди — фигурки в оранжевых жилетах. Касание быстрее 3 м/с ранит пассажиров (целостность падает на 8 за каждый м/с сверх 3); при нуле миссия проваливается. Медаль по времени и целостности, как у груза на подвесе; награда плюс 50 за человека. В HUD видно пройденные площадки, людей на борту и прогресс посадки.
+Шестая карточка миссий меняется при каждом обновлении: подвес, разведка, **спасение**. В спасении вертолёт летит к 1–3 площадкам со спасёнными (на высокой сложности больше; по 1–3 человека, на борту не больше 4), садится в зелёный круг и ждёт 3 секунды, пока люди садятся, затем садится на площадку базы и ждёт 2 секунды высадки. Ждущие люди — фигурки в оранжевых жилетах. Касание быстрее 1,2 м/с ранит пассажиров (целостность падает на 12 за каждый м/с сверх 1,2; 3 м/с — уже авария); при нуле миссия проваливается. Медаль по времени и целостности, как у груза на подвесе; награда плюс 50 за человека. В HUD видно пройденные площадки, людей на борту и прогресс посадки.
 
 ## Город
 

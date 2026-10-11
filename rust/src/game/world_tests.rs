@@ -346,7 +346,7 @@ mod rescue {
         let people = rescue_people(42, 2);
         let v = w.view(1).survivors;
         assert_eq!(v.len() as u32, people.iter().map(|c| *c as u32).sum::<u32>());
-        for p in &v { assert!((p.x - 0.0).hypot(p.z - 120.0) < 4.0 || (p.x - 0.0).hypot(p.z - 240.0) < 4.0); assert!((p.y - w.terrain.height(p.x, p.z)).abs() < 1e-3); }
+        for p in &v { assert!((p.x - 0.0).hypot(p.z - 120.0) < 5.0 || (p.x - 0.0).hypot(p.z - 240.0) < 5.0); assert!((p.y - w.terrain.height(p.x, p.z)).abs() < 1e-3); }
         sit_on(&mut w, 0.0, 120.0, 3.3);
         assert_eq!(w.view(1).survivors.len() as u32, people[1] as u32);
         assert_eq!(w.markers().iter().filter(|k| k.kind == MarkerKind::Pad).count(), 2);
@@ -359,5 +359,46 @@ mod rescue {
         sit_on(&mut w, 0.0, 120.0, 2.0);
         fill_state(&mut s, &w, 0, 0, 60.0, 4.0, 42, 0);
         assert_eq!((s[23], s[10], s[11]), (rescue_people(42, 2)[0] as f32, 1.0, 3.0));
+    }
+}
+
+mod rescue_fixes {
+    use super::*;
+    use crate::game::run::Phase;
+    fn world() -> World {
+        let mut m = air(MissionKind::Rescue, AircraftKind::Heli, vec![v3(0., 0., 400.), v3(300., 0., 0.)]);
+        m.difficulty = 1; World::for_mission(m)
+    }
+    #[test] fn a_real_descent_costs_integrity_before_it_becomes_a_crash() {
+        // flying the real aircraft physics: a descent below soft_speed is a landing, and a faster one hurts the passengers
+        let mut hurt = false;
+        for lift in [-0.15f32, -0.25, -0.35, -0.45, -0.55] {
+            let mut w = world();
+            let g = w.terrain.height(0., 0.);
+            w.aircraft.as_mut().unwrap().pos = v3(0., g + 10.0, 0.);
+            for _ in 0..1200 {
+                w.step_with(&Input::default(), &FlightInput { lift, yaw: 0.2, ..Default::default() }, 1.0 / 60.0);
+                if w.aircraft.as_ref().unwrap().status != crate::game::flight::Status::Flying { break; }
+            }
+            let (st, integ) = (w.aircraft.as_ref().unwrap().status, w.run_info().unwrap().integrity);
+            if st == crate::game::flight::Status::Landed && integ < 100.0 { hurt = true; assert!(integ > 0.0); }
+        }
+        assert!(hurt, "no soft landing ever cost integrity");
+    }
+    #[test] fn survivors_disappear_when_the_mission_ends() {
+        let mut w = world();
+        assert!(!w.survivors().is_empty());
+        w.abandon_mission();
+        assert_eq!(w.run_info().unwrap().phase, Phase::Done);
+        assert!(w.survivors().is_empty());
+    }
+    #[test] fn boarding_progress_is_cleared_when_the_run_ends() {
+        let mut w = world();
+        let y = w.terrain.height(0., 400.) + 0.3;
+        w.aircraft.as_mut().unwrap().pos = v3(0., y, 400.);
+        for _ in 0..90 { w.step_with(&Input::default(), &FlightInput { yaw: 0.2, ..Default::default() }, 1.0 / 60.0); }
+        assert!(w.air.as_ref().unwrap().rescue_progress() > 0.0);
+        w.abandon_mission();
+        assert_eq!(w.air.as_ref().unwrap().rescue_progress(), 0.0);
     }
 }

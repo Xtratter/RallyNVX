@@ -224,12 +224,12 @@ impl World {
 
     /// Rescue: the people still waiting, standing on a small circle around each pending site (ground level).
     pub fn survivors(&self) -> Vec<V3> {
-        let Some(r) = self.air.as_ref().filter(|r| r.mission().kind == MissionKind::Rescue) else { return Vec::new() };
+        let Some(r) = self.air.as_ref().filter(|r| r.mission().kind == MissionKind::Rescue && r.phase() != Phase::Done) else { return Vec::new() };
         let mut out = Vec::new();
         for (site, n) in r.rescue_pending() {
             for k in 0..n {
                 let a = k as f32 * std::f32::consts::TAU / n as f32 + 0.6;
-                let (x, z) = (site.x + a.cos() * 2.5, site.z + a.sin() * 2.5);
+                let (x, z) = (site.x + a.cos() * 4.6, site.z + a.sin() * 4.6);
                 out.push(v3(x, self.terrain.height(x, z), z));
             }
         }
