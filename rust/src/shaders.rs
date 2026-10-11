@@ -26,6 +26,7 @@ pub fn gi_trace(sc: &crate::scene::SceneData) -> String { join_scene(sc, include
 pub fn gi_temporal() -> String { join(include_str!("shaders/gi_temporal.wgsl")) }
 pub fn gi_atrous() -> String { join(include_str!("shaders/gi_atrous.wgsl")) }
 pub fn composite() -> String { join(include_str!("shaders/composite.wgsl")) }
+pub fn raster() -> String { include_str!("shaders/raster.wgsl").to_string() }
 pub fn present() -> String { join(include_str!("shaders/present.wgsl")) }
 
 /// Parses and validates WGSL with naga (host tests; no GPU needed).
@@ -55,5 +56,6 @@ mod tests {
         validate("gi_temporal", gi_temporal());
         validate("gi_atrous", gi_atrous());
         validate("composite", composite());
+        validate("raster", raster());
     }
 }

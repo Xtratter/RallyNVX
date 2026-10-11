@@ -2,6 +2,14 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.0.0 - off-road game
+
+- Added: a game next to the scene viewer: "Free drive" on a random level (every level has a seed shown in the HUD; the same seed gives the same level)
+- Added: seeded hilly terrain with rocks and trees, an arcade off-road car with suspension, drift (handbrake) and collisions, a chase camera, touch controls (left stick steer/throttle, right stick down brake) and keyboard on desktop
+- Added: a raster renderer (render mode C) with tiled terrain LODs, fog, sky and a sun shadow map; Low / Medium / High resolution on the start screen
+- Added: start screen (Free drive / Scenes / Quality); desktop: `raytrace-desktop --game [seed]` (docs/game.md)
+- Unchanged: the ray-traced Scenes mode and its scene files
+
 ## 1.8.0 - prism
 
 - Added: the "Prism" scene: sunlight through a low slit passes a glass prism and splits into a spectrum on the floor; the prism itself shows coloured edges

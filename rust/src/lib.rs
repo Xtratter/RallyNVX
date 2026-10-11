@@ -1,11 +1,14 @@
 pub mod adaptive;
 pub mod camera;
 pub mod dispersion;
+pub mod game;
+pub mod game_jni;
 pub mod gi;
 pub mod halton;
 pub mod params;
 pub mod presets;
 pub mod profile;
+pub mod raster;
 pub mod reproj;
 pub mod scene;
 pub mod scenegen;

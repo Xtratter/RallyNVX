@@ -62,6 +62,12 @@ jobs:
             grep -q "adapter:" smoke$sc.log
             ! grep -qi "panicked\|panic:" smoke$sc.log
           done
+      - name: Smoke run of the game on software Vulkan, one screenshot
+        run: |
+          RAYTRACE_SEED=42 RAYTRACE_AUTODRIVE=1 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/raytrace-desktop --game > smoke-game.log 2>&1 & sleep 45; xwd -root -silent | convert xwd:- screenshot-game.png; kill %1" || true
+          grep -v naga smoke-game.log
+          grep -q "adapter:" smoke-game.log
+          ! grep -qi "panicked\|panic:" smoke-game.log
       - uses: actions/upload-artifact@v4
         with:
           retention-days: 1

@@ -407,6 +407,11 @@ impl ApplicationHandler for App {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--game") {
+        raytrace::game::desktop::run(args.get(i + 1).and_then(|s| s.parse().ok()));
+        return;
+    }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let el = EventLoop::new().expect("event loop");
     el.set_control_flow(ControlFlow::Poll);
