@@ -1,7 +1,8 @@
 use super::*;
 use crate::game::{math::v3, terrain::Terrain};
 const DT: f32 = 1.0 / 60.0;
-fn hang(attach: V3) -> Sling { let mut s = Sling::on_ground(attach - v3(0., ROPE, 0.)); s.attach(); s }
+fn rope() -> f32 { crate::game::params::get().sling.rope }
+fn hang(attach: V3) -> Sling { let mut s = Sling::on_ground(attach - v3(0., rope(), 0.)); s.attach(); s }
 
 #[test] fn an_unattached_cargo_rests_on_the_ground_and_ignores_the_aircraft() {
     let t = Terrain::flat(); let mut s = Sling::on_ground(v3(5., 0., 5.));
@@ -12,7 +13,7 @@ fn hang(attach: V3) -> Sling { let mut s = Sling::on_ground(attach - v3(0., ROPE
     let t = Terrain::flat(); let a = v3(0., 50., 0.); let mut s = hang(a);
     for _ in 0..(5.0 / DT) as usize { s.step(a, V3::ZERO, &t, DT); }
     let d = (a - s.pos).len();
-    assert!(d >= ROPE - 0.01 && d < ROPE + 0.4, "rope {d}");
+    assert!(d >= rope() - 0.01 && d < rope() + 0.4, "rope {d}");
     assert!(s.pos.x.abs() < 0.2 && s.pos.z.abs() < 0.2);
     assert!(s.rope_taut(a));
 }
@@ -20,7 +21,7 @@ fn hang(attach: V3) -> Sling { let mut s = Sling::on_ground(attach - v3(0., ROPE
     let t = Terrain::flat(); let mut a = v3(0., 50., 0.); let mut s = hang(a);
     for _ in 0..(12.0 / DT) as usize { a.x += 10.0 * DT; s.step(a, v3(10., 0., 0.), &t, DT); }
     assert!((a.x - s.pos.x).abs() < 4.0, "lag {}", a.x - s.pos.x);
-    assert!((a - s.pos).len() < ROPE + 0.5);
+    assert!((a - s.pos).len() < rope() + 0.5);
 }
 #[test] fn swinging_damps_out() {
     let t = Terrain::flat(); let a = v3(0., 50., 0.); let mut s = hang(a);
@@ -40,7 +41,7 @@ fn hang(attach: V3) -> Sling { let mut s = Sling::on_ground(attach - v3(0., ROPE
     let t = Terrain::flat(); let mut s = hang(v3(0., 50., 0.));
     for _ in 0..600 { s.step(v3(500., 90., -300.), V3::ZERO, &t, DT); }
     assert!(s.pos.is_finite() && s.vel.is_finite());
-    assert!((v3(500., 90., -300.) - s.pos).len() < ROPE + 1.0);
+    assert!((v3(500., 90., -300.) - s.pos).len() < rope() + 1.0);
 }
 #[test] fn relative_speed_and_slack_rope() {
     let t = Terrain::flat(); let a = v3(0., 50., 0.); let mut s = hang(a);

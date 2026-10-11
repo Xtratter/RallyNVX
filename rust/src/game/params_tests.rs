@@ -1,0 +1,53 @@
+use super::*;
+use crate::game::{flight::AircraftKind, math::v3};
+
+fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehicles.json must parse") }
+
+#[test] fn the_offroader_keeps_its_known_numbers() {
+    let c = embedded().car("offroader").expect("offroader");
+    let (m, w, h, l) = (1500.0f32, 2.0f32, 1.4f32, 4.2f32);
+    assert_eq!(c.mass, 1500.0);
+    assert_eq!(c.inertia, v3(m / 12.0 * (h * h + l * l), m / 12.0 * (w * w + l * l), m / 12.0 * (w * w + h * h)));
+    assert_eq!(c.wheels, [v3(-0.95, 0.0, 1.4), v3(0.95, 0.0, 1.4), v3(-0.95, 0.0, -1.4), v3(0.95, 0.0, -1.4)]);
+    assert_eq!((c.rest, c.radius, c.spring, c.damper), (0.6, 0.45, 30000.0, 3500.0));
+    assert_eq!((c.engine_force, c.brake_force, c.max_speed, c.mu), (14000.0, 16000.0, 35.0, 1.1));
+    assert_eq!((c.steer_max, c.steer_speed_ref, c.steer_rate, c.lateral_k, c.rolling), (0.55, 15.0, 3.0, 12.0, 40.0));
+    assert_eq!((c.aero, c.ang_damp, c.handbrake_grip, c.reverse_factor, c.max_susp_factor), (0.35, 0.8, 0.4, 0.4, 5.0));
+}
+#[test] fn the_aircraft_keep_their_known_numbers() {
+    let p = embedded();
+    let h = p.aircraft(AircraftKind::Heli);
+    assert_eq!((h.tilt_lag, h.max_speed, h.drag, h.vmax, h.vacc, h.yaw_rate, h.yaw_lag, h.radius), (0.25, 35.0, 0.13, 6.0, 4.0, 1.6, 0.3, 1.8));
+    assert!((h.max_tilt - 25f32.to_radians()).abs() < 1e-6);
+    let d = p.aircraft(AircraftKind::Drone);
+    assert_eq!((d.tilt_lag, d.max_speed, d.drag, d.vmax, d.vacc, d.yaw_rate, d.yaw_lag, d.radius), (0.25, 28.0, 0.29, 10.0, 12.0, 3.0, 0.15, 0.7));
+    assert!((d.max_tilt - 40f32.to_radians()).abs() < 1e-6);
+    for a in [h, d] { assert_eq!((a.ceiling, a.soft_speed, a.ground_damp), (400.0, 3.0, 4.0)); assert!((a.soft_tilt - 20f32.to_radians()).abs() < 1e-6); }
+}
+#[test] fn the_sling_keeps_its_known_numbers() {
+    assert_eq!(embedded().sling, SlingSpec { rope: 8.0, k: 60.0, c: 6.0, drag: 0.3 });
+}
+#[test] fn the_active_parameters_are_the_embedded_ones_by_default() {
+    if std::env::var_os("RAYTRACE_VEHICLES").is_none() { assert_eq!(get().car("offroader").unwrap().mass, 1500.0); }
+}
+#[test] fn an_override_changes_the_specs_and_inertia_scales_with_mass() {
+    let text = EMBEDDED.replacen("\"mass\": 1500", "\"mass\": 3000", 1);
+    assert_ne!(text, EMBEDDED, "the replacement must hit the mass field");
+    let c = Params::from_json(&text).unwrap().car("offroader").unwrap();
+    assert_eq!(c.mass, 3000.0);
+    assert!((c.inertia.x / embedded().car("offroader").unwrap().inertia.x - 2.0).abs() < 1e-4);
+}
+#[test] fn unknown_car_ids_are_none() { assert!(embedded().car("hovercraft").is_none()); }
+#[test] fn errors_are_readable() {
+    let e = Params::from_json("not json").unwrap_err(); assert!(!e.is_empty());
+    let e = Params::from_json("{}").unwrap_err(); assert!(e.contains("cars"), "{e}");
+    let no_mass = EMBEDDED.replacen("\"mass\": 1500,", "", 1);
+    let e = Params::from_json(&no_mass).unwrap_err(); assert!(e.contains("mass") && e.contains("offroader"), "{e}");
+    let neg = EMBEDDED.replacen("\"mass\": 1500", "\"mass\": -5", 1);
+    let e = Params::from_json(&neg).unwrap_err(); assert!(e.contains("mass"), "{e}");
+    let rope0 = EMBEDDED.replacen("\"rope\": 8.0", "\"rope\": 0.0", 1);
+    assert_ne!(rope0, EMBEDDED);
+    let e = Params::from_json(&rope0).unwrap_err(); assert!(e.contains("rope"), "{e}");
+    let bad_wheels = EMBEDDED.replacen("[-0.95, 0.0, 1.4]", "[-0.95, 0.0]", 1);
+    let e = Params::from_json(&bad_wheels).unwrap_err(); assert!(e.contains("wheel"), "{e}");
+}

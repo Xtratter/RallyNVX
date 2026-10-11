@@ -1,6 +1,7 @@
 use super::*;
 use crate::game::{math::v3, props::{Prop, PropKind}, terrain::Terrain, world::WORLD_LIMIT};
 const DT: f32 = 1.0 / 60.0;
+fn ceiling() -> f32 { AircraftSpec::of(AircraftKind::Heli).ceiling }
 fn fly(a: &mut Aircraft, t: &Terrain, i: FlightInput, secs: f32) { for _ in 0..(secs / DT) as usize { a.step(t, &[], &i, DT); } }
 fn heli(y: f32) -> (Aircraft, Terrain) { (Aircraft::new(AircraftKind::Heli, v3(0., y, 0.), 0.0), Terrain::flat()) }
 
@@ -37,9 +38,9 @@ fn heli(y: f32) -> (Aircraft, Terrain) { (Aircraft::new(AircraftKind::Heli, v3(0
     assert!((d.vel.y - 10.0).abs() < 0.05);
 }
 #[test] fn the_ceiling_stops_the_climb() {
-    let (mut a, t) = heli(CEILING - 1.0);
+    let (mut a, t) = heli(ceiling() - 1.0);
     fly(&mut a, &t, FlightInput { lift: 1.0, ..Default::default() }, 10.0);
-    assert!(a.pos.y <= CEILING + 0.5, "{}", a.pos.y);
+    assert!(a.pos.y <= ceiling() + 0.5, "{}", a.pos.y);
 }
 #[test] fn gentle_descent_lands_softly() {
     let (mut a, t) = heli(10.0);
