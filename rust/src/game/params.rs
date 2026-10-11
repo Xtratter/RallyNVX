@@ -30,6 +30,27 @@ fn section<'a>(v: &'a Value, key: &str, ctx: &str) -> Result<&'a Value, String> 
     v.get(key).filter(|x| x.is_object()).ok_or_else(|| format!("{ctx}: missing object \"{key}\""))
 }
 
+/// Colours and widths used by the renderer (all colours 0..1). Optional in the file: defaults apply when absent.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Look { pub body: [f32; 3], pub accent: [f32; 3], pub glass: [f32; 3], pub wheel_width: f32 }
+
+fn color(v: &Value, key: &str, ctx: &str, default: [f32; 3]) -> Result<[f32; 3], String> {
+    let Some(x) = v.get(key) else { return Ok(default) };
+    let err = || format!("{ctx}.look: \"{key}\" must be [r, g, b] with every value in 0..1");
+    let a = x.as_array().filter(|a| a.len() == 3).ok_or_else(err)?;
+    let mut out = [0.0f32; 3];
+    for (i, c) in a.iter().enumerate() { let f = c.as_f64().filter(|f| (0.0..=1.0).contains(f)).ok_or_else(err)?; out[i] = f as f32; }
+    Ok(out)
+}
+
+fn parse_look(v: &Value, ctx: &str, default: Look) -> Result<Look, String> {
+    let Some(l) = v.get("look") else { return Ok(default) };
+    if !l.is_object() { return Err(format!("{ctx}: \"look\" must be an object")); }
+    let ctxl = ctx.to_string();
+    let wheel_width = match l.get("wheel_width") { None => default.wheel_width, Some(_) => between(l, "wheel_width", &format!("{ctxl}.look"), 0.05, 1.0)? };
+    Ok(Look { body: color(l, "body_color", ctx, default.body)?, accent: color(l, "accent_color", ctx, default.accent)?, glass: color(l, "glass_tint", ctx, default.glass)?, wheel_width })
+}
+
 fn parse_car(id: &str, v: &Value) -> Result<VehicleSpec, String> {
     let ctx = format!("cars.{id}");
     let ctx = ctx.as_str();
@@ -46,8 +67,9 @@ fn parse_car(id: &str, v: &Value) -> Result<VehicleSpec, String> {
     }
     let sus = section(v, "suspension", ctx)?;
     let hnd = section(v, "handling", ctx)?;
+    let look = parse_look(v, ctx, Look { body: [0.75, 0.12, 0.08], accent: [0.15, 0.15, 0.17], glass: [0.10, 0.16, 0.22], wheel_width: 0.32 })?;
     Ok(VehicleSpec {
-        mass,
+        mass, size: v3(w, h, l), look,
         inertia: v3(mass / 12.0 * (h * h + l * l), mass / 12.0 * (w * w + l * l), mass / 12.0 * (w * w + h * h)),
         wheels,
         rest: above(sus, "rest", ctx, 0.0)?, radius: above(sus, "radius", ctx, 0.0)?,
@@ -67,8 +89,10 @@ fn parse_aircraft(id: &str, v: &Value, rules: &Value) -> Result<AircraftSpec, St
     let ctx = format!("aircraft.{id}");
     let ctx = ctx.as_str();
     let fl = "flight";
+    let default = if id == "heli" { Look { body: [0.95, 0.45, 0.10], accent: [0.55, 0.55, 0.58], glass: [0.10, 0.16, 0.22], wheel_width: 0.1 } } else { Look { body: [0.15, 0.15, 0.18], accent: [0.90, 0.90, 0.95], glass: [0.10, 0.16, 0.22], wheel_width: 0.1 } };
+    let look = parse_look(v, ctx, default)?;
     Ok(AircraftSpec {
-        max_tilt: between(v, "max_tilt_deg", ctx, 1.0, 80.0)?.to_radians(), tilt_lag: above(v, "tilt_lag", ctx, 0.0)?,
+        look, max_tilt: between(v, "max_tilt_deg", ctx, 1.0, 80.0)?.to_radians(), tilt_lag: above(v, "tilt_lag", ctx, 0.0)?,
         max_speed: above(v, "max_speed", ctx, 0.0)?, drag: between(v, "drag", ctx, 0.0, 100.0)?,
         vmax: above(v, "vertical_speed", ctx, 0.0)?, vacc: above(v, "vertical_accel", ctx, 0.0)?,
         yaw_rate: above(v, "yaw_rate", ctx, 0.0)?, yaw_lag: above(v, "yaw_lag", ctx, 0.0)?, radius: above(v, "radius", ctx, 0.0)?,

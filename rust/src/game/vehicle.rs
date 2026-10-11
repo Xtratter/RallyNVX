@@ -7,6 +7,8 @@ use super::terrain::Terrain;
 #[derive(Clone, Copy, Debug)]
 pub struct VehicleSpec {
     pub mass: f32,
+    /// Body box (width, height, length) in metres and the renderer's colours.
+    pub size: V3, pub look: super::params::Look,
     /// Principal moments of inertia about body x (pitch), y (yaw), z (roll).
     pub inertia: V3,
     /// Suspension attachment points in body space: FL, FR, RL, RR.

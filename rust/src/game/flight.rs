@@ -21,6 +21,7 @@ impl FlightInput {
 
 #[derive(Clone, Copy, Debug)]
 pub struct AircraftSpec {
+    pub look: super::params::Look,
     pub max_tilt: f32, pub tilt_lag: f32, pub max_speed: f32, pub drag: f32, pub vmax: f32, pub vacc: f32, pub yaw_rate: f32, pub yaw_lag: f32, pub radius: f32,
     /// Flight rules shared by all aircraft (from the `flight` section): ceiling in metres, the highest soft touchdown
     /// speed along the ground normal (m/s), the largest soft tilt (rad) and the ground friction (1/s).

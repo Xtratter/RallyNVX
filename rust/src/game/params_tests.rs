@@ -51,3 +51,23 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     let bad_wheels = EMBEDDED.replacen("[-0.95, 0.0, 1.4]", "[-0.95, 0.0]", 1);
     let e = Params::from_json(&bad_wheels).unwrap_err(); assert!(e.contains("wheel"), "{e}");
 }
+#[test] fn look_parses_with_defaults_overrides_and_readable_errors() {
+    let p = embedded();
+    let c = p.car("offroader").unwrap();
+    assert_eq!(c.size, v3(2.0, 1.4, 4.2));
+    assert!(c.look.body.iter().all(|v| (0.0..=1.0).contains(v)) && c.look.wheel_width > 0.1);
+    let h = p.aircraft(AircraftKind::Heli); assert!(h.look.body[0] > h.look.body[2], "the heli is orange");
+    // a file without any look section still loads, with defaults
+    let no_look = EMBEDDED.replace("\"look\":", "\"_unused\":");
+    let q = Params::from_json(&no_look).unwrap();
+    for l in [q.car("offroader").unwrap().look, q.aircraft(AircraftKind::Heli).look, q.aircraft(AircraftKind::Drone).look] {
+        assert!(l.body.iter().chain(&l.accent).chain(&l.glass).all(|v| (0.0..=1.0).contains(v)) && l.wheel_width > 0.0);
+    }
+    let custom = EMBEDDED.replacen("\"body_color\": [0.75, 0.12, 0.08]", "\"body_color\": [0.1, 0.2, 0.3]", 1);
+    assert_ne!(custom, EMBEDDED);
+    assert_eq!(Params::from_json(&custom).unwrap().car("offroader").unwrap().look.body, [0.1, 0.2, 0.3]);
+    let bad = EMBEDDED.replacen("\"body_color\": [0.75, 0.12, 0.08]", "\"body_color\": [1.5, 0.2, 0.3]", 1);
+    let e = Params::from_json(&bad).unwrap_err(); assert!(e.contains("look") && e.contains("body_color"), "{e}");
+    let bad2 = EMBEDDED.replacen("\"wheel_width\": 0.32", "\"wheel_width\": 5.0", 1);
+    assert!(Params::from_json(&bad2).unwrap_err().contains("wheel_width"));
+}
