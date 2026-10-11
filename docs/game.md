@@ -54,6 +54,10 @@ Air missions use a helicopter or a drone (the card shows which). Sticks released
 - **Recon** (drone): hover for 2 s inside every zone (40 m), in any order.
 - Medals, rewards and the profile work as for ground missions. The drone is faster and tilts more; the helicopter is steadier.
 
+## Rescue
+
+The sixth mission card rotates with each Refresh: sling, recon, **rescue**. In a rescue you fly the helicopter to 1-3 survivor sites (more on higher difficulty; 1-3 people each, at most 4 aboard), land inside the green circle and wait 3 seconds while they board, then land on the base pad and wait 2 seconds to unload. People waiting at a site are shown as orange-vested figures. A touchdown faster than 3 m/s hurts the passengers (integrity falls by 8 per m/s over 3); at 0 the mission fails. The medal uses time and integrity like the sling cargo; the reward adds 50 per person. The HUD shows sites done, people aboard and the boarding progress.
+
 ## City
 
 Every level has one or two cities (about 530 x 530 m) standing on a flat plateau a few hundred metres from the start: a grid of streets, blocks, parks and buildings from 4 m to 90 m, the tallest in the centre. Buildings are solid: the car stops at them, an aircraft that touches a wall or the underside of a building crashes. A helicopter or drone can land softly on a roof (descent up to 3 m/s) and take off again; sling cargo rests on roofs. The Quality setting also sets how far the city is drawn: 300 m (Low), 400 m (Medium), 450 m (High). Desktop: `RAYTRACE_AT_CITY=1 raytrace-desktop --game` starts next to the first city, `RAYTRACE_CITY_RADIUS=500` sets the draw distance.
@@ -121,6 +125,10 @@ No garage, rescue missions or NPC orders yet, and only the raster renderer (mode
 - **Подвес** (вертолёт): повисите ниже 4 м над грузом 1,5 с, чтобы зацепить, довезите до зелёной площадки и мягко опустите внутри круга; удары о землю и сильное раскачивание портят груз.
 - **Разведка** (дрон): повисите 2 с в каждой зоне (40 м), в любом порядке.
 - Медали, награды и профиль работают как в наземных миссиях. Дрон быстрее и сильнее наклоняется; вертолёт устойчивее.
+
+## Спасение
+
+Шестая карточка миссий меняется при каждом обновлении: подвес, разведка, **спасение**. В спасении вертолёт летит к 1–3 площадкам со спасёнными (на высокой сложности больше; по 1–3 человека, на борту не больше 4), садится в зелёный круг и ждёт 3 секунды, пока люди садятся, затем садится на площадку базы и ждёт 2 секунды высадки. Ждущие люди — фигурки в оранжевых жилетах. Касание быстрее 3 м/с ранит пассажиров (целостность падает на 8 за каждый м/с сверх 3); при нуле миссия проваливается. Медаль по времени и целостности, как у груза на подвесе; награда плюс 50 за человека. В HUD видно пройденные площадки, людей на борту и прогресс посадки.
 
 ## Город
 

@@ -20,6 +20,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 - **Missions**: a list of random deliveries and checkpoint races with medals, money and a saved profile (see [docs/game.md](docs/game.md))
 - **Flight**: a helicopter and a drone for ring races, sling cargo and recon missions (see [docs/game.md](docs/game.md))
 - **City**: procedural cities with streets, parks and buildings 4-90 m; solid buildings, roof landings (see [docs/game.md](docs/game.md))
+- **Rescue**: helicopter missions that pick survivors up at 1-3 sites and bring them to a base pad (see [docs/game.md](docs/game.md))
 - **Graphics**: generated textures, vehicles, trees, rocks, grass, a moving sun with clouds, lakes and a detailed city (see [docs/game.md](docs/game.md))
 - **City missions**: urban deliveries, street races, rings between the houses and sling cargo between roofs (see [docs/game.md](docs/game.md))
 - **Vehicle parameters**: every number of the car, helicopter, drone and sling in one file, `rust/vehicles.json` (see [docs/vehicles.md](docs/vehicles.md))

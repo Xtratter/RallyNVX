@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.7.0 - rescue
+
+- Added: helicopter rescue missions: fly to 1-3 survivor sites, land and wait while the people board, then land on the base pad and wait to unload; hard touchdowns hurt the passengers; reward +50 per person
+- Added: orange-vested survivor figures at the pending sites, HUD with sites done, people aboard and boarding progress
+- Changed: the sixth mission card rotates sling / recon / rescue with each Refresh (before: sling / recon)
+
 ## 2.6.0 - graphics II
 
 - Added: generated trees (4 variants), bushes, rocks and grass tufts (grass: none on Low, 1500 on Medium, 3000 on High, within 40 m), swaying in the wind
