@@ -48,6 +48,7 @@ mod android {
     }
 
     fn stop_engine() {
+        crate::audio::silence();
         let e = ENGINE.lock().unwrap().take();
         if let Some(mut e) = e {
             let _ = e.tx.send(GCmd::Stop);

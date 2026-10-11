@@ -75,3 +75,21 @@ fn run(s: &mut Synth, n: f32) -> Vec<f32> { let mut v = vec![0.0; secs(n)]; s.re
     assert!(buf.iter().any(|x| *x != 0));
     feed(&AudioParams::default(), &[]); set_muted(false);
 }
+
+fn rms(v: &[f32]) -> f32 { (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt() }
+#[test] fn a_crash_is_louder_than_a_loud_engine_and_the_engine_has_mid_band_body() {
+    let loud = AudioParams { machine: Machine::Car, rpm: 0.9, load: 0.9, roll: 0.8, active: true, ..Default::default() };
+    let mut a = Synth::new(); a.set_params(&loud); run(&mut a, 0.5); let base = rms(&run(&mut a, 0.1));
+    let mut b = Synth::new(); b.set_params(&loud); run(&mut b, 0.5); b.push(Event::Crash); let with = rms(&run(&mut b, 0.1));
+    assert!(with > 1.4 * base, "crash {with} vs engine {base}");
+    let mut e = Synth::new(); e.set_params(&car(0.5)); run(&mut e, 0.6); let buf = run(&mut e, 1.0);
+    let f0 = engine_freq(0.5);
+    assert!(power(&buf, 3.0 * f0) > 0.5 * power(&buf, f0), "the 3rd harmonic must carry weight for small speakers: {} vs {}", power(&buf, 3.0 * f0), power(&buf, f0));
+}
+#[test] fn silence_clears_voices_and_the_target() {
+    let mut s = Synth::new(); s.set_params(&car(0.7)); s.push(Event::Success); run(&mut s, 0.1);
+    s.silence();
+    assert_eq!(s.voices(), 0);
+    run(&mut s, 0.2);
+    assert!(run(&mut s, 0.1).iter().all(|x| *x == 0.0));
+}

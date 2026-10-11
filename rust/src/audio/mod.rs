@@ -37,6 +37,8 @@ fn with<R>(f: impl FnOnce(&mut Synth) -> R) -> R {
 /// Game thread: new parameters and events for the audio thread (short lock).
 pub fn feed(params: &AudioParams, events: &[Event]) { with(|s| { s.set_params(params); for e in events { s.push(*e); } }) }
 pub fn set_muted(m: bool) { with(|s| s.set_muted(m)) }
+/// Stops all sound immediately (the game screen is gone).
+pub fn silence() { with(|s| s.silence()) }
 /// Audio thread: fills `out` with PCM16 mono samples.
 pub fn render_into(out: &mut [i16]) { with(|s| s.render(out)) }
 

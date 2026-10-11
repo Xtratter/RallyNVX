@@ -19,15 +19,15 @@ fn heli_world() -> World { World::for_mission(air_mission(MissionKind::Rings, Ai
 #[test] fn landing_after_a_jump_gives_one_touchdown_scaled_by_speed() {
     let mut w = settled(); let mut d = Director::new();
     d.update(&w, 0.0, true);
-    w.vehicle.contacts = 0; w.vehicle.vel.y = -9.0;
+    w.vehicle.contacts = 0; w.vehicle.vel.y = -9.0; w.time += 0.4;
     assert!(d.update(&w, 0.0, true).1.is_empty());
     w.vehicle.contacts = 4;
     let ev = d.update(&w, 0.0, true).1;
     assert!(matches!(ev.as_slice(), [Event::Touchdown(s)] if *s > 0.7 && *s <= 1.0), "{ev:?}");
     assert!(d.update(&w, 0.0, true).1.is_empty(), "no repeat while grounded");
-    w.vehicle.contacts = 0; w.vehicle.vel.y = -3.5; d.update(&w, 0.0, true); w.vehicle.contacts = 4;
+    w.vehicle.contacts = 0; w.vehicle.vel.y = -3.5; w.time += 0.4; d.update(&w, 0.0, true); w.vehicle.contacts = 4;
     assert!(matches!(d.update(&w, 0.0, true).1.as_slice(), [Event::Touchdown(s)] if *s < 0.5));
-    w.vehicle.contacts = 0; w.vehicle.vel.y = -1.0; d.update(&w, 0.0, true); w.vehicle.contacts = 4;
+    w.vehicle.contacts = 0; w.vehicle.vel.y = -1.0; w.time += 0.4; d.update(&w, 0.0, true); w.vehicle.contacts = 4;
     assert!(d.update(&w, 0.0, true).1.is_empty(), "a gentle landing is silent");
 }
 #[test] fn a_sudden_stop_is_a_crash_and_entering_a_lake_splashes_once() {
@@ -91,4 +91,31 @@ fn heli_world() -> World { World::for_mission(air_mission(MissionKind::Rings, Ai
     w2.vehicle.vel = v3(0., 0., 20.);
     let ev = d.update(&w2, 0.0, true).1;
     assert!(ev.is_empty(), "first update of another world must not emit events: {ev:?}");
+}
+
+#[test] fn a_reset_while_driving_is_not_a_crash() {
+    let mut w = settled(); let mut d = Director::new();
+    w.vehicle.vel = v3(0., 0., 18.); d.update(&w, 1.0, true);
+    w.vehicle.reset_upright(&w.terrain);        // what the Reset button does: velocity zeroed, car lifted
+    w.time += 1.0 / 60.0;
+    assert!(!d.update(&w, 0.0, true).1.contains(&Event::Crash));
+}
+#[test] fn a_one_frame_contact_flicker_on_a_slope_is_not_a_touchdown() {
+    let mut w = settled(); let mut d = Director::new();
+    w.vehicle.vel = v3(0., -8.5, 20.); d.update(&w, 1.0, true);
+    w.time += 1.0 / 60.0; w.vehicle.contacts = 0; d.update(&w, 1.0, true);
+    w.time += 1.0 / 60.0; w.vehicle.contacts = 4;
+    assert!(d.update(&w, 1.0, true).1.is_empty(), "no real jump, no thump");
+}
+#[test] fn a_real_jump_still_thumps_and_the_engine_stops_after_the_result() {
+    let mut w = settled(); let mut d = Director::new();
+    d.update(&w, 0.0, true);
+    w.time += 0.016; w.vehicle.contacts = 0; w.vehicle.vel.y = -7.0; d.update(&w, 0.0, true);
+    w.time += 0.4; d.update(&w, 0.0, true);
+    w.time += 0.016; w.vehicle.contacts = 4;
+    assert!(matches!(d.update(&w, 0.0, true).1.as_slice(), [Event::Touchdown(_)]));
+    let mut w = heli_world(); let mut d = Director::new(); d.update(&w, 0.0, true);
+    w.abandon_mission();
+    let (p, ev) = d.update(&w, 0.0, true);
+    assert_eq!((p.machine, ev), (Machine::None, vec![Event::Fail]));
 }

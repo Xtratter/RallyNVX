@@ -8,7 +8,7 @@ const FADE: f32 = 0.05;      // seconds for mute/inactive fades
 const SMOOTH: f32 = 0.08;    // parameter smoothing time constant, seconds
 
 /// Fundamental of the engine for `rpm` in 0..1.
-pub fn engine_freq(rpm: f32) -> f32 { 25.0 + 110.0 * rpm.clamp(0.0, 1.0) }
+pub fn engine_freq(rpm: f32) -> f32 { 40.0 + 140.0 * rpm.clamp(0.0, 1.0) }
 
 #[derive(Clone, Copy, Default)]
 struct Voice { kind: u8, t: f32, strength: f32, phase: f32, lp1: OnePole, lp2: OnePole, live: bool }
@@ -46,6 +46,9 @@ impl Synth {
 
     pub fn set_muted(&mut self, m: bool) { self.muted = m; }
 
+    /// Stops everything at once: no one-shots, no machine, inactive (the activity left the game).
+    pub fn silence(&mut self) { self.voices = [Voice::default(); MAX_VOICES]; self.target = AudioParams::default(); }
+
     /// Number of one-shot voices currently sounding.
     pub fn voices(&self) -> usize { self.voices.iter().filter(|v| v.live).count() }
 
@@ -72,9 +75,9 @@ impl Synth {
         let (out, end) = match v.kind {
             0 => { // touchdown: falling thump plus a little noise
                 v.phase = frac(v.phase + (45.0 + 35.0 * (-t * 18.0).exp()) * dt);
-                ((TAU * v.phase).sin() * (-t * 11.0).exp() * 0.7 + v.lp1.run(noise, 0.15) * (-t * 25.0).exp() * 0.3, t > 0.5)
+                ((TAU * v.phase).sin() * (-t * 11.0).exp() * 0.5 + (TAU * v.phase * 4.0).sin() * (-t * 14.0).exp() * 0.35 + v.lp1.run(noise, 0.45) * (-t * 22.0).exp() * 0.45, t > 0.5)
             }
-            1 => (v.lp1.run(noise, 0.12) * (-t * 4.0).exp() * 0.9 * (1.0 + 0.3 * (t * 90.0).sin()), t > 1.0),
+            1 => (v.lp1.run(noise, 0.2) * (-t * 3.5).exp() * 2.4 * (1.0 + 0.3 * (t * 90.0).sin()), t > 1.2),
             2 => { let hi = v.lp1.run(noise, 0.5) - v.lp2.run(noise, 0.05); (hi * (-t * 7.0).exp() * 1.4, t > 0.7) }
             3 => (note(660.0, 0.0, 0.14, t) + note(880.0, 0.12, 0.28, t), t > 0.45),
             4 => (note(1000.0, 0.0, 0.07, t) * 0.8, t > 0.1),
@@ -90,7 +93,7 @@ impl Synth {
         let (rate, a) = (self.rate, self.a);
         let c_roll = coef(1500.0, rate); let c_roll_w = coef(600.0, rate);
         let (c_s1, c_s2) = (coef(1400.0, rate), coef(900.0, rate));
-        let (c_thump, c_whoosh, c_wind, c_drone) = (coef(400.0, rate), coef(1200.0, rate), coef(500.0, rate), coef(2000.0, rate));
+        let (c_thump, c_whoosh, c_wind, c_drone) = (coef(700.0, rate), coef(1200.0, rate), coef(500.0, rate), coef(2000.0, rate));
         let fade = 1.0 / (FADE * rate);
         for o in out.iter_mut() {
             let t = self.target;
@@ -108,9 +111,9 @@ impl Synth {
             if self.s.car > 0.001 {
                 self.engine_phase = frac(self.engine_phase + engine_freq(self.s.rpm) / rate);
                 let p = self.engine_phase * TAU;
-                let w = [1.0f32, 0.6, 0.5, 0.3, 0.25, 0.15];
+                let w = [0.6f32, 0.7, 1.0, 0.8, 0.6, 0.4];   // the mids carry the sound on a phone speaker
                 let mut e = 0.0; for (k, wk) in w.iter().enumerate() { e += (p * (k + 1) as f32).sin() * wk; }
-                let engine = (e * 0.35 + n * 0.04) * (0.10 + 0.22 * self.s.load);
+                let engine = (e * 0.30 + n * 0.04) * (0.10 + 0.22 * self.s.load);
                 self.gurgle = frac(self.gurgle + 3.0 / rate);
                 let ground = self.f_roll.run(n, c_roll) * 0.35;
                 let wet = self.f_roll_w.run(n, c_roll_w) * 0.45 * (0.7 + 0.3 * (self.gurgle * TAU).sin());
@@ -125,16 +128,16 @@ impl Synth {
                 self.rotor_phase = frac(self.rotor_phase + (13.0 + 4.0 * self.s.rpm) / rate);
                 self.rotor_tone = frac(self.rotor_tone + 55.0 / rate);
                 let pulse = (1.0 - self.rotor_phase).powi(4);
-                let thump = self.f_thump.run(n, c_thump) * pulse * 2.2;
+                let thump = self.f_thump.run(n, c_thump) * pulse * 2.6;
                 let whoosh = self.f_whoosh.run(n, c_whoosh) * 0.18;
-                let heli = thump * 0.5 + (self.rotor_tone * TAU).sin() * 0.10 + whoosh;
+                let heli = thump * 0.5 + ((self.rotor_tone * TAU).sin() * 0.06 + (self.rotor_tone * 2.0 * TAU).sin() * 0.05) + whoosh;
                 x += heli * (0.4 + 0.6 * self.s.rpm) * self.s.heli;
             }
             // drone: four detuned tones
             if self.s.drone > 0.001 {
                 let mut d = 0.0;
                 for i in 0..4 {
-                    let f = 300.0 + 40.0 * i as f32 + 60.0 * self.s.rpm;
+                    let f = 300.0 + 7.0 * i as f32 + 60.0 * self.s.rpm;
                     self.drone_phase[i] = frac(self.drone_phase[i] + f / rate);
                     d += (self.drone_phase[i] * TAU).sin() * 0.05;
                 }

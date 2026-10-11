@@ -131,6 +131,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         pc.addView(label(t("Paused", "Пауза"), 22f))
         fun pbtn(text: String, onClick: () -> Unit) = pc.addView(M3Widgets.button(this, text, M3Widgets.ButtonKind.TONAL, onClick), LinearLayout.LayoutParams(px(220f), px(48f)).apply { topMargin = px(10f) })
         pbtn(t("Resume", "Продолжить")) { hidePause() }
+        fun soundLabel() = if (audio.muted) t("Sound: off", "Звук: выкл") else t("Sound: on", "Звук: вкл")
+        val soundPause = M3Widgets.button(this, soundLabel(), M3Widgets.ButtonKind.TONAL) {}
+        soundPause.setOnClickListener { audio.muted = !audio.muted; (soundPause as? TextView)?.text = soundLabel() }
+        pc.addView(soundPause, LinearLayout.LayoutParams(px(220f), px(48f)).apply { topMargin = px(10f) })
         pbtn(t("Restart", "Заново")) { ignoreRun = Native.gameStats()[18]; Native.gameRestart(); resultShown = false; hidePause() }
         pbtn(t("Abandon", "Бросить")) { Native.gameAbort(); finish() }
         pausePanel = panel(pc)
