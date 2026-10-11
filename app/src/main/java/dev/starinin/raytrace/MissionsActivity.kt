@@ -34,6 +34,7 @@ class MissionsActivity : Activity() {
         root.addView(top)
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.setBackgroundColor(M3.base)
         setContentView(root)
     }
 

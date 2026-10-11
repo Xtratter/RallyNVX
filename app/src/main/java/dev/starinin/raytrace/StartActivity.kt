@@ -47,7 +47,8 @@ class StartActivity : Activity() {
             Quality.save(this, i); refresh()
         }
         add(quality)
-        setContentView(col)
+        col.setBackgroundColor(M3.base)
+        setContentView(android.widget.ScrollView(this).apply { isFillViewport = true; setBackgroundColor(M3.base); addView(col, android.widget.FrameLayout.LayoutParams(-1, -1)) })
         refresh()
     }
 
