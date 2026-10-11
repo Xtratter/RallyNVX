@@ -2,6 +2,14 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.6.0 - graphics II
+
+- Added: generated trees (4 variants), bushes, rocks and grass tufts (grass: none on Low, 1500 on Medium, 3000 on High, within 40 m), swaying in the wind
+- Added: a moving sun (12 minute cycle, dawn - noon - dusk, no night) with matching sky, fog and light colours; procedural clouds; sky reflections on paint, glass, chrome and windows
+- Added: shallow lakes in low ground with depth colour, waves, reflections and splashes; the car drives through them with extra drag (`water_drag` in `vehicles.json`), aircraft are unaffected; props, bushes, grass, tyre tracks and mission points avoid water
+- Added: cities with ten facade colours, roof cornices, street lamps and even asphalt with lane marks
+- Changed: levels look different from earlier versions (props avoid lakes)
+
 ## 2.5.1 - stability
 
 - Changed: the off-roader's centre of mass is 0.35 m lower relative to the wheels, so hard turns make it slide instead of rolling over (rollover limit 1.36 g against the tyre limit 1.1 g, before 0.9 g); the look is unchanged

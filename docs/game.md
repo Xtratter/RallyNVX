@@ -60,7 +60,7 @@ Every level has one or two cities (about 530 x 530 m) standing on a flat plateau
 
 ## Graphics
 
-The terrain is textured with generated materials (grass, dirt, sand, rock) blended by height, slope and noise. Vehicles are detailed generated models (paint, glass, chrome, lamps, spinning wheels, rotors and propellers) and the car leaves tyre tracks. Nothing is loaded from files: all textures and meshes are made in code.
+The terrain is textured with generated materials (grass, dirt, sand, rock) blended by height, slope and noise. Vehicles are detailed generated models (paint, glass, chrome, lamps, spinning wheels, rotors and propellers) and the car leaves tyre tracks. Trees (conifers and broadleaf), bushes, rocks and grass tufts are generated models (grass is drawn within 40 m: none on Low, 1500 tufts on Medium, 3000 on High). The sun moves while you play (a full cycle takes 12 minutes, dawn - noon - dusk, no night) and the light, sky and fog colours follow it; the sky has drifting clouds. Low ground fills with shallow lakes: the car can drive through them with extra drag and splashes, aircraft are unaffected, and mission points are never in water. Cities have ten facade colours, roof cornices, street lamps and even asphalt with lane marks. Nothing is loaded from files: all textures and meshes are made in code.
 
 ## Limits of this version
 
@@ -128,7 +128,7 @@ No garage, rescue missions or NPC orders yet, and only the raster renderer (mode
 
 ## Графика
 
-Рельеф покрыт сгенерированными материалами (трава, земля, песок, скала), которые смешиваются по высоте, наклону и шуму. Техника — детальные сгенерированные модели (краска, стекло, хром, фары, вращающиеся колёса, винты), а машина оставляет следы шин. Ничего не грузится из файлов: все текстуры и меши строятся в коде.
+Рельеф покрыт сгенерированными материалами (трава, земля, песок, скала), которые смешиваются по высоте, наклону и шуму. Техника — детальные сгенерированные модели (краска, стекло, хром, фары, вращающиеся колёса, винты), а машина оставляет следы шин. Деревья (хвойные и лиственные), кусты, камни и пучки травы — сгенерированные модели (трава рисуется в 40 м: на Низком её нет, на Среднем 1500 пучков, на Высоком 3000). Солнце движется во время игры (полный цикл 12 минут, рассвет — полдень — закат, без ночи), цвета света, неба и тумана следуют за ним; в небе плывут облака. В низинах появляются мелкие озёра: машина проезжает их с дополнительным сопротивлением и брызгами, аппараты их не замечают, а точки миссий никогда не стоят в воде. В городах десять цветов фасадов, карнизы на крышах, уличные фонари и ровный асфальт с разметкой. Ничего не грузится из файлов: все текстуры и меши строятся в коде.
 
 ## Ограничения этой версии
 

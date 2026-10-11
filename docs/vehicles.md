@@ -19,6 +19,7 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 | `brake_force` | total brake force, N |
 | `max_speed` | m/s, drive force fades to zero here |
 | `grip` | tyre friction coefficient |
+| `water_drag` | extra drag in water, 1/s with all four wheels wet (optional, default 0) |
 | `handling.steer_max` | steering angle limit, rad |
 | `handling.steer_speed_ref` | m/s; the steering angle shrinks as `1 / (1 + speed / ref)` |
 | `handling.steer_rate` | how fast the wheels turn, rad/s |
@@ -64,6 +65,7 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 | `brake_force` | суммарная тормозная сила, Н |
 | `max_speed` | м/с, на этой скорости тяга сходит на нуль |
 | `grip` | коэффициент трения шин |
+| `water_drag` | дополнительное сопротивление в воде, 1/с при четырёх мокрых колёсах (необязательно, по умолчанию 0) |
 | `handling.steer_max` | предел угла руля, рад |
 | `handling.steer_speed_ref` | м/с; угол руля уменьшается как `1 / (1 + скорость / ref)` |
 | `handling.steer_rate` | скорость поворота колёс, рад/с |
