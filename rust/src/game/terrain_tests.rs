@@ -52,3 +52,27 @@ use super::*;
     let n = (TILE_CELLS >> 1) + 1;
     for v in &m.verts[..n * n] { let l = (v[3] * v[3] + v[4] * v[4] + v[5] * v[5]).sqrt(); assert!((l - 1.0).abs() < 1e-3 && v[4] > 0.0); }
 }
+#[test] fn plateau_is_flat_inside_a_city_and_blends_out() {
+    let t = Terrain::new(7);
+    let s = t.sites()[0];
+    for (dx, dz) in [(0.0, 0.0), (100.0, 80.0), (-200.0, 150.0), (250.0, -250.0), (-260.0, -260.0)] {
+        let h = t.height(s.centre.x + dx, s.centre.z + dz);
+        assert!((h - s.centre.y).abs() < 1e-3, "inside the city: {h} vs {}", s.centre.y);
+    }
+    let (x, z) = (s.centre.x + s.half + 101.0, s.centre.z);
+    assert_eq!(t.height(x, z), t.raw_height(x, z));
+    let mut prev = t.height(s.centre.x + s.half - 20.0, s.centre.z);
+    for i in 1..400 {
+        let h = t.height(s.centre.x + s.half - 20.0 + i as f32 * 0.5, s.centre.z);
+        assert!(h.is_finite() && (h - prev).abs() < 6.0, "step {i}: {prev} -> {h}");
+        prev = h;
+    }
+}
+#[test] fn flat_terrain_has_no_cities_and_terrain_stays_copy() {
+    assert!(Terrain::flat().sites().is_empty());
+    let t = Terrain::new(3); let u = t; assert_eq!(t.height(10.0, 10.0), u.height(10.0, 10.0));
+    assert_eq!(Terrain::flat().height(500.0, 500.0), 0.0);
+}
+#[test] fn the_spawn_plateau_is_still_flat_with_cities() {
+    for seed in [1u64, 7, 99, 12345] { let t = Terrain::new(seed); for (x, z) in [(0.0, 0.0), (5.0, -4.0), (-8.0, 8.0)] { assert!(t.height(x, z).abs() < 0.5); } }
+}

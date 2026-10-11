@@ -90,3 +90,40 @@ fn wall() -> City { City::from_buildings(site(), vec![Building { min: v3(990.0, 
     let inside = pos.x > 990.0 - 1.0 && pos.x < 1010.0 + 1.0 && pos.z > -690.0 - 1.0 && pos.z < -670.0 + 1.0 && pos.y < 60.0;
     assert!(!inside, "still inside the box at {pos:?}");
 }
+use crate::game::{terrain::Terrain, world::WORLD_LIMIT};
+fn spread(t: &Terrain, s: &CitySite) -> f32 {
+    let hs: Vec<f32> = (-1..=1).flat_map(|a| (-1..=1).map(move |b| (a, b))).map(|(a, b)| t.raw_height(s.centre.x + a as f32 * s.half * 0.8, s.centre.z + b as f32 * s.half * 0.8)).collect();
+    hs.iter().cloned().fold(f32::MIN, f32::max) - hs.iter().cloned().fold(f32::MAX, f32::min)
+}
+#[test] fn sites_obey_the_placement_rules_for_many_and_extreme_seeds() {
+    let mut seeds: Vec<u64> = (0..300u64).map(|s| s * 7919).collect(); seeds.extend([0, 1, u64::MAX, 0xFF_FFFF]);
+    let (mut ones, mut twos) = (0, 0);
+    for seed in seeds {
+        let t = Terrain::new(seed);
+        let sites = t.sites();
+        assert!(sites.len() == 1 || sites.len() == 2, "seed {seed}: {}", sites.len());
+        if sites.len() == 1 { ones += 1 } else { twos += 1 }
+        for s in &sites {
+            let d = s.centre.x.hypot(s.centre.z);
+            assert!(d >= 600.0 - 1.0 && d <= 1500.0 + 1.0, "distance {d}");
+            assert!(s.centre.x.abs() + s.half <= WORLD_LIMIT - 200.0 && s.centre.z.abs() + s.half <= WORLD_LIMIT - 200.0);
+            assert!(s.centre.x.is_finite() && s.centre.y.is_finite());
+            assert!(!t.in_city(0.0, 0.0, 100.0), "the spawn plateau must stay outside the cities");
+        }
+        if sites.len() == 2 { assert!((sites[0].centre - sites[1].centre).len() >= 800.0, "sites too close"); }
+        for s in &sites { assert!(spread(&t, s) < 60.0, "seed {seed}: spread {}", spread(&t, s)); }
+    }
+    assert!(ones > 60 && twos > 60, "ones {ones} twos {twos}");
+}
+#[test] fn the_flattest_candidate_wins() {
+    let t = Terrain::new(7);
+    let s = t.sites()[0];
+    let mut flatter = 0;
+    for k in 0..12i32 {
+        let a = crate::game::terrain::hash01(7 ^ 0xC17, k, 91) * std::f32::consts::TAU;
+        let d = 600.0 + 900.0 * crate::game::terrain::hash01(7 ^ 0xC17, k, 92);
+        let c = CitySite { centre: v3(a.cos() * d, 0.0, a.sin() * d), half: HALF };
+        if spread(&t, &c) < spread(&t, &s) - 1e-3 { flatter += 1; }
+    }
+    assert_eq!(flatter, 0, "a flatter candidate existed");
+}

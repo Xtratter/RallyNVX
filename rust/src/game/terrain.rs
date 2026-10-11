@@ -1,4 +1,5 @@
 //! Seeded procedural terrain: hash-based value noise, fBm heights, normals.
+use super::city::{city_sites, CitySite};
 use super::math::{v3, V3};
 
 pub const TILE_CELLS: usize = 64;
@@ -37,19 +38,42 @@ fn fbm(seed: u64, x: f32, z: f32, octaves: u32) -> f32 {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Terrain { pub seed: u64, scale: f32 }
+pub struct Terrain { pub seed: u64, scale: f32, sites: [Option<CitySite>; 2] }
 
 impl Terrain {
-    pub fn new(seed: u64) -> Terrain { Terrain { seed, scale: 1.0 } }
+    pub fn new(seed: u64) -> Terrain {
+        let raw = Terrain { seed, scale: 1.0, sites: [None; 2] };
+        Terrain { sites: city_sites(seed, &raw), ..raw }
+    }
     /// Height 0 everywhere (tests, vehicle tuning).
-    pub fn flat() -> Terrain { Terrain { seed: 0, scale: 0.0 } }
+    pub fn flat() -> Terrain { Terrain { seed: 0, scale: 0.0, sites: [None; 2] } }
 
-    pub fn height(&self, x: f32, z: f32) -> f32 {
+    /// The heightfield without city plateaus.
+    pub fn raw_height(&self, x: f32, z: f32) -> f32 {
         if self.scale == 0.0 { return 0.0; }
         let big = vnoise(self.seed ^ 0xB16, x / 700.0, z / 700.0);
         let amp = (6.0 + 44.0 * big * big) * self.scale;
         let k = smoothstep(10.0, 70.0, x.hypot(z)); // flat spawn plateau
         fbm(self.seed, x / 140.0, z / 140.0, 5) * amp * k
+    }
+
+    /// Terrain height with every city plateau blended in (flat inside a city, smooth 100 m rim).
+    pub fn height(&self, x: f32, z: f32) -> f32 {
+        let mut h = self.raw_height(x, z);
+        for s in self.sites.iter().flatten() {
+            let d = (x - s.centre.x).abs().max((z - s.centre.z).abs()) - s.half;   // distance beyond the city square
+            if d >= 100.0 { continue; }
+            let k = 1.0 - smoothstep(0.0, 100.0, d.max(0.0));
+            h += (s.centre.y - h) * k;
+        }
+        h
+    }
+
+    pub fn sites(&self) -> Vec<CitySite> { self.sites.iter().flatten().copied().collect() }
+
+    /// Inside any city square grown by `margin` metres.
+    pub fn in_city(&self, x: f32, z: f32, margin: f32) -> bool {
+        self.sites.iter().flatten().any(|s| (x - s.centre.x).abs() <= s.half + margin && (z - s.centre.z).abs() <= s.half + margin)
     }
 
     pub fn normal(&self, x: f32, z: f32) -> V3 {

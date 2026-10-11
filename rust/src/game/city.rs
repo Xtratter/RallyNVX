@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 
 use super::math::{v3, Q, V3};
-use super::terrain::hash01;
+use super::terrain::{hash01, Terrain};
 
 pub const BLOCKS: i32 = 11;
 pub const PITCH: f32 = 48.0;
@@ -150,6 +150,28 @@ impl City {
             if !moved { break; }
         }
     }
+}
+
+/// Picks one or two city sites by seed: the flattest of 12 hashed candidates, then the flattest one at least 800 m from it.
+pub fn city_sites(seed: u64, raw: &Terrain) -> [Option<CitySite>; 2] {
+    let key = seed ^ 0xC17;
+    let mut cands: Vec<(f32, CitySite)> = (0..12i32).map(|k| {
+        let a = hash01(key, k, 91) * std::f32::consts::TAU;
+        let d = 600.0 + 900.0 * hash01(key, k, 92);
+        let (cx, cz) = (a.cos() * d, a.sin() * d);
+        let samples: Vec<f32> = (-1..=1).flat_map(|i| (-1..=1).map(move |j| (i, j)))
+            .map(|(i, j)| raw.raw_height(cx + i as f32 * HALF * 0.8, cz + j as f32 * HALF * 0.8)).collect();
+        let spread = samples.iter().cloned().fold(f32::MIN, f32::max) - samples.iter().cloned().fold(f32::MAX, f32::min);
+        let base = samples.iter().sum::<f32>() / samples.len() as f32;
+        (spread, CitySite { centre: v3(cx, base, cz), half: HALF })
+    }).collect();
+    cands.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let first = cands[0].1;
+    let mut out = [Some(first), None];
+    if hash01(key, 90, 0) >= 0.6 {
+        out[1] = cands.iter().skip(1).map(|c| c.1).find(|s| (s.centre - first.centre).len() >= 800.0);
+    }
+    out
 }
 
 #[cfg(test)]

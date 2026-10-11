@@ -20,3 +20,15 @@ use crate::game::terrain::TILE_SIZE;
         for p in ps { assert!(p.pos.x >= tx as f32 * TILE_SIZE && p.pos.x < (tx + 1) as f32 * TILE_SIZE); assert!(p.radius > 0.0 && p.height > 0.0); } } }
     assert!(total > 20, "{total}");
 }
+#[test] fn no_props_inside_cities_or_their_rim() {
+    let t = Terrain::new(7);
+    let s = t.sites()[0];
+    let (c0x, c0z) = (crate::game::world::tile_of(s.centre.x - s.half - 120.0), crate::game::world::tile_of(s.centre.z - s.half - 120.0));
+    let (c1x, c1z) = (crate::game::world::tile_of(s.centre.x + s.half + 120.0), crate::game::world::tile_of(s.centre.z + s.half + 120.0));
+    let mut outside = 0;
+    for tx in c0x..=c1x { for tz in c0z..=c1z { for p in tile_props(&t, tx, tz) {
+        assert!(!t.in_city(p.pos.x, p.pos.z, 100.0), "prop inside the city rim at {:?}", p.pos);
+        outside += 1;
+    } } }
+    assert!(outside > 0, "props still exist around the city");
+}
