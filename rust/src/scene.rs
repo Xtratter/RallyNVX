@@ -81,8 +81,11 @@ pub struct SceneData {
 impl SceneData {
     pub fn prism(&self) -> Option<&Obj> { self.objs.iter().find(|o| matches!(o.shape, Shape::Prism { .. })) }
 
-    /// Whether the photon passes are needed: a sun, a prism and somewhere for the light to land.
-    pub fn photons(&self) -> bool { self.sun.is_some() && self.prism().is_some() && !self.receivers.is_empty() }
+    /// Whether the photon passes are needed: a sun, a dispersive glass prism and somewhere for the light to land.
+    pub fn photons(&self) -> bool {
+        let dispersive_glass = self.prism().is_some_and(|p| { let m = &self.mats[p.mat]; m.kind == 2 && m.dispersion > 0.0 });
+        self.sun.is_some() && dispersive_glass && !self.receivers.is_empty()
+    }
 }
 
 /// `scene` setting value for a user-loaded file (built-in scenes are 0..BUILTIN.len()).
@@ -283,7 +286,7 @@ pub fn parse(json: &str) -> Result<SceneData, String> {
     }
     if objs.iter().filter(|o| matches!(o.shape, Shape::Prism { .. })).count() > 1 { return Err("objects: only one prism is supported".into()); }
     if objs.iter().filter(|o| o.shape.complex()).count() > MAX_COMPLEX {
-        return Err(format!("objects: at most {MAX_COMPLEX} of torus, menger, cylinder and blobs"));
+        return Err(format!("objects: at most {MAX_COMPLEX} of prism, torus, menger, cylinder and blobs"));
     }
     let mut receivers = vec![];
     if let Some(rj) = root.get("caustic_receivers") {
@@ -499,5 +502,21 @@ mod tests {
         }).collect();
         let spread = ((hits[0][0] - hits[6][0]).powi(2) + (hits[0][2] - hits[6][2]).powi(2)).sqrt();
         assert!(spread > 0.15, "violet and red land only {spread} m apart: {hits:?}");
+    }
+
+    #[test]
+    fn photons_need_a_dispersive_glass_prism() {
+        let diffuse = PRISM_BASE.replace(r#""name":"g","kind":"glass","ior":1.6,"dispersion":2.5"#, r#""name":"g","kind":"diffuse""#);
+        assert!(!parse(&diffuse).unwrap().photons(), "an opaque prism must not throw a rainbow");
+        let plain = PRISM_BASE.replace(r#""dispersion":2.5"#, r#""dispersion":0"#);
+        assert!(!parse(&plain).unwrap().photons(), "glass without dispersion has no spectrum (and would be counted twice in path tracing)");
+        assert!(parse(PRISM_BASE).unwrap().photons());
+    }
+
+    #[test]
+    fn complex_limit_message_names_the_prism() {
+        let one = |t: &str| format!(r#"{{"type":"{t}","pos":[0,0,0],"size":1,"material":"a"}}"#);
+        let j = format!(r#"{{"materials":[{{"name":"a"}}],"objects":[{}]}}"#, (0..7).map(|_| one("menger")).collect::<Vec<_>>().join(","));
+        assert!(parse(&j).unwrap_err().contains("prism"));
     }
 }

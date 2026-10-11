@@ -124,7 +124,7 @@ pub fn caustic_at_wgsl(sc: &SceneData, with_map: bool) -> String {
         s.push_str("fn caustic_at(p: vec3<f32>) -> vec3<f32> {\n");
         for (i, r) in sc.receivers.iter().enumerate() {
             let n = unit(cross(r.u, r.v));
-            let _ = writeln!(s, "  {{\n    let q = p - {o};\n    if (abs(dot(q, {n})) < 0.004) {{\n      let a = dot(q, {u}) / {uu};\n      let b = dot(q, {v}) / {vv};\n      if (a >= 0.0 && a < 1.0 && b >= 0.0 && b < 1.0) {{ return cmap_cell({off}u, {nu}u, {nv}u, a, b); }}\n    }}\n  }}",
+            let _ = writeln!(s, "  {{\n    let q = p - {o};\n    if (abs(dot(q, {n})) < 0.01) {{\n      let a = dot(q, {u}) / {uu};\n      let b = dot(q, {v}) / {vv};\n      if (a >= 0.0 && a < 1.0 && b >= 0.0 && b < 1.0) {{ return cmap_cell({off}u, {nu}u, {nv}u, a, b); }}\n    }}\n  }}",
                 o = v3(r.origin), n = v3(n), u = v3(r.u), v = v3(r.v), uu = f(dot(r.u, r.u)), vv = f(dot(r.v, r.v)),
                 off = receiver_offset(sc, i), nu = r.cells[0], nv = r.cells[1]);
         }
@@ -239,5 +239,14 @@ mod tests {
         assert_eq!(total_cells(&sc), cells.iter().sum::<u32>());
         assert_eq!(receiver_offset(&sc, 1), cells[0]);
         assert_eq!(receiver_offset(&sc, 0), 0);
+    }
+
+    #[test]
+    fn photons_respect_slits_and_the_caustics_toggle() {
+        let sc = crate::scene::builtin(3);
+        let ph = crate::shaders::photon(&sc);
+        assert!(ph.contains("occ_all(start, d0"), "the sun beam must be tested against walls before it reaches the prism");
+        let scene = include_str!("shaders/scene.wgsl");
+        assert!(scene.contains("has(F_CAUSTICS)") && scene.contains("select(vec3<f32>(0.0), caustic_at(q), has(F_CAUSTICS))"));
     }
 }

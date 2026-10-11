@@ -3,7 +3,7 @@ package dev.starinin.raytrace
 import android.content.Context
 import java.io.File
 
-/** Built-in scenes (ids 0..2 of the `scene` setting) and user scene files (id 3): JSON in the app's external files dir. */
+/** Built-in scenes (ids 0..3 of the `scene` setting) and user scene files (id 4): JSON in the app's external files dir. */
 object Scenes {
     val NAMES get() = listOf(t("Classic", "Классика"), t("Sun room", "Солнечная комната"), t("Materials", "Витрина материалов"), t("Prism", "Призма"))
 

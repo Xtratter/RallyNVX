@@ -553,7 +553,7 @@ fn indirect(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     alb = alb * 0.5;
   }
   let nq = calc_normal_gi(q);
-  return alb * (direct_light_gi(q, nq, h.y) + caustic_at(q));
+  return alb * (direct_light_gi(q, nq, h.y) + select(vec3<f32>(0.0), caustic_at(q), has(F_CAUSTICS)));
 }
 
 fn clamp_lum(c: vec3<f32>, m: f32) -> vec3<f32> {

@@ -486,7 +486,7 @@ impl Gfx {
             query_set: &p.qs, beginning_of_pass_write_index: b, end_of_pass_write_index: e }));
         let slot = |s: u32| cts(Some(2 * s), Some(2 * s + 1));
         let mut enc = dev.create_command_encoder(&Default::default());
-        if let Some(ph) = &self.photon {
+        if let (Some(ph), true) = (&self.photon, p.flags & crate::params::flags::CAUSTICS != 0) {
             let pbg = bg(dev, &ph.photon_bgl, &[(0, pb.clone()), (1, ph.counts.as_entire_binding())]);
             let rbg = bg(dev, &ph.resolve_bgl, &[(0, pb.clone()), (1, ph.counts.as_entire_binding()), (2, ph.map.as_entire_binding())]);
             {

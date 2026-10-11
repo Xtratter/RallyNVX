@@ -16,7 +16,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let b = make_basis(axis);
   let rr = PR_BOUND * sqrt(rnd());
   let ph = 6.2831853 * rnd();
-  let start = PR_C - axis * (PR_BOUND * 1.5) + (b[0] * cos(ph) + b[1] * sin(ph)) * rr;
+  // far enough back to be outside the whole room, so walls and slits between the sun and the prism are tested
+  let start = PR_C - axis * (PR_BOUND * 1.5 + 40.0) + (b[0] * cos(ph) + b[1] * sin(ph)) * rr;
   let lam = 380.0 + 400.0 * rnd();
   let n = ior_l(lam, PR_IOR, PR_DISP);
   let f0 = (n - 1.0) / (n + 1.0);
@@ -26,6 +27,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var d = to_local(d0);
   let c4 = prism_clip(o, d, PR_SIDE, PR_LEN);
   if (!(c4.y > max(c4.x, 0.0)) || c4.x < 0.0) { return; }
+  // the sun beam must reach the prism: slits and walls between the sun and the entry point cut it (glass panes tint it)
+  let beam = occ_all(start, d0, c4.x - 0.01, -1);
+  if (all(beam == vec3<f32>(0.0))) { return; }
   let nin = prism_normal(c4.z);
   if (rnd() < schlick(clamp(-dot(d, nin), 0.0, 1.0), f0 * f0)) { return; }
   o = o + d * c4.x - nin * 1e-4;
@@ -59,7 +63,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let omega = 2.0 * PI * (1.0 - SUN_COS);
   let beam_area = PI * PR_BOUND * PR_BOUND;
   let e_perp = sun_rad() * omega; // irradiance on a surface facing the sun
-  let phi = e_perp * beam_area / PHOTONS * wavelength_rgb(lam) * tr;
+  let phi = e_perp * beam_area / PHOTONS * wavelength_rgb(lam) * tr * beam;
   let idx = u32(hit.x) * 3u;
   atomicAdd(&COUNTS[idx], u32(phi.x * FIXED));
   atomicAdd(&COUNTS[idx + 1u], u32(phi.y * FIXED));
