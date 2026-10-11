@@ -5,7 +5,9 @@ const COMMON: &str = include_str!("shaders/common.wgsl");
 const SCENE: &str = include_str!("shaders/scene.wgsl");
 
 fn join(body: &str) -> String { format!("{}\n{}", COMMON, body) }
-fn join_scene(sc: &crate::scene::SceneData, body: &str) -> String { format!("{}\n{}\n{}\n{}", COMMON, SCENE, crate::scenegen::scene_wgsl(sc), body) }
+fn join_scene(sc: &crate::scene::SceneData, body: &str) -> String {
+    format!("{}\n{}\n{}\n{}\n{}", COMMON, SCENE, crate::scenegen::scene_wgsl(sc), crate::dispersion::spectrum_wgsl(), body)
+}
 
 pub fn trace(sc: &crate::scene::SceneData) -> String { join_scene(sc, include_str!("shaders/trace.wgsl")) }
 pub fn temporal() -> String { join(include_str!("shaders/temporal.wgsl")) }
@@ -16,16 +18,19 @@ pub fn gi_atrous() -> String { join(include_str!("shaders/gi_atrous.wgsl")) }
 pub fn composite() -> String { join(include_str!("shaders/composite.wgsl")) }
 pub fn present() -> String { join(include_str!("shaders/present.wgsl")) }
 
+/// Parses and validates WGSL with naga (host tests; no GPU needed).
+#[cfg(test)]
+pub(crate) fn validate_for_tests(name: &str, src: String) {
+    use wgpu::naga;
+    let m = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(&src)));
+    naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty())
+        .validate(&m).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wgpu::naga;
-
-    fn validate(name: &str, src: String) {
-        let m = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(&src)));
-        naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty())
-            .validate(&m).unwrap_or_else(|e| panic!("{name}: {e:?}"));
-    }
+    use super::validate_for_tests as validate;
 
     #[test]
     fn shaders_validate() {

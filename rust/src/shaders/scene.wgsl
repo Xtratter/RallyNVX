@@ -149,6 +149,72 @@ fn d_pair(p: vec3<f32>, c: vec3<f32>, c2: vec3<f32>, r1: f32, r2: f32, k: f32, b
   return smin(length(p - c) - r1, length(p - c2) - r2, k);
 }
 
+// Equilateral prism, triangle in the local xy plane (apex up, centroid at the origin), extruded along z; yaw is a fixed
+// angle about y, spin an extra rotation speed. side = triangle side, len = length along z.
+fn prism_local(p: vec3<f32>, c: vec3<f32>, yaw: f32, spin: f32) -> vec3<f32> {
+  return rot_y(p - c, yaw + P.time * spin);
+}
+
+const SQ3H: f32 = 0.8660254;
+
+// max of the five face distances: exact inside, a safe lower bound outside
+fn d_prism(p: vec3<f32>, c: vec3<f32>, side: f32, len: f32, yaw: f32, spin: f32, bound: f32) -> f32 {
+  let bd = length(p - c) - bound;
+  if (bd > 0.2) { return bd; }
+  let q = prism_local(p, c, yaw, spin);
+  let r = side * 0.28867513; // inradius = side / (2 * sqrt 3)
+  let dl = dot(q.xy, vec2<f32>(-SQ3H, 0.5)) - r;
+  let dr = dot(q.xy, vec2<f32>(SQ3H, 0.5)) - r;
+  let db = -q.y - r;
+  return max(max(dl, dr), max(db, abs(q.z) - len * 0.5));
+}
+
+// Ray against the prism in its local frame: (t_in, t_out, face in, face out); a miss has t_in > t_out.
+// Faces: 0 left, 1 right, 2 base, 3 back cap (-z), 4 front cap (+z).
+fn prism_clip(o: vec3<f32>, d: vec3<f32>, side: f32, len: f32) -> vec4<f32> {
+  let r = side * 0.28867513;
+  var tin = -1e9;
+  var tout = 1e9;
+  var fin = -1.0;
+  var fout = -1.0;
+  for (var k = 0; k < 5; k = k + 1) {
+    var n = vec3<f32>(0.0);
+    var off = r;
+    if (k == 0) { n = vec3<f32>(-SQ3H, 0.5, 0.0); }
+    if (k == 1) { n = vec3<f32>(SQ3H, 0.5, 0.0); }
+    if (k == 2) { n = vec3<f32>(0.0, -1.0, 0.0); }
+    if (k == 3) { n = vec3<f32>(0.0, 0.0, -1.0); off = len * 0.5; }
+    if (k == 4) { n = vec3<f32>(0.0, 0.0, 1.0); off = len * 0.5; }
+    let den = dot(n, d);
+    let num = off - dot(n, o);
+    if (abs(den) < 1e-8) {
+      if (num < 0.0) { return vec4<f32>(1.0, -1.0, -1.0, -1.0); }
+    } else {
+      let t = num / den;
+      if (den < 0.0) {
+        if (t > tin) { tin = t; fin = f32(k); }
+      } else {
+        if (t < tout) { tout = t; fout = f32(k); }
+      }
+    }
+  }
+  return vec4<f32>(tin, tout, fin, fout);
+}
+
+fn prism_normal(face: f32) -> vec3<f32> {
+  if (face < 0.5) { return vec3<f32>(-SQ3H, 0.5, 0.0); }
+  if (face < 1.5) { return vec3<f32>(SQ3H, 0.5, 0.0); }
+  if (face < 2.5) { return vec3<f32>(0.0, -1.0, 0.0); }
+  if (face < 3.5) { return vec3<f32>(0.0, 0.0, -1.0); }
+  return vec3<f32>(0.0, 0.0, 1.0);
+}
+
+fn occ_prism(ro: vec3<f32>, dir: vec3<f32>, tmax: f32, c: vec3<f32>, side: f32, len: f32, yaw: f32, spin: f32) -> bool {
+  let a = yaw + P.time * spin;
+  let c4 = prism_clip(rot_y(ro - c, a), rot_y(dir, a), side, len);
+  return c4.y > max(c4.x, 0.0) && c4.x < tmax;
+}
+
 fn calc_normal(p: vec3<f32>) -> vec3<f32> {
   let e = vec2<f32>(1.0, -1.0) * 0.0007;
   return normalize(

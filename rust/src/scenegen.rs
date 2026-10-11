@@ -23,7 +23,7 @@ fn dist(o: &Obj, fast: bool) -> String {
         Shape::Torus { big, small } => format!("d_torus(p, {c}, {}, {}, {})", vec2(*big, *small), f(o.spin), f(o.bound)),
         Shape::Menger { s } => format!("d_menger(p, {c}, {}, {}, {}, {fast})", f(*s), f(o.spin), f(o.bound)),
         Shape::Cylinder { r, h } => format!("d_cyl(p, {c}, {}, {}, {}, {})", f(*r), f(*h), f(o.spin), f(o.bound)),
-        Shape::Prism { .. } => "1e9".into(), // replaced in Task 3
+        Shape::Prism { side, len, yaw } => format!("d_prism(p, {c}, {}, {}, {}, {}, {})", f(*side), f(*len), f(*yaw), f(o.spin), f(o.bound)),
         Shape::Blobs { pos2, r1, r2, k } => format!("d_pair(p, {c}, {}, {}, {}, {}, {})", v3(*pos2), f(*r1), f(*r2), f(*k), f(o.bound)),
     }
 }
@@ -37,7 +37,7 @@ fn occ(o: &Obj) -> String {
         Shape::Torus { big, small } => format!("occ_torus(ro, dir, tmax, {c}, {}, {}, {})", vec2(*big, *small), f(o.spin), f(o.bound)),
         Shape::Menger { s } => format!("occ_menger(ro, dir, tmax, {c}, {}, {}, {})", f(*s), f(o.spin), f(o.bound)),
         Shape::Cylinder { r, h } => format!("occ_cyl(ro, dir, tmax, {c}, {}, {}, {}, {})", f(*r), f(*h), f(o.spin), f(o.bound)),
-        Shape::Prism { .. } => "false".into(), // replaced in Task 3
+        Shape::Prism { side, len, yaw } => format!("occ_prism(ro, dir, tmax, {c}, {}, {}, {}, {})", f(*side), f(*len), f(*yaw), f(o.spin)),
         Shape::Blobs { pos2, r1, r2, .. } => format!("occ_pair(ro, dir, tmax, {c}, {}, {}, {})", v3(*pos2), f(*r1), f(*r2)),
     }
 }
@@ -85,7 +85,7 @@ pub fn scene_wgsl(sc: &SceneData) -> String {
         let name = if cheap { "occ_cheap" } else { "occ_all" };
         let _ = writeln!(s, "fn {name}(ro: vec3<f32>, dir: vec3<f32>, tmax: f32, id: i32) -> vec3<f32> {{\n  var tr = vec3<f32>(1.0);");
         for (i, o) in sc.objs.iter().enumerate() {
-            if cheap && o.shape.complex() { continue; }
+            if cheap && o.shape.complex() && !matches!(o.shape, Shape::Prism { .. }) { continue; }
             let blob = matches!(o.shape, Shape::Blobs { .. });
             let test = if blob { format!("id != {i} && {}", occ(o)) } else { occ(o) };
             if o.filter {
@@ -125,5 +125,14 @@ mod tests {
             assert!(g.contains(&format!("{}.0);", sc.objs.len() - 1)), "{}", sc.name);
             assert!(g.contains("fn occ_all") && g.contains("fn material"));
         }
+    }
+
+    #[test]
+    fn prism_scene_generates_prism_code_and_validates() {
+        let sc = crate::scene::parse(r#"{"materials":[{"name":"g","kind":"glass","dispersion":2.0}],
+            "objects":[{"type":"prism","pos":[0,1,0],"size":0.9,"length":1.0,"yaw":0.3,"material":"g"}]}"#).unwrap();
+        let g = scene_wgsl(&sc);
+        assert!(g.contains("d_prism(p,") && g.contains("occ_prism(ro,"), "{g}");
+        crate::shaders::validate_for_tests("trace/prism", crate::shaders::trace(&sc));
     }
 }
