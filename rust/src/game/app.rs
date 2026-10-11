@@ -40,7 +40,7 @@ pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, payout: u32,
     }
     match r.outcome() {
         Some(Outcome::Passed { medal, .. }) => { out[12] = 1.0; out[13] = medal as u8 as f32; out[14] = payout as f32; }
-        Some(Outcome::Failed(f)) => { out[12] = 2.0; out[15] = match f { Failure::TimeUp => 1.0, Failure::CargoDestroyed => 2.0, Failure::Abandoned => 3.0 }; }
+        Some(Outcome::Failed(f)) => { out[12] = 2.0; out[15] = match f { Failure::TimeUp => 1.0, Failure::CargoDestroyed => 2.0, Failure::Abandoned => 3.0, Failure::Crashed => 4.0 }; }
         None => {}
     }
 }

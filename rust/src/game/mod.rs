@@ -1,6 +1,7 @@
 //! Off-road game: pure CPU gameplay (no wgpu). Rendering lives in `crate::raster`.
 pub mod app;
 pub mod airgen;
+pub mod airrun;
 pub mod api;
 pub mod camera_follow;
 #[cfg(feature = "desktop")]
