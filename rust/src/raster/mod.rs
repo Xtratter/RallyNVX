@@ -3,6 +3,7 @@ pub mod citygen;
 pub mod meshes;
 pub mod models;
 pub mod texgen;
+pub mod vehicle_models;
 
 /// Terrain tiles around the camera tile: which to build (nearest first) and which cached meshes to draw
 /// (the wanted LOD, else any cached LOD of the same tile so there are never holes while a tile is rebuilt).
