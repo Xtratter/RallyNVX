@@ -1,5 +1,6 @@
 pub mod adaptive;
 pub mod camera;
+pub mod dispersion;
 pub mod gi;
 pub mod halton;
 pub mod params;
