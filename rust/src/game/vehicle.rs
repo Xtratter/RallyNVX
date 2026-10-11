@@ -70,7 +70,13 @@ impl Vehicle {
         for _ in 0..SUB { self.substep(t, &inp, h); }
         self.collide_props(props);
         let g = t.height(self.pos.x, self.pos.z);
-        if self.pos.y < g + 0.2 { self.pos.y = g + 0.2; if self.vel.y < 0.0 { self.vel.y = 0.0; } }
+        if self.pos.y < g + 0.2 {
+            // the body touches the ground (flipped or bottomed out): it scrapes and slows down
+            self.pos.y = g + 0.2;
+            if self.vel.y < 0.0 { self.vel.y = 0.0; }
+            let k = (1.0 - 3.0 * dt).max(0.0);
+            self.vel.x *= k; self.vel.z *= k; self.omega = self.omega * k;
+        }
     }
 
     fn substep(&mut self, t: &Terrain, inp: &Input, h: f32) {

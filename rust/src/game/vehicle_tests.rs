@@ -81,3 +81,10 @@ fn flat_car(y: f32) -> (Vehicle, Terrain) { (Vehicle::new(VehicleSpec::offroader
     assert!(v.forward().x < -0.1, "forward.x {}", v.forward().x);
     assert!(v.right().x < -0.9 || v.right().dot(v.forward().cross(v.up())) > 0.99);
 }
+#[test] fn flipped_car_slides_to_a_stop() {
+    let (mut v, t) = flat_car(0.6);
+    v.rot = v.rot.mul(Q::axis_angle(v.forward(), std::f32::consts::PI));
+    v.vel = v3(0., 0., 6.);
+    run(&mut v, &t, Input::default(), 4.0);
+    assert!(v.vel.len() < 0.5, "still sliding at {}", v.vel.len());
+}
