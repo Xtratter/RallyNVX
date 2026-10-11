@@ -60,7 +60,7 @@ fn hash2(p: vec2<f32>) -> f32 { return fract(sin(dot(p, vec2<f32>(12.9898, 78.23
     return vec4<f32>(lit(a, i.wp, n), 1.0);
 }
 
-struct IOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32> };
+struct IOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) emi: f32 };
 
 fn inst_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec4<f32>) -> vec3<f32> {
     return (mat4x4<f32>(m0, m1, m2, m3) * vec4<f32>(p, 1.0)).xyz;
@@ -75,6 +75,7 @@ fn inst_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec
     o.wp = w;
     o.n = normalize((m0.xyz / sc.x) * (n.x / sc.x) + (m1.xyz / sc.y) * (n.y / sc.y) + (m2.xyz / sc.z) * (n.z / sc.z));
     o.col = col.rgb;
+    o.emi = col.a;
     return o;
 }
 @vertex fn vs_inst_shadow(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>,
@@ -83,6 +84,8 @@ fn inst_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec
     return u.light_vp * vec4<f32>(inst_world(p, m0, m1, m2, m3), 1.0);
 }
 @fragment fn fs_inst(i: IOut) -> @location(0) vec4<f32> {
+    // colour alpha > 1.5 marks glowing mission markers: unlit and not hidden by fog
+    if (i.emi > 1.5) { return vec4<f32>(finish(i.col * 1.6), 1.0); }
     return vec4<f32>(lit(i.col, i.wp, normalize(i.n)), 1.0);
 }
 

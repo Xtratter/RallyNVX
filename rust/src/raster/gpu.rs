@@ -39,6 +39,9 @@ fn inst(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst {
         scale: [s.x, s.y, s.z, 0.], color: [color[0], color[1], color[2], 1.] }
 }
 
+/// Like `inst`, but flagged as a glowing marker (colour alpha 2): drawn unlit and fog-free.
+fn inst_glow(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = inst(rot, pos, s, color); i.color[3] = 2.0; i }
+
 struct MeshBuf { vb: wgpu::Buffer, ib: wgpu::Buffer, n: u32 }
 fn mesh_buf(dev: &wgpu::Device, m: &Mesh) -> MeshBuf {
     MeshBuf {
@@ -200,7 +203,7 @@ impl Raster {
 
         // camera and light matrices
         let aspect = self.config.width as f32 / self.config.height as f32;
-        let vp = mat_mul(perspective(1.0, aspect, 0.3, 900.0), look_at(wv.cam_pos, wv.cam_target, v3(0., 1., 0.)));
+        let vp = mat_mul(perspective(1.0, aspect, 0.3, 2500.0), look_at(wv.cam_pos, wv.cam_target, v3(0., 1., 0.)));
         let centre = wv.vehicle.pos;
         let up = if wv.sun.y.abs() > 0.99 { v3(0., 0., 1.) } else { v3(0., 1., 0.) };
         let light_vp = mat_mul(ortho(-70., 70., -70., 70., 1., 300.), look_at(centre + wv.sun * 150.0, centre, up));
@@ -237,11 +240,11 @@ impl Raster {
         for mk in &wv.markers {
             use crate::game::world::MarkerKind;
             match mk.kind {
-                MarkerKind::Beacon => lists[1].push(inst(Q::IDENT, mk.pos + v3(0., 30., 0.), v3(3.0, 60.0, 3.0), [1.0, 0.85, 0.25])),
-                MarkerKind::Ring => lists[1].push(inst(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [0.25, 0.75, 1.0])),
+                MarkerKind::Beacon => lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 30., 0.), v3(3.0, 60.0, 3.0), [1.0, 0.85, 0.25])),
+                MarkerKind::Ring => lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [0.25, 0.75, 1.0])),
                 MarkerKind::Next => {
-                    lists[1].push(inst(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [1.0, 0.35, 0.85]));
-                    lists[1].push(inst(Q::IDENT, mk.pos + v3(0., 7.5, 0.), v3(1.5, 15.0, 1.5), [1.0, 0.35, 0.85]));
+                    lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [1.0, 0.35, 0.85]));
+                    lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 7.5, 0.), v3(1.5, 15.0, 1.5), [1.0, 0.35, 0.85]));
                 }
             }
         }
