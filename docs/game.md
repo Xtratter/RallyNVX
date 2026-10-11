@@ -31,6 +31,8 @@ The main menu opens a list of four random missions: two **deliveries** and two *
 - **Cargo** (deliveries only, 100%): a hard hit (horizontal speed change above 6 m/s in a step), a hard landing after a jump, a rollover (8% per second) and the Reset button (5%) damage it; at 0% the mission fails.
 - **Medals**: Gold = within 60% of the time limit and cargo at least 90%; Silver = within 80% and at least 60%; otherwise Bronze. Races use time only.
 - **Reward** = base x 1 / 1.5 / 2.2 for Bronze / Silver / Gold. Replaying a mission pays the difference when you improve the medal, otherwise half.
+**Urban missions** (marked "City" on the card) take place in the level's city and start on a street at its west edge. The delivery goes through the streets (buildings are solid), the street race follows the turning intersections, rings hang over a street between the houses, and the sling mission hooks the cargo on one roof and sets it down on the green pad of another roof.
+
 - **Refresh** rolls a new list. Progress is saved in `files/profile.json` (desktop: `~/.config/raytrace/profile.json`); a damaged file is kept as `profile.json.bak`.
 - Desktop: `RAYTRACE_MISSION=0..3 raytrace-desktop --game` starts a mission, `M` abandons it.
 
@@ -92,6 +94,8 @@ No garage, rescue missions or NPC orders yet, and missions are not city-aware (g
 - **Груз** (только доставки, 100%): портят сильный удар (изменение горизонтальной скорости больше 6 м/с за шаг), жёсткая посадка после прыжка, переворот (8% в секунду) и кнопка «Сброс» (5%); при 0% миссия провалена.
 - **Медали**: золото — уложились в 60% лимита и груз не менее 90%; серебро — в 80% и не менее 60%; иначе бронза. В гонках только время.
 - **Награда** = база x 1 / 1,5 / 2,2 за бронзу / серебро / золото. Повторное прохождение платит разницу при улучшении медали, иначе половину.
+**Городские миссии** (на карточке пометка «Город») проходят в городе уровня и стартуют на улице у его западного края. Доставка идёт по улицам (здания твёрдые), гонка проходит поворотные перекрёстки, кольца висят над улицей между домами, а в миссии с подвесом груз цепляют на одной крыше и опускают на зелёную площадку другой.
+
 - **Обновить** создаёт новый список. Прогресс хранится в `files/profile.json` (десктоп: `~/.config/raytrace/profile.json`); повреждённый файл сохраняется как `profile.json.bak`.
 - Десктоп: `RAYTRACE_MISSION=0..3 raytrace-desktop --game` запускает миссию, `M` прерывает.
 
