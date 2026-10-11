@@ -29,6 +29,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var lx = 0f; private var ly = 0f; private var ry = 0f
     private var seed = 0L
     private var mission = -1
+    private lateinit var audio: AudioEngine
     private var air = false
     private var rx = 0f
     private var profile = ""
@@ -91,6 +92,11 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                 true
             }
         }
+        // sound on/off (kept in SharedPreferences)
+        audio = AudioEngine(this)
+        val soundBtn = M3Widgets.button(this, if (audio.muted) "🔇" else "🔊", M3Widgets.ButtonKind.TONAL) {}
+        soundBtn.setOnClickListener { audio.muted = !audio.muted; (soundBtn as? android.widget.TextView)?.text = if (audio.muted) "🔇" else "🔊" }
+        root.addView(soundBtn, FrameLayout.LayoutParams(px(52f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(140f), 0, 0) })
         if (mission >= 0) buildMissionUi(::px)
         setContentView(root)
     }
@@ -184,14 +190,15 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Native.gameQuality(Quality.index(this))
         intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
         running = true
+        audio.start()
         // the engine restarts after a surface loss (screen lock): stay paused if the pause panel is up
         if (mission >= 0 && pausePanel?.visibility == View.VISIBLE) Native.gamePause(true)
     }
-    override fun surfaceDestroyed(h: SurfaceHolder) { Native.gameStop(); running = false }
+    override fun surfaceDestroyed(h: SurfaceHolder) { audio.stop(); Native.gameStop(); running = false }
 
-    override fun onResume() { super.onResume(); handler.post(tick) }
+    override fun onResume() { super.onResume(); handler.post(tick); if (running) audio.start() }
     override fun onPause() {
-        handler.removeCallbacks(tick); sticks.release(); handbrake = false; sendInput()
+        audio.stop(); handler.removeCallbacks(tick); sticks.release(); handbrake = false; sendInput()
         if (mission >= 0 && !resultShown) showPause()
         super.onPause()
     }

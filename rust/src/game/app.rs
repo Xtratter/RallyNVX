@@ -77,6 +77,7 @@ mod game {
         stats: Arc<Mutex<[f32; STAT_LEN]>>,
         profile: Option<Profile>, profile_path: Option<PathBuf>, missions: Vec<Mission>,
         current: Option<usize>, paused: bool, recorded: bool, payout: u32, run_id: u32,
+        director: crate::audio::Director,
     }
 
     impl Game {
@@ -84,7 +85,7 @@ mod game {
             let seed = super::level_seed(seed);
             Game { world: World::new(seed), raster, input: Input::default(), flight: FlightInput::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0, run_id: 0 }
+                profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0, run_id: 0, director: crate::audio::Director::new() }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
@@ -148,6 +149,9 @@ mod game {
                 }
                 self.record_if_done();
             }
+            let throttle = self.input.throttle;
+            let (params, events) = self.director.update(&self.world, throttle, !self.paused);
+            crate::audio::feed(&params, &events);
             let t0 = Instant::now();
             self.raster.render(&mut self.world);
             self.frame_ms = t0.elapsed().as_secs_f32() * 1000.0;

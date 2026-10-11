@@ -65,3 +65,13 @@ fn run(s: &mut Synth, n: f32) -> Vec<f32> { let mut v = vec![0.0; secs(n)]; s.re
     let mut odd = vec![0i16; 1001]; Synth::new().render(&mut odd);
     let mut empty: Vec<i16> = Vec::new(); Synth::new().render(&mut empty);
 }
+
+#[test] fn the_global_synth_survives_empty_buffers_and_renders_what_the_game_feeds() {
+    render_into(&mut []);
+    feed(&car(0.6), &[Event::Touchdown(0.5)]);
+    let mut buf = vec![0i16; 4410];
+    render_into(&mut buf);
+    render_into(&mut buf);
+    assert!(buf.iter().any(|x| *x != 0));
+    feed(&AudioParams::default(), &[]); set_muted(false);
+}

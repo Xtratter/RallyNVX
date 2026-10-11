@@ -30,6 +30,9 @@ object Native {
     @JvmStatic external fun gameStop()
     @JvmStatic external fun gameResize(w: Int, h: Int)
     @JvmStatic external fun gameInput(throttle: Float, steer: Float, brake: Boolean, handbrake: Boolean)
+    /** Fills [buf] with PCM16 mono 44.1 kHz samples (procedural sound, see audio::). */
+    @JvmStatic external fun audioRender(buf: ShortArray)
+    @JvmStatic external fun audioMute(muted: Boolean)
     @JvmStatic external fun gameReset()
     @JvmStatic external fun gameNewLevel(seed: Long)
     /** 64 floats, layout in game::app::fill_state: [0] fps, [1] km/h, [2] seed, [4] phase, [5] time, [6] limit, [7] integrity, [8] distance, [9] bearing, [10]/[11] checkpoint, [12] result, [13] medal, [14] payout, [15] failure, [16] money, [17] kind 0..5, [19] altitude, [20] aircraft 0/1/2, [21] rope taut, [22] target height above the aircraft, [23] rescue: people aboard, [24] rescue: boarding progress 0..1; failure [15] 4 = crashed. */

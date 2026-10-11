@@ -126,6 +126,16 @@ mod android {
         env.set_float_array_region(&arr, 0, &v).unwrap();
         arr.into_raw()
     }
+    /// Audio thread: fills `buf` (PCM16 mono, 44.1 kHz) with the next samples. Never panics.
+    #[no_mangle]
+    pub extern "system" fn Java_dev_starinin_raytrace_Native_audioRender(env: JNIEnv, _c: JClass, buf: jni::objects::JShortArray) {
+        let n = env.get_array_length(&buf).unwrap_or(0).max(0) as usize;
+        if n == 0 { return; }
+        let mut v = vec![0i16; n];
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::audio::render_into(&mut v)));
+        let _ = env.set_short_array_region(&buf, 0, &v);
+    }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_audioMute(_e: JNIEnv, _c: JClass, m: jboolean) { crate::audio::set_muted(m != 0); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameReset(_e: JNIEnv, _c: JClass) { send(GCmd::Reset); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameNewLevel(_e: JNIEnv, _c: JClass, seed: jlong) { send(GCmd::NewLevel(seed as u64)); }
 
