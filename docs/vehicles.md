@@ -29,6 +29,8 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 | `handling.handbrake_grip` | rear grip factor with the handbrake (0..1; lower = more drift) |
 | `handling.reverse_speed_factor` | top reverse speed as a fraction of `max_speed` |
 
+`look` (optional, per car and aircraft): `body_color`, `accent`, `glass` (RGB 0..1, linear) and for cars `wheel_width` (m). They only change the generated model, not the handling.
+
 ## `aircraft.heli` and `aircraft.drone`
 
 `max_tilt_deg` (largest pitch/roll), `tilt_lag` (s), `max_speed` (m/s), `drag` (1/s), `vertical_speed` (m/s at full lift stick), `vertical_accel` (m/s²), `yaw_rate` (rad/s), `yaw_lag` (s), `radius` (collision radius, m).
@@ -71,6 +73,8 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 | `handling.angular_damping` | демпфирование вращения, 1/с |
 | `handling.handbrake_grip` | доля сцепления задних колёс с ручником (0..1; меньше — сильнее занос) |
 | `handling.reverse_speed_factor` | максимальная скорость заднего хода как доля `max_speed` |
+
+`look` (необязательно, у машин и аппаратов): `body_color`, `accent`, `glass` (RGB 0..1, линейные) и у машин `wheel_width` (м). Меняют только сгенерированную модель, не управляемость.
 
 ## `aircraft.heli` и `aircraft.drone`
 

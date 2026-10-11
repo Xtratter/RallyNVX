@@ -2,6 +2,13 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.5.0 - graphics I
+
+- Added: generated material textures for the terrain (grass, dirt, sand, rock) blended by height, slope and noise, with a second scale against visible tiling
+- Added: detailed generated vehicle models: a lofted off-road body with glass, bumpers, lamps and spinning wheels; a helicopter with rotor and tail rotor; a drone with four propellers. Paint, glass and chrome get sun glints
+- Added: tyre tracks left on the ground behind the car
+- Added: a softer horizon in the sky; the body colours of each vehicle are set in the `look` section of `rust/vehicles.json` (docs/vehicles.md)
+
 ## 2.4.0 - city missions
 
 - Added: urban missions marked "City": a cargo delivery through the streets, a street race over turning intersections, rings flown over a street between the houses, and sling cargo carried from one roof to another; they start on a street at the west edge of the city
