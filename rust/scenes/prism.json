@@ -1,6 +1,6 @@
 {
   "name": "Prism",
-  "camera": {"target": [0.3, 0.9, 0.0], "yaw": 0.6, "pitch": 0.22, "dist": 6.0, "dist_range": [2.5, 8],
+  "camera": {"target": [0.4, 0.4, 0.0], "yaw": 0.0, "pitch": 0.32, "dist": 5.0, "dist_range": [2.5, 8],
              "orbit_min": [-3.6, 0.4, -4.6], "orbit_max": [3.6, 4.2, 4.7], "fly_min": [-3.6, 0.4, -4.6], "fly_max": [3.6, 4.2, 4.7]},
   "sun": {"dir": [-0.985, -0.174, 0.0], "color": [3.0, 2.8, 2.5], "angle_deg": 0.5},
   "caustic_receivers": [
@@ -11,7 +11,7 @@
     {"name": "floor", "color": [0.55, 0.52, 0.48]},
     {"name": "wall", "color": [0.75, 0.74, 0.72]},
     {"name": "ceiling", "color": [0.6, 0.6, 0.6]},
-    {"name": "flint", "kind": "glass", "color": [1, 1, 1], "ior": 1.55, "dispersion": 2.5},
+    {"name": "flint", "kind": "glass", "color": [1, 1, 1], "ior": 1.55, "dispersion": 4.0},
     {"name": "pedestal", "color": [0.25, 0.25, 0.27]},
     {"name": "steel", "kind": "metal", "color": [0.9, 0.9, 0.92], "rough": 0.12}
   ],
@@ -21,12 +21,12 @@
     {"type": "box", "pos": [0, 2.25, 6], "size": [6, 3, 1], "material": "wall"},
     {"type": "box", "pos": [5, 2.25, 0], "size": [1, 3, 7], "material": "wall"},
     {"type": "box", "pos": [0, 5.0, 0], "size": [6, 0.5, 7], "material": "ceiling"},
-    {"type": "box", "pos": [-5, -0.25, 0], "size": [1, 0.5, 7], "material": "wall"},
-    {"type": "box", "pos": [-5, 3.0, 0], "size": [1, 2.25, 7], "material": "wall"},
-    {"type": "box", "pos": [-5, 0.5, 3.875], "size": [1, 0.25, 3.625], "material": "wall"},
-    {"type": "box", "pos": [-5, 0.5, -3.875], "size": [1, 0.25, 3.625], "material": "wall"},
-    {"type": "box", "pos": [-1.2, 0.45, 0.0], "size": [0.5, 0.45, 0.5], "material": "pedestal"},
-    {"type": "prism", "pos": [-1.2, 1.16, 0.0], "size": 0.9, "length": 0.9, "yaw": 0.0, "material": "flint"},
-    {"type": "sphere", "pos": [2.2, 0.5, 1.8], "radius": 0.5, "material": "steel"}
+    {"type": "box", "pos": [-5, 0.045, 0], "size": [1, 0.795, 7], "material": "wall"},
+    {"type": "box", "pos": [-5, 3.295, 0], "size": [1, 1.955, 7], "material": "wall"},
+    {"type": "box", "pos": [-5, 1.09, 3.875], "size": [1, 0.25, 3.625], "material": "wall"},
+    {"type": "box", "pos": [-5, 1.09, -3.875], "size": [1, 0.25, 3.625], "material": "wall"},
+    {"type": "box", "pos": [-1.2, 0.75, 0.0], "size": [0.4, 0.75, 0.4], "material": "pedestal"},
+    {"type": "prism", "pos": [-1.2, 1.76, 0.0], "size": 0.9, "length": 0.9, "yaw": 0.0, "material": "flint"},
+    {"type": "sphere", "pos": [2.6, 0.5, -2.2], "radius": 0.5, "material": "steel"}
   ]
 }
