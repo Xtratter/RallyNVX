@@ -42,3 +42,43 @@ use crate::game::math::Q;
     assert!(!v.props.is_empty());
     assert!(v.sun.len() > 0.99);
 }
+use crate::game::missions::{Mission, MissionKind};
+fn mk(kind: MissionKind, pts: Vec<V3>) -> Mission {
+    let goal = *pts.last().unwrap();
+    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0 }
+}
+#[test] fn for_mission_uses_the_mission_seed_and_starts_ready() {
+    let w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
+    assert_eq!(w.terrain.seed, 42);
+    assert!(w.vehicle.up().y > 0.99);
+    assert_eq!(w.mission.as_ref().unwrap().phase(), crate::game::run::Phase::Ready);
+}
+#[test] fn world_step_feeds_the_run() {
+    let mut w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
+    for _ in 0..30 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+    assert!(w.mission.as_ref().unwrap().time() > 0.3);
+}
+#[test] fn cargo_markers_are_one_beacon() {
+    let w = World::for_mission(mk(MissionKind::Cargo, vec![v3(10., 2., 300.)]));
+    let m = w.markers();
+    assert_eq!(m.len(), 1);
+    assert_eq!((m[0].kind, m[0].pos), (MarkerKind::Beacon, v3(10., 2., 300.)));
+}
+#[test] fn race_markers_highlight_the_next_checkpoint_and_drop_passed_ones() {
+    let mut w = World::for_mission(mk(MissionKind::Race, vec![v3(0., 0., 100.), v3(0., 0., 200.), v3(0., 0., 300.)]));
+    let kinds = |w: &World| w.markers().iter().map(|m| m.kind).collect::<Vec<_>>();
+    assert_eq!(kinds(&w), vec![MarkerKind::Next, MarkerKind::Ring, MarkerKind::Ring, MarkerKind::Beacon]);
+    w.vehicle.pos = v3(0., 0.9, 100.0);
+    w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0);
+    assert_eq!(kinds(&w), vec![MarkerKind::Next, MarkerKind::Ring, MarkerKind::Beacon]);
+}
+#[test] fn no_markers_without_a_mission_or_when_done() {
+    assert!(World::new(1).markers().is_empty());
+    let mut w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
+    w.mission.as_mut().unwrap().abandon();
+    assert!(w.markers().is_empty());
+}
+#[test] fn view_carries_the_markers() {
+    let w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
+    assert_eq!(w.view(1).markers.len(), 1);
+}

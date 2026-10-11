@@ -234,6 +234,17 @@ impl Raster {
             let r = rot.mul(Q::axis_angle(v3(0., 1., 0.), -steer)).mul(Q::axis_angle(v3(0., 0., 1.), std::f32::consts::FRAC_PI_2));
             lists[1].push(inst(r, veh.pos + rot.rotate(local), v3(sp.radius * 2.0, 0.35, sp.radius * 2.0), [0.07, 0.07, 0.08]));
         }
+        for mk in &wv.markers {
+            use crate::game::world::MarkerKind;
+            match mk.kind {
+                MarkerKind::Beacon => lists[1].push(inst(Q::IDENT, mk.pos + v3(0., 30., 0.), v3(3.0, 60.0, 3.0), [1.0, 0.85, 0.25])),
+                MarkerKind::Ring => lists[1].push(inst(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [0.25, 0.75, 1.0])),
+                MarkerKind::Next => {
+                    lists[1].push(inst(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [1.0, 0.35, 0.85]));
+                    lists[1].push(inst(Q::IDENT, mk.pos + v3(0., 7.5, 0.), v3(1.5, 15.0, 1.5), [1.0, 0.35, 0.85]));
+                }
+            }
+        }
         for p in &wv.props {
             match p.kind {
                 PropKind::Rock => {
