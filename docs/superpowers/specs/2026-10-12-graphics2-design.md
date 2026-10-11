@@ -28,9 +28,12 @@ phone (no CI screenshots). Gameplay physics, missions and collision shapes do no
 
 - `fs_sky`: procedural clouds (2D fbm on a plane projection, drifting with time), sun disc and glow, softer horizon
   haze; one shared `sky_gradient` function so terrain/model reflections use the same colours.
-- Time of day comes from the level seed: morning, noon or evening (sun elevation 18/55/12 degrees, matching sky, fog and
-  light colours). No night. The uniform block already carries sun, fog and sky colours, so the change is in
-  `WorldView` (sun) and the uniform fill.
+- Time of day is dynamic: the sun moves during play along a day arc (full cycle in 12 minutes of play, the starting
+  phase comes from the level seed). The elevation swings between 10 degrees (dawn/dusk, warm and long shadows) and 60
+  degrees (noon); sky, fog, light and ambient colours are interpolated from the elevation. No night in this release
+  (the sun never sets; the cycle goes dawn - noon - dusk - noon). The shadow map follows the sun direction. The cycle
+  length and the elevation range are constants in `game/daylight.rs` (pure, tested) and `WorldView.sun/daylight`
+  carry the result; paused/menu time does not advance it.
 - Models get a fresnel rim and a sky reflection term on paint, glass and chrome (deferred from Graphics I).
 
 ## 4. Water
@@ -50,8 +53,10 @@ phone (no CI screenshots). Gameplay physics, missions and collision shapes do no
 
 - 4 facade palettes chosen per building by a hash; cornice and parapet boxes on the roofs; window glass takes a sky
   reflection term.
-- Street surface uses the `Asphalt` material layer with painted lane marks (generated, no new textures beyond a tiled
-  road-mark layer in the same array: layer count 5 -> 6).
+- Street surface is even asphalt: a dedicated clean `Asphalt` look (no grass/dirt blend, no noise bumps: the city
+  plateau is already exactly flat, the surface draws as one smooth dark-grey material with fine grain), painted lane
+  marks and edge lines (generated, tiled road-mark layer in the same array: layer count 5 -> 6), kerbs along the
+  blocks. Drawn on the plateau in the city area only; the terrain texture shows again outside the city rim.
 - Street lamps along the road edges (cheap instances, within the city draw distance).
 
 ## 6. Testing and verification
@@ -63,7 +68,21 @@ from the seed, water drag in `vehicle` tests. Device: build locally, install ove
 extras (city, mission), screenshots of forest, lake, city, sky, flight; fps at High >= 60. One final review on the most
 capable model; findings fixed with RED->GREEN.
 
-## 7. Out of scope
+## 7. Vehicle stability (ships first as v2.5.1)
+
+The car tips over too easily. Cause (measured from `vehicles.json`): the centre of mass sits at the suspension
+attachment height, 1.05 m above the ground (`rest 0.6 + radius 0.45`), half-track 0.95 m, so the rollover limit is
+0.95/1.05 = 0.9 g, below the tyre limit (`grip 1.1`): a hard turn rolls the car before it slides. Fix: lower the centre
+of mass relative to the wheels by moving the attachment points up in body space (`wheels[*].y = 0.35`, so the CoM is
+0.70 m above the ground; rollover limit 1.36 g > grip, it slides first). Consequences handled together: the body and
+wheel poses (`vehicle_models::car_body_pose`, `car_wheel_poses`) follow the new attachment height so the look does not
+change; scrape height, reset height and the roof/hull checks are re-derived from the spec; no other number changes.
+A host test drives a hard steady turn at several speeds and asserts the car never rolls over on flat ground, plus a
+test that the CoM height is below the rollover limit implied by `grip` (guards future edits of `vehicles.json`); the
+existing vehicle tests must still pass; before/after rollover speed is reported. Released as **v2.5.1** before the
+graphics work; docs/vehicles.md documents the relation.
+
+## 8. Out of scope
 
 Night, rain/snow, real reflections or refraction, swimming/boats/bridges (later with fords), shadows from grass,
 LOD meshes for trees (distance culling only), new vehicles, UI changes.
