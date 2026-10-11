@@ -216,3 +216,19 @@ fn walled_world() -> World {
         assert!(w.vehicle.pos.z <= 10.0 - 0.9 || w.vehicle.pos.z > 30.0 + 0.9 && false, "z {}", w.vehicle.pos.z);
     }
 }
+#[test] fn place_in_city_puts_the_car_on_a_street_at_the_centre_and_the_aircraft_above_the_roofs() {
+    use crate::game::flight::{AircraftKind, Status};
+    let mut w = World::new(7);
+    assert!(w.place_in_city());
+    let c = &w.cities[0];
+    let p = w.vehicle.pos;
+    assert!(c.inside(p.x, p.z) && (p.x - c.site.centre.x).abs() < 40.0 && (p.z - c.site.centre.z).abs() < 40.0, "{p:?}");
+    assert!(c.roof_at(p.x, p.z).is_none(), "on a street, not inside a building");
+    assert!(c.buildings_near(p, 1.5).is_empty() || !c.touches_side(p + v3(0., 0.5, 0.), 1.5));
+    let mut a = World::for_mission(air(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 100.)]));
+    assert!(a.place_in_city());
+    let top = a.cities[0].buildings.iter().map(|b| b.max.y).fold(0.0f32, f32::max);
+    assert!(a.aircraft.as_ref().unwrap().pos.y > top + 20.0 && a.aircraft.as_ref().unwrap().status == Status::Flying);
+    let mut none = World::new(1); none.cities.clear();
+    assert!(!none.place_in_city());
+}

@@ -151,6 +151,19 @@ impl World {
         self.time += dt;
     }
 
+    /// Puts the player at a street intersection near the centre of the first city (an aircraft 120 m above it). False without a city.
+    pub fn place_in_city(&mut self) -> bool {
+        let Some(c) = self.cities.first() else { return false };
+        let s = c.site;
+        let (x, z) = (s.centre.x - 24.0, s.centre.z - 24.0);       // the intersection of the 5th street each way
+        if let Some(a) = self.aircraft.as_mut() { *a = Aircraft::new(a.kind, v3(x, s.centre.y + 120.0, z), 0.0); }
+        else {
+            self.vehicle = Vehicle::new(VehicleSpec::offroader(), v3(x, s.centre.y + 1.1, z), 0.0);
+            self.cam = FollowCam::new(&self.vehicle);
+        }
+        true
+    }
+
     /// Puts the player (the aircraft in an air mission, else the car) 60 m west of the first city facing it. False without a city.
     pub fn place_near_city(&mut self) -> bool {
         let Some(c) = self.cities.first() else { return false };

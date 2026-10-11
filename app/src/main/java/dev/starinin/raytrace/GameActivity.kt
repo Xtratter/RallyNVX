@@ -182,6 +182,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         if (running) { Native.gameResize(w, hh); return }
         Native.gameStart(h.surface, w, hh, seed, profile, mission)
         Native.gameQuality(Quality.index(this))
+        intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
         running = true
         // the engine restarts after a surface loss (screen lock): stay paused if the pause panel is up
         if (mission >= 0 && pausePanel?.visibility == View.VISIBLE) Native.gamePause(true)
