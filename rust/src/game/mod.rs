@@ -12,6 +12,7 @@ pub mod meta;
 pub mod missions;
 pub mod props;
 pub mod run;
+pub mod sling;
 pub mod terrain;
 pub mod vehicle;
 pub mod world;
