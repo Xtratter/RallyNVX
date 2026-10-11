@@ -108,6 +108,9 @@ impl City {
     /// Deepest overlap of a sphere with a building: (push-out vector, surface normal).
     pub fn push_out(&self, p: V3, r: f32) -> Option<(V3, V3)> { self.overlap(p, r, true) }
 
+    /// Like `push_out` but ignoring contacts from above (roofs): for things that may rest on a roof (the sling cargo).
+    pub fn push_out_sides(&self, p: V3, r: f32) -> Option<(V3, V3)> { self.overlap(p, r, false) }
+
     fn overlap(&self, p: V3, r: f32, roofs: bool) -> Option<(V3, V3)> {
         let mut best: Option<(f32, V3, V3)> = None;
         for b in self.buildings_near(p, r + 1.0) {

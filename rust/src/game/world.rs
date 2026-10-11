@@ -101,8 +101,8 @@ impl World {
     pub fn for_mission(m: Mission) -> World {
         let mut w = World::new(m.seed);
         if let Some(kind) = m.aircraft {
-            let p0 = v3(0.0, w.terrain.height(0.0, 0.0) + 3.0, 0.0);
-            let yaw = m.checkpoints.first().map_or(0.0, |t| { let (dx, dz) = (t.x - p0.x, t.z - p0.z); if dx.hypot(dz) > 1.0 { dx.atan2(dz) } else { 0.0 } });
+            let p0 = v3(m.start.x, w.terrain.height(m.start.x, m.start.z) + 3.0, m.start.z);
+            let yaw = m.start_yaw.unwrap_or_else(|| m.checkpoints.first().map_or(0.0, |t| { let (dx, dz) = (t.x - p0.x, t.z - p0.z); if dx.hypot(dz) > 1.0 { dx.atan2(dz) } else { 0.0 } }));
             let a = Aircraft::new(kind, p0, yaw);
             let (back, up) = if kind == AircraftKind::Heli { (9.0, 3.0) } else { (6.0, 2.0) };
             w.cam = FollowCam::new_for(p0, a.forward(), back, up);
@@ -111,14 +111,11 @@ impl World {
             w.air = Some(AirRun::new(m));
             return w;
         }
-        // start facing the first target, camera behind
-        if let Some(t) = m.checkpoints.first() {
-            let (dx, dz) = (t.x - w.vehicle.pos.x, t.z - w.vehicle.pos.z);
-            if dx.hypot(dz) > 1.0 {
-                w.vehicle = Vehicle::new(VehicleSpec::offroader(), w.vehicle.pos, dx.atan2(dz));
-                w.cam = FollowCam::new(&w.vehicle);
-            }
-        }
+        // start at the mission start (the origin plateau, or a street in the city) facing the start heading or the first target
+        let pos = v3(m.start.x, w.terrain.height(m.start.x, m.start.z) + 1.1, m.start.z);
+        let yaw = m.start_yaw.unwrap_or_else(|| m.checkpoints.first().map_or(0.0, |t| { let (dx, dz) = (t.x - pos.x, t.z - pos.z); if dx.hypot(dz) > 1.0 { dx.atan2(dz) } else { 0.0 } }));
+        w.vehicle = Vehicle::new(VehicleSpec::offroader(), pos, yaw);
+        w.cam = FollowCam::new(&w.vehicle);
         w.mission = Some(MissionRun::new(m));
         w
     }
@@ -137,7 +134,7 @@ impl World {
         if let Some(s) = self.sling.as_mut() {
             impact = s.step(ap - v3(0.0, 0.8, 0.0), av, &g, dt);
             for c in &self.cities {
-                if let Some((push, n)) = c.push_out(s.pos, 0.6) { s.pos = s.pos + push; let vn = s.vel.dot(n); if vn < 0.0 { s.vel = s.vel - n * vn; } }
+                if let Some((push, n)) = c.push_out_sides(s.pos, 0.6) { s.pos = s.pos + push; let vn = s.vel.dot(n); if vn < 0.0 { s.vel = s.vel - n * vn; } }
             }
         }
         let a = *self.aircraft.as_ref().unwrap();
