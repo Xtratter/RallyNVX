@@ -17,6 +17,7 @@ pub enum Shape {
     Menger { s: f32 },
     Cylinder { r: f32, h: f32 },
     Blobs { pos2: [f32; 3], r1: f32, r2: f32, k: f32 },
+    Prism { side: f32, len: f32, yaw: f32 },
 }
 
 impl Shape {
@@ -46,6 +47,9 @@ pub struct Material {
     pub checker: Option<([f32; 3], f32)>,
     /// emissive: 0 fixed colour, 1 / 2 = the "Light A / B colour" setting
     pub slot: u8,
+    /// glass: refractive index at 589 nm and dispersion strength (0 = none, 1 = crown glass)
+    pub ior: f32,
+    pub dispersion: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,6 +57,13 @@ pub struct Sun { pub dir: [f32; 3], /** radiance */ pub col: [f32; 3], pub cos: 
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lamp { pub pos: [f32; 3], pub r: f32, pub col: [f32; 3], pub slot: u8 }
+
+pub const MAX_RECEIVERS: usize = 2;
+pub const MAX_CELLS: u32 = 256;
+
+/// A parallelogram (origin + u + v) that collects the photon map; the map has `cells` = [nu, nv] cells.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Receiver { pub origin: [f32; 3], pub u: [f32; 3], pub v: [f32; 3], pub cells: [u32; 2] }
 
 #[derive(Debug)]
 pub struct SceneData {
@@ -64,6 +75,14 @@ pub struct SceneData {
     pub objs: Vec<Obj>,
     /// first glass sphere: gets the analytic caustic
     pub caustic: Option<([f32; 3], f32)>,
+    pub receivers: Vec<Receiver>,
+}
+
+impl SceneData {
+    pub fn prism(&self) -> Option<&Obj> { self.objs.iter().find(|o| matches!(o.shape, Shape::Prism { .. })) }
+
+    /// Whether the photon passes are needed: a sun, a prism and somewhere for the light to land.
+    pub fn photons(&self) -> bool { self.sun.is_some() && self.prism().is_some() && !self.receivers.is_empty() }
 }
 
 /// Scene used until a settings push selects another (matches the `scene` default in params.rs).
@@ -184,9 +203,11 @@ pub fn parse(json: &str) -> Result<SceneData, String> {
             k => return Err(format!("material \"{n}\": unknown kind \"{k}\"")),
         };
         let checker = if m.get("checker").is_some() { Some((opt3(m, "checker", [0.0; 3])?, num(m, "checker_scale", 1.0)?.max(0.01))) } else { None };
+        let ior = num(m, "ior", 1.5)?;
+        if !(1.0..=3.0).contains(&ior) { return Err(format!("material \"{n}\": ior must be between 1.0 and 3.0")); }
         mats.push(Material {
             color: opt3(m, "color", [0.8, 0.8, 0.8])?, kind, rough: num(m, "rough", 0.0)?.clamp(0.0, 1.0),
-            emit: opt3(m, "emit", [0.0; 3])?, checker, slot: user_slot(m)?,
+            emit: opt3(m, "emit", [0.0; 3])?, checker, slot: user_slot(m)?, ior, dispersion: num(m, "dispersion", 0.0)?.clamp(0.0, 10.0),
         });
     }
 
@@ -226,6 +247,15 @@ pub fn parse(json: &str) -> Result<SceneData, String> {
                 if s <= 0.0 { return Err(format!("object {i}: size must be positive")); }
                 (Shape::Menger { s }, s * 1.8)
             }
+            "prism" => {
+                let side = num(o, "size", 1.0)?;
+                let len = num(o, "length", 1.0)?;
+                if side <= 0.0 || len <= 0.0 { return Err(format!("object {i}: prism size and length must be positive")); }
+                let yaw = num(o, "yaw", 0.0)?;
+                // circumradius of the triangle plus half the length: a sphere that contains the prism
+                let r = side / 3f32.sqrt();
+                (Shape::Prism { side, len, yaw }, (r * r + len * len * 0.25).sqrt() + 0.02)
+            }
             "cylinder" => {
                 let r = num(o, "radius", 0.5)?;
                 let h = num(o, "half_height", 0.5)?;
@@ -247,10 +277,27 @@ pub fn parse(json: &str) -> Result<SceneData, String> {
         if glass && caustic.is_none() { if let Shape::Sphere { r } = shape { caustic = Some((pos, r)); } }
         objs.push(Obj { pos, shape, spin, mat: mi, filter, bound });
     }
+    if objs.iter().filter(|o| matches!(o.shape, Shape::Prism { .. })).count() > 1 { return Err("objects: only one prism is supported".into()); }
     if objs.iter().filter(|o| o.shape.complex()).count() > MAX_COMPLEX {
         return Err(format!("objects: at most {MAX_COMPLEX} of torus, menger, cylinder and blobs"));
     }
-    Ok(SceneData { name, cam, sun, lamps, mats, objs, caustic })
+    let mut receivers = vec![];
+    if let Some(rj) = root.get("caustic_receivers") {
+        let rj = rj.as_array().ok_or("caustic_receivers: expected a list")?;
+        if rj.len() > MAX_RECEIVERS { return Err(format!("caustic_receivers: at most {MAX_RECEIVERS}")); }
+        for (i, r) in rj.iter().enumerate() {
+            let origin = vec3(r.get("origin").ok_or_else(|| format!("receiver {i}: missing origin"))?, "origin")?;
+            let u = vec3(r.get("u").ok_or_else(|| format!("receiver {i}: missing u"))?, "u")?;
+            let v = vec3(r.get("v").ok_or_else(|| format!("receiver {i}: missing v"))?, "v")?;
+            let cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+            if cross.iter().map(|c| c * c).sum::<f32>().sqrt() < 1e-4 { return Err(format!("receiver {i}: u and v are parallel (zero area)")); }
+            let c = r.get("cells").and_then(|c| c.as_array()).filter(|c| c.len() == 2).ok_or_else(|| format!("receiver {i}: cells must be [nu, nv]"))?;
+            let cells = [c[0].as_u64().unwrap_or(0) as u32, c[1].as_u64().unwrap_or(0) as u32];
+            if cells.iter().any(|n| *n == 0 || *n > MAX_CELLS) { return Err(format!("receiver {i}: cells must be 1..{MAX_CELLS}")); }
+            receivers.push(Receiver { origin, u, v, cells });
+        }
+    }
+    Ok(SceneData { name, cam, sun, lamps, mats, objs, caustic, receivers })
 }
 
 #[cfg(test)]
@@ -303,5 +350,52 @@ mod tests {
         assert!(parse(&mk(MAX_OBJECTS + 1, "sphere")).unwrap_err().contains("at most"));
         assert!(parse(&mk(MAX_COMPLEX + 1, "menger")).unwrap_err().contains("at most"));
         assert!(parse(&mk(MAX_COMPLEX, "menger")).is_ok());
+    }
+
+    const PRISM_BASE: &str = r#"{"materials":[{"name":"g","kind":"glass","ior":1.6,"dispersion":2.5},{"name":"w"}],
+        "sun":{"dir":[1,0.2,0],"color":[3,3,3]},
+        "caustic_receivers":[{"origin":[-4,0,-4],"u":[8,0,0],"v":[0,0,8],"cells":[128,128]}],
+        "objects":[{"type":"prism","pos":[0,1,0],"size":0.9,"length":1.0,"yaw":0.3,"material":"g"}]}"#;
+
+    #[test]
+    fn parses_prism_dispersion_and_receivers() {
+        let s = parse(PRISM_BASE).unwrap();
+        assert_eq!(s.mats[0].ior, 1.6);
+        assert_eq!(s.mats[0].dispersion, 2.5);
+        assert_eq!(s.mats[1].ior, 1.5);
+        assert_eq!(s.mats[1].dispersion, 0.0);
+        assert_eq!(s.receivers.len(), 1);
+        assert_eq!(s.receivers[0].cells, [128, 128]);
+        assert!(matches!(s.objs[0].shape, Shape::Prism { side, len, yaw } if side == 0.9 && len == 1.0 && yaw == 0.3));
+        assert!(s.objs[0].bound > 0.72 && s.objs[0].bound < 0.8, "bound {}", s.objs[0].bound);
+        assert!(s.prism().is_some() && s.photons());
+        assert!(s.caustic.is_none(), "a prism does not use the analytic sphere caustic");
+    }
+
+    #[test]
+    fn photons_need_sun_prism_and_receivers() {
+        let no_sun = PRISM_BASE.replace(r#""sun":{"dir":[1,0.2,0],"color":[3,3,3]},"#, "");
+        assert!(!parse(&no_sun).unwrap().photons());
+        let no_rx = PRISM_BASE.replace(r#""caustic_receivers":[{"origin":[-4,0,-4],"u":[8,0,0],"v":[0,0,8],"cells":[128,128]}],"#, "");
+        assert!(!parse(&no_rx).unwrap().photons());
+    }
+
+    #[test]
+    fn bad_receivers_and_prisms_are_rejected_readably() {
+        let rx = |s: &str| PRISM_BASE.replace(r#"{"origin":[-4,0,-4],"u":[8,0,0],"v":[0,0,8],"cells":[128,128]}"#, s);
+        let bad = |j: String| parse(&j).err().unwrap();
+        assert!(bad(rx(r#"{"origin":[0,0,0],"u":[1,0,0],"v":[2,0,0],"cells":[8,8]}"#)).contains("parallel"));
+        assert!(bad(rx(r#"{"origin":[0,0,0],"u":[1,0,0],"v":[0,0,1],"cells":[0,8]}"#)).contains("cells"));
+        assert!(bad(rx(r#"{"origin":[0,0,0],"u":[1,0,0],"v":[0,0,1],"cells":[512,8]}"#)).contains("cells"));
+        assert!(bad(PRISM_BASE.replace(r#""size":0.9"#, r#""size":-1"#)).contains("size"));
+        assert!(bad(PRISM_BASE.replace(r#""ior":1.6"#, r#""ior":0.5"#)).contains("ior"));
+        let three = PRISM_BASE.replace(r#""caustic_receivers":["#, r#""caustic_receivers":[{"origin":[0,0,0],"u":[1,0,0],"v":[0,0,1],"cells":[8,8]},{"origin":[0,0,0],"u":[1,0,0],"v":[0,0,1],"cells":[8,8]},"#);
+        assert!(bad(three).contains("at most"));
+    }
+
+    #[test]
+    fn only_one_prism() {
+        let two = PRISM_BASE.replace(r#""objects":["#, r#""objects":[{"type":"prism","pos":[2,1,0],"size":0.5,"length":1,"material":"g"},"#);
+        assert!(parse(&two).unwrap_err().contains("one prism"));
     }
 }

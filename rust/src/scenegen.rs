@@ -23,6 +23,7 @@ fn dist(o: &Obj, fast: bool) -> String {
         Shape::Torus { big, small } => format!("d_torus(p, {c}, {}, {}, {})", vec2(*big, *small), f(o.spin), f(o.bound)),
         Shape::Menger { s } => format!("d_menger(p, {c}, {}, {}, {}, {fast})", f(*s), f(o.spin), f(o.bound)),
         Shape::Cylinder { r, h } => format!("d_cyl(p, {c}, {}, {}, {}, {})", f(*r), f(*h), f(o.spin), f(o.bound)),
+        Shape::Prism { .. } => "1e9".into(), // replaced in Task 3
         Shape::Blobs { pos2, r1, r2, k } => format!("d_pair(p, {c}, {}, {}, {}, {}, {})", v3(*pos2), f(*r1), f(*r2), f(*k), f(o.bound)),
     }
 }
@@ -36,6 +37,7 @@ fn occ(o: &Obj) -> String {
         Shape::Torus { big, small } => format!("occ_torus(ro, dir, tmax, {c}, {}, {}, {})", vec2(*big, *small), f(o.spin), f(o.bound)),
         Shape::Menger { s } => format!("occ_menger(ro, dir, tmax, {c}, {}, {}, {})", f(*s), f(o.spin), f(o.bound)),
         Shape::Cylinder { r, h } => format!("occ_cyl(ro, dir, tmax, {c}, {}, {}, {}, {})", f(*r), f(*h), f(o.spin), f(o.bound)),
+        Shape::Prism { .. } => "false".into(), // replaced in Task 3
         Shape::Blobs { pos2, r1, r2, .. } => format!("occ_pair(ro, dir, tmax, {c}, {}, {}, {})", v3(*pos2), f(*r1), f(*r2)),
     }
 }
