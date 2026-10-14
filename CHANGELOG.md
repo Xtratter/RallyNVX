@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.16.0 - grip by surface
+
+- Added: the grip, the tyres' side stiffness and the rolling resistance depend on the surface under every wheel (asphalt, gravel, dirt, grass, sand, rock, shallow water); off the tarmac the car is noticeably slipperier, sand is slow
+- Added: a loose gravel layer on the special stage: the wheels sweep it into a packed, grippier line while the sides stay loose; the map resets with a new level
+- Added: the HUD shows the name of the surface under the car
+
 ## 2.15.0 - roads
 
 - Added: every level has two random roads: a tarmac liaison from the spawn to the first city and a gravel special stage of about 6-10 km from the city's far gate through the terrain to the open (or to the second city). They are generated from the level seed, never double back, avoid lakes, keep a minimum bend radius (13 m) and a grade limit (14 %), and are carved into the terrain (cut and fill); trees, rocks and grass keep off them; tarmac has edge lines and a dashed centre line, gravel has wheel ruts and a loose berm. The car spawns on the liaison facing along it

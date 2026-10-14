@@ -16,3 +16,15 @@ use crate::game::{input::Input, world::World};
     fill_state(&mut s, &w, 0, 60.0, 4.0, 7);
     assert!(s[25] < -20.0, "backwards must be negative: {}", s[25]);
 }
+#[test] fn the_surface_under_the_car_is_reported() {
+    let mut w = World::with_roads(4, crate::game::vehicle::VehicleSpec::offroader());
+    let mut s = [0.0f32; STAT_LEN];
+    assert!(w.place_on_road(1));
+    for _ in 0..120 { w.step(&Input::default(), 1.0 / 60.0); }
+    fill_state(&mut s, &w, 0, 60.0, 4.0, 4);
+    assert_eq!(s[28], 5.0, "tarmac on the liaison");
+    assert!(w.place_on_road(2));
+    for _ in 0..120 { w.step(&Input::default(), 1.0 / 60.0); }
+    fill_state(&mut s, &w, 0, 60.0, 4.0, 4);
+    assert_eq!(s[28], 4.0, "gravel on the stage");
+}

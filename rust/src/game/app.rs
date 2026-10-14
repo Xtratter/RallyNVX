@@ -18,12 +18,19 @@ pub fn step_budget(acc: &mut f32, dt: f32, max_steps: usize) -> usize {
 
 pub const STAT_LEN: usize = 64;
 
+fn surface_code(s: crate::game::surface::Surface) -> u8 {
+    use crate::game::surface::Surface::*;
+    match s { Grass => 0, Dirt => 1, Sand => 2, Rock => 3, Gravel => 4, Asphalt => 5, Water => 6 }
+}
+
 /// Flat state for the UI. `[0]` fps, `[1]` km/h, `[2]` seed (24-bit), `[3]` frame ms, `[16]` money, `[25]` signed forward
-/// speed of the car, km/h, `[26]` hybrid render mode active (0/1), `[27]` fell back from hybrid to raster automatically (0/1);
+/// speed of the car, km/h, `[26]` hybrid render mode active (0/1), `[27]` fell back from hybrid to raster automatically (0/1),
+/// `[28]` the surface under the car (0 grass, 1 dirt, 2 sand, 3 rock, 4 gravel, 5 asphalt, 6 water);
 /// the other slots are zero (kept so the indices stay put).
 pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, fps: f32, frame_ms: f32, seed: u64) {
     *out = [0.0; STAT_LEN];
     out[0] = fps; out[1] = w.vehicle.vel.len() * 3.6; out[2] = (seed & 0xFF_FFFF) as f32; out[3] = frame_ms; out[16] = money as f32;
+    out[28] = surface_code(w.vehicle.surface) as f32;
     out[25] = w.vehicle.speed() * 3.6;   // signed: negative while rolling backwards (the brake pedal reverses below 3 km/h)
 }
 

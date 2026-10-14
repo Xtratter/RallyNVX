@@ -26,8 +26,8 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 | `handling.steer_max` | steering angle limit, rad |
 | `handling.steer_speed_ref` | m/s; the steering angle shrinks as `1 / (1 + speed / ref)` |
 | `handling.steer_rate` | how fast the wheels turn, rad/s |
-| `handling.lateral_stiffness` | tyre side stiffness (1/s; higher = less sliding) |
-| `handling.rolling_resistance` | N·s/m per wheel |
+| `handling.lateral_stiffness` | tyre side stiffness (1/s; higher = less sliding); the tarmac value, scaled by the surface |
+| `handling.rolling_resistance` | N·s/m per wheel; the tarmac value, scaled by the surface |
 | `handling.aero_drag` | air drag coefficient (force = coefficient × speed²) |
 | `handling.angular_damping` | rotation damping, 1/s |
 | `handling.handbrake_grip` | rear grip factor with the handbrake (0..1; lower = more drift) |
@@ -65,8 +65,8 @@ The `vulpes` car follows the data of the real rally car it is modelled on: mass 
 | `handling.steer_max` | предел угла руля, рад |
 | `handling.steer_speed_ref` | м/с; угол руля уменьшается как `1 / (1 + скорость / ref)` |
 | `handling.steer_rate` | скорость поворота колёс, рад/с |
-| `handling.lateral_stiffness` | боковая жёсткость шин (1/с; больше — меньше скольжения) |
-| `handling.rolling_resistance` | Н·с/м на колесо |
+| `handling.lateral_stiffness` | боковая жёсткость шин (1/с; больше — меньше скольжения); значение для асфальта, масштабируется покрытием |
+| `handling.rolling_resistance` | Н·с/м на колесо; значение для асфальта, масштабируется покрытием |
 | `handling.aero_drag` | коэффициент сопротивления воздуха (сила = коэффициент × скорость²) |
 | `handling.angular_damping` | демпфирование вращения, 1/с |
 | `handling.handbrake_grip` | доля сцепления задних колёс с ручником (0..1; меньше — сильнее занос) |
