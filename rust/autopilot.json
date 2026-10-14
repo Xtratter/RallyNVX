@@ -1,6 +1,6 @@
 {
-  "lat_factor": 0.75,
-  "brake_factor": 0.7,
+  "lat_factor": 0.9,
+  "brake_factor": 0.8,
   "look_base": 6.0,
   "look_gain": 0.45,
   "offset_max": 0.55,

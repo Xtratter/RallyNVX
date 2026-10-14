@@ -2,6 +2,8 @@
 pub mod cfg;
 pub mod join;
 pub mod route;
+#[cfg(test)]
+mod stage_tests;
 
 use self::cfg::{cfg, AutoCfg};
 use self::route::{Limits, Route};
@@ -81,9 +83,11 @@ impl Autopilot {
         if remaining < 12.0 && speed.abs() < 1.5 { cmd.done = true; cmd.input = Input { brake: true, ..Default::default() }; return cmd; }
 
         // recovery: flipped, stuck, or far from the route
-        let want = self.route.speed[(i + 4).min(self.route.len() - 1)];
+        // the profile's target a few points ahead (a crawl is kept until the last 12 m so the car does not stall short of the finish)
+        let want = self.route.speed[(i + 4).min(self.route.len() - 1)].max(if remaining > 12.0 { 3.5 } else { 0.0 });
         if v.flipped() { cmd.reset = true; self.recoveries += 1; self.stuck = 0.0; }
         self.stuck = if speed.abs() < 1.0 && want > 3.0 { self.stuck + dt } else { 0.0 };
+        if remaining < 25.0 && self.stuck > 2.0 { cmd.done = true; return cmd; }   // stopped just short of the line
         if self.stuck > self.cfg.stuck_time || d > 25.0 {
             let p = self.route.p[i]; let (_, q) = self.route.ahead(i, 8.0);
             cmd.teleport = Some((v3(p.x, p.y + 1.1, p.z), (q.x - p.x).atan2(q.z - p.z)));

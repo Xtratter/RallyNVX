@@ -36,6 +36,8 @@ pub struct World {
     pub car_spec: VehicleSpec,
     /// Garage scene: the camera orbit angle (radians); `None` in play.
     orbit: Option<f32>,
+    /// The autopilot while it drives (see `game/autopilot`).
+    pub autopilot: Option<super::autopilot::Autopilot>,
     props: HashMap<(i32, i32), Vec<Prop>>,
 }
 
@@ -64,10 +66,17 @@ impl World {
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
         let loose = terrain.roads().map_or_else(LooseMap::empty, LooseMap::new);
-        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }
+        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, props: HashMap::new() }
     }
 
     /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
+    /// Turns the autopilot on (it joins the stage from wherever the car is) or off; returns whether it is on afterwards.
+    pub fn set_autopilot(&mut self, on: bool) -> bool {
+        self.autopilot = if on { super::autopilot::Autopilot::start(&self.terrain, &self.vehicle, self.car_spec) } else { None };
+        self.autopilot.is_some()
+    }
+    pub fn autopilot_on(&self) -> bool { self.autopilot.is_some() }
+
     /// The wind now (horizontal, m/s, gusts included).
     pub fn wind(&self) -> V3 { wind::wind_now(self.terrain.seed, self.time) }
 
@@ -129,8 +138,15 @@ impl World {
 
     /// One physics step of the car.
     pub fn step(&mut self, inp: &Input, dt: f32) {
-        let inp = inp.sanitized();
-        if inp.reset { self.vehicle.reset_upright(&self.terrain); }
+        let mut inp = inp.sanitized();
+        if inp.reset { self.autopilot = None; self.vehicle.reset_upright(&self.terrain); }
+        if let Some(ap) = self.autopilot.as_mut() {
+            let cmd = ap.drive(&self.vehicle, dt);
+            inp = cmd.input.sanitized();
+            if cmd.reset { self.vehicle.reset_upright(&self.terrain); }
+            if let Some((p, yaw)) = cmd.teleport { self.vehicle = Vehicle::new(self.car_spec, p, yaw); }
+            if cmd.done { self.autopilot = None; }
+        }
         let (tx, tz) = (tile_of(self.vehicle.pos.x), tile_of(self.vehicle.pos.z));
         self.ensure_props(tx, tz, 1);
         let near = self.nearby_props();
