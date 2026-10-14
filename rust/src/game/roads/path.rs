@@ -26,6 +26,9 @@ impl Eq for Node {}
 impl PartialOrd for Node { fn partial_cmp(&self, o: &Self) -> Option<Ordering> { Some(self.cmp(o)) } }
 impl Ord for Node { fn cmp(&self, o: &Self) -> Ordering { o.f.total_cmp(&self.f) } }   // a min-heap on f
 
+/// A slightly greedy heuristic (1.25x the straight distance): paths a little longer than optimal, searched several times faster.
+const HEUR_WEIGHT: f32 = 1.25;
+
 const NEIGHBOURS: [(i32, i32); 8] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)];
 
 impl Grid {
@@ -35,8 +38,9 @@ impl Grid {
         let (mut h, mut wet, mut city, mut noise) = (Vec::with_capacity(n * n), Vec::with_capacity(n * n), Vec::with_capacity(n * n), Vec::with_capacity(n * n));
         for j in 0..n { for i in 0..n {
             let (x, z) = (-half + i as f32 * cell, -half + j as f32 * cell);
-            h.push(t.height(x, z));
-            wet.push(t.is_water(x, z, 0.5));
+            let hh = t.height(x, z);
+            h.push(hh);
+            wet.push(t.water_level().map_or(false, |l| hh < l + 0.5));
             city.push(t.in_city(x, z, 40.0));
             noise.push(value_noise(t.seed ^ 0x40AD, x / 320.0, z / 320.0));
         } }
@@ -82,7 +86,7 @@ impl Grid {
         let mut came = vec![u32::MAX; n * n];
         let mut closed = vec![false; n * n];
         let mut heap = BinaryHeap::new();
-        g[start] = 0.0; heap.push(Node { f: self.heur(start, goal), i: start as u32 });
+        g[start] = 0.0; heap.push(Node { f: HEUR_WEIGHT * self.heur(start, goal), i: start as u32 });
         while let Some(Node { i, .. }) = heap.pop() {
             let i = i as usize;
             if closed[i] { continue; }
@@ -95,7 +99,7 @@ impl Grid {
                 let k = nj as usize * n + ni as usize;
                 if closed[k] { continue; }
                 let c = g[i] + self.step_cost(i, k, di != 0 && dj != 0, avoid_city);
-                if c < g[k] { g[k] = c; came[k] = i as u32; heap.push(Node { f: c + self.heur(k, goal), i: k as u32 }); }
+                if c < g[k] { g[k] = c; came[k] = i as u32; heap.push(Node { f: c + HEUR_WEIGHT * self.heur(k, goal), i: k as u32 }); }
             }
         }
         let mut cells = vec![goal];

@@ -434,3 +434,30 @@ struct WOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @lo
     let alpha = smoothstep(0.0, 0.5, i.depth) * mix(0.35, 0.85, smoothstep(0.0, 1.2, d));
     return vec4<f32>(finish(c), alpha);
 }
+
+struct RIn { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) a: vec3<f32> };
+@vertex fn vs_road(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>) -> RIn {
+    var o: RIn; o.pos = u.vp * vec4<f32>(p, 1.0); o.wp = p; o.a = n; return o;
+}
+// a = (across -1..1, metres along the road, kind * 100 + width): gravel (kind 0) or tarmac (kind 1)
+@fragment fn fs_road(i: RIn) -> @location(0) vec4<f32> {
+    let nd = normalize(cross(dpdy(i.wp), dpdx(i.wp)));
+    let up = select(-nd, nd, nd.y > 0.0);
+    let asphalt = i.a.z >= 100.0;
+    let across = i.a.x; let s = i.a.y; let ac = abs(across);
+    let grain = 0.80 + 0.40 * vnoise2(i.wp.xz * 1.7) * (0.6 + 0.4 * vnoise2(i.wp.xz * 0.23 + vec2<f32>(3.0, 1.0)));
+    var col: vec3<f32>;
+    var alpha = 1.0;
+    if (asphalt) {
+        col = vec3<f32>(0.115, 0.115, 0.125) * grain;
+        if (ac > 0.86 && ac < 0.92) { col = mix(col, vec3<f32>(0.62), 0.9); }
+        if (ac < 0.025 && fract(s / 9.0) < 0.5) { col = mix(col, vec3<f32>(0.70, 0.66, 0.30), 0.9); }
+    } else {
+        col = vec3<f32>(0.47, 0.40, 0.31) * grain;
+        let rut = smoothstep(0.12, 0.22, ac) * (1.0 - smoothstep(0.38, 0.50, ac));
+        col = col * (1.0 - 0.18 * rut);
+        col = col * (1.0 + 0.10 * (1.0 - smoothstep(0.0, 0.10, ac)) + 0.10 * smoothstep(0.72, 0.9, ac));
+        alpha = 1.0 - smoothstep(0.86, 1.0, ac);
+    }
+    return vec4<f32>(lit(col, i.wp, up), alpha);
+}

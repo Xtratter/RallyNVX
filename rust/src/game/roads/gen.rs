@@ -41,8 +41,8 @@ fn opposite(side: usize) -> usize { side ^ 1 }
 
 /// A random point `rmin`..`rmax` from `from`, ahead of `heading` (at most about 100 degrees off it), inside the world, dry and
 /// outside the cities; falls back to the last clamped try if 24 tries fail.
-fn pick_point(seed: u64, key: u64, from: (f32, f32), heading: (f32, f32), goal: Option<(f32, f32)>, rmin: f32, rmax: f32, base: &Terrain, half: f32) -> (f32, f32) {
-    let lim = half - 150.0;
+fn pick_point(seed: u64, key: u64, from: (f32, f32), heading: (f32, f32), goal: Option<(f32, f32)>, avoid: &[(f32, f32)], rmin: f32, rmax: f32, base: &Terrain, half: f32) -> (f32, f32) {
+    let lim = half - 500.0;
     let mut best: Option<(f32, (f32, f32))> = None;   // the most forward candidate if none is fully valid
     for k in 0..64i32 {
         let a = hash01(seed ^ key, k, 1) * std::f32::consts::TAU;
@@ -52,7 +52,8 @@ fn pick_point(seed: u64, key: u64, from: (f32, f32), heading: (f32, f32), goal: 
         let (dx, dz) = (p.0 - from.0, p.1 - from.1);
         let fwd = (dx * heading.0 + dz * heading.1) / dx.hypot(dz).max(1.0);
         if best.map_or(true, |b| fwd > b.0) { best = Some((fwd, p)); }
-        if fwd < -0.15 { continue; }   // no U-turns: the road never doubles back
+        if fwd < 0.25 { continue; }   // a turn of at most about 75 degrees per leg: the road never doubles back
+        if avoid.iter().any(|a| (a.0 - p.0).hypot(a.1 - p.1) < 700.0) { continue; }   // and keeps away from where it has been
         if let Some(g) = goal {
             // and the turn at the new point towards the goal (the second city) must not reverse either
             let (ex, ez) = (g.0 - p.0, g.1 - p.1);
@@ -109,10 +110,12 @@ fn despike(mut p: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
 
 /// True when the route comes back to a spot it passed more than 150 m earlier (a retrace or a crossing); the arms of a
 /// real hairpin are at least a grid cell apart, so they do not count.
-fn has_fold(p: &[(f32, f32)]) -> bool {
+fn has_fold(p: &[(f32, f32)]) -> bool { fold_at(p).is_some() }
+fn fold_at(p: &[(f32, f32)]) -> Option<(usize, usize, (f32, f32))> {
     let q = shape::resample_uniform(p, 16.0);
     let gap = 10usize;   // 160 m of road
-    (0..q.len()).any(|i| (i + gap..q.len()).any(|j| (q[i].0 - q[j].0).hypot(q[i].1 - q[j].1) < 12.0))
+    for i in 0..q.len() { for j in i + gap..q.len() { if (q[i].0 - q[j].0).hypot(q[i].1 - q[j].1) < 12.0 { return Some((i, j, q[i])); } } }
+    None
 }
 
 /// The road's points that lie in a lake.
@@ -140,7 +143,9 @@ fn build_road(kind: RoadKind, poly: &[(f32, f32)], base: &Terrain, seed: u64) ->
 pub fn generate_with(seed: u64, base: &Terrain, cfg: GenCfg) -> RoadNet {
     let sites = base.sites();
     let Some(city1) = sites.first().copied() else { return RoadNet::new(Vec::new()) };
+    let t0 = std::time::Instant::now();
     let mut grid = Grid::build(base, cfg.cell, cfg.half);
+    log::info!("road grid built in {} ms", t0.elapsed().as_millis());
     let key = seed ^ 0x40AD5;
 
     // liaison: spawn -> the side of city 1 that faces the spawn
@@ -149,7 +154,11 @@ pub fn generate_with(seed: u64, base: &Terrain, cfg: GenCfg) -> RoadNet {
     let wp_a = gate_a.outside(80.0);
     let mut liaison = None;
     for round in 0..5 {
-        let poly = join(vec![route(&mut grid, base, (0.0, 0.0), wp_a, true), vec![wp_a, gate_a.pos]]);
+        // the road starts 40 m behind the spawn (straight back along its first step), so the car does not sit at its very end
+        let first = route(&mut grid, base, (0.0, 0.0), wp_a, true);
+        let (dx, dz) = (first[1].0 - first[0].0, first[1].1 - first[0].1);
+        let dl = dx.hypot(dz).max(1.0);
+        let poly = join(vec![vec![(-dx / dl * 40.0, -dz / dl * 40.0)], first, vec![wp_a, gate_a.pos]]);
         let road = build_road(RoadKind::Liaison, &poly, base, seed);
         let wet = wet_points(&road, base);
         if wet.is_empty() || round == 4 { liaison = Some(road); break; }
@@ -163,15 +172,19 @@ pub fn generate_with(seed: u64, base: &Terrain, cfg: GenCfg) -> RoadNet {
     let finish_city = sites.get(1).copied().filter(|_| hash01(key, 3, 3) < 0.5);
     let target = 6000.0 + 3000.0 * hash01(key, 4, 4);
     let mut stage = None;
+    let mut tried = 0u32;
     for round in 0..3 {
     let mut best: Option<(f32, Vec<(f32, f32)>)> = None;
     for attempt in 0..24u64 {
-        let legs = 2 + (hash01(key, attempt as i32, 7) > 0.5) as usize;
+        let legs = 2 + (hash01(key, attempt as i32, 7) * 2.0) as usize;   // 2..3 random legs before the finish
         let mut cur = wp_b;
         let mut heading = gate_b.out;
+        let mut visited: Vec<(f32, f32)> = vec![gate_b.pos];
         let mut parts: Vec<Vec<(f32, f32)>> = vec![vec![gate_b.pos, wp_b]];
+        tried += 1;
         for l in 0..legs {
-            let next = pick_point(seed, 0x5100 + attempt * 16 + l as u64, cur, heading, finish_city.map(|c| (c.centre.x, c.centre.z)), 1200.0, 2400.0, base, cfg.half);
+            let next = pick_point(seed, 0x5100 + attempt * 16 + l as u64, cur, heading, finish_city.map(|c| (c.centre.x, c.centre.z)), &visited, 800.0, 1600.0, base, cfg.half);
+            visited.push(next);
             parts.push(route(&mut grid, base, cur, next, true));
             let (dx, dz) = (next.0 - cur.0, next.1 - cur.1);
             let l2 = dx.hypot(dz).max(1.0);
@@ -197,7 +210,7 @@ pub fn generate_with(seed: u64, base: &Terrain, cfg: GenCfg) -> RoadNet {
                 }
                 parts.push(vec![w2, g2.pos]);
             }
-            None => { let f = pick_point(seed, 0x5900 + attempt, cur, heading, None, 900.0, 1800.0, base, cfg.half); parts.push(route(&mut grid, base, cur, f, true)); }
+            None => { let f = pick_point(seed, 0x5900 + attempt, cur, heading, None, &visited, 700.0, 1300.0, base, cfg.half); parts.push(route(&mut grid, base, cur, f, true)); }
         }
         let poly = join(parts);
         let len = shape::length(&poly) * 1.06;
@@ -215,6 +228,7 @@ pub fn generate_with(seed: u64, base: &Terrain, cfg: GenCfg) -> RoadNet {
     for p in wet { grid.mark_wet(p.0, p.1, 45.0); }
     }
 
+    log::info!("roads: {} stage attempts, {} ms in total", tried, t0.elapsed().as_millis());
     RoadNet::new(vec![liaison.expect("the liaison loop always sets it"), stage.expect("the stage loop always sets it")])
 }
 

@@ -31,7 +31,7 @@ fn net(seed: u64) -> (Terrain, RoadNet) { let t = Terrain::new(seed); let n = ge
             assert!(wet * 12 <= r.pts.len(), "seed {seed}: {wet}/{} road points over a lake", r.pts.len());
             if let Some(l) = t.water_level() { assert!(r.pts.iter().all(|p| p.pos.y >= l + 0.2), "seed {seed}: a road point under the water"); }
         }
-        assert!(lia.pts[0].pos.x.hypot(lia.pts[0].pos.z) < 1.0, "the liaison starts at the spawn");
+        assert!(lia.pts[0].pos.x.hypot(lia.pts[0].pos.z) < 41.0, "the liaison starts a little behind the spawn");
         assert!(on_square_edge(&t, lia.pts.last().unwrap().pos), "seed {seed}: the liaison ends on the city boundary");
         assert!(on_square_edge(&t, stage.pts[0].pos), "seed {seed}: the stage starts on the city boundary");
         let (la, sa) = (lia.pts.last().unwrap().pos, stage.pts[0].pos);

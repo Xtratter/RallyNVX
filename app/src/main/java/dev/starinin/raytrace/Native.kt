@@ -34,6 +34,8 @@ object Native {
     /** The player drags on the screen: orbit the chase camera by (yaw, pitch) radians; [gameCameraUp] when the finger goes up. */
     @JvmStatic external fun gameCamera(dyaw: Float, dpitch: Float)
     @JvmStatic external fun gameCameraUp()
+    /** Debug/test: put the car on a road facing along it (1 liaison, 2 stage start, 3 stage middle, 4 stage end). */
+    @JvmStatic external fun gameOnRoad(mode: Int)
     @JvmStatic external fun gameInCity(mode: Int)
     /** Debug/test: start every level at this time of day (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk); negative = off. */
     @JvmStatic external fun gameTimeOfDay(phase: Float)

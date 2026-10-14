@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.15.0 - roads
+
+- Added: every level has two random roads: a tarmac liaison from the spawn to the first city and a gravel special stage of about 6-10 km from the city's far gate through the terrain to the open (or to the second city). They are generated from the level seed, never double back, avoid lakes, keep a minimum bend radius (13 m) and a grade limit (14 %), and are carved into the terrain (cut and fill); trees, rocks and grass keep off them; tarmac has edge lines and a dashed centre line, gravel has wheel ruts and a loose berm. The car spawns on the liaison facing along it
+- Added: `surface_at` reports grass, dirt, sand, rock, gravel, asphalt or water for every point (the base for grip, dust and sound in the next cycles)
+- Debug: the intent extra `road` (1 liaison, 2 stage start, 3 stage middle, 4 stage end) puts the car on a road
+
 ## 2.14.0 - free drive only, camera control
 
 - Added: look around by dragging a finger on free space (also while driving): swing the camera round the car and raise or lower it; it returns behind the car once the car drives forward faster than about 7 km/h. While reversing the camera swings in front of the car and looks back to show what is behind, and returns when you drive forward

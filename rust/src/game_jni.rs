@@ -33,7 +33,7 @@ mod android {
     use crate::game::{app::{Game, STAT_LEN}, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), Camera(f32, f32), CameraUp, Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
+    enum GCmd { Input(Input), OnRoad(i32), Camera(f32, f32), CameraUp, Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -75,6 +75,7 @@ mod android {
                         match rx.try_recv() {
                             Ok(GCmd::Stop) => break 'run,
                             Ok(GCmd::Input(i)) => { let reset = g.input.reset; g.input = i; g.input.reset = reset; }
+                            Ok(GCmd::OnRoad(m)) => { g.place_on_road(m); }
                             Ok(GCmd::Camera(y, p)) => g.camera_drag(y, p),
                             Ok(GCmd::CameraUp) => g.camera_release(),
                             Ok(GCmd::Reset) => g.input.reset = true,
@@ -115,6 +116,8 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameTimeOfDay(_e: JNIEnv, _c: JClass, phase: jfloat) {
         crate::game::daylight::set_debug_phase(if phase >= 0.0 { Some(phase) } else { None });
     }
+    /// Debug/test: put the car on a road facing along it (1 liaison, 2 stage start, 3 stage middle, 4 stage end).
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameOnRoad(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::OnRoad(mode)); }
     /// The player drags on the screen: orbit the chase camera by (yaw, pitch) radians.
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameCamera(_e: JNIEnv, _c: JClass, dyaw: jfloat, dpitch: jfloat) { send(GCmd::Camera(dyaw, dpitch)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameCameraUp(_e: JNIEnv, _c: JClass) { send(GCmd::CameraUp); }

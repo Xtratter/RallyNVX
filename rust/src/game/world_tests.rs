@@ -155,7 +155,8 @@ use crate::game::vehicle::VehicleSpec as RoadCar;
 #[test] fn a_world_with_roads_spawns_on_the_liaison_facing_along_it() {
     let w = World::with_roads(4, RoadCar::offroader());
     let r = &w.terrain.roads().expect("roads").roads[0];
-    let t0 = (r.pts[1].pos - r.pts[0].pos).norm();
+    let i = r.pts.iter().position(|p| p.s >= 44.0).unwrap();
+    let t0 = (r.pts[i + 1].pos - r.pts[i - 1].pos).norm();
     let f = w.vehicle.forward();
     assert!(f.x * t0.x + f.z * t0.z > 0.99, "{f:?} vs {t0:?}");
     assert!(w.terrain.near_road(w.vehicle.pos.x, w.vehicle.pos.z, 0.0), "the car spawns on the road");

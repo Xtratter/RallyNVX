@@ -33,21 +33,25 @@ pub struct World {
 impl World {
     pub fn new(seed: u64) -> World { World::new_with(seed, VehicleSpec::offroader()) }
 
-    pub fn new_with(seed: u64, car: VehicleSpec) -> World { World::from_terrain(Terrain::new(seed), car, 0.0) }
+    pub fn new_with(seed: u64, car: VehicleSpec) -> World { World::from_terrain(Terrain::new(seed), car, (0.0, 0.0), 0.0) }
 
-    /// The game's world: roads generated for the level; the car spawns at the origin facing along the liaison.
+    /// The game's world: roads generated for the level; the car spawns on the liaison facing along it.
     pub fn with_roads(seed: u64, car: VehicleSpec) -> World {
         let t0 = std::time::Instant::now();
         let terrain = Terrain::with_roads(seed);
         log::info!("roads generated in {} ms", t0.elapsed().as_millis());
-        let yaw = terrain.roads().and_then(|n| n.roads.first()).filter(|r| r.pts.len() > 1)
-            .map_or(0.0, |r| { let d = r.pts[1].pos - r.pts[0].pos; d.x.atan2(d.z) });
-        World::from_terrain(terrain, car, yaw)
+        // the spawn: 44 m along the liaison (it starts 40 m behind the old spawn point), facing along it
+        let (at, yaw) = terrain.roads().and_then(|n| n.roads.first()).filter(|r| r.pts.len() > 2).map_or(((0.0, 0.0), 0.0), |r| {
+            let i = r.pts.iter().position(|p| p.s >= 44.0).unwrap_or(1).clamp(1, r.pts.len() - 2);
+            let d = r.pts[i + 1].pos - r.pts[i - 1].pos;
+            ((r.pts[i].pos.x, r.pts[i].pos.z), d.x.atan2(d.z))
+        });
+        World::from_terrain(terrain, car, at, yaw)
     }
 
-    fn from_terrain(terrain: Terrain, car: VehicleSpec, yaw: f32) -> World {
+    fn from_terrain(terrain: Terrain, car: VehicleSpec, at: (f32, f32), yaw: f32) -> World {
         let seed = terrain.seed;
-        let vehicle = Vehicle::new(car, v3(0.0, terrain.height(0.0, 0.0) + 1.1, 0.0), yaw);
+        let vehicle = Vehicle::new(car, v3(at.0, terrain.height(at.0, at.1) + 1.1, at.1), yaw);
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
         World { terrain, vehicle, cam, time: 0.0, cities, tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }

@@ -119,6 +119,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
         intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
+        intent.getIntExtra("road", 0).let { if (it > 0) Native.gameOnRoad(it) }   // debug/test: start on a road
         // debug/test: a camera orbit (radians) and a held throttle (after 1.5 s) without touching the screen
         val camYaw = intent.getFloatExtra("camyaw", 0f); val camPitch = intent.getFloatExtra("campitch", 0f)
         if (camYaw != 0f || camPitch != 0f) Native.gameCamera(camYaw, camPitch)

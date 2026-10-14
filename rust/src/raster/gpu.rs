@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{citygen, heightatlas::{self, HeightAtlas}, watergen, meshes, nature_models, texgen, vehicle_models as vm};
+use super::{citygen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::scatter::{self, Bush};
@@ -138,12 +138,14 @@ pub struct Raster {
     models: Vec<ModelBuf>,
     mbuf: wgpu::Buffer,
     pl_water: wgpu::RenderPipeline,
+    pl_road: wgpu::RenderPipeline,
     cache_seed: u64,
     car_key: [u32; 12],
     atlas: HeightAtlas,
     atlas_tex: wgpu::Texture,
     hybrid: bool,
     water: HashMap<(i32, i32), Option<MeshBuf>>,
+    roads: HashMap<(i32, i32), Option<MeshBuf>>,
     bush_cache: HashMap<(i32, i32), Vec<Bush>>,
     grass_cache: Option<((i32, i32, usize), Vec<(V3, f32)>)>,
     wheel_spin: f32,
@@ -288,6 +290,13 @@ impl Raster {
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_water"), compilation_options: Default::default(), targets: &target_blend }),
             primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
         });
+        let road_bias = wgpu::DepthBiasState { constant: -4, slope_scale: -2.0, clamp: 0.0 };
+        let pl_road = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("road"), layout: Some(&lay_main),
+            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_road"), compilation_options: Default::default(), buffers: &[mesh_layout.clone()] },
+            fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_road"), compilation_options: Default::default(), targets: &target_blend }),
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, road_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+        });
         let pl_terrain_sh = mk("terrain_sh", &lay_shadow, "vs_terrain_shadow", None, &[mesh_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
         let pl_inst = mk("inst", &lay_main, "vs_inst", Some("fs_inst"), &[mesh_layout.clone(), inst_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
         let pl_inst_sh = mk("inst_sh", &lay_shadow, "vs_inst_shadow", None, &[mesh_layout, inst_layout], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
@@ -306,7 +315,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -385,7 +394,7 @@ impl Raster {
         // a new level invalidates every cache keyed by tile coordinates
         if self.cache_seed != wv.terrain.seed {
             self.cache_seed = wv.terrain.seed;
-            self.tiles.clear(); self.water.clear(); self.bush_cache.clear(); self.grass_cache = None;
+            self.tiles.clear(); self.water.clear(); self.roads.clear(); self.bush_cache.clear(); self.grass_cache = None;
             for w in self.atlas.clear() { self.upload_slot(&w); }
         }
         // terrain tiles: nearest first, a few per frame; the old LOD stays drawn until its replacement exists
@@ -398,6 +407,7 @@ impl Raster {
             let mut mb = mesh_buf(&self.device, &mesh);
             mb.wb = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("tile_w"), contents: bytemuck::cast_slice(&w), usage: wgpu::BufferUsages::VERTEX }));
             self.tiles.insert((tx, tz, lod), mb);
+            if !self.roads.contains_key(&(tx, tz)) { let rm = roadgen::road_mesh(wv.terrain, tx, tz).map(|m| mesh_buf(&self.device, &m)); self.roads.insert((tx, tz), rm); }
             if !self.water.contains_key(&(tx, tz)) { let wm = watergen::water_mesh(wv.terrain, tx, tz).map(|m| mesh_buf(&self.device, &m)); self.water.insert((tx, tz), wm); }
         }
         let (_, visible) = if build.len() > TILE_BUDGET || !build.is_empty() {
@@ -409,6 +419,7 @@ impl Raster {
         let present: HashSet<(i32, i32)> = self.tiles.keys().map(|k| (k.0, k.1)).collect();
         for w in self.atlas.evict_missing(&present) { self.upload_slot(&w); }
         self.water.retain(|&(tx, tz), _| (tx - cx).abs() <= DRAW_TILES + 1 && (tz - cz).abs() <= DRAW_TILES + 1);
+        self.roads.retain(|&(tx, tz), _| (tx - cx).abs() <= DRAW_TILES + 1 && (tz - cz).abs() <= DRAW_TILES + 1);
 
         // instances: cube, cylinder, cone, sphere
         let mut lists: [Vec<Inst>; 4] = Default::default();
@@ -590,6 +601,11 @@ impl Raster {
                 let m = &self.meshes[0];
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, city_start..city_end);
+            }
+            rp.set_pipeline(&self.pl_road);
+            for m in self.roads.values().flatten() {
+                rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..m.n, 0, 0..1);
             }
             rp.set_pipeline(&self.pl_water);
             for m in self.water.values().flatten() {
