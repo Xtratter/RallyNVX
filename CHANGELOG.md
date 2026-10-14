@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.18.1 - autopilot on the whole drive
+
+- Fixed: the autopilot no longer cuts across the fields from the start: it drives the whole way (the liaison, the city streets between its end and the stage start, the stage) and stops at the finish
+- Changed: the car may use its full top speed (no speed caps except the grip in bends, braking distance and crests); cross-country the cap is 20 m/s, crests 30 m/s (`rust/autopilot.json`)
+
 ## 2.18.0 - stage relief and autopilot
 
 - Added: crests and jumps on the special stage (series of 3-5, 0.6-2 m high, a long take-off and a short landing side; none in tight bends, near the road ends or on a causeway)
