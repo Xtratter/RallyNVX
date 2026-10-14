@@ -20,6 +20,7 @@ pub mod math;
 pub mod params;
 pub mod meta;
 pub mod props;
+pub mod rally;
 pub mod roads;
 pub mod superspecial;
 pub mod surface;
