@@ -33,7 +33,7 @@ object Controls {
     /** The chosen studio voice per language ("ru" / "en"): an id of assets/voices, or "system" for the speech synthesizer. */
     fun voice(c: Context, lang: String): String = p(c).getString("voice_$lang", null) ?: "system"
     fun setVoice(c: Context, lang: String, id: String) = p(c).edit().putString("voice_$lang", id).apply()
-    /** The co-driver in rallies: 0 off, 1 text, 2 text and voice (the default). */
+    /** The co-driver in rallies: 0 off, 1 icons, 2 icons and voice (the default). */
     fun paceMode(c: Context): Int = p(c).getInt("pace_mode", 2).coerceIn(0, 2)
     fun setPaceMode(c: Context, v: Int) = p(c).edit().putInt("pace_mode", v.coerceIn(0, 2)).apply()
     /** Autopilot style: 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers. */

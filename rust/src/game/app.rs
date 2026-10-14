@@ -39,7 +39,7 @@ pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, fps: f32, fr
         use crate::game::rally::Phase;
         out[30] = match r.run.phase { Phase::Countdown => 1.0, Phase::Running => 2.0, Phase::Finished => 3.0 };
         out[31] = r.run.time; out[32] = r.run.penalty; out[33] = r.run.countdown_digit() as f32; out[34] = r.stage as f32;
-        for (i, u) in r.pace.upcoming(4).iter().enumerate() { out[45 + i * 8..53 + i * 8].copy_from_slice(u); }   // the pictogram strip
+        for (i, u) in r.pace.upcoming(3, (5.5 * w.vehicle.speed().max(0.0)).max(110.0)).iter().enumerate() { out[45 + i * 8..53 + i * 8].copy_from_slice(u); }   // the pictogram strip
         out[42] = r.note.0 as f32; out[43] = r.pace.to_next(); out[44] = r.pace.progress();
         { let mut t = NOTE_TEXT.lock().unwrap_or_else(|e| e.into_inner()); if t.0 != r.note.0 { *t = (r.note.0, r.note.1.clone(), r.note.2.clone(), r.note_clips.clone()); } }
         out[35] = r.run.next_line() as f32; out[36] = r.run.line_count() as f32;

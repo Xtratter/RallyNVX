@@ -206,13 +206,15 @@ impl Playback {
         None
     }
 
-    /// The next `n` notes ahead of the car (from 15 m behind it) for the pictogram strip, each as 8 numbers:
+    /// The next `n` notes ahead of the car (from 15 m behind it) that are within `lead` metres, for the pictogram strip (an icon
+    /// appears when its corner, crest or junction is near and goes after it), each as 8 numbers:
     /// kind (1 corner, 2 crest, 3 junction, 4 finish), left (1/0), severity, flags (1 tightens, 2 opens, 4 long, 8 into, 16 jump),
     /// metres from the car, the second corner's left (1/0) and severity when it runs into one, and the gap to the next note.
-    pub fn upcoming(&self, n: usize) -> Vec<[f32; 8]> {
+    pub fn upcoming(&self, n: usize, lead: f32) -> Vec<[f32; 8]> {
         let car = self.progress();
         let first = self.notes.iter().position(|x| x.s > car - 15.0).unwrap_or(self.notes.len());
-        (first..self.notes.len().min(first + n)).map(|k| encode(&self.notes[k], self.notes[k].s - car, self.notes.get(k + 1).map_or(0.0, |x| x.s - self.notes[k].s))).collect()
+        (first..self.notes.len().min(first + n)).take_while(|k| self.notes[*k].s - car <= lead)
+            .map(|k| encode(&self.notes[k], self.notes[k].s - car, self.notes.get(k + 1).map_or(0.0, |x| x.s - self.notes[k].s))).collect()
     }
 
     /// The clips of note `k` with the distance to the following note.

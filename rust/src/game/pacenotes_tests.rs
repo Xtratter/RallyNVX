@@ -134,20 +134,23 @@ fn corners(notes: &[Note]) -> Vec<Corner> { notes.iter().filter_map(|n| if let N
     assert_eq!(corners(&easy)[0].sev, 6);
 }
 
-#[test] fn the_upcoming_strip_lists_the_next_notes_with_their_distances() {
+#[test] fn the_upcoming_strip_lists_only_the_notes_that_are_near() {
     let p = path(&[(300.0, 0.0), (50.0, 60.0), (300.0, 0.0), (50.0, -60.0), (300.0, 0.0)]);
     let notes = generate(&p, &[]);
     let mut pb = Playback::new(p.clone(), notes.clone());
-    pb.update(p[10], 20.0, 0.05);
-    let up = pb.upcoming(4);
-    assert!(up.len() >= 2 && up.len() <= 4);
+    pb.update(p[10], 20.0, 0.05);                          // 40 m along: the first corner is ~260 m away
+    assert!(pb.upcoming(3, 110.0).is_empty(), "nothing is shown while the next call is far");
+    let near = notes[0].s - 90.0;                          // 90 m before the first corner
+    let i = p.iter().position(|q| (q.x * q.x + q.z * q.z).sqrt() > 0.0 && q.z >= near).unwrap();
+    pb.update(p[i], 20.0, 0.05);
+    let up = pb.upcoming(3, 110.0);
+    assert!(!up.is_empty() && up.len() <= 3);
     assert_eq!(up[0][0], 1.0, "a corner first");
-    assert!(up[0][4] > 200.0 && up[0][4] < 330.0, "{up:?}");
+    assert!(up[0][4] > 60.0 && up[0][4] <= 110.0, "{up:?}");
     assert!(up.windows(2).all(|w| w[1][4] > w[0][4]), "distances increase");
-    assert_eq!(up.last().unwrap().len(), 8);
-    // the finish encodes as kind 4; a car past a note no longer lists it
+    assert_eq!(up[0].len(), 8);
+    // past the finish nothing is left
     let mut pb = Playback::new(p.clone(), notes);
     pb.update(*p.last().unwrap(), 20.0, 0.05);
-    let up = pb.upcoming(4);
-    assert!(up.iter().all(|u| u[4] > -15.0));
+    assert!(pb.upcoming(3, 110.0).iter().all(|u| u[4] > -15.0));
 }

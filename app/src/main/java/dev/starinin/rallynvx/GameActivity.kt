@@ -48,9 +48,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var finishedShown = false
     private var resultsPanel: FrameLayout? = null
     private var newLevelBtn: View? = null
-    private var noteBar: TextView? = null
     private var paceStrip: PaceStrip? = null
-    private var noteUntil = 0L
     private var lastNote = 0
     private var tts: android.speech.tts.TextToSpeech? = null
     private var voicePlayer: VoicePlayer? = null
@@ -122,10 +120,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             rallyCount = overlay(96f, true).apply { setTextColor(0xFFFFFFFF.toInt()); setShadowLayer(10f, 0f, 3f, 0xDD000000.toInt()) }
             root.addView(rallyCount, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
             rallyToast = overlay(18f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)) }
-            noteBar = overlay(20f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)) }
-            root.addView(noteBar, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = px(120f); leftMargin = px(16f) })
             paceStrip = PaceStrip(this).apply { visibility = View.GONE }
-            root.addView(paceStrip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = px(64f); leftMargin = px(12f) })
+            root.addView(paceStrip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = px(70f); leftMargin = px(12f) })
             val lang = if (java.util.Locale.getDefault().language == "ru") "ru" else "en"
             voiceLang = lang
             studioVoice = Controls.voice(this, lang)
@@ -147,7 +143,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         audio = AudioEngine(this)
         val soundBtn = M3Widgets.button(this, if (audio.muted) "🔇" else "🔊", M3Widgets.ButtonKind.TONAL) {}
         soundBtn.setOnClickListener { audio.muted = !audio.muted; (soundBtn as? android.widget.TextView)?.text = if (audio.muted) "🔇" else "🔊" }
-        root.addView(soundBtn, FrameLayout.LayoutParams(px(52f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(if (rallyIdx > 0) 168f else 140f), 0, 0) })
+        root.addView(soundBtn, FrameLayout.LayoutParams(px(52f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(140f), 0, 0) })
         setContentView(root)
     }
 
@@ -178,7 +174,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     /** Starts (or restarts) a rally stage: 0 the special stage, 1 the city super-special. */
     private fun startRallyStage(stage: Int) {
         rallyStage = stage; finishedShown = false; lastEvent = 0; lastNote = 0
-        tts?.stop(); voicePlayer?.stop(); noteBar?.visibility = View.GONE
+        tts?.stop(); voicePlayer?.stop()
         resultsPanel?.visibility = View.GONE
         autopilotOn = false; showAutopilot()
         Native.gameRally(stage)
@@ -222,7 +218,6 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             val text = Native.gameNoteText(java.util.Locale.getDefault().language == "ru")
             android.util.Log.i("rallynvx", "pace note $note: \"$text\" (voice ${if (ttsReady) "ready" else "not ready"})")
             if (text.isNotEmpty()) {
-                noteBar?.text = text; noteBar?.visibility = View.VISIBLE; noteUntil = System.currentTimeMillis() + 6000
                 if (Controls.paceMode(this) == 2) {
                     val clips = Native.gameNoteClips().split(",").filter { it.isNotEmpty() }
                     if (studioVoice != "system" && voicePlayer?.canPlay(studioVoice, voiceLang, clips) == true) voicePlayer?.play(studioVoice, clips, lang = voiceLang)
@@ -230,7 +225,6 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                 }
             }
         }
-        if (noteBar?.visibility == View.VISIBLE && (System.currentTimeMillis() > noteUntil || phase == 3)) noteBar?.visibility = View.GONE
         if (phase == 3 && !finishedShown) { finishedShown = true; showRallyResults(s[31], s[32], s[41], s[40] > 0.5f) }
     }
 
