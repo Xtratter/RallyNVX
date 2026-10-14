@@ -146,3 +146,8 @@ fn never_rolls(throttle_pre: f32, secs_pre: f32, steer: f32, thr: f32) -> (bool,
     assert!(hand < before - 1.0, "the handbrake must brake: {before} -> {hand}");
     assert!(both <= hand + 0.05, "handbrake alone {hand}, with a light brake press {both}");
 }
+#[test] fn reversing_without_the_brake_gets_well_above_walking_pace() {
+    let (mut v, t) = flat_car(1.1);
+    run(&mut v, &t, Input { throttle: -1.0, ..Default::default() }, 6.0);
+    assert!(v.speed() < -5.0, "reverse speed {} m/s", v.speed());
+}

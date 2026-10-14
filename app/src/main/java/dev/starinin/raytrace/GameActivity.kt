@@ -226,7 +226,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun applyControls() {
         Native.audioVolume(Controls.volume(this))
         val d = drive ?: return
-        d.configure(Controls.mode(this), Controls.sens(this), Controls.pedalsLeft(this))
+        d.configure(Controls.mode(this), Controls.sens(this), Controls.pedalsLeft(this), Controls.pedalsAnalog(this))
         applyControlLayout()
         // tilt steering: the pose at resume (or after "Calibrate" in the settings) is the centre
         stopTilt()
@@ -265,9 +265,12 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Controls.setHintSeen(this, mode, true)
         val dp = resources.displayMetrics.density
         val side = Controls.pedalsLeft(this)
-        val msg = if (mode == Controls.MODE_TILT)
-            t("Tilt the phone like a wheel to steer. Pedals on the ${if (side) "left" else "right"}: gas and brake / reverse.", "Наклоняй телефон как руль. Педали ${if (side) "слева" else "справа"}: газ и тормоз / задний ход.")
-        else t("Drag the wheel to steer. Pedals on the ${if (side) "left" else "right"}: gas (the taller one) and brake / reverse.", "Крути руль пальцем. Педали ${if (side) "слева" else "справа"}: газ (высокая) и тормоз / задний ход.")
+        val pedals = if (side) t("left", "слева") else t("right", "справа")
+        val msg = when (mode) {
+            Controls.MODE_TILT -> t("Tilt the phone like a wheel to steer. Pedals on the $pedals: gas and brake / reverse.", "Наклоняй телефон как руль. Педали $pedals: газ и тормоз / задний ход.")
+            Controls.MODE_WHEEL -> t("Drag the wheel to steer. Pedals on the $pedals: gas (the taller one) and brake / reverse.", "Крути руль пальцем. Педали $pedals: газ (высокая) и тормоз / задний ход.")
+            else -> t("Steer with the arrow buttons. Pedals on the $pedals: gas (the taller one) and brake / reverse.", "Рули кнопками-стрелками. Педали $pedals: газ (высокая) и тормоз / задний ход.")
+        }
         hintView?.let { root.removeView(it) }
         val tv = TextView(this).apply {
             text = msg; textSize = 15f; setTextColor(M3.TEXT); gravity = Gravity.CENTER

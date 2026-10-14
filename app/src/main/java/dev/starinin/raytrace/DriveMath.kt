@@ -57,6 +57,19 @@ object DriveMath {
         else -> BrakeCmd(false, 0f, -pressure.coerceIn(0f, 1f))
     }
 
+    /** Steering by two buttons: the value ramps towards full lock while a button is held and back to centre on release. */
+    class Buttons {
+        var value = 0f; private set
+        fun step(dt: Float, left: Boolean, right: Boolean, sens: Int): Float {
+            if (!dt.isFinite() || dt <= 0f) return value
+            val target = (if (right) 1f else 0f) - (if (left) 1f else 0f)
+            val rate = (if (target == 0f) 8f else 4f * SENS[sens.coerceIn(0, SENS.size - 1)]) * dt
+            value = if (abs(target - value) <= rate) target else value + sign(target - value) * rate
+            return value
+        }
+        fun reset() { value = 0f }
+    }
+
     /** Tilt steering from the phone's roll angle (degrees, landscape): re-zeroable, dead zone, low-pass. */
     class Tilt {
         private var zero = 0f

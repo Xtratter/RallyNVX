@@ -20,3 +20,8 @@ Rows (label + a button that cycles the value): Graphics quality (Low/Medium/High
 
 ## 4. Testing
 Kotlin unit tests (JVM, no Android): wheel angle from touch points, accumulation across the +-180 seam, limit, return to centre, steering curve and sensitivities; pedal pressure; brake/reverse switch at 3 km/h; tilt dead zone, scaling, calibration, smoothing; volume steps; settings cycle logic. Rust tests: analog brake force scales with `brake_amt` and legacy `brake_amt = 0` is unchanged; volume gain (silence at 0, half amplitude at 0.5, clamping, NaN). Device: install, open settings, change values, screenshots of the new layout in both pedal sides; the feel of the controls is judged by the user. One final review on the most capable model.
+
+## 5. Changes after the first device check (user request)
+- Steering modes are now **Buttons (default)**, Wheel, Tilt: two arrow buttons at the wheel's place, the steering value ramps to full lock at 4 per second times the sensitivity gain and springs back at 8 per second (`DriveMath.Buttons`).
+- Pedals are **full on touch by default** (pressure 1: full gas, full brake); the analog behaviour above is the option "Pedal force: Adjustable" in Settings (`pedals_analog`).
+- Reversing with the brake held no longer fights itself: the pedal logic now uses the signed forward speed (a bug found in the review).

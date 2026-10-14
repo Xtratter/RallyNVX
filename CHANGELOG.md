@@ -4,8 +4,8 @@
 
 ## 2.9.0 - car controls and settings
 
-- Added: an on-screen steering wheel and gas / brake pedals for the car instead of the two sticks; the brake pedal reverses below 3 km/h; pedals are analog (the lower the touch, the harder the press)
-- Added: tilt steering as an option, with calibration; sensitivity low / normal / high; pedals on the left or right
+- Added: gas and brake pedals and steering for the car instead of the two sticks: two arrow buttons by default, an on-screen wheel or tilt of the phone as options; the pedals give full gas and full brake on touch by default, with an "Adjustable" force option (the lower the touch, the harder the press); the brake pedal reverses when stopped or rolling backwards
+- Added: tilt calibration; sensitivity low / normal / high; pedals on the left or right
 - Added: a settings screen (quality, steering, sensitivity, volume, pedal side, tilt centre, hints) from the main menu and the pause panel; the main menu quality button moved into it
 - Added: a master volume setting; an analog brake (a lighter press brakes less); a one-time hint for each steering type
 - Unchanged: the helicopter and the drone still use the two sticks

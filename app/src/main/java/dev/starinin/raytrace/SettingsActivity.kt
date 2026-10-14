@@ -33,11 +33,12 @@ class SettingsActivity : Activity() {
             col.addView(r, LinearLayout.LayoutParams(px(520f), -2).apply { topMargin = px(12f) })
         }
         row(t("Graphics quality", "Качество графики"), { Quality.label(Quality.index(this)) + " ⟳" }) { Quality.save(this, DriveMath.cycle(Quality.index(this), Quality.NAMES.size)) }
-        row(t("Steering", "Руль"), { if (Controls.mode(this) == Controls.MODE_TILT) t("Tilt", "Наклон") else t("Wheel", "Колесо") }) { Controls.setMode(this, DriveMath.cycle(Controls.mode(this), 2)) }
+        row(t("Steering", "Руль"), { arrayOf(t("Buttons", "Кнопки"), t("Wheel", "Колесо"), t("Tilt", "Наклон"))[Controls.mode(this)] }) { Controls.setMode(this, DriveMath.cycle(Controls.mode(this), Controls.MODES)) }
         row(t("Sensitivity", "Чувствительность"), { arrayOf(t("Low", "Низкая"), t("Normal", "Обычная"), t("High", "Высокая"))[Controls.sens(this)] }) { Controls.setSens(this, DriveMath.cycle(Controls.sens(this), 3)) }
         row(t("Volume", "Громкость"), { "${(DriveMath.VOLUME[Controls.volumeStep(this)] * 100).toInt()} %" }) {
             Controls.setVolumeStep(this, DriveMath.cycle(Controls.volumeStep(this), DriveMath.VOLUME.size)); Native.audioVolume(Controls.volume(this))
         }
+        row(t("Pedal force", "Усилие педалей"), { if (Controls.pedalsAnalog(this)) t("Adjustable", "Регулируемое") else t("Full on touch", "Полное по нажатию") }) { Controls.setPedalsAnalog(this, !Controls.pedalsAnalog(this)) }
         row(t("Pedals", "Педали"), { if (Controls.pedalsLeft(this)) t("Left", "Слева") else t("Right", "Справа") }) { Controls.setPedalsLeft(this, !Controls.pedalsLeft(this)) }
         var calibrated = false
         row(t("Tilt centre", "Центр наклона"), { if (calibrated) t("Set at start ✓", "Задаётся при старте ✓") else t("Recalibrate", "Перекалибровать") }) { calibrated = true; Controls.setWantsCalibration(this, true) }

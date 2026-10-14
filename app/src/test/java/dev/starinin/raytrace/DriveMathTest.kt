@@ -118,3 +118,27 @@ class DriveMathReviewTest {
         assertEquals(0f, t.update(0f, 1f / 60f, 1), 0f)     // the old centre is gone: 0 degrees is the centre again
     }
 }
+
+class DriveMathButtonsTest {
+    @Test fun buttonsRampToFullLockAndSpringBack() {
+        val b = DriveMath.Buttons()
+        assertEquals(0f, b.step(0.1f, false, false, 1), 0f)
+        assertEquals(0.4f, b.step(0.1f, false, true, 1), 1e-4f)        // 4 per second at normal sensitivity
+        repeat(10) { b.step(0.1f, false, true, 1) }
+        assertEquals(1f, b.value, 0f)                                  // never beyond full lock
+        b.step(0.05f, false, false, 1); assertEquals(0.6f, b.value, 1e-4f)
+        b.step(1f, false, false, 1); assertEquals(0f, b.value, 0f)     // returns to centre without overshoot
+    }
+    @Test fun leftIsNegativeBothCancelAndSensitivityScalesTheRamp() {
+        val b = DriveMath.Buttons()
+        b.step(0.1f, true, false, 1); assertTrue(b.value < 0f)
+        b.step(1f, true, true, 1); assertEquals(0f, b.value, 0f)       // both pressed: centre
+        val slow = DriveMath.Buttons().also { it.step(0.1f, false, true, 0) }.value
+        val fast = DriveMath.Buttons().also { it.step(0.1f, false, true, 2) }.value
+        assertTrue(slow < 0.4f && fast > 0.4f)
+        val r = DriveMath.Buttons(); r.step(0.2f, false, true, 1); r.step(0.1f, true, false, 1)   // reversing direction passes through the centre
+        assertTrue(r.value < 0.8f)
+        assertEquals(0f, DriveMath.Buttons().step(Float.NaN, false, true, 1), 0f)
+        assertEquals(0f, DriveMath.Buttons().step(-1f, false, true, 1), 0f)
+    }
+}

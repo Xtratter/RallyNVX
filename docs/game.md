@@ -8,9 +8,9 @@ Raytrace has a game mode next to the scene viewer: off-road free drive on a rand
 
 | | Android | Desktop (`raytrace-desktop --game`) |
 |---|---|---|
-| Throttle | gas pedal (right, taller; the lower you press, the more gas) | W, arrow up |
-| Brake / reverse | brake pedal (left of the gas): brakes while moving, reverses below 3 km/h | S, arrow down |
-| Steer | on-screen wheel (drag it around its centre) or tilt of the phone (Settings) | A D, arrows |
+| Throttle | gas pedal (right, taller): full gas on touch; with "Adjustable" pedal force in Settings the lower you press, the more gas | W, arrow up |
+| Brake / reverse | brake pedal (left of the gas): full brake while moving forward, reverse when stopped or rolling backwards | S, arrow down |
+| Steer | two arrow buttons (default), an on-screen wheel (drag it around its centre) or tilt of the phone (Settings) | A D, arrows |
 | Handbrake (drift) | "Handbrake" button (hold) | Left Shift |
 | Reset (flipped car) | "Reset" button | R |
 | New random level | "New level" button | N |
@@ -56,7 +56,7 @@ Air missions use a helicopter or a drone (the card shows which). Sticks released
 
 ## Settings
 
-The main menu and the pause panel open **Settings**: graphics quality (applies at the next start), steering (wheel or tilt), sensitivity (low / normal / high), volume (0 / 25 / 50 / 75 / 100 %), the side of the pedals (the wheel goes to the other side), recalibrating the tilt centre (the pose at the start of a drive is the centre) and showing the hints again. The helicopter and the drone keep their two sticks. A short hint appears the first time you drive with each steering type.
+The main menu and the pause panel open **Settings**: graphics quality (applies at the next start), steering (buttons, wheel or tilt), pedal force (full on touch or adjustable), sensitivity (low / normal / high), volume (0 / 25 / 50 / 75 / 100 %), the side of the pedals (the wheel goes to the other side), recalibrating the tilt centre (the pose at the start of a drive is the centre) and showing the hints again. The helicopter and the drone keep their two sticks. A short hint appears the first time you drive with each steering type.
 
 ## Rescue
 
@@ -88,9 +88,9 @@ No garage, rescue missions or NPC orders yet, and only the raster renderer (mode
 
 | | Android | Десктоп (`raytrace-desktop --game`) |
 |---|---|---|
-| Газ | педаль газа (справа, выше; чем ниже нажать, тем больше газа) | W, стрелка вверх |
-| Тормоз / задний ход | педаль тормоза (слева от газа): тормозит на ходу, ниже 3 км/ч включает задний ход | S, стрелка вниз |
-| Руль | экранный руль (крутить пальцем вокруг центра) или наклон телефона (Настройки) | A D, стрелки |
+| Газ | педаль газа (справа, выше): полный газ по нажатию; при «Регулируемом» усилии в настройках чем ниже нажать, тем больше газа | W, стрелка вверх |
+| Тормоз / задний ход | педаль тормоза (слева от газа): полный тормоз при движении вперёд, задний ход когда стоишь или катишься назад | S, стрелка вниз |
+| Руль | две кнопки-стрелки (по умолчанию), экранный руль (крутить пальцем вокруг центра) или наклон телефона (Настройки) | A D, стрелки |
 | Ручник (занос) | кнопка «Ручник» (удерживать) | Левый Shift |
 | Сброс (машина перевернулась) | кнопка «Сброс» | R |
 | Новый случайный уровень | кнопка «Новый уровень» | N |
@@ -136,7 +136,7 @@ No garage, rescue missions or NPC orders yet, and only the raster renderer (mode
 
 ## Настройки
 
-Главное меню и панель паузы открывают **Настройки**: качество графики (применится при следующем запуске), руль (колесо или наклон), чувствительность (низкая / обычная / высокая), громкость (0 / 25 / 50 / 75 / 100 %), сторона педалей (руль уходит на другую), перекалибровка центра наклона (центр — поза в начале поездки) и повторный показ подсказок. Вертолёт и дрон по-прежнему управляются двумя стиками. При первой поездке с каждым видом руля появляется короткая подсказка.
+Главное меню и панель паузы открывают **Настройки**: качество графики (применится при следующем запуске), руль (кнопки, колесо или наклон), усилие педалей (полное по нажатию или регулируемое), чувствительность (низкая / обычная / высокая), громкость (0 / 25 / 50 / 75 / 100 %), сторона педалей (руль уходит на другую), перекалибровка центра наклона (центр — поза в начале поездки) и повторный показ подсказок. Вертолёт и дрон по-прежнему управляются двумя стиками. При первой поездке с каждым видом руля появляется короткая подсказка.
 
 ## Спасение
 
