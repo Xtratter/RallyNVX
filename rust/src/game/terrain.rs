@@ -110,6 +110,8 @@ impl Terrain {
     /// Tests: this terrain with the given road network.
     #[cfg(test)]
     pub fn with_net(self, net: RoadNet) -> Terrain { Terrain { roads: Some(Arc::new(net)), ..self } }
+    /// The plain test terrain (no relief): off the roads a neutral asphalt for the physics tests.
+    pub fn is_flat_test(&self) -> bool { self.scale == 0.0 }
     pub fn roads(&self) -> Option<&RoadNet> { self.roads.as_deref() }
     pub fn road_hit(&self, x: f32, z: f32) -> Option<RoadHit> { self.roads.as_ref()?.nearest(x, z) }
     /// Distance from (x, z) to the edge of the nearest road (negative on the road); `None` when no road is within reach.

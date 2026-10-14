@@ -29,7 +29,7 @@ impl Road { pub fn length(&self) -> f32 { self.pts.last().map_or(0.0, |p| p.s) }
 
 /// The closest road point to a query: `dist` to the centre line, the road height `y`, the half-width, `s` along the road.
 #[derive(Clone, Copy, Debug)]
-pub struct RoadHit { pub road: usize, pub seg: usize, pub t: f32, pub dist: f32, pub y: f32, pub half: f32, pub s: f32, pub tangent: V3 }
+pub struct RoadHit { pub road: usize, pub seg: usize, pub t: f32, pub dist: f32, pub y: f32, pub half: f32, pub s: f32, pub tangent: V3, pub side: f32 }
 
 #[derive(Clone, Debug, Default)]
 pub struct RoadNet { pub roads: Vec<Road>, grid: HashMap<(i32, i32), Vec<(u16, u32)>> }
@@ -80,7 +80,9 @@ impl RoadNet {
         let dist = (x - px).hypot(z - pz);
         if dist > INFLUENCE { return None; }
         let lerp = |p: f32, q: f32| p + (q - p) * t;
-        Some(RoadHit { road: ri, seg: si, t, dist, y: lerp(a.pos.y, b.pos.y), half: lerp(a.width, b.width) * 0.5, s: lerp(a.s, b.s), tangent: v3(dx, 0.0, dz).norm() })
+        let l = l2.sqrt().max(1e-6);
+        let side = (x - px) * (-dz / l) + (z - pz) * (dx / l);   // positive to the left of the travel direction
+        Some(RoadHit { road: ri, seg: si, t, dist, y: lerp(a.pos.y, b.pos.y), half: lerp(a.width, b.width) * 0.5, s: lerp(a.s, b.s), tangent: v3(dx, 0.0, dz).norm(), side })
     }
 }
 

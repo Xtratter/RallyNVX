@@ -1,0 +1,58 @@
+use super::*;
+use crate::game::{math::v3, roads::{Road, RoadKind, RoadNet, RoadPt}, surface::Surface, terrain::Terrain};
+
+fn stage(len: f32) -> RoadNet {
+    let n = (len / 4.0) as usize;
+    RoadNet::new(vec![Road { kind: RoadKind::Stage, pts: (0..=n).map(|i| RoadPt { pos: v3(0.0, 0.0, i as f32 * 4.0), width: 8.0, s: i as f32 * 4.0 }).collect() }])
+}
+
+#[test] fn the_table_orders_the_surfaces_and_stays_in_bounds() {
+    let g = |s| grip(s, 1.0).mu;
+    assert!(g(Surface::Asphalt) > g(Surface::Rock) && g(Surface::Rock) > g(Surface::Dirt) && g(Surface::Dirt) > g(Surface::Grass) && g(Surface::Grass) > g(Surface::Sand));
+    for s in [Surface::Grass, Surface::Dirt, Surface::Sand, Surface::Rock, Surface::Gravel, Surface::Asphalt, Surface::Water] {
+        for l in [0.0, 0.5, 1.0, 2.0, -1.0, f32::NAN] { let k = grip(s, l); assert!((0.3..=1.0).contains(&k.mu) && (0.3..=1.0).contains(&k.lateral) && (0.9..=3.5).contains(&k.rolling), "{s:?} {l}"); }
+    }
+    assert!(grip(Surface::Gravel, 0.0).mu > grip(Surface::Gravel, 1.0).mu, "packed gravel grips better than loose");
+    assert!((grip(Surface::Gravel, 0.0).mu - 0.78).abs() < 1e-5 && (grip(Surface::Gravel, 1.0).mu - 0.62).abs() < 1e-5);
+}
+#[test] fn the_map_starts_loose_and_wear_packs_the_line_not_the_sides() {
+    let net = stage(400.0);
+    let mut m = LooseMap::new(&net);
+    assert_eq!(m.loose_at(0, 100.0, 0.0), 1.0);
+    for _ in 0..60 { m.wear(0, 100.0, 0.0, 20.0, 1.0 / 240.0); }   // a quarter of a second at 20 m/s on one spot
+    assert!(m.loose_at(0, 100.0, 0.0) < 0.5, "{}", m.loose_at(0, 100.0, 0.0));
+    assert_eq!(m.loose_at(0, 100.0, 1.4), 1.0, "1.4 m to the side is untouched");
+    assert_eq!(m.loose_at(0, 140.0, 0.0), 1.0, "40 m along is untouched");
+    for _ in 0..2000 { m.wear(0, 100.0, 0.0, 30.0, 1.0 / 60.0); }
+    assert!(m.loose_at(0, 100.0, 0.0) >= 0.0);
+}
+#[test] fn the_map_survives_odd_queries() {
+    let net = stage(100.0);
+    let mut m = LooseMap::new(&net);
+    for (s, side) in [(-5.0, 0.0), (1e9, 0.0), (50.0, 99.0), (50.0, -99.0), (f32::NAN, 0.0), (50.0, f32::NAN)] {
+        assert_eq!(m.loose_at(0, s, side), 1.0, "({s}, {side})");
+        m.wear(0, s, side, 20.0, 0.01);
+    }
+    m.wear(0, 50.0, 0.0, f32::NAN, 0.01); m.wear(0, 50.0, 0.0, f32::INFINITY, 0.01);
+    assert!((0.0..=1.0).contains(&m.loose_at(0, 50.0, 0.0)));
+    assert_eq!(m.loose_at(7, 50.0, 0.0), 1.0, "an unknown road");
+    assert_eq!(LooseMap::empty().loose_at(0, 1.0, 0.0), 1.0);
+}
+#[test] fn a_liaison_road_has_no_loose_layer() {
+    let net = RoadNet::new(vec![Road { kind: RoadKind::Liaison, pts: (0..=25).map(|i| RoadPt { pos: v3(0.0, 0.0, i as f32 * 4.0), width: 8.0, s: i as f32 * 4.0 }).collect() }]);
+    let mut m = LooseMap::new(&net);
+    m.wear(0, 50.0, 0.0, 20.0, 1.0);
+    assert_eq!(m.loose_at(0, 50.0, 0.0), 1.0);
+}
+#[test] fn ground_at_reports_surface_looseness_and_the_gravel_road_cell() {
+    let t = Terrain::flat().with_net(stage(400.0));
+    let mut m = LooseMap::new(t.roads().unwrap());
+    let (s, loose, road) = ground_at(&t, &m, 1.0, 100.0);
+    assert_eq!((s, loose), (Surface::Gravel, 1.0));
+    let (ri, along, side) = road.expect("on the gravel stage");
+    assert!(ri == 0 && (along - 100.0).abs() < 1.0 && (side - (-1.0)).abs() < 1e-3 || (side - 1.0).abs() < 1e-3, "side {side}");
+    m.wear(0, 100.0, side, 20.0, 0.5);
+    assert!(ground_at(&t, &m, 1.0, 100.0).1 < 1.0);
+    let (s2, l2, r2) = ground_at(&t, &m, 300.0, 100.0);
+    assert!(s2 == Surface::Asphalt && l2 == 1.0 && r2.is_none(), "the flat test terrain far from the road is neutral asphalt");
+}

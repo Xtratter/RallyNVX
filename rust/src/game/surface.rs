@@ -14,6 +14,7 @@ pub fn surface_at(t: &Terrain, x: f32, z: f32) -> Surface {
     }
     if t.in_city(x, z, 0.0) { return Surface::Asphalt; }
     if t.is_water(x, z, 0.0) { return Surface::Water; }
+    if t.is_flat_test() { return Surface::Asphalt; }
     let w = terrain_weights(t.height(x, z), t.normal(x, z), x, z);
     let k = (0..4).max_by_key(|&i| w[i]).unwrap();
     [Surface::Grass, Surface::Dirt, Surface::Sand, Surface::Rock][k]

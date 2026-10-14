@@ -10,6 +10,7 @@ pub mod city;
 #[cfg(feature = "desktop")]
 pub mod desktop;
 pub mod garage;
+pub mod grip;
 pub mod input;
 pub mod materials;
 pub mod math;
