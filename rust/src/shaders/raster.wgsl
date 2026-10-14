@@ -479,24 +479,49 @@ struct RIn { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @loc
     return vec4<f32>(lit(col, i.wp, up), alpha);
 }
 
-struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) c: vec4<f32>, @location(2) wp: vec3<f32> };
-@vertex fn vs_dust(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>) -> DOut {
+struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) c: vec4<f32>, @location(2) wp: vec3<f32>, @location(3) e: vec4<f32> };
+@vertex fn vs_dust(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>, @location(2) e: vec4<f32>) -> DOut {
     var q = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0));
     let right = normalize(vec3<f32>(u.vp[0].x, u.vp[1].x, u.vp[2].x));
     let up = normalize(vec3<f32>(u.vp[0].y, u.vp[1].y, u.vp[2].y));
     let corner = q[vi];
-    let wp = ps.xyz + (right * corner.x + up * corner.y) * ps.w;
+    // every puff turns slowly about its own axis, so the noise of the sprite does not look the same twice
+    let ang = e.x * 6.2831 + e.y * 1.5;
+    let rc = vec2<f32>(corner.x * cos(ang) - corner.y * sin(ang), corner.x * sin(ang) + corner.y * cos(ang));
+    let wp = ps.xyz + (right * rc.x + up * rc.y) * ps.w;
     var o: DOut;
-    o.pos = u.vp * vec4<f32>(wp, 1.0); o.uv = corner; o.c = c; o.wp = wp;
+    o.pos = u.vp * vec4<f32>(wp, 1.0); o.uv = rc; o.c = c; o.wp = wp; o.e = e;
     return o;
 }
 @fragment fn fs_dust(i: DOut) -> @location(0) vec4<f32> {
     let r = length(i.uv);
-    let near = smoothstep(2.0, 9.0, length(i.wp - u.cam.xyz));   // puffs close to the camera thin out instead of blinding the view
-    let a = i.c.a * (1.0 - smoothstep(0.25, 1.0, r)) * near;
+    // a ragged, noisy puff instead of a smooth disc: the edge radius wanders with a noise that is different for every puff
+    let n = vnoise2(i.uv * 2.3 + vec2<f32>(i.e.x * 31.0, i.e.x * 17.0)) * 0.6 + vnoise2(i.uv * 5.1 + vec2<f32>(i.e.x * 9.0, 3.0)) * 0.4;
+    let edge = mix(0.55, 1.05, n);
+    let shape = 1.0 - smoothstep(0.1, edge, r);
+    let wp = i.wp;
+    let dcam = length(wp - u.cam.xyz);
+    let near = smoothstep(2.0, 9.0, dcam);   // puffs close to the camera thin out instead of blinding the view
+    // soft against the ground: a puff that meets the terrain fades out instead of cutting a hard line
+    let above = wp.y - terrain_h(wp.x, wp.z);
+    let soft = mix(0.4, 1.0, smoothstep(0.0, 0.7, above));
+    let a = i.c.a * shape * near * soft;
+    // light: the sun, the sky, the glow of a cloud seen against the sun, the headlights and the night
+    let sun_dir = normalize(u.sun.xyz);
+    let view = normalize(wp - u.cam.xyz);
     let sun = clamp(length(u.sun_col.rgb) / 2.6, 0.06, 1.0);
-    var col = i.c.rgb * (0.30 + 0.70 * sun);
-    let f = clamp(1.0 - exp(-length(i.wp - u.cam.xyz) * u.fog.x), 0.0, 1.0);
+    let fwd = pow(max(dot(view, sun_dir), 0.0), 5.0);
+    let amb = mix(u.sky_hor.rgb, u.sky_top.rgb, 0.5) * 0.45;
+    var col = i.c.rgb * (amb * 0.8 + vec3<f32>(sun) * (0.42 + 0.35 * shape + 1.1 * fwd * sun));
+    col = col * mix(0.82, 1.0, smoothstep(0.0, 0.8, r));   // the thick middle of a puff is shaded by the rest of it
+    if (u.hl_pos.w > 0.0) {
+        let dv = wp - u.hl_pos.xyz;
+        let dist = length(dv);
+        let l = dv / max(dist, 0.001);
+        let cone = smoothstep(u.hl_dir.w, u.hl_dir.w + 0.06, dot(l, normalize(u.hl_dir.xyz)));
+        col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (1.6 * cone * clamp(1.0 - dist / 55.0, 0.0, 1.0));
+    }
+    let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0);
     col = mix(col, u.sky_hor.rgb, f);
     return vec4<f32>(finish(col), a);
 }

@@ -1,7 +1,7 @@
 use super::*;
 use crate::game::{dust::Particle, math::v3};
 
-fn p(x: f32, z: f32, a: f32) -> Particle { Particle { pos: v3(x, 1.0, z), size: 1.0, color: [0.7, 0.6, 0.5], alpha: a } }
+fn p(x: f32, z: f32, a: f32) -> Particle { Particle { pos: v3(x, 1.0, z), size: 1.0, color: [0.7, 0.6, 0.5], alpha: a, seed: 0.3, age: 0.2, kind: 0.0 } }
 
 #[test] fn instances_are_sorted_far_to_near_and_carry_the_data() {
     let cam = v3(0.0, 2.0, 0.0);

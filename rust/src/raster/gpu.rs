@@ -302,7 +302,7 @@ impl Raster {
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_road"), compilation_options: Default::default(), targets: &target_blend }),
             primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, road_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
         });
-        const DUST_ATTRS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4];
+        const DUST_ATTRS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4];
         let dust_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<dustgen::DustInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &DUST_ATTRS };
         let pl_dust = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("dust"), layout: Some(&lay_main),
