@@ -119,3 +119,17 @@ fn never_rolls(throttle_pre: f32, secs_pre: f32, steer: f32, thr: f32) -> (bool,
     let (dry, wet) = (go(&Terrain::flat()), go(&Terrain::flooded(1.0)));
     assert!(wet < dry * 0.7, "dry {dry} wet {wet}");
 }
+#[test] fn the_brake_amount_scales_the_brake_force_and_zero_is_the_legacy_full_brake() {
+    let speed_after = |inp: Input| {
+        let (mut v, t) = flat_car(1.1);
+        run(&mut v, &t, Input { throttle: 1.0, ..Default::default() }, 8.0);
+        let before = v.speed();
+        run(&mut v, &t, inp, 1.0);
+        (before, v.speed())
+    };
+    let (_, full) = speed_after(Input { brake: true, ..Default::default() });
+    let (_, one) = speed_after(Input { brake: true, brake_amt: 1.0, ..Default::default() });
+    let (before, soft) = speed_after(Input { brake: true, brake_amt: 0.3, ..Default::default() });
+    assert!((full - one).abs() < 0.01 * before, "full {full} vs amt 1.0 {one}");
+    assert!(soft > full + 1.0 && soft < before, "soft {soft} full {full} before {before}");
+}

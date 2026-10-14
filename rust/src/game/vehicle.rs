@@ -122,7 +122,9 @@ impl Vehicle {
             let lim_speed = if inp.throttle >= 0.0 { s.max_speed } else { s.max_speed * s.reverse_factor };
             let taper = (1.0 - (fspeed * inp.throttle.signum()).max(0.0) / lim_speed).clamp(0.0, 1.0);
             let mut fx = inp.throttle * s.engine_force / 4.0 * taper - vf * s.rolling;
-            if inp.brake || (inp.handbrake && !front) { fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0; }
+            let kb = if inp.brake && inp.brake_amt > 0.0 { inp.brake_amt.clamp(0.05, 1.0) } else { 1.0 };
+            if inp.brake { fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0 * kb; }
+            if inp.handbrake && !front { fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0 * if inp.brake { 0.0 } else { 1.0 }; }
             let lim = lat_mu * fs;
             let mag = fl.hypot(fx);
             if mag > lim && mag > 1e-6 { let k = lim / mag; fl *= k; fx *= k; }

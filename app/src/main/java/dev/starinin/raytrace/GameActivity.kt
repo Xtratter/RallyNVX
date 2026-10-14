@@ -184,7 +184,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
 
     private fun sendInput() {
         if (!running) return
-        if (air) Native.gameFlight(lx, ly, ry, rx) else Native.gameInput(ly, lx, ry < -0.5f, handbrake)
+        if (air) Native.gameFlight(lx, ly, ry, rx) else Native.gameInput(ly, lx, ry < -0.5f, handbrake, 0f)
     }
 
     override fun surfaceCreated(h: SurfaceHolder) { running = false }

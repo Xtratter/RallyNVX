@@ -2,8 +2,8 @@
 use crate::game::{flight::FlightInput, input::Input};
 
 /// Commands from Kotlin as an `Input` (non-finite axes become 0, axes are clamped).
-pub fn merge_input(throttle: f32, steer: f32, brake: bool, handbrake: bool) -> Input {
-    Input { throttle, steer, brake, handbrake, reset: false }.sanitized()
+pub fn merge_input(throttle: f32, steer: f32, brake: bool, handbrake: bool, brake_amt: f32) -> Input {
+    Input { throttle, steer, brake, handbrake, brake_amt, reset: false }.sanitized()
 }
 
 /// Flight sticks from Kotlin as a `FlightInput` (non-finite axes become 0, axes are clamped).
@@ -17,8 +17,11 @@ mod tests {
         assert_eq!((f.yaw, f.lift, f.pitch, f.roll), (0.0, 1.0, -1.0, 0.5));
     }
     #[test] fn merge_input_sanitizes_and_maps() {
-        let i = merge_input(f32::NAN, 2.0, true, false);
-        assert_eq!((i.throttle, i.steer, i.brake, i.handbrake, i.reset), (0.0, 1.0, true, false, false));
+        let i = merge_input(f32::NAN, 2.0, true, false, 0.4);
+        assert_eq!((i.throttle, i.steer, i.brake, i.handbrake, i.reset, i.brake_amt), (0.0, 1.0, true, false, false, 0.4));
+        assert_eq!(merge_input(0.0, 0.0, true, false, f32::NAN).brake_amt, 0.0);
+        assert_eq!(merge_input(0.0, 0.0, true, false, 7.0).brake_amt, 1.0);
+        assert_eq!(merge_input(0.0, 0.0, true, false, -2.0).brake_amt, 0.0);
     }
 }
 
@@ -108,8 +111,8 @@ mod android {
 
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameStop(_e: JNIEnv, _c: JClass) { stop_engine(); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameResize(_e: JNIEnv, _c: JClass, w: jint, h: jint) { send(GCmd::Resize(w.max(1) as u32, h.max(1) as u32)); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameInput(_e: JNIEnv, _c: JClass, throttle: jfloat, steer: jfloat, brake: jboolean, handbrake: jboolean) {
-        send(GCmd::Input(merge_input(throttle, steer, brake != 0, handbrake != 0)));
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameInput(_e: JNIEnv, _c: JClass, throttle: jfloat, steer: jfloat, brake: jboolean, handbrake: jboolean, brake_amt: jfloat) {
+        send(GCmd::Input(merge_input(throttle, steer, brake != 0, handbrake != 0, brake_amt)));
     }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameFlight(_e: JNIEnv, _c: JClass, yaw: jfloat, lift: jfloat, pitch: jfloat, roll: jfloat) {
         send(GCmd::Flight(merge_flight(yaw, lift, pitch, roll)));
@@ -136,6 +139,7 @@ mod android {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::audio::render_into(&mut v)));
         let _ = env.set_short_array_region(&buf, 0, &v);
     }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_audioVolume(_e: JNIEnv, _c: JClass, v: jfloat) { crate::audio::set_volume(v); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_audioMute(_e: JNIEnv, _c: JClass, m: jboolean) { crate::audio::set_muted(m != 0); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameReset(_e: JNIEnv, _c: JClass) { send(GCmd::Reset); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameNewLevel(_e: JNIEnv, _c: JClass, seed: jlong) { send(GCmd::NewLevel(seed as u64)); }

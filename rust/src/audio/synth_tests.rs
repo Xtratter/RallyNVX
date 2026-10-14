@@ -93,3 +93,13 @@ fn rms(v: &[f32]) -> f32 { (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f3
     run(&mut s, 0.2);
     assert!(run(&mut s, 0.1).iter().all(|x| *x == 0.0));
 }
+
+#[test] fn master_volume_scales_the_output() {
+    let rms_at = |v: f32| { let mut s = Synth::new(); s.set_volume(v); s.set_params(&car(0.6)); run(&mut s, 0.8); rms(&run(&mut s, 0.3)) };
+    let full = rms_at(1.0);
+    assert!(full > 0.02);
+    assert_eq!(rms_at(0.0), 0.0);
+    let half = rms_at(0.5);
+    assert!((half / full - 0.5).abs() < 0.05, "{half} vs {full}");
+    assert_eq!(rms_at(5.0), full); assert_eq!(rms_at(f32::NAN), full);
+}

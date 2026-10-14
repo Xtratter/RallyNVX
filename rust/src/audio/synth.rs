@@ -17,7 +17,7 @@ struct Voice { kind: u8, t: f32, strength: f32, phase: f32, lp1: OnePole, lp2: O
 struct Smoothed { rpm: f32, load: f32, roll: f32, water: f32, slip: f32, wind: f32, car: f32, heli: f32, drone: f32 }
 
 pub struct Synth {
-    target: AudioParams, s: Smoothed, master: f32, muted: bool,
+    target: AudioParams, s: Smoothed, master: f32, muted: bool, volume: f32, vol_s: f32,
     noise: Noise, rate: f32, a: f32,
     engine_phase: f32, rotor_phase: f32, rotor_tone: f32, drone_phase: [f32; 4], gurgle: f32, squeal: f32,
     f_roll: OnePole, f_roll_w: OnePole, f_sq1: OnePole, f_sq2: OnePole, f_thump: OnePole, f_whoosh: OnePole, f_wind: OnePole, f_drone: OnePole,
@@ -30,7 +30,7 @@ impl Synth {
     pub fn new() -> Synth {
         let rate = RATE as f32;
         Synth {
-            target: AudioParams::default(), s: Smoothed::default(), master: 0.0, muted: false,
+            target: AudioParams::default(), s: Smoothed::default(), master: 0.0, muted: false, volume: 1.0, vol_s: 1.0,
             noise: Noise::new(0x1234_5678), rate, a: 1.0 - (-1.0 / (SMOOTH * rate)).exp(),
             engine_phase: 0.0, rotor_phase: 0.0, rotor_tone: 0.0, drone_phase: [0.0; 4], gurgle: 0.0, squeal: 0.0,
             f_roll: OnePole::default(), f_roll_w: OnePole::default(), f_sq1: OnePole::default(), f_sq2: OnePole::default(),
@@ -45,6 +45,8 @@ impl Synth {
     }
 
     pub fn set_muted(&mut self, m: bool) { self.muted = m; }
+    /// Master volume 0..1 (applied after the soft clip, smoothed).
+    pub fn set_volume(&mut self, v: f32) { self.volume = if v.is_finite() { v.clamp(0.0, 1.0) } else { 1.0 }; }
 
     /// Stops everything at once: no one-shots, no machine, inactive (the activity left the game).
     pub fn silence(&mut self) { self.voices = [Voice::default(); MAX_VOICES]; self.target = AudioParams::default(); }
@@ -149,7 +151,9 @@ impl Synth {
             // one-shots
             let mut shots = 0.0;
             for v in self.voices.iter_mut() { if v.live { shots += Self::voice_sample(v, n, rate); } }
-            let y = ((x + shots) * 0.9).tanh() * self.master;
+            self.vol_s += (self.volume - self.vol_s) * a;
+            if self.volume == 0.0 && self.vol_s < 1e-4 { self.vol_s = 0.0; }
+            let y = ((x + shots) * 0.9).tanh() * self.master * self.vol_s;
             *o = if y.is_finite() { y.clamp(-1.0, 1.0) } else { 0.0 };
         }
     }
