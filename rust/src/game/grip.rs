@@ -7,10 +7,14 @@ use super::terrain::Terrain;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SurfaceGrip { pub mu: f32, pub lateral: f32, pub rolling: f32 }
 
+/// How a surface's dust looks and how much of it the wheels throw (see `game/dust.rs`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DustSpec { pub color: [f32; 3], pub roll: f32, pub slide: f32, pub size: f32, pub life: f32 }
+
 /// The numbers of `rust/surfaces.json`: one grip per surface (gravel's `mu` is the packed value), the loose gravel's
 /// own `mu` and how fast the wheels pack it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct GripTable { surfaces: [SurfaceGrip; 7], pub gravel_loose_mu: f32, pub wear_per_metre: f32 }
+pub struct GripTable { surfaces: [SurfaceGrip; 7], dust: [DustSpec; 7], pub gravel_loose_mu: f32, pub wear_per_metre: f32, pub dust_cap_normal: usize, pub dust_cap_lots: usize, pub wind_speed: f32 }
 
 /// The embedded default file.
 pub const EMBEDDED: &str = include_str!("../../surfaces.json");
@@ -34,11 +38,25 @@ impl GripTable {
         let (loose, packed) = (num(gravel, "gravel", "mu_loose", 0.1, 2.0)?, num(gravel, "gravel", "mu_packed", 0.1, 2.0)?);
         let gravel_grip = SurfaceGrip { mu: packed, lateral: num(gravel, "gravel", "lateral", 0.1, 2.0)?, rolling: num(gravel, "gravel", "rolling", 0.1, 10.0)? };
         let wear = num(section("loose_layer")?, "loose_layer", "wear_per_metre", 0.0, 5.0)?;
+        let dust_of = |name: &str| -> Result<DustSpec, String> {
+            let o = section(name)?.get("dust").filter(|d| d.is_object()).ok_or_else(|| format!("{name}: missing object \"dust\""))?;
+            let ctx = format!("{name}.dust");
+            let col = o.get("color").and_then(|c| c.as_array()).filter(|c| c.len() == 3).ok_or_else(|| format!("{ctx}: \"color\" must be three numbers"))?;
+            let mut color = [0.0f32; 3];
+            for (i, c) in col.iter().enumerate() { let x = c.as_f64().filter(|x| (0.0..=1.0).contains(x)).ok_or_else(|| format!("{ctx}: \"color\" values must be between 0 and 1"))?; color[i] = x as f32; }
+            Ok(DustSpec { color, roll: num(o, &ctx, "roll", 0.0, 1.0)?, slide: num(o, &ctx, "slide", 0.0, 2.0)?, size: num(o, &ctx, "size", 0.2, 3.0)?, life: num(o, &ctx, "life", 0.3, 6.0)? })
+        };
+        let dust_top = section("dust")?;
+        let cap = |key: &str| -> Result<usize, String> { Ok(num(dust_top, "dust", key, 0.0, 4096.0)? as usize) };
         Ok(GripTable {
             surfaces: [plain("grass")?, plain("dirt")?, plain("sand")?, plain("rock")?, gravel_grip, plain("asphalt")?, plain("water")?],
+            dust: [dust_of("grass")?, dust_of("dirt")?, dust_of("sand")?, dust_of("rock")?, dust_of("gravel")?, dust_of("asphalt")?, dust_of("water")?],
             gravel_loose_mu: loose, wear_per_metre: wear,
+            dust_cap_normal: cap("cap_normal")?, dust_cap_lots: cap("cap_lots")?, wind_speed: num(dust_top, "dust", "wind_speed", 0.0, 20.0)?,
         })
     }
+
+    pub fn dust(&self, s: Surface) -> DustSpec { self.dust[index(s)] }
 
     /// The grip of a surface; `loose` (0 packed .. 1 loose, only used on gravel) interpolates the gravel grip.
     pub fn grip(&self, s: Surface, loose: f32) -> SurfaceGrip {

@@ -87,3 +87,18 @@ fn stage(len: f32) -> RoadNet {
     assert_eq!(table(), before);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test] fn the_dust_numbers_are_parsed_and_checked() {
+    let t = GripTable::from_json(EMBEDDED).unwrap();
+    let g = t.dust(Surface::Gravel); let a = t.dust(Surface::Asphalt); let s = t.dust(Surface::Sand); let gr = t.dust(Surface::Grass);
+    assert!(g.roll > 0.3 && a.roll == 0.0 && a.slide > 0.0 && a.slide < g.slide, "tarmac only smokes when sliding");
+    assert!(s.roll > g.roll && s.size > g.size && s.life > g.life && gr.roll < 0.15, "sand is the dustiest, grass barely");
+    for k in [Surface::Grass, Surface::Dirt, Surface::Sand, Surface::Rock, Surface::Gravel, Surface::Asphalt, Surface::Water] {
+        let d = t.dust(k);
+        assert!(d.color.iter().all(|c| (0.0..=1.0).contains(c)) && (0.0..=1.0).contains(&d.roll) && (0.0..=2.0).contains(&d.slide) && (0.2..=3.0).contains(&d.size) && (0.3..=6.0).contains(&d.life), "{k:?}");
+    }
+    assert_eq!((t.dust_cap_normal, t.dust_cap_lots), (400, 800));
+    assert!((t.wind_speed - 2.5).abs() < 1e-6);
+    let e = GripTable::from_json(&EMBEDDED.replace("\"life\": 2.6", "\"life\": 60.0")).unwrap_err(); assert!(e.contains("gravel") && e.contains("life"), "{e}");
+    let e = GripTable::from_json(&EMBEDDED.replace("\"cap_normal\": 400,", "")).unwrap_err(); assert!(e.contains("cap_normal"), "{e}");
+}
