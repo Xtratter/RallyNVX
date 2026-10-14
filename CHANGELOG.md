@@ -2,11 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
-## 2.18.0 - stage relief
+## 2.18.0 - stage relief and autopilot
 
 - Added: crests and jumps on the special stage (series of 3-5, 0.6-2 m high, a long take-off and a short landing side; none in tight bends, near the road ends or on a causeway)
 - Added: ditches along both road edges (deeper on the stage), a 0.8 m loose gravel verge and rocks 4-8 m from the stage
 - Added: `rust/roads.json` holds all these numbers; a `roads.json` next to the profile or `RAYTRACE_ROADS` overrides them without a rebuild
+- Added: the Autopilot button (beside Reset and New level): it joins the special stage from anywhere, drives the least-curvature line at the speed the grip allows and stops at the finish; any touch of the controls hands control back; numbers in `rust/autopilot.json`
 
 ## 2.17.0 - tyre dust
 

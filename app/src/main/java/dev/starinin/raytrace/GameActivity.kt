@@ -30,6 +30,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private val handler = Handler(Looper.getMainLooper())
     private var running = false
     private var handbrake = false
+    private var autopilotOn = false
+    private var autopilotBtn: View? = null
     private var seed = 0L
     private lateinit var audio: AudioEngine
     private var profile = ""
@@ -38,6 +40,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         override fun run() {
             val s = Native.gameStats()
             hud.text = (if (s[27] > 0.5f) t("Raster (auto) · ", "Растр (авто) · ") else "") + "${s[1].toInt()} km/h" + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}" + (if (s[26] > 0.5f) " · " + t("hybrid", "гибрид") else "") + " · " + arrayOf(t("grass", "трава"), t("dirt", "грунт"), t("sand", "песок"), t("rock", "скала"), t("gravel", "гравий"), t("asphalt", "асфальт"), t("water", "вода")).getOrElse(s[28].toInt()) { "" }
+            if ((s[29] > 0.5f) != autopilotOn) { autopilotOn = s[29] > 0.5f; showAutopilot() }   // it switches itself off at the finish
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
         }
@@ -60,7 +63,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             sv.holder.setFixedSize((dm.widthPixels * scale).toInt().coerceAtLeast(2), (dm.heightPixels * scale).toInt().coerceAtLeast(2))
         }
         root.addView(sv, FrameLayout.LayoutParams(-1, -1))
-        drive = DriveControls(this).also { it.onChange = { thr, steer, brake, amt -> carThr = thr; carSteer = steer; carBrake = brake; carAmt = amt; sendInput() } }
+        drive = DriveControls(this).also { it.onChange = { thr, steer, brake, amt -> if (autopilotOn && (thr != 0f || steer != 0f || brake)) setAutopilot(false); carThr = thr; carSteer = steer; carBrake = brake; carAmt = amt; sendInput() } }
         drive?.onCamera = { dx, dy -> if (running) Native.gameCamera(dx * 0.006f, -dy * 0.004f) }   // drag right = the camera swings round, drag down = lower
         drive?.onCameraUp = { if (running) Native.gameCameraUp() }
         root.addView(drive, FrameLayout.LayoutParams(-1, -1))
@@ -70,14 +73,15 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             M3Widgets.button(this, label, M3Widgets.ButtonKind.TONAL, onClick).also {
                 root.addView(it, FrameLayout.LayoutParams(px(w), px(48f), gravity).apply { setMargins(0, px(top), px(end), 0) })
             }
-        button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { Native.gameReset() }
-        button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
+        button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { autopilotOn = false; showAutopilot(); Native.gameReset() }
+        button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { autopilotOn = false; showAutopilot(); seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
+        autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, 284f) { setAutopilot(!autopilotOn) }
         button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
             handbrakeBtn = this
             applyControlLayout()
             setOnTouchListener { _, e ->
                 when (e.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { handbrake = true; sendInput() }
+                    MotionEvent.ACTION_DOWN -> { if (autopilotOn) setAutopilot(false); handbrake = true; sendInput() }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { handbrake = false; sendInput() }
                 }
                 true
@@ -103,6 +107,16 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
 
     private fun label(text: String, size: Float = 16f) = TextView(this).apply { this.text = text; textSize = size; setTextColor(M3.TEXT); gravity = Gravity.CENTER }
 
+    /** Turns the autopilot on or off (any touch of the wheel or pedals turns it off). */
+    private fun setAutopilot(on: Boolean) {
+        if (!running) return
+        autopilotOn = on; Native.gameAutopilot(on); showAutopilot()
+    }
+    private fun showAutopilot() {
+        (autopilotBtn as? android.widget.TextView)?.text = if (autopilotOn) t("● Autopilot", "● Автопилот") else t("Autopilot", "Автопилот")
+        autopilotBtn?.alpha = if (autopilotOn) 1f else 0.85f
+    }
+
     private fun sendInput() {
         if (!running) return
         Native.gameInput(carThr, carSteer, carBrake, handbrake, carAmt)
@@ -121,6 +135,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
         intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
         intent.getIntExtra("road", 0).let { if (it > 0) Native.gameOnRoad(it) }   // debug/test: start on a road
+        intent.getIntExtra("autopilot", 0).let { if (it > 0) handler.postDelayed({ setAutopilot(true) }, 1500) }   // debug/test: the autopilot drives
         // debug/test: a camera orbit (radians) and a held throttle (after 1.5 s) without touching the screen
         val camYaw = intent.getFloatExtra("camyaw", 0f); val camPitch = intent.getFloatExtra("campitch", 0f)
         if (camYaw != 0f || camPitch != 0f) Native.gameCamera(camYaw, camPitch)
