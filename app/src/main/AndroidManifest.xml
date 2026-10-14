@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.vulkan.version" android:version="0x400003" android:required="true" />
-    <application android:label="RallyNVX" android:allowBackup="false" android:theme="@android:style/Theme.Material.NoActionBar">
+    <application android:label="RallyNVX" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="false" android:theme="@android:style/Theme.Material.NoActionBar">
         <activity android:name=".StartActivity" android:exported="true"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode|density|keyboard|navigation|fontScale|layoutDirection|locale">

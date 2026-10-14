@@ -108,3 +108,28 @@ def render(name, bg, fg):
 
 for n, (bg, fg) in VARIANTS.items(): render(n, bg, fg)
 print("drawn", list(VARIANTS))
+
+
+# ---- the chosen icon: Android resources (adaptive layers + legacy PNGs) ----
+def android(res_dir, name="e_wordmark"):
+    bg, fg = VARIANTS[name]
+    # the adaptive foreground keeps the car and the word inside the 66 dp safe zone: the artwork is scaled about the centre
+    fg_adaptive = fg.replace('font-size="15"', 'font-size="13.5"').replace('y="96"', 'y="93"')
+    fg_adaptive = f'<g transform="translate(54 54) scale(0.66) translate(-54 -54)">{fg_adaptive}</g>'
+    sizes = {"mdpi": (48, 108), "hdpi": (72, 162), "xhdpi": (96, 216), "xxhdpi": (144, 324), "xxxhdpi": (192, 432)}
+    tmp = os.path.join(OUT, "android_tmp"); os.makedirs(tmp, exist_ok=True)
+    layers = {"bg": svg(108, bg), "fg": svg(108, fg_adaptive), "full": svg(108, bg + fg_adaptive)}
+    for k, v in layers.items(): open(os.path.join(tmp, k + ".svg"), "w").write(v)
+    for dens, (legacy, adaptive) in sizes.items():
+        d = os.path.join(res_dir, f"mipmap-{dens}"); os.makedirs(d, exist_ok=True)
+        for k, out, px in (("bg", "ic_launcher_background.png", adaptive), ("fg", "ic_launcher_foreground.png", adaptive), ("full", "ic_launcher.png", legacy)):
+            subprocess.run(["rsvg-convert", "-w", str(px), "-h", str(px), os.path.join(tmp, k + ".svg"), "-o", os.path.join(d, out)], check=True)
+        # the round legacy icon: the same picture in a circle
+        subprocess.run(["magick", os.path.join(d, "ic_launcher.png"), "(", "-size", f"{legacy}x{legacy}", "xc:none", "-fill", "white", "-draw", f"circle {legacy / 2},{legacy / 2} {legacy / 2},0", ")", "-compose", "DstIn", "-composite", os.path.join(d, "ic_launcher_round.png")], check=True)
+    any_dir = os.path.join(res_dir, "mipmap-anydpi-v26"); os.makedirs(any_dir, exist_ok=True)
+    xml = '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n    <background android:drawable="@mipmap/ic_launcher_background"/>\n    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>\n</adaptive-icon>\n'
+    for n in ("ic_launcher.xml", "ic_launcher_round.xml"): open(os.path.join(any_dir, n), "w").write(xml)
+    subprocess.run(["rsvg-convert", "-w", "512", "-h", "512", os.path.join(tmp, "full.svg"), "-o", os.path.join(OUT, "store_icon.png")], check=True)
+
+if len(sys.argv) > 2 and sys.argv[2] == "android":
+    android(sys.argv[3])
