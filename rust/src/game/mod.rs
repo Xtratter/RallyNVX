@@ -2,6 +2,7 @@
 pub mod app;
 pub mod airgen;
 pub mod daylight;
+pub mod rendermode;
 pub mod scatter;
 pub mod airrun;
 pub mod api;
