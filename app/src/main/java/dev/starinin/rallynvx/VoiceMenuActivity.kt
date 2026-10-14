@@ -55,10 +55,23 @@ class VoiceMenuActivity : Activity() {
             col.addView(TextView(this).apply { text = if (lang == "ru") "Русский" else "English"; textSize = 18f; typeface = M3.medium; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(px(600f), -2).apply { topMargin = px(18f) })
             row(t("System voice", "Системный голос"), t("the speech synthesizer of the device", "синтезатор речи устройства"), chosen[lang] == "system",
                 { speakSystem(lang) }, { Controls.setVoice(this, lang, "system") })
-            for (v in voices.filter { it.lang == lang }) row(v.name, "${v.license} · ${v.source}", chosen[lang] == v.id, { tts?.stop(); player.play(v.id, sample) }, { Controls.setVoice(this, lang, v.id) })
+            val ownCount = OwnVoice.count(this, lang, clipIds(lang))
+            row(t("My voice", "Мой голос"), t("recorded phrases: ", "записано фраз: ") + "$ownCount / ${clipIds(lang).size}", chosen[lang] == VoicePlayer.OWN,
+                { tts?.stop(); player.play(VoicePlayer.OWN, sample, lang = lang) }, { Controls.setVoice(this, lang, VoicePlayer.OWN) })
+            col.addView(M3Widgets.button(this, t("Record my voice…", "Записать свой голос…"), M3Widgets.ButtonKind.TONAL) {
+                startActivity(android.content.Intent(this, RecordVoiceActivity::class.java).putExtra("lang", lang))
+            }, LinearLayout.LayoutParams(px(260f), px(44f)).apply { topMargin = px(6f) })
+            for (v in voices.filter { it.lang == lang }) row(v.name, "${v.license} · ${v.source}", chosen[lang] == v.id, { tts?.stop(); player.play(v.id, sample, lang = v.lang) }, { Controls.setVoice(this, lang, v.id) })
         }
         col.addView(M3Widgets.button(this, t("Back", "Назад"), M3Widgets.ButtonKind.FILLED) { finish() }, LinearLayout.LayoutParams(px(240f), px(52f)).apply { topMargin = px(22f) })
     }
+
+    override fun onResume() { super.onResume(); if (::col.isInitialized) build() }
+
+    private fun clipIds(lang: String): List<String> = try {
+        val o = org.json.JSONObject(assets.open("voices/clips.json").bufferedReader().use { it.readText() }).getJSONObject(lang)
+        o.keys().asSequence().toList()
+    } catch (e: Exception) { emptyList() }
 
     private fun speakSystem(lang: String) {
         player.stop()

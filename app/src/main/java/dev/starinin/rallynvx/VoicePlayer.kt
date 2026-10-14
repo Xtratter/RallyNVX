@@ -10,6 +10,7 @@ import org.json.JSONObject
 class Voice(val id: String, val lang: String, val name: String, val license: String, val source: String)
 
 class VoicePlayer(private val ctx: Context) {
+    companion object { const val OWN = "own" }
     private val cache = HashMap<String, ShortArray>()
     private var track: AudioTrack? = null
 
@@ -19,14 +20,21 @@ class VoicePlayer(private val ctx: Context) {
         (0 until arr.length()).map { arr.getJSONObject(it).let { o -> Voice(o.getString("id"), o.getString("lang"), o.getString("name"), o.getString("license"), o.getString("source")) } }
     } catch (e: Exception) { emptyList() }
 
-    private fun clip(voice: String, id: String): ShortArray? = cache.getOrPut("$voice/$id") {
-        try { WavReader.pcm16(ctx.assets.open("voices/$voice/$id.wav").use { it.readBytes() }) ?: ShortArray(0) } catch (e: Exception) { ShortArray(0) }
-    }.takeIf { it.isNotEmpty() }
+    /** `voice` "own" is the player's recording (files, per language), any other id is a studio voice of the assets. */
+    private fun clip(voice: String, id: String, lang: String): ShortArray? {
+        if (voice == OWN) return OwnVoice.read(ctx, lang, id)?.takeIf { it.isNotEmpty() }
+        return cache.getOrPut("$voice/$id") {
+            try { WavReader.pcm16(ctx.assets.open("voices/$voice/$id.wav").use { it.readBytes() }) ?: ShortArray(0) } catch (e: Exception) { ShortArray(0) }
+        }.takeIf { it.isNotEmpty() }
+    }
+
+    /** True when every clip of the call exists in this voice (the own voice may miss phrases). */
+    fun canPlay(voice: String, lang: String, clips: List<String>) = clips.isNotEmpty() && clips.all { it == "-" || clip(voice, it, lang) != null }
 
     /** Plays the clips one after another (a call replaces the one still playing); the volume is the media volume. */
-    fun play(voice: String, clips: List<String>, gapMs: Int = 60) {
+    fun play(voice: String, clips: List<String>, gapMs: Int = 60, lang: String = "en") {
         // the id "-" is a pause between calls
-        val parts = clips.mapNotNull { if (it == "-") ShortArray(16 * 450) else clip(voice, it) }
+        val parts = clips.mapNotNull { if (it == "-") ShortArray(16 * 450) else clip(voice, it, lang) }
         if (parts.isEmpty()) return
         val gap = ShortArray(16 * gapMs)
         val pcm = ShortArray(parts.sumOf { it.size } + gap.size * (parts.size - 1))

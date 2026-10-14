@@ -198,7 +198,7 @@ For comparison, the prototype this app grew out of ran at **7.1 fps** (356x767, 
 
 ## Co-driver voices
 
-The studio voices are neural voices rendered with [Piper](https://github.com/rhasspy/piper) from free datasets: LJ Speech (public domain), Kathleen (CC0), Cori (public domain, LibriVox), Denis and Dmitri (CC0 data, OHF voice datasets), and under CC BY 4.0: Alba (University of Edinburgh), LibriTTS-R, VCTK (University of Edinburgh) and ARU. See `tools/voices/`.
+The studio voices are neural voices rendered with [Piper](https://github.com/rhasspy/piper) from free datasets: Dmitri (CC0 data, OHF voice datasets) and, under CC BY 4.0, Alba (University of Edinburgh) and LibriTTS-R. See `tools/voices/`.
 
 ## License
 

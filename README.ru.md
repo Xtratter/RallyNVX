@@ -196,7 +196,7 @@ export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
 
 ## Голоса штурмана
 
-Студийные голоса — нейросетевые голоса, сделанные в [Piper](https://github.com/rhasspy/piper) по свободным наборам данных: LJ Speech (общественное достояние), Kathleen (CC0), Cori (общественное достояние, LibriVox), Denis и Dmitri (данные CC0, OHF voice datasets), и по CC BY 4.0: Alba (Эдинбургский университет), LibriTTS-R, VCTK (Эдинбургский университет) и ARU. См. `tools/voices/`.
+Студийные голоса — нейросетевые голоса, сделанные в [Piper](https://github.com/rhasspy/piper) по свободным наборам данных: Dmitri (данные CC0, OHF voice datasets) и по CC BY 4.0 Alba (Эдинбургский университет) и LibriTTS-R. См. `tools/voices/`.
 
 ## Лицензия
 

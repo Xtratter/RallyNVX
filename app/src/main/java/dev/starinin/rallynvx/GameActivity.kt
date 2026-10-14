@@ -54,6 +54,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var tts: android.speech.tts.TextToSpeech? = null
     private var voicePlayer: VoicePlayer? = null
     private var studioVoice = "system"
+    private var voiceLang = "en"
     private var ttsReady = false
 
     private val tick = object : Runnable {
@@ -123,10 +124,12 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             noteBar = overlay(20f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)) }
             root.addView(noteBar, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = px(70f); leftMargin = px(16f) })
             val lang = if (java.util.Locale.getDefault().language == "ru") "ru" else "en"
+            voiceLang = lang
             studioVoice = Controls.voice(this, lang)
             if (Controls.paceMode(this) == 2 && studioVoice != "system") voicePlayer = VoicePlayer(this)
-            if (Controls.paceMode(this) == 2 && (studioVoice == "system" || voicePlayer?.voices()?.none { it.id == studioVoice } == true)) {   // the system speech synthesizer in the device's language
-                studioVoice = "system"
+            // the system synthesizer speaks when it is chosen, when the studio voice is gone, and for the calls the own voice lacks
+            if (Controls.paceMode(this) == 2 && (studioVoice == "system" || studioVoice == VoicePlayer.OWN || voicePlayer?.voices()?.none { it.id == studioVoice } == true)) {   // the system speech synthesizer in the device's language
+                if (studioVoice != VoicePlayer.OWN) studioVoice = "system"
                 val ru = lang == "ru"
                 tts = android.speech.tts.TextToSpeech(this) { st ->
                     if (st == android.speech.tts.TextToSpeech.SUCCESS) {
@@ -217,7 +220,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             if (text.isNotEmpty()) {
                 noteBar?.text = text; noteBar?.visibility = View.VISIBLE; noteUntil = System.currentTimeMillis() + 6000
                 if (Controls.paceMode(this) == 2) {
-                    if (studioVoice != "system") voicePlayer?.play(studioVoice, Native.gameNoteClips().split(",").filter { it.isNotEmpty() })
+                    val clips = Native.gameNoteClips().split(",").filter { it.isNotEmpty() }
+                    if (studioVoice != "system" && voicePlayer?.canPlay(studioVoice, voiceLang, clips) == true) voicePlayer?.play(studioVoice, clips, lang = voiceLang)
                     else if (ttsReady) tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "note$note")
                 }
             }
