@@ -27,9 +27,9 @@ const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 struct Uni {
     vp: [f32; 16], light_vp: [f32; 16], inv_vp: [f32; 16],
     cam: [f32; 4], sun: [f32; 4], fog: [f32; 4], sky_top: [f32; 4], sky_hor: [f32; 4], sun_col: [f32; 4],
-    mode: [f32; 4], cam_tile: [f32; 4],
+    mode: [f32; 4], cam_tile: [f32; 4], moon: [f32; 4], disc: [f32; 4],
 }
-const _: () = assert!(std::mem::size_of::<Uni>() == 320);
+const _: () = assert!(std::mem::size_of::<Uni>() == 352);
 
 /// One instance: model matrix, per-axis scale (for normals), colour. Matches the instance vertex layout (96 bytes).
 #[repr(C)]
@@ -370,7 +370,9 @@ impl Raster {
             fog: [1.0 / 330.0, wv.time, 0., 0.], sky_top: [wv.daylight.sky_top[0], wv.daylight.sky_top[1], wv.daylight.sky_top[2], 0.],
             sky_hor: [wv.daylight.sky_hor[0], wv.daylight.sky_hor[1], wv.daylight.sky_hor[2], 0.],
             sun_col: [wv.daylight.sun_col[0], wv.daylight.sun_col[1], wv.daylight.sun_col[2], 0.],
-            mode: [self.hybrid as u8 as f32, 0., 0., 0.], cam_tile: [cx as f32, cz as f32, 0., 0.] };
+            mode: [self.hybrid as u8 as f32, 0., 0., 0.], cam_tile: [cx as f32, cz as f32, 0., 0.],
+            moon: [wv.daylight.moon.x, wv.daylight.moon.y, wv.daylight.moon.z, 0.],
+            disc: [wv.daylight.sun_disc.x, wv.daylight.sun_disc.y, wv.daylight.sun_disc.z, wv.daylight.night] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // a new level invalidates every cache keyed by tile coordinates

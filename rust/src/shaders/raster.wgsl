@@ -1,7 +1,7 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
-    mode: vec4<f32>, cam_tile: vec4<f32>,
+    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
@@ -11,6 +11,14 @@ struct U {
 @group(0) @binding(3) var mat_tex: texture_2d_array<f32>;
 @group(0) @binding(4) var mat_smp: sampler;
 
+// integer hash (PCG3D): no sin() precision problems on mobile GPUs
+fn hash3(p: vec3<f32>) -> f32 {
+    var v = bitcast<vec3<u32>>(vec3<i32>(floor(p))) * 1664525u + vec3<u32>(1013904223u);
+    v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+    v = v ^ (v >> vec3<u32>(16u));
+    v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+    return f32(v.x >> 8u) / 16777216.0;
+}
 fn hash2(p: vec2<f32>) -> f32 { return fract(sin(dot(p, vec2<f32>(12.9898, 78.233))) * 43758.5453); }
 
 fn sky_gradient(dir: vec3<f32>) -> vec3<f32> {
@@ -140,7 +148,7 @@ fn shade_lite(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
 fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: f32, sh: f32) -> vec3<f32> {
     let sun = normalize(u.sun.xyz);
     let diff = max(dot(n, sun), 0.0) * sh;
-    let amb = mix(vec3<f32>(0.20, 0.22, 0.26), u.sky_top.rgb * 0.55, n.y * 0.5 + 0.5);
+    let amb = mix(vec3<f32>(0.20, 0.22, 0.26) * mix(1.0, 0.12, u.disc.w), u.sky_top.rgb * 0.55, n.y * 0.5 + 0.5);
     var c = albedo * (u.sun_col.rgb * diff + amb);
     if (sharp > 0.0) {
         let v = normalize(u.cam.xyz - wp);
@@ -317,23 +325,60 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     return o;
 }
 @fragment fn fs_sky(i: SOut) -> @location(0) vec4<f32> {
-    let ndc = vec4<f32>(i.uv.x * 2.0 - 1.0, 1.0 - i.uv.y * 2.0, 1.0, 1.0);
+    let ndc = vec4<f32>(i.uv.x * 2.0 - 1.0, i.uv.y * 2.0 - 1.0, 1.0, 1.0);   // uv.y = 1 at the top of the screen (the sky was mirrored vertically before)
     let w = u.inv_vp * ndc;
     let dir = normalize(w.xyz / w.w - u.cam.xyz);
     var c = sky_gradient(dir);
-    let sd = normalize(u.sun.xyz);
-    let s = max(dot(dir, sd), 0.0);
+    let night = u.disc.w;
+    let sd = normalize(u.disc.xyz);
+    let md = normalize(u.moon.xyz);
+    let horizon = smoothstep(-0.02, 0.03, dir.y);
     // clouds: noise on a plane above the viewer, drifting with the wind
+    var cov = 0.0;
     if (dir.y > 0.02) {
         let p = dir.xz / (dir.y + 0.12) * 0.35 + vec2<f32>(u.fog.y * 0.012, u.fog.y * 0.004);
         let n = fbm2(p);
-        let cov = smoothstep(0.50, 0.78, n) * smoothstep(0.02, 0.25, dir.y);
+        cov = smoothstep(0.50, 0.78, n) * smoothstep(0.02, 0.25, dir.y) * mix(1.0, 0.4, night);
         let lit_side = clamp(0.55 + 0.45 * (1.0 - n), 0.0, 1.0);
         let sun_tint = normalize(u.sun_col.rgb + vec3<f32>(0.001)) * 1.7;
-        let cloud = mix(vec3<f32>(0.62, 0.65, 0.72), vec3<f32>(1.0, 0.98, 0.95) * sun_tint, lit_side);
+        let cloud = mix(vec3<f32>(0.62, 0.65, 0.72), vec3<f32>(1.0, 0.98, 0.95) * sun_tint, lit_side) * mix(1.0, 0.06, night);
         c = mix(c, cloud, cov * 0.92);
     }
-    c = c + u.sun_col.rgb * 0.4 * (pow(s, 600.0) * 8.0 + pow(s, 12.0) * 0.18);
+    // stars: a hashed point field on the sphere, twinkling, only in the night and in clear sky
+    if (night > 0.2 && dir.y > 0.0) {
+        let g = dir * 110.0;
+        let q = floor(g);
+        let h = hash3(q);
+        if (h > 0.985) {
+            let centre = vec3<f32>(hash3(q + 17.0), hash3(q + 31.0), hash3(q + 53.0)) * 0.6 + 0.2;
+            let d = length(fract(g) - centre);
+            let mag = 0.35 + 0.65 * (h - 0.985) / 0.015;
+            let tw = 0.75 + 0.25 * sin(u.fog.y * 3.0 + h * 400.0);
+            let star = smoothstep(0.17, 0.0, d) * mag * tw;
+            c = c + vec3<f32>(0.85, 0.9, 1.0) * star * 1.8 * smoothstep(0.2, 0.9, night) * (1.0 - cov) * smoothstep(0.0, 0.18, dir.y);
+        }
+    }
+    // the moon: a disc whose lit side faces the sun, with a soft glow
+    let sm = dot(dir, md);
+    let rm = 0.0175;                                       // 1 degree
+    let rgt = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), md));
+    let upv = cross(md, rgt);
+    let pm = vec2<f32>(dot(dir, rgt), dot(dir, upv)) / rm;
+    let r2 = dot(pm, pm);
+    let shown = horizon * (1.0 - 0.9 * cov);
+    if (sm > 0.0 && r2 < 1.0) {
+        let nrm = rgt * pm.x + upv * pm.y - md * sqrt(max(1.0 - r2, 0.0));
+        let lit_m = clamp(dot(nrm, sd) * 2.5, 0.0, 1.0);
+        let maria = 0.85 + 0.15 * vnoise2(pm * 3.0 + 7.0);
+        let disc_m = vec3<f32>(0.86, 0.88, 0.95) * (0.05 + 0.95 * lit_m) * maria * 1.8;
+        c = mix(c, disc_m, smoothstep(1.0, 0.92, sqrt(r2)) * shown);
+    }
+    c = c + vec3<f32>(0.35, 0.45, 0.75) * pow(max(sm, 0.0), 250.0) * 0.5 * shown;
+    // the sun: disc, glow, red near the horizon, hidden below it
+    let s = max(dot(dir, sd), 0.0);
+    let sun_c = mix(vec3<f32>(1.0, 0.95, 0.80), vec3<f32>(1.0, 0.42, 0.14), 1.0 - smoothstep(0.0, 0.35, sd.y)) * smoothstep(-0.14, 0.0, sd.y);
+    let sun_disc = 1.0 - smoothstep(1.7e-4, 2.3e-4, 1.0 - s);
+    c = c + sun_c * (sun_disc * 14.0 * horizon + pow(s, 400.0) * 3.0 + pow(s, 12.0) * 0.12 + pow(s, 3.0) * 0.04);
     return vec4<f32>(finish(c), 1.0);
 }
 

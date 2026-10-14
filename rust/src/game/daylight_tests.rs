@@ -58,8 +58,8 @@ fn lum(c: [f32; 3]) -> f32 { 0.3 * c[0] + 0.6 * c[1] + 0.1 * c[2] }
 #[test] fn the_night_factor_and_the_sky_follow_the_sun() {
     let noon = daylight_at_phase(0.5); let mid = daylight_at_phase(0.0);
     assert!(noon.night < 1e-3 && mid.night > 0.99);
-    assert!(lum(mid.sky_hor) < 0.15 * lum(noon.sky_hor) && lum(mid.sky_top) < 0.05, "night sky is dark");
-    assert!(lum(mid.sun_col) > 0.1 && lum(mid.sun_col) < 0.6, "moonlight is dim but there: {}", lum(mid.sun_col));
+    assert!(lum(mid.sky_hor) < 0.15 * lum(noon.sky_hor) && lum(mid.sky_top) < 0.02, "night sky is dark");
+    assert!(lum(mid.sun_col) > 0.1 && lum(mid.sun_col) < 0.4, "moonlight is dim but there: {}", lum(mid.sun_col));
     assert!(mid.sun.y > 0.0, "the light at night is the moon above the horizon");
     assert!((mid.sun - mid.moon).len() < 1e-4);
 }

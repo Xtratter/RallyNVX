@@ -12,7 +12,7 @@ pub const AMP_DEG: f32 = 55.0;
 /// A level starts with the sun between these elevations: never at night.
 pub const START_MIN_DEG: f32 = 8.0;
 pub const START_MAX_DEG: f32 = 50.0;
-const MOON_COL: [f32; 3] = [0.36, 0.44, 0.62];
+const MOON_COL: [f32; 3] = [0.22, 0.28, 0.42];
 
 #[derive(Clone, Copy, Debug)]
 pub struct Daylight {
@@ -74,11 +74,11 @@ pub fn daylight_at(phase: f32, az0: f32, moon_off: f32) -> Daylight {
     let t1 = smooth(0.0, -6.0, e_deg);
     top = mix(top, [0.10, 0.12, 0.30], t1); hor = mix(hor, [0.55, 0.28, 0.30], t1);
     let t2 = smooth(-6.0, -16.0, e_deg);
-    top = mix(top, [0.012, 0.02, 0.05], t2); hor = mix(hor, [0.03, 0.05, 0.10], t2);
+    top = mix(top, [0.004, 0.007, 0.02], t2); hor = mix(hor, [0.012, 0.02, 0.045], t2);
     Daylight { sun, sun_col, sky_top: top, sky_hor: hor, sun_disc, moon, night: smooth(4.0, -14.0, e_deg) }
 }
 
-/// Debug/test clock: a fixed start phase for every level (bits of an f32; `u32::MAX` = none). Set over JNI only.
+/// Debug/test clock: a fixed phase (the clock stands still) for every level (bits of an f32; `u32::MAX` = none). Set over JNI only.
 static DEBUG_PHASE: AtomicU32 = AtomicU32::new(u32::MAX);
 /// `Some(phase)` makes every level start at `phase` (0 midnight .. 1); `None` (or a negative/NaN value) clears it.
 pub fn set_debug_phase(p: Option<f32>) {
@@ -89,7 +89,8 @@ fn debug_phase() -> Option<f32> { let b = DEBUG_PHASE.load(Ordering::Relaxed); i
 
 /// Daylight `t` seconds into a level; the start phase, the sun's side and the moon's phase come from the level seed.
 pub fn daylight(seed: u64, t: f32) -> Daylight {
-    let p0 = debug_phase().unwrap_or_else(|| start_phase(seed));
+    // the debug phase also freezes the clock, so test screenshots are exactly reproducible
+    let (p0, t) = match debug_phase() { Some(p) => (p, 0.0), None => (start_phase(seed), t) };
     daylight_at(((p0 + t / DAY_SECONDS) % 1.0 + 1.0) % 1.0, azimuth0(seed), moon_offset(seed))
 }
 
