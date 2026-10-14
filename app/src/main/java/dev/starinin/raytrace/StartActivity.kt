@@ -41,6 +41,9 @@ class StartActivity : Activity() {
         add(M3Widgets.button(this, t("Scenes", "Сцены"), M3Widgets.ButtonKind.TONAL) {
             startActivity(Intent(this, MainActivity::class.java))
         })
+        add(M3Widgets.button(this, t("Garage", "Гараж"), M3Widgets.ButtonKind.TONAL) {
+            startActivity(Intent(this, GarageActivity::class.java))
+        })
         add(M3Widgets.button(this, t("Settings", "Настройки"), M3Widgets.ButtonKind.TONAL) {
             startActivity(Intent(this, SettingsActivity::class.java))
         })

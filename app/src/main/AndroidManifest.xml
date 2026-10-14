@@ -16,6 +16,9 @@
         <activity android:name=".SettingsActivity" android:exported="false"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode|density|keyboard|navigation|fontScale|layoutDirection|locale" />
+        <activity android:name=".GarageActivity" android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode|density|keyboard|navigation|fontScale|layoutDirection|locale" />
         <activity android:name=".GameActivity" android:exported="false"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode|density|keyboard|navigation|fontScale|layoutDirection|locale" />
