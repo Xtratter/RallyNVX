@@ -96,6 +96,9 @@ mod game {
             // the grip numbers: the embedded surfaces.json unless `surfaces.json` lies next to the profile (tune without a rebuild)
             crate::game::grip::reset_table();
             if let Some(dir) = path.parent() { crate::game::grip::load_override(&dir.join("surfaces.json")); }
+            // the road relief numbers likewise (`roads.json`; used by the next level that is generated)
+            crate::game::roads::cfg::reset_cfg();
+            if let Some(dir) = path.parent() { crate::game::roads::cfg::load_override(&dir.join("roads.json")); }
             self.car = p.selected_spec();
             self.world.swap_car(self.car);   // the free-drive world made in `new` used the default car
             self.profile = Some(p);

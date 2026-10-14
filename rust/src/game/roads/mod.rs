@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use super::math::{v3, V3};
 use super::surface::Surface;
 
+pub mod cfg;
 pub mod gen;
 pub mod path;
 pub mod shape;
