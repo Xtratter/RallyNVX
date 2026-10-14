@@ -25,13 +25,20 @@ fn surface_code(s: crate::game::surface::Surface) -> u8 {
 
 /// Flat state for the UI. `[0]` fps, `[1]` km/h, `[2]` seed (24-bit), `[3]` frame ms, `[16]` money, `[25]` signed forward
 /// speed of the car, km/h, `[26]` hybrid render mode active (0/1), `[27]` fell back from hybrid to raster automatically (0/1),
-/// `[28]` the surface under the car (0 grass, 1 dirt, 2 sand, 3 rock, 4 gravel, 5 asphalt, 6 water), `[29]` the autopilot style plus one while it drives (1 calm, 2 normal, 3 aggressive, 4 custom; 0 off);
+/// `[28]` the surface under the car (0 grass, 1 dirt, 2 sand, 3 rock, 4 gravel, 5 asphalt, 6 water), `[30..41]` the rally run (0 none, 1 countdown, 2 running, 3 finished; time; penalty; countdown digit; stage; next line; lines; last event code, serial and value; assisted; total), `[29]` the autopilot style plus one while it drives (1 calm, 2 normal, 3 aggressive, 4 custom; 0 off);
 /// the other slots are zero (kept so the indices stay put).
 pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, fps: f32, frame_ms: f32, seed: u64) {
     *out = [0.0; STAT_LEN];
     out[0] = fps; out[1] = w.vehicle.vel.len() * 3.6; out[2] = (seed & 0xFF_FFFF) as f32; out[3] = frame_ms; out[16] = money as f32;
     out[28] = surface_code(w.vehicle.surface) as f32;
     out[29] = w.autopilot.as_ref().map_or(0.0, |a| a.style() as f32 + 1.0);
+    if let Some(r) = w.rally.as_ref() {
+        use crate::game::rally::Phase;
+        out[30] = match r.run.phase { Phase::Countdown => 1.0, Phase::Running => 2.0, Phase::Finished => 3.0 };
+        out[31] = r.run.time; out[32] = r.run.penalty; out[33] = r.run.countdown_digit() as f32; out[34] = r.stage as f32;
+        out[35] = r.run.next_line() as f32; out[36] = r.run.line_count() as f32;
+        out[37] = r.event.0 as f32; out[38] = r.event.2 as f32; out[39] = r.event.1; out[40] = if r.run.assisted { 1.0 } else { 0.0 }; out[41] = r.run.total();
+    }
     out[25] = w.vehicle.speed() * 3.6;   // signed: negative while rolling backwards (the brake pedal reverses below 3 km/h)
 }
 
@@ -80,6 +87,8 @@ mod game {
         pub fn camera_release(&mut self) { self.world.cam.set_dragging(false); }
         /// Tyre dust: 0 off, 1 normal, 2 lots.
         pub fn set_dust(&mut self, level: i32) { self.dust_level = level.clamp(0, 2); self.world.dust.set_level(self.dust_level); }
+        /// Rally: stage 0 the special stage, 1 the city loop, -1 leaves the rally mode.
+        pub fn rally(&mut self, stage: i32) { if stage < 0 { self.world.rally_stop(); } else { self.world.rally_start(stage as u32); } }
         pub fn set_autopilot(&mut self, style: i32) { self.world.set_autopilot_style(style); }
         pub fn place_on_road(&mut self, mode: i32) -> bool { self.world.place_on_road(mode) }
         pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }

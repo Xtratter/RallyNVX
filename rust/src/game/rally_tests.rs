@@ -29,6 +29,11 @@ fn go(r: &mut Run) { for _ in 0..80 { r.update(v3(0.0, 0.0, 0.0), DT, None); } a
     assert!(matches!(ev[0], Event::Split { index: 0, .. }) && matches!(ev[1], Event::Split { index: 1, .. }) && matches!(ev[2], Event::Finish { .. }), "{ev:?}");
     let t = r.time; drive(&mut r, 0.0, 310.0, 330.0); assert_eq!(r.time, t, "the clock stops at the finish");
 }
+#[test] fn a_start_line_is_just_passed() {
+    let mut r = Run::new(vec![line(50.0, LineKind::Start), line(100.0, LineKind::Finish)]); go(&mut r); r.drain_events();
+    r.teleported(); drive(&mut r, 0.0, 40.0, 110.0);
+    assert_eq!((r.phase, r.penalty, r.splits.len()), (Phase::Finished, 0.0, 0), "no split, no penalty for the start line");
+}
 #[test] fn the_wrong_side_and_the_wrong_place_do_not_count() {
     let mut r = run(); go(&mut r);
     r.teleported();

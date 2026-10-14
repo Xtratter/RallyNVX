@@ -107,3 +107,26 @@ fn check(r: &Report) {
         assert!(done && flips == 0 && worst < 6.5 && dist > len * 1.8 && dist < len * 2.4, "seed {seed}");
     }
 }
+
+/// A rally stage driven by the autopilot: returns (finished, time, penalty, splits, lines, assisted).
+fn rally_run(seed: u64, stage: u32, style: i32) -> (bool, f32, f32, usize, usize, bool) {
+    let mut w = World::with_roads(seed, VehicleSpec::offroader());
+    assert!(w.rally_start(stage));
+    let lines = w.rally.as_ref().unwrap().run.line_count();
+    for _ in 0..(4.0 * 60.0) as usize { w.step(&Input::default(), 1.0 / 60.0); }
+    assert!(w.set_autopilot_style(style), "the autopilot starts");
+    let mut t = 0.0;
+    while w.rally.as_ref().unwrap().run.phase != crate::game::rally::Phase::Finished && t < 900.0 { w.step(&Input::default(), 1.0 / 60.0); t += 1.0 / 60.0; }
+    let r = w.rally.as_ref().unwrap();
+    (r.run.phase == crate::game::rally::Phase::Finished, r.run.time, r.run.penalty, r.run.splits.len(), lines, r.run.assisted)
+}
+
+#[test] #[ignore] fn the_autopilot_finishes_both_rally_stages_without_penalties() {
+    let hs: Vec<_> = [(21u64, 0u32), (3, 0), (21, 1), (3, 1)].iter().map(|&(s, st)| std::thread::spawn(move || (s, st, rally_run(s, st, 1)))).collect();
+    for h in hs {
+        let (seed, stage, (done, time, penalty, splits, lines, assisted)) = h.join().unwrap();
+        println!("rally seed {seed} stage {stage}: finished {done} time {time:.1}s penalty {penalty} splits {splits}/{lines} assisted {assisted}");
+        assert!(done && penalty == 0.0 && splits + 2 == lines && assisted, "seed {seed} stage {stage}");
+    }
+}
+

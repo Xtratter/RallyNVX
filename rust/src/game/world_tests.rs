@@ -197,3 +197,46 @@ use crate::game::vehicle::VehicleSpec as RoadCar;
     for _ in 0..120 { g.step_garage(1.0 / 60.0); }
     assert!(g.cloud_off != before, "the sky moves in the garage too");
 }
+
+mod rally_world {
+    use super::*;
+    use crate::game::{input::Input, rally::Phase};
+
+    fn world(seed: u64) -> World { World::with_roads(seed, crate::game::vehicle::VehicleSpec::offroader()) }
+
+    #[test] fn the_car_is_held_during_the_countdown_and_released_at_go() {
+        let mut w = world(21);
+        assert!(w.rally_start(0));
+        let go = Input { throttle: 1.0, ..Default::default() };
+        for _ in 0..60 { w.step(&go, 1.0 / 60.0); }   // the car settles on its springs
+        let p0 = w.vehicle.pos;
+        for _ in 0..120 { w.step(&go, 1.0 / 60.0); }
+        assert!((w.vehicle.pos - p0).len() < 0.2, "the car moved {} m during the countdown", (w.vehicle.pos - p0).len());
+        assert_eq!(w.rally.as_ref().unwrap().run.phase, Phase::Countdown);
+        for _ in 0..120 { w.step(&go, 1.0 / 60.0); }
+        assert_eq!(w.rally.as_ref().unwrap().run.phase, Phase::Running);
+        for _ in 0..180 { w.step(&go, 1.0 / 60.0); }
+        assert!((w.vehicle.pos - p0).len() > 3.0, "the car drives after GO");
+    }
+    #[test] fn reset_during_a_run_puts_the_car_on_the_road_with_a_penalty() {
+        let mut w = world(21);
+        assert!(w.rally_start(0));
+        for _ in 0..300 { w.step(&Input::default(), 1.0 / 60.0); }
+        // carry the car 40 m off the road, then press Reset
+        let p = w.vehicle.pos;
+        w.vehicle.pos = v3(p.x + 40.0, p.y + 2.0, p.z + 40.0);
+        w.step(&Input { reset: true, ..Default::default() }, 1.0 / 60.0);
+        let r = w.rally.as_ref().unwrap();
+        assert_eq!(r.run.penalty, crate::game::rally::RESET_PENALTY);
+        let e = w.terrain.road_edge_distance(w.vehicle.pos.x, w.vehicle.pos.z).unwrap();
+        assert!(e < 1.0, "the car is {e} m outside the road after the reset");
+        assert_eq!(r.event.0, 2);
+    }
+    #[test] fn free_drive_has_no_rally_and_stop_leaves_the_mode() {
+        let mut w = world(21);
+        assert!(w.rally.is_none());
+        assert!(w.rally_start(1) && w.rally.is_some());
+        w.rally_stop();
+        assert!(w.rally.is_none());
+    }
+}

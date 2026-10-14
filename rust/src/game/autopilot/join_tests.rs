@@ -61,7 +61,7 @@ fn world_terrain(seed: u64) -> Terrain {
     let v = Vehicle::new(car, v3(at.x, at.y + 1.1, at.z), 0.0);
     let ap = Autopilot::start(&t, &v, car, 1).expect("an autopilot");
     let laps = crate::game::autopilot::cfg::cfg().laps as f32;
-    assert!((ap.route().length() - l.length * laps).abs() < l.length * 0.1, "route {} vs {} laps of {}", ap.route().length(), laps, l.length);
+    assert!((ap.route().length() - l.length * laps).abs() < l.length * 0.1 + 40.0, "route {} vs {} laps of {}", ap.route().length(), laps, l.length);
     let end = *ap.route().p.last().unwrap();
-    assert!((end - at).len() < 6.0, "the drive ends on the start line");
+    assert!((end - at).len() < 40.0, "the drive ends just past the start line");
 }

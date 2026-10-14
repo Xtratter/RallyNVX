@@ -23,7 +23,7 @@ pub struct Run {
     /// The clock (from GO) and the penalties added to it, in seconds.
     pub time: f32,
     pub penalty: f32,
-    /// The lines to cross in order: the checks and, last, the finish.
+    /// The lines to cross in order: the start line (a first line of the kind `Start` is just passed), the checks and, last, the finish.
     lines: Vec<Line>,
     next: usize,
     pub splits: Vec<f32>,
@@ -78,6 +78,7 @@ impl Run {
                     for k in self.next..(self.next + 3).min(self.lines.len()) {
                         if !self.lines[k].crossed(prev, pos) { continue; }
                         if k > self.next { let n = k - self.next; self.penalty += MISSED_PENALTY * n as f32; self.events.push(Event::Missed { lines: n }); }
+                        if k == 0 && self.lines[0].kind == super::lines::LineKind::Start { self.next = 1; break; }   // the start line itself: nothing to record
                         if k == last {
                             self.phase = Phase::Finished;
                             self.events.push(Event::Finish { total: self.total() });

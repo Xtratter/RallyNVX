@@ -19,6 +19,13 @@ pub const WORLD_LIMIT: f32 = 4000.0;
 
 pub fn tile_of(x: f32) -> i32 { (x / TILE_SIZE).floor() as i32 }
 
+/// A rally stage in progress: the runner, which stage it is (0 the special stage, 1 the city loop), the upside-down timer and
+/// the last event for the HUD (code 1 split, 2 reset, 3 off road, 4 skipped lines, 5 finish, 6 go; its value and a serial).
+pub struct RallyState { pub run: super::rally::Run, pub stage: u32, flip_t: f32, pub event: (u32, f32, u32) }
+
+/// Laps of the city loop in a rally.
+pub const CITY_LAPS: usize = 2;
+
 pub struct World {
     pub terrain: Terrain,
     pub vehicle: Vehicle,
@@ -38,6 +45,8 @@ pub struct World {
     orbit: Option<f32>,
     /// The autopilot while it drives (see `game/autopilot`).
     pub autopilot: Option<super::autopilot::Autopilot>,
+    /// The rally stage being driven against the clock (`None` in free drive).
+    pub rally: Option<RallyState>,
     props: HashMap<(i32, i32), Vec<Prop>>,
 }
 
@@ -66,7 +75,7 @@ impl World {
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
         let loose = terrain.roads().map_or_else(LooseMap::empty, LooseMap::new);
-        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, props: HashMap::new() }
+        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, rally: None, props: HashMap::new() }
     }
 
     /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
@@ -74,10 +83,87 @@ impl World {
     pub fn set_autopilot(&mut self, on: bool) -> bool { self.set_autopilot_style(if on { 1 } else { -1 }) }
     /// Style -1 off, 0 calm, 1 normal, 2 aggressive (slides allowed), 3 custom (the numbers set in the settings).
     pub fn set_autopilot_style(&mut self, style: i32) -> bool {
-        self.autopilot = if style >= 0 { super::autopilot::Autopilot::start(&self.terrain, &self.vehicle, self.car_spec, style.min(3)) } else { None };
+        self.autopilot = if style >= 0 { super::autopilot::Autopilot::start_with(&self.terrain, &self.vehicle, self.car_spec, style.min(3), self.rally.as_ref().map(|r| r.stage == 1)) } else { None };
         self.autopilot.is_some()
     }
     pub fn autopilot_on(&self) -> bool { self.autopilot.is_some() }
+
+    /// Starts a rally stage (0 the special stage, 1 the city loop): the car is put before the start line facing along
+    /// the road, and the countdown begins. Returns false when the level has no such stage.
+    pub fn rally_start(&mut self, stage: u32) -> bool {
+        use super::lines::{Line, LineKind};
+        let (lines, at, yaw): (Vec<Line>, V3, f32) = if stage == 0 {
+            let (Some(net), l) = (self.terrain.roads(), self.terrain.stage_lines()) else { return false };
+            let Some(road) = net.roads.iter().find(|r| r.kind == super::roads::RoadKind::Stage) else { return false };
+            if l.len() < 2 { return false; }
+            let i = road.pts.iter().position(|p| p.s >= 8.0).unwrap_or(1).min(road.pts.len() - 2);
+            let d = road.pts[i + 1].pos - road.pts[i].pos;
+            (l.to_vec(), road.pts[i].pos, d.x.atan2(d.z))
+        } else {
+            let Some(c) = self.terrain.city_loop() else { return false };
+            let n = c.pts.len();
+            let (a, b) = (c.pts[n.saturating_sub(4)], c.pts[n - 1]);
+            let start = c.lines[0];
+            let checks: Vec<Line> = c.lines.iter().skip(1).cloned().collect();
+            let mut seq = vec![start];
+            for lap in 0..CITY_LAPS {
+                seq.extend(checks.iter().cloned());
+                seq.push(Line { kind: if lap + 1 == CITY_LAPS { LineKind::Finish } else { LineKind::Check }, ..start });
+            }
+            let d = b - a;
+            (seq, a, d.x.atan2(d.z))
+        };
+        self.autopilot = None;
+        self.vehicle = Vehicle::new(self.car_spec, v3(at.x, at.y + 1.1, at.z), yaw);
+        self.cam = FollowCam::new(&self.vehicle);
+        if stage == 0 { self.loose = self.terrain.roads().map_or_else(LooseMap::empty, LooseMap::new); }
+        self.rally = Some(RallyState { run: super::rally::Run::new(lines), stage, flip_t: 0.0, event: (0, 0.0, 0) });
+        true
+    }
+    pub fn rally_stop(&mut self) { self.rally = None; }
+
+    /// A reset during a rally: the car goes back on the road (the nearest road point of the stage, the nearest loop
+    /// point of the city) facing along it, and the run takes its time penalty.
+    fn rally_reset(&mut self) {
+        let Some(stage) = self.rally.as_ref().map(|r| r.stage) else { return };
+        let p = self.vehicle.pos;
+        let (at, yaw) = if stage == 0 {
+            // the nearest point of the special stage itself (not of a side road)
+            let stage = self.terrain.roads().and_then(|n| n.roads.iter().find(|r| r.kind == super::roads::RoadKind::Stage));
+            match stage {
+                Some(r) => {
+                    let i = r.pts.iter().enumerate().min_by(|a, b| ((a.1.pos.x - p.x).hypot(a.1.pos.z - p.z)).partial_cmp(&((b.1.pos.x - p.x).hypot(b.1.pos.z - p.z))).unwrap()).map_or(0, |x| x.0);
+                    let (a, b) = (r.pts[i].pos, r.pts[(i + 1).min(r.pts.len() - 1)].pos);
+                    (a, (b.x - a.x).atan2(b.z - a.z))
+                }
+                None => (p, 0.0),
+            }
+        } else {
+            let c = self.terrain.city_loop();
+            let i = c.map_or(0, |c| c.pts.iter().enumerate().min_by(|a, b| ((a.1.x - p.x).hypot(a.1.z - p.z)).partial_cmp(&((b.1.x - p.x).hypot(b.1.z - p.z))).unwrap()).map_or(0, |x| x.0));
+            c.map_or((p, 0.0), |c| { let (a, b) = (c.pts[i], c.pts[(i + 1).min(c.pts.len() - 1)]); (a, (b.x - a.x).atan2(b.z - a.z)) })
+        };
+        self.vehicle = Vehicle::new(self.car_spec, v3(at.x, at.y + 1.1, at.z), yaw);
+        if let Some(r) = self.rally.as_mut() { r.run.reset_penalty(); r.flip_t = 0.0; }
+    }
+
+    /// Feeds the run with the car's position; turns its events into the HUD's last event.
+    fn rally_step(&mut self, dt: f32) {
+        let Some(stage) = self.rally.as_ref().map(|r| r.stage) else { return };
+        let p = self.vehicle.pos;
+        let off = if stage == 0 { self.terrain.road_edge_distance(p.x, p.z) } else { None };
+        let flipped = self.vehicle.flipped();
+        let upside_down_too_long = { let r = self.rally.as_mut().unwrap(); r.flip_t = if flipped { r.flip_t + dt } else { 0.0 }; r.flip_t > 3.0 };
+        if upside_down_too_long { self.rally_reset(); }
+        let r = self.rally.as_mut().unwrap();
+        r.run.update(self.vehicle.pos, dt, off);
+        for e in r.run.drain_events() {
+            use super::rally::Event::*;
+            let (code, value) = match e { Split { time, .. } => (1, time), Reset => (2, super::rally::RESET_PENALTY), OffRoad => (3, super::rally::OFFROAD_PENALTY), Missed { lines } => (4, lines as f32 * super::rally::MISSED_PENALTY), Finish { total } => (5, total), Go => (6, 0.0) };
+            r.event = (code, value, r.event.2 + 1);
+        }
+        if r.run.phase == super::rally::Phase::Finished { self.autopilot = None; }
+    }
 
     /// The wind now (horizontal, m/s, gusts included).
     pub fn wind(&self) -> V3 { wind::wind_now(self.terrain.seed, self.time) }
@@ -149,7 +235,12 @@ impl World {
     /// One physics step of the car.
     pub fn step(&mut self, inp: &Input, dt: f32) {
         let mut inp = inp.sanitized();
-        if inp.reset { self.autopilot = None; self.vehicle.reset_upright(&self.terrain); }
+        let counting = self.rally.as_ref().map_or(false, |r| r.run.phase == super::rally::Phase::Countdown);
+        if inp.reset {
+            self.autopilot = None;
+            if self.rally.is_some() { self.rally_reset(); inp.reset = false; } else { self.vehicle.reset_upright(&self.terrain); }
+        }
+        if counting { self.autopilot = None; }
         if let Some(ap) = self.autopilot.as_mut() {
             let cmd = ap.drive(&self.vehicle, dt);
             inp = cmd.input.sanitized();
@@ -160,6 +251,8 @@ impl World {
         let (tx, tz) = (tile_of(self.vehicle.pos.x), tile_of(self.vehicle.pos.z));
         self.ensure_props(tx, tz, 1);
         let near = self.nearby_props();
+        if counting { inp = Input { brake: true, handbrake: true, ..Default::default() }; }   // held at the start line until GO
+        if self.autopilot.is_some() { if let Some(r) = self.rally.as_mut() { r.run.assisted = true; } }
         self.vehicle.step_with(&self.terrain, &near, &inp, dt, &mut self.loose);
         self.dust.update(&self.vehicle, &self.terrain, self.time, dt);
         let v = &mut self.vehicle;
@@ -169,6 +262,7 @@ impl World {
         if v.pos.z.abs() >= WORLD_LIMIT { v.vel.z = 0.0; }
         for c in &self.cities { c.resolve_hull(&mut self.vehicle.pos, &mut self.vehicle.vel, &mut self.vehicle.omega, self.vehicle.rot); }
         self.tracks.update(&self.vehicle, &self.terrain, dt);
+        self.rally_step(dt);
         self.cam.update(&self.vehicle, &self.terrain, dt);
         self.advance_sky(dt); self.time += dt;
     }

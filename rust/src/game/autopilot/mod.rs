@@ -75,8 +75,11 @@ pub fn chain_route(t: &super::terrain::Terrain, car: &VehicleSpec, c: &AutoCfg) 
 /// The city loop from its point `k` through `laps` laps, ending on the start/finish line.
 pub fn loop_route(l: &super::superspecial::SuperSpecial, k: usize, car: &VehicleSpec, c: &AutoCfg) -> Route {
     let mut centre: Vec<V3> = l.pts[k..].to_vec();
-    let full = c.laps.saturating_sub(1);   // from the line: the first lap is already in `centre`; from elsewhere: the rest of the lap, then the other laps
+    // a car just before the line (a stage start) has all its laps ahead of it; elsewhere the rest of the lap counts as one
+    let before_line = l.pts.len() - k <= 20;
+    let full = if before_line { c.laps } else { c.laps.saturating_sub(1) };
     for _ in 0..full { centre.extend(l.pts[1..].iter().cloned()); }
+    centre.extend(l.pts[1..8].iter().cloned());   // a little past the line, so the finish is crossed, not just reached
     if centre.len() < 7 { centre.extend(l.pts[1..8].iter().cloned()); }
     let mu = vec![car.mu * grip(super::surface::Surface::Asphalt, 1.0).mu; centre.len()];
     let lim = Limits { mu: 1.0, v_max: car.max_speed * c.speed_cap, accel: 0.5 * car.engine_force / car.mass, stop_at_end: true };
@@ -95,14 +98,18 @@ impl Autopilot {
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
     /// the city streets, the stage), elsewhere it first drives a field route to the nearest road point. `None` when the
     /// level has no stage.
-    pub fn start(t: &super::terrain::Terrain, v: &Vehicle, car: VehicleSpec, style: i32) -> Option<Autopilot> {
+    pub fn start(t: &super::terrain::Terrain, v: &Vehicle, car: VehicleSpec, style: i32) -> Option<Autopilot> { Autopilot::start_with(t, v, car, style, None) }
+
+    /// As `start`; `force_loop` decides between the city loop (`Some(true)`) and the road chain (`Some(false)`) instead of
+    /// the distance (a rally stage knows which one it is).
+    pub fn start_with(t: &super::terrain::Terrain, v: &Vehicle, car: VehicleSpec, style: i32, force_loop: Option<bool>) -> Option<Autopilot> {
         let c = cfg_style(style);
         let chain = chain_route(t, &car, &c);
         // on the city loop: its laps (the start/finish line is the end)
         if let Some(l) = t.city_loop() {
             let (k, dl) = l.pts.iter().enumerate().map(|(i, p)| (i, (p.x - v.pos.x).hypot(p.z - v.pos.z))).fold((0, f32::INFINITY), |a, b| if b.1 < a.1 { b } else { a });
             let dc = chain.as_ref().map_or(f32::INFINITY, |r| r.nearest(v.pos.x, v.pos.z).1);
-            if dl <= 20.0 && dl <= dc { return Some(Autopilot::on_route_styled(loop_route(l, k, &car, &c), car, v, style)); }
+            if force_loop.unwrap_or(dl <= 20.0 && dl <= dc) { return Some(Autopilot::on_route_styled(loop_route(l, k, &car, &c), car, v, style)); }
         }
         let chain = chain?;
         let (k, d) = chain.nearest(v.pos.x, v.pos.z);

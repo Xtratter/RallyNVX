@@ -33,7 +33,7 @@ mod android {
     use crate::game::{app::{Game, STAT_LEN}, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Camera(f32, f32), CameraUp, Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
+    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Rally(i32), Camera(f32, f32), CameraUp, Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -78,6 +78,7 @@ mod android {
                             Ok(GCmd::OnRoad(m)) => { g.place_on_road(m); }
                             Ok(GCmd::Dust(l)) => g.set_dust(l),
                             Ok(GCmd::Autopilot(style)) => g.set_autopilot(style),
+                            Ok(GCmd::Rally(stage)) => g.rally(stage),
                             Ok(GCmd::Camera(y, p)) => g.camera_drag(y, p),
                             Ok(GCmd::CameraUp) => g.camera_release(),
                             Ok(GCmd::Reset) => g.input.reset = true,
@@ -121,6 +122,7 @@ mod android {
     /// Tyre dust: 0 off, 1 normal, 2 lots.
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAutopilot(_e: JNIEnv, _c: JClass, style: jint) { send(GCmd::Autopilot(style)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAutopilotTune(_e: JNIEnv, _c: JClass, lat: jfloat, brake: jfloat, offset: jfloat, speed: jfloat, slide: jfloat, edge: jfloat) { crate::game::autopilot::cfg::set_custom(lat, brake, offset, speed, slide, edge); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameRally(_e: JNIEnv, _c: JClass, stage: jint) { send(GCmd::Rally(stage)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameDust(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Dust(level)); }
     /// Debug/test: put the car on a road facing along it (1 liaison, 2 stage start, 3 stage middle, 4 stage end).
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameOnRoad(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::OnRoad(mode)); }
