@@ -29,6 +29,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var tiltListener: android.hardware.SensorEventListener? = null
     private var sentRender = -1
     private var sentAuto = -1
+    private var sentRev = -1
     private var needTiltCal = true   // the pose at the start of a drive is the centre (and after "Recalibrate" in the settings)
     private lateinit var hud: Hud
     private lateinit var root: FrameLayout
@@ -55,7 +56,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private val tick = object : Runnable {
         override fun run() {
             val s = Native.gameStats()
-            hud.text = (if (s[27] > 0.5f) t("Raster (auto) · ", "Растр (авто) · ") else "") + (if (s[20] > 0f) "${s[1].toInt()} km/h · ${s[19].toInt()} m" else "${s[1].toInt()} km/h") + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}"
+            hud.text = (if (s[27] > 0.5f) t("Raster (auto) · ", "Растр (авто) · ") else "") + (if (s[20] > 0f) "${s[1].toInt()} km/h · ${s[19].toInt()} m" else "${s[1].toInt()} km/h") + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}" + (if (s[26] > 0.5f) " · " + t("hybrid", "гибрид") else "")
             if (mission >= 0) updateMission(s)
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (mission >= 0 || drive != null) 100 else 250)
@@ -208,10 +209,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         if (running) { Native.gameResize(w, hh); return }
         Native.gameStart(h.surface, w, hh, seed, profile, mission)
         Native.gameQuality(Quality.index(this))
-        sentRender = -1; sentAuto = -1; applyRender()
+        running = true
+        sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
         intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
-        running = true
         audio.start()
         // the engine restarts after a surface loss (screen lock): stay paused if the pause panel is up
         if (mission >= 0 && pausePanel?.visibility == View.VISIBLE) Native.gamePause(true)
@@ -231,7 +232,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun applyRender() {
         if (!running) return
         val mode = Controls.renderMode(this); val auto = if (Controls.autoFallback(this)) 1 else 0
-        if (mode != sentRender) { Native.gameRenderMode(mode); sentRender = mode }
+        val rev = Controls.renderRev(this)   // bumped by the settings screen: a deliberate pick is sent again even if the value is the same
+        if (mode != sentRender || rev != sentRev) { Native.gameRenderMode(mode); sentRender = mode; sentRev = rev }
         if (auto != sentAuto) { Native.gameAutoFallback(auto == 1); sentAuto = auto }
     }
 

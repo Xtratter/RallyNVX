@@ -314,7 +314,7 @@ impl Raster {
     /// How far from the camera city buildings and tiles are drawn (metres).
     pub fn set_city_radius(&mut self, r: f32) { self.city_radius = r.clamp(100.0, 2000.0); }
 
-    /// Hybrid mode: PCSS soft shadows and terrain ray shadows (and, with the post pipeline, ambient occlusion).
+    /// Hybrid mode: PCSS soft shadows, terrain ray shadows and forward ambient occlusion (no post pass).
     pub fn set_hybrid(&mut self, on: bool) { self.hybrid = on; }
     pub fn is_hybrid(&self) -> bool { self.hybrid }
 

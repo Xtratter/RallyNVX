@@ -34,3 +34,13 @@ fn feed(m: &mut FallbackMonitor, fps: f32, secs: f32, hybrid: bool, auto: bool) 
     let mut n = 0; while !m.update(30.0, 1.0, true, true) { n += 1; assert!(n < 20); }
     assert_eq!(n, 3, "four one-second slow samples fire on the fourth");
 }
+#[test] fn warm_up_ignores_the_first_seconds_and_a_new_warm_up_restarts_the_count() {
+    let mut m = FallbackMonitor::new();
+    m.warm_up(6.0);
+    assert!(!feed(&mut m, 10.0, 6.0, true, true), "tile streaming at the start is not a verdict on Hybrid");
+    assert!(!feed(&mut m, 10.0, 3.5, true, true), "the slow count starts after the warm-up");
+    assert!(m.update(10.0, 0.5, true, true));
+    m.reset(); m.warm_up(2.0);
+    assert!(!feed(&mut m, 10.0, 2.0, true, true));
+    assert!(feed(&mut m, 10.0, 4.0, true, true));
+}

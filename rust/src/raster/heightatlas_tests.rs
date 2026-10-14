@@ -6,9 +6,8 @@ use std::collections::HashSet;
     for (v, bits) in [(0.0f32, 0x0000u16), (1.0, 0x3C00), (-2.5, 0xC100), (1024.0, 0x6400), (-10000.0, 0xF0E2)] { assert_eq!(f32_to_f16(v), bits, "{v}"); }
     assert_eq!(f32_to_f16(1e9), 0x7C00);            // overflow -> +inf
     assert_eq!(f32_to_f16(-0.0), 0x8000);
-    let mut prev = f32_to_f16(-60.0) as i32;
-    // positive halves grow with the bit pattern, negative ones shrink in value as the pattern grows
-    for i in 0..400 { let v = -60.0 + i as f32 * 0.3; let b = f32_to_f16(v); let neg = b & 0x8000 != 0; let _ = (neg, prev); prev = b as i32; }
+    // negative halves mirror the positive ones with the sign bit
+    for i in 1..200 { let v = i as f32 * 0.41; assert_eq!(f32_to_f16(-v), f32_to_f16(v) | 0x8000, "{v}"); }
     let pos: Vec<u16> = (0..300).map(|i| f32_to_f16(i as f32 * 0.37)).collect();
     assert!(pos.windows(2).all(|w| w[0] <= w[1]));
 }

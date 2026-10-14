@@ -2,7 +2,7 @@
 //! addressed by `tile mod 8`, stored as R16Float on the GPU. Pure CPU bookkeeping, tested on the host.
 use std::collections::HashSet;
 
-use crate::game::terrain::{TILE_CELLS, TILE_SIZE};
+use crate::game::terrain::TILE_CELLS;
 
 pub const ATLAS_TILES: i32 = 8;
 pub const TEXELS: usize = TILE_CELLS;
@@ -115,8 +115,6 @@ impl HeightAtlas {
         top * (1.0 - fz) + bot * fz
     }
 }
-
-#[allow(dead_code)] const _: f32 = TILE_SIZE;
 
 #[cfg(test)]
 #[path = "heightatlas_tests.rs"]

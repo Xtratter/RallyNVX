@@ -71,21 +71,24 @@ fn shadow_at(wp: vec3<f32>, n: vec3<f32>) -> f32 {
         }
         return mix(1.0, s / 9.0, inside);
     }
-    // hybrid: percentage-closer soft shadows (blocker search, penumbra from the blocker distance, 16-tap PCF)
+    // hybrid: percentage-closer soft shadows (blocker search, penumbra from the blocker distance, 12-tap PCF)
     if (inside < 0.5) { return 1.0; }
-    let zr = p.z - 0.002;
+    let sun_n = normalize(u.sun.xyz);
+    let zr = p.z - (0.0015 + 0.006 * (1.0 - clamp(dot(n, sun_n), 0.0, 1.0)));   // slope-scaled bias
     var bsum = 0.0; var bcnt = 0.0;
-    for (var i = 0; i < 8; i++) {
-        let q = uv + POISSON[i] * (6.0 * texel);
+    let maxpix = 12.0;                                       // search radius in texels = the largest filter radius
+    for (var i = 0; i < 9; i++) {
+        let o = select(POISSON[i] * (maxpix * texel), vec2<f32>(0.0), i == 8);   // 8 spread taps plus the centre
+        let q = clamp(uv + o, vec2<f32>(0.0), vec2<f32>(0.9995));
         let d = textureLoad(shadow_tex, vec2<i32>(q * 2048.0), 0);
         if (d < zr) { bsum += d; bcnt += 1.0; }
     }
     if (bcnt < 0.5) { return 1.0; }
     let dist_m = (zr - bsum / bcnt) * 299.0;                 // ortho light, near 1 far 300
-    let pen_m = clamp(dist_m * 0.028, 0.04, 1.2);
-    let rad = pen_m / 0.0684 * texel;                        // shadow map texel = 140 / 2048 m
-    var s = 0.0;
-    for (var i = 0; i < 12; i++) { s += textureSampleCompareLevel(shadow_tex, shadow_smp, uv + POISSON[i] * rad, zr); }
+    let pen_m = clamp(dist_m * 0.028, 0.04, 0.8);
+    let rad = pen_m / 0.0684 * texel;                        // shadow map texel = 140 / 2048 m (at most 12 texels)
+    var s = textureSampleCompareLevel(shadow_tex, shadow_smp, uv, zr);
+    for (var i = 0; i < 11; i++) { s += textureSampleCompareLevel(shadow_tex, shadow_smp, uv + POISSON[i] * rad, zr); }
     return s / 12.0;
 }
 
@@ -103,7 +106,8 @@ fn terrain_shadow(wp: vec3<f32>, sun: vec3<f32>) -> f32 {
     let dir = sun.xz / l;
     let slope = sun.y / l;
     // a high sun or a far, hazy fragment: the hills cannot throw a visible shadow here
-    if (slope > 1.4 || distance(wp, u.cam.xyz) > 280.0) { return 1.0; }
+    let far_fade = 1.0 - smoothstep(200.0, 280.0, distance(wp, u.cam.xyz));
+    if (slope > 1.4 || far_fade <= 0.0) { return 1.0; }
     var t = 2.0;
     var vis = 1.0;
     for (var i = 0; i < 14; i++) {
@@ -113,7 +117,7 @@ fn terrain_shadow(wp: vec3<f32>, sun: vec3<f32>) -> f32 {
         vis = min(vis, clamp((ray_h - th) / (0.06 * t + 0.5), 0.0, 1.0));
         t = t * 1.34 + 1.5;
     }
-    return vis;
+    return mix(1.0, vis, far_fade);
 }
 
 fn lit(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
@@ -176,10 +180,11 @@ fn mat_sample(layer: i32, uv: vec2<f32>) -> vec3<f32> {
     a = pow(a, vec3<f32>(1.35));   // the maps are stored linear and bright; this deepens and saturates them
     let snow = smoothstep(34.0, 44.0, i.wp.y) * (1.0 - smoothstep(0.1, 0.3, 1.0 - n.y));
     a = mix(a, vec3<f32>(0.85, 0.86, 0.90), snow);
-    if (u.mode.x > 0.5 && distance(i.wp, u.cam.xyz) < 260.0) {
+    let conc_fade = 1.0 - smoothstep(180.0, 260.0, distance(i.wp, u.cam.xyz));
+    if (u.mode.x > 0.5 && conc_fade > 0.0) {
         // hybrid: hollows and valleys are darker (concavity from the height atlas, 4 taps at 3 m)
         let hn = (terrain_h(i.wp.x + 3.0, i.wp.z) + terrain_h(i.wp.x - 3.0, i.wp.z) + terrain_h(i.wp.x, i.wp.z + 3.0) + terrain_h(i.wp.x, i.wp.z - 3.0)) * 0.25;
-        a = a * (1.0 - clamp((hn - i.wp.y) * 0.22, 0.0, 0.45));
+        a = a * (1.0 - clamp((hn - i.wp.y) * 0.22, 0.0, 0.45) * conc_fade);
     }
     return vec4<f32>(lit(a, i.wp, n), 1.0);
 }
@@ -207,7 +212,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     o.col = c.rgb * tint.rgb;
     o.mat = c.a * 255.0;
     // hybrid occlusion near the ground: tint.a 2 = plants (base at the origin), 3 = rocks (base 0.7 below the origin)
-    let base = select(0.0, -0.7, tint.a > 2.5);
+    let base = select(0.0, -0.4, tint.a > 2.5);
     let hgt = (p.y - base) * length(m1.xyz);
     o.ao = select(1.0, mix(0.55, 1.0, smoothstep(0.0, 1.8, hgt)), tint.a > 1.5);
     return o;

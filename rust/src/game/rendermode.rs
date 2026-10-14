@@ -12,14 +12,17 @@ const SLOW_SECONDS: f32 = 4.0;
 /// Counts how long the frame rate stays below the floor in Hybrid; `update` returns true once when the fallback should
 /// happen (only if `auto`), then stays quiet until `reset`.
 #[derive(Debug, Default)]
-pub struct FallbackMonitor { slow: f32, fired: bool }
+pub struct FallbackMonitor { slow: f32, fired: bool, warm: f32 }
 
 impl FallbackMonitor {
     pub fn new() -> FallbackMonitor { FallbackMonitor::default() }
-    pub fn reset(&mut self) { self.slow = 0.0; self.fired = false; }
+    pub fn reset(&mut self) { self.slow = 0.0; self.fired = false; self.warm = 0.0; }
+    /// Ignores the next `secs` seconds (the start of a drive streams tiles and is slow whatever the mode).
+    pub fn warm_up(&mut self, secs: f32) { self.warm = secs.max(0.0); self.slow = 0.0; }
     pub fn update(&mut self, fps: f32, dt: f32, hybrid: bool, auto: bool) -> bool {
         if !auto || !hybrid { self.slow = 0.0; return false; }
         if !fps.is_finite() || !dt.is_finite() || dt <= 0.0 || self.fired { return false; }
+        if self.warm > 0.0 { self.warm -= dt.min(1.0); self.slow = 0.0; return false; }
         if fps >= FPS_FLOOR { self.slow = 0.0; return false; }
         self.slow += dt.min(1.0);
         if self.slow >= SLOW_SECONDS - 1e-4 { self.fired = true; return true; }

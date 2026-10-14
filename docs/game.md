@@ -56,7 +56,7 @@ Air missions use a helicopter or a drone (the card shows which). Sticks released
 
 ## Render modes
 
-Settings has **Render mode**: *Raster* (the fast classic look) or *Hybrid*. Hybrid adds soft sun shadows (sharp at the foot of a tree, softer further away), long shadows of hills from a height map (dawn and dusk shadows reach far across the land) and ambient occlusion (hollows, tree and rock bases and building feet are darker). Hybrid is on by default only with High graphics quality and costs roughly 15-20 % of the frame rate (about 80 fps against 100 in a forest on a POCO F3). **Auto fallback to Raster** (off by default) drops to Raster for the rest of the drive when the frame rate stays below 50 for four seconds, and the HUD says so.
+Settings has **Render mode**: *Raster* (the fast classic look) or *Hybrid*. Hybrid adds soft sun shadows (sharp at the foot of a tree, softer further away), long shadows of hills from a height map (dawn and dusk shadows reach far across the land) and ambient occlusion (hollows, tree and rock bases and building feet are darker). Hybrid is on by default only with High graphics quality and costs roughly 15-20 % of the frame rate (about 80 fps against 100 in a forest on a POCO F3). **Auto fallback to Raster** (off by default) drops to Raster for the rest of the drive when the frame rate stays below 50 for four seconds, and the HUD says so; it comes back when you restart the game or pick Hybrid again. Hybrid shadows are slightly softer than Raster ones everywhere, and the first six seconds of a drive never count towards the fallback.
 
 ## Settings
 
@@ -80,7 +80,7 @@ The terrain is textured with generated materials (grass, dirt, sand, rock) blend
 
 ## Limits of this version
 
-No garage, rescue missions or NPC orders yet, and only the raster renderer (mode C). The ray-traced Scenes mode is unchanged.
+No garage or NPC orders yet, and only the raster and hybrid renderers. The ray-traced Scenes mode is unchanged.
 
 ---
 
@@ -140,7 +140,7 @@ No garage, rescue missions or NPC orders yet, and only the raster renderer (mode
 
 ## Режимы рендера
 
-В настройках есть **Режим рендера**: *Растр* (быстрый классический вид) или *Гибрид*. Гибрид добавляет мягкие тени от солнца (резкие у основания дерева, дальше мягче), длинные тени холмов по карте высот (тени на рассвете и закате далеко ложатся по земле) и затенение углов (впадины, основания деревьев и камней и подножия зданий темнее). Гибрид включён по умолчанию только при высоком качестве графики и стоит примерно 15–20 % частоты кадров (около 80 fps против 100 в лесу на POCO F3). **Откат на Растр** (по умолчанию выключен) переключает на Растр до конца поездки, если частота кадров держится ниже 50 в течение четырёх секунд, и HUD сообщает об этом.
+В настройках есть **Режим рендера**: *Растр* (быстрый классический вид) или *Гибрид*. Гибрид добавляет мягкие тени от солнца (резкие у основания дерева, дальше мягче), длинные тени холмов по карте высот (тени на рассвете и закате далеко ложатся по земле) и затенение углов (впадины, основания деревьев и камней и подножия зданий темнее). Гибрид включён по умолчанию только при высоком качестве графики и стоит примерно 15–20 % частоты кадров (около 80 fps против 100 в лесу на POCO F3). **Откат на Растр** (по умолчанию выключен) переключает на Растр до конца поездки, если частота кадров держится ниже 50 в течение четырёх секунд, и HUD сообщает об этом; Гибрид вернётся при перезапуске игры или если выбрать его снова. Тени гибрида везде чуть мягче, чем в Растре, а первые шесть секунд поездки в откат не засчитываются.
 
 ## Настройки
 
@@ -164,4 +164,4 @@ No garage, rescue missions or NPC orders yet, and only the raster renderer (mode
 
 ## Ограничения этой версии
 
-Пока нет гаража, спасательных миссий и заказов NPC, и только растровый рендер (режим C). Режим «Сцены» с трассировкой не менялся.
+Пока нет гаража и заказов NPC, и только растровый и гибридный рендер. Режим «Сцены» с трассировкой не менялся.

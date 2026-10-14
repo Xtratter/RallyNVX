@@ -87,7 +87,7 @@ mod game {
             let seed = super::level_seed(seed);
             Game { world: World::new(seed), raster, input: Input::default(), flight: FlightInput::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0, run_id: 0, director: crate::audio::Director::new(), auto_fallback: false, monitor: crate::game::rendermode::FallbackMonitor::new(), fell_back: false }
+                profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0, run_id: 0, director: crate::audio::Director::new(), auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
@@ -95,13 +95,14 @@ mod game {
         /// Quality level 0/1/2 (Low/Medium/High) sets the city draw distance: 300 / 400 / 450 m.
         pub fn set_quality(&mut self, level: i32) { self.raster.set_city_radius([300.0, 400.0, 450.0][level.clamp(0, 2) as usize]); }
         pub fn set_city_radius(&mut self, r: f32) { self.raster.set_city_radius(r); }
-        pub fn set_hybrid(&mut self, on: bool) { self.raster.set_hybrid(on); self.monitor.reset(); if on { self.fell_back = false; } }
+        pub fn set_hybrid(&mut self, on: bool) { self.raster.set_hybrid(on); self.monitor.reset(); self.monitor.warm_up(6.0); self.fell_back = false; }
         pub fn set_auto_fallback(&mut self, on: bool) { self.auto_fallback = on; self.monitor.reset(); }
         pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }
         pub fn place_in_city(&mut self) -> bool { self.world.place_in_city() }
         pub fn place_near_water(&mut self) -> bool { self.world.place_near_water() }
 
         pub fn new_level(&mut self, seed: u64) {
+            self.monitor.warm_up(6.0);
             let seed = super::level_seed(seed);
             self.world = World::new(seed); self.seed = seed; self.input = Input::default(); self.acc = 0.0;
             self.current = None; self.recorded = false; self.payout = 0;
@@ -116,6 +117,7 @@ mod game {
         }
 
         pub fn start_mission(&mut self, index: usize) {
+            self.monitor.warm_up(6.0);
             let Some(m) = self.missions.get(index).cloned() else { return };
             self.seed = m.seed;
             self.world = World::for_mission(m);

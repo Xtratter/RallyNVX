@@ -24,7 +24,8 @@ object Controls {
     fun setVolumeStep(c: Context, v: Int) = p(c).edit().putInt("volume_step", v.coerceIn(0, DriveMath.VOLUME.size - 1)).apply()
     /** Render mode: 0 raster, 1 hybrid; until the user picks one it follows the graphics quality (hybrid on High). */
     fun renderMode(c: Context): Int { val v = p(c).getInt("render_mode", -1); return if (v in 0..1) v else DriveMath.defaultRender(p(c).getInt("game_quality", 1)) }
-    fun setRenderMode(c: Context, v: Int) = p(c).edit().putInt("render_mode", v.coerceIn(0, 1)).apply()
+    fun setRenderMode(c: Context, v: Int) = p(c).edit().putInt("render_mode", v.coerceIn(0, 1)).putInt("render_rev", renderRev(c) + 1).apply()
+    fun renderRev(c: Context) = p(c).getInt("render_rev", 0)
     fun autoFallback(c: Context) = p(c).getBoolean("auto_fallback", false)
     fun setAutoFallback(c: Context, v: Boolean) = p(c).edit().putBoolean("auto_fallback", v).apply()
     fun hintSeen(c: Context, mode: Int) = p(c).getBoolean("hint_$mode", false)
