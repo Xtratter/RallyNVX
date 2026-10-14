@@ -20,7 +20,13 @@ import io.github.xtratter.uikit.M3Widgets
  * Mission HUD: timer, cargo integrity, arrow and distance to the target; pause and results panels.
  */
 class GameActivity : Activity(), SurfaceHolder.Callback {
-    private lateinit var sticks: SticksLayer
+    private var sticks: SticksLayer? = null
+    private var drive: DriveControls? = null
+    private var carThr = 0f; private var carSteer = 0f; private var carBrake = false; private var carAmt = 0f
+    private var handbrakeBtn: View? = null
+    private var hintView: TextView? = null
+    private var sensors: android.hardware.SensorManager? = null
+    private var tiltListener: android.hardware.SensorEventListener? = null
     private lateinit var hud: Hud
     private lateinit var root: FrameLayout
     private val handler = Handler(Looper.getMainLooper())
@@ -48,7 +54,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             val s = Native.gameStats()
             hud.text = (if (s[20] > 0f) "${s[1].toInt()} km/h · ${s[19].toInt()} m" else "${s[1].toInt()} km/h") + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}"
             if (mission >= 0) updateMission(s)
-            handler.postDelayed(this, if (mission >= 0) 100 else 250)
+            drive?.speedKmh = s[1]
+            handler.postDelayed(this, if (mission >= 0 || drive != null) 100 else 250)
         }
     }
 
@@ -71,8 +78,13 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             sv.holder.setFixedSize((dm.widthPixels * scale).toInt().coerceAtLeast(2), (dm.heightPixels * scale).toInt().coerceAtLeast(2))
         }
         root.addView(sv, FrameLayout.LayoutParams(-1, -1))
-        sticks = SticksLayer(this).also { it.onChange = { x, y, rX, rY -> lx = x; ly = y; rx = rX; ry = rY; sendInput() } }
-        root.addView(sticks, FrameLayout.LayoutParams(-1, -1))
+        if (air) {
+            sticks = SticksLayer(this).also { it.onChange = { x, y, rX, rY -> lx = x; ly = y; rx = rX; ry = rY; sendInput() } }
+            root.addView(sticks, FrameLayout.LayoutParams(-1, -1))
+        } else {
+            drive = DriveControls(this).also { it.onChange = { thr, steer, brake, amt -> carThr = thr; carSteer = steer; carBrake = brake; carAmt = amt; sendInput() } }
+            root.addView(drive, FrameLayout.LayoutParams(-1, -1))
+        }
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
         fun button(label: String, gravity: Int, top: Float, end: Float, w: Float = 120f, onClick: () -> Unit) =
@@ -82,8 +94,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         if (!air) button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { Native.gameReset() }
         if (mission < 0) button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
         if (!air) button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
-            (layoutParams as FrameLayout.LayoutParams).gravity = Gravity.BOTTOM or Gravity.END
-            (layoutParams as FrameLayout.LayoutParams).setMargins(0, 0, px(40f), px(220f))
+            handbrakeBtn = this
+            applyControlLayout()
             setOnTouchListener { _, e ->
                 when (e.actionMasked) {
                     MotionEvent.ACTION_DOWN -> { handbrake = true; sendInput() }
@@ -184,7 +196,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
 
     private fun sendInput() {
         if (!running) return
-        if (air) Native.gameFlight(lx, ly, ry, rx) else Native.gameInput(ly, lx, ry < -0.5f, handbrake, 0f)
+        if (air) Native.gameFlight(lx, ly, ry, rx) else Native.gameInput(carThr, carSteer, carBrake, handbrake, carAmt)
     }
 
     override fun surfaceCreated(h: SurfaceHolder) { running = false }
@@ -200,9 +212,73 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     }
     override fun surfaceDestroyed(h: SurfaceHolder) { audio.stop(); Native.gameStop(); running = false }
 
-    override fun onResume() { super.onResume(); handler.post(tick); if (running) audio.start() }
+    /** Puts the handbrake button above the pedals (on the pedal side set in the settings). */
+    private fun applyControlLayout() {
+        val b = handbrakeBtn ?: return
+        val dp = resources.displayMetrics.density
+        val left = Controls.pedalsLeft(this)
+        b.layoutParams = FrameLayout.LayoutParams((120f * dp).toInt(), (48f * dp).toInt(), Gravity.BOTTOM or (if (left) Gravity.START else Gravity.END))
+            .apply { if (left) setMargins((28f * dp).toInt(), 0, 0, (214f * dp).toInt()) else setMargins(0, 0, (28f * dp).toInt(), (214f * dp).toInt()) }
+    }
+
+    private fun applyControls() {
+        val d = drive ?: return
+        d.configure(Controls.mode(this), Controls.sens(this), Controls.pedalsLeft(this))
+        applyControlLayout()
+        Native.audioVolume(Controls.volume(this))
+        // tilt steering: the pose at resume (or after "Calibrate" in the settings) is the centre
+        stopTilt()
+        if (Controls.mode(this) == Controls.MODE_TILT) startTilt(d)
+        showHintOnce()
+    }
+
+    private fun startTilt(d: DriveControls) {
+        val sm = getSystemService(SENSOR_SERVICE) as android.hardware.SensorManager
+        val sensor = sm.getDefaultSensor(android.hardware.Sensor.TYPE_GRAVITY) ?: sm.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER) ?: return
+        var calibrated = false
+        val l = object : android.hardware.SensorEventListener {
+            override fun onSensorChanged(e: android.hardware.SensorEvent) {
+                val x = e.values[0]; val y = e.values[1]
+                // roll of the phone about the screen normal, clockwise positive, for the current display rotation
+                val phi = Math.toDegrees(when (windowManager.defaultDisplay.rotation) {
+                    android.view.Surface.ROTATION_90 -> Math.atan2(y.toDouble(), x.toDouble())
+                    android.view.Surface.ROTATION_270 -> Math.atan2(-y.toDouble(), -x.toDouble())
+                    android.view.Surface.ROTATION_180 -> Math.atan2(x.toDouble(), -y.toDouble())
+                    else -> Math.atan2(-x.toDouble(), y.toDouble())
+                }).toFloat()
+                d.tiltRoll = phi
+                if (!calibrated || Controls.wantsCalibration(this@GameActivity)) { d.calibrate(); calibrated = true; Controls.setWantsCalibration(this@GameActivity, false) }
+            }
+            override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
+        }
+        sm.registerListener(l, sensor, android.hardware.SensorManager.SENSOR_DELAY_GAME)
+        sensors = sm; tiltListener = l
+    }
+
+    private fun stopTilt() { tiltListener?.let { sensors?.unregisterListener(it) }; tiltListener = null; drive?.tiltRoll = 0f }
+
+    private fun showHintOnce() {
+        val mode = Controls.mode(this)
+        if (drive == null || Controls.hintSeen(this, mode)) return
+        Controls.setHintSeen(this, mode, true)
+        val dp = resources.displayMetrics.density
+        val msg = if (mode == Controls.MODE_TILT)
+            t("Tilt the phone like a wheel to steer. Right: gas and brake / reverse.", "Наклоняй телефон как руль. Справа: газ и тормоз / задний ход.")
+        else t("Drag the wheel to steer. Right: gas (top pedal) and brake / reverse.", "Крути руль пальцем. Справа: газ и тормоз / задний ход.")
+        hintView?.let { root.removeView(it) }
+        val tv = TextView(this).apply {
+            text = msg; textSize = 15f; setTextColor(M3.TEXT); gravity = Gravity.CENTER
+            setPadding((16f * dp).toInt(), (10f * dp).toInt(), (16f * dp).toInt(), (10f * dp).toInt())
+            background = M3Surface(this@GameActivity, 16f, M3.surface)
+        }
+        hintView = tv
+        root.addView(tv, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM).apply { setMargins(0, 0, 0, (250f * dp).toInt()) })
+        tv.postDelayed({ root.removeView(tv); if (hintView === tv) hintView = null }, 6000)
+    }
+
+    override fun onResume() { super.onResume(); handler.post(tick); if (running) audio.start(); applyControls() }
     override fun onPause() {
-        audio.stop(); handler.removeCallbacks(tick); sticks.release(); handbrake = false; sendInput()
+        audio.stop(); handler.removeCallbacks(tick); sticks?.release(); drive?.release(); stopTilt(); handbrake = false; sendInput()
         if (mission >= 0 && !resultShown) showPause()
         super.onPause()
     }
