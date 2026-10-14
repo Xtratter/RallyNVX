@@ -1,7 +1,9 @@
 //! Turning an A* path into a road: smooth curve with a minimum radius, a vertical profile with a grade limit and pinned
 //! ends, and a width profile.
 use super::path::value_noise;
+use super::cfg::CrestCfg;
 use super::RoadKind;
+use crate::game::terrain::hash01;
 
 /// Point spacing, tightest allowed bend radius and the grade limit of the road profile.
 pub const STEP: f32 = 4.0;
@@ -115,6 +117,45 @@ pub fn widths(kind: RoadKind, pts: &[(f32, f32)], spacing: f32, seed: u64) -> Ve
         (base - tight).clamp(4.6, 9.0)
     }).collect();
     (0..n).map(|i| { let (a, b) = (i.saturating_sub(2), (i + 2).min(n - 1)); raw[a..=b].iter().sum::<f32>() / (b - a + 1) as f32 }).collect()
+}
+
+/// Adds series of crests ("yumps") to the height profile `y` of a road with centre line `xz`: half-cosine bumps whose
+/// take-off side is longer than the landing side, so the car launches. A crest is skipped within `keep_ends` of the road
+/// ends, where the curve is tighter than `min_radius`, and where the road lies less than `causeway_clear` above `floor`
+/// (the water level). The added slope never exceeds `max_slope`.
+pub fn add_crests(y: &mut [f32], xz: &[(f32, f32)], spacing: f32, floor: f32, seed: u64, c: &CrestCfg) {
+    let n = y.len();
+    if n < 3 || xz.len() != n || spacing <= 0.0 { return; }
+    let len = spacing * (n as f32 - 1.0);
+    let range = |lo: f32, hi: f32, k: i32, salt: u64| lo + (hi - lo) * hash01(seed ^ 0xC7E57 ^ salt, k, 0);
+    let base: Vec<f32> = y.to_vec();
+    let mut s = c.keep_ends + range(0.0, c.series_gap.0, 0, 1);
+    let mut k = 0;
+    while s < len - c.keep_ends {
+        let count = c.series.0 + (hash01(seed ^ 0x5E71, k, 1) * (c.series.1 - c.series.0 + 1) as f32) as u32;
+        for _ in 0..count.min(c.series.1) {
+            k += 1;
+            let (l, h) = (range(c.length.0, c.length.1, k, 2), range(c.height.0, c.height.1, k, 3));
+            let (take, land) = (l * 0.5 * (1.0 + c.asym), l * 0.5 * (1.0 - c.asym));
+            if s - take < c.keep_ends || s + land > len - c.keep_ends { break; }
+            let ci = (s / spacing).round() as usize;
+            let reach = ((take.max(land) / spacing) as usize + 1).min(n / 2);
+            let (a, b) = (ci.saturating_sub(reach).max(1), (ci + reach).min(n - 2));
+            let tight = (a..=b).step_by(2).any(|i| radius(xz[i - 1], xz[i], xz[i + 1]) < c.min_radius);
+            let wet = base[a..=b].iter().any(|v| *v - floor < c.causeway_clear);
+            if !tight && !wet {
+                let h = h.min(c.max_slope * 2.0 * land / std::f32::consts::PI);
+                for i in a..=b {
+                    let d = spacing * i as f32 - s;
+                    let half = if d < 0.0 { take } else { land };
+                    if d.abs() < half { y[i] += h * 0.5 * (1.0 + (std::f32::consts::PI * d / half).cos()); }
+                }
+            }
+            s += range(c.spacing.0, c.spacing.1, k, 4);
+        }
+        s += range(c.series_gap.0, c.series_gap.1, k, 5);
+        k += 1;
+    }
 }
 
 #[cfg(test)]

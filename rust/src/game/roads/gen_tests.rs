@@ -73,3 +73,17 @@ fn net(seed: u64) -> (Terrain, RoadNet) { let t = Terrain::new(seed); let n = ge
 #[test] fn a_flat_test_terrain_has_no_roads() {
     assert!(generate_with(1, &Terrain::flat(), GenCfg::coarse()).is_empty());
 }
+#[test] fn every_stage_has_crests_and_stays_connected_and_drivable() {
+    for seed in 1..=8u64 {
+        let (t, n) = net(seed);
+        let s = &n.roads[1];
+        // crests: local height excess over a +-60 m moving average
+        let k = 15usize;
+        let ys: Vec<f32> = s.pts.iter().map(|p| p.pos.y).collect();
+        let excess = |i: usize| { let (a, b) = (i.saturating_sub(k), (i + k).min(ys.len() - 1)); ys[i] - ys[a..=b].iter().sum::<f32>() / (b - a + 1) as f32 };
+        let crests = (k..ys.len() - k).filter(|&i| excess(i) > 0.4 && excess(i) >= excess(i - 1) && excess(i) > excess(i + 1)).count();
+        assert!(crests >= 4, "seed {seed}: {crests} crests in {} m", s.length());
+        for w in s.pts.windows(2) { assert!((w[1].pos.y - w[0].pos.y).abs() / 4.0 < 0.25, "seed {seed}: grade"); }
+        assert!(s.pts.iter().all(|p| p.pos.y >= t.water_level().map_or(f32::MIN, |l| l + 0.2)));
+    }
+}

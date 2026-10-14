@@ -61,3 +61,41 @@ fn zigzag() -> Vec<(f32, f32)> {   // an octilinear staircase like the A* output
     assert!(s.iter().cloned().fold(0.0f32, f32::max) - s.iter().cloned().fold(9.0f32, f32::min) > 1.5, "the width varies along the road");
     for w in s.windows(2) { assert!((w[1] - w[0]).abs() < 0.35, "width jumps"); }
 }
+
+fn line(n: usize) -> Vec<(f32, f32)> { (0..n).map(|i| (i as f32 * 4.0, 0.0)).collect() }
+fn crest_cfg() -> crate::game::roads::cfg::CrestCfg { crate::game::roads::cfg::cfg().crest }
+fn bumps(y: &[f32]) -> usize { (1..y.len() - 1).filter(|&i| y[i] > 0.5 && y[i] >= y[i - 1] && y[i] > y[i + 1]).count() }
+
+#[test] fn crests_keep_the_ends_the_slope_cap_and_the_end_margin() {
+    let xz = line(750); let mut y = vec![0.0f32; 750];
+    add_crests(&mut y, &xz, 4.0, f32::MIN, 3, &crest_cfg());
+    let c = crest_cfg();
+    assert!(bumps(&y) >= 4, "{}", bumps(&y));
+    assert_eq!((y[0], y[749]), (0.0, 0.0));
+    for w in y.windows(2) { assert!((w[1] - w[0]).abs() / 4.0 <= c.max_slope + 1e-3, "{}", (w[1] - w[0]).abs() / 4.0); }
+    let m = (c.keep_ends / 4.0) as usize;
+    assert!(y[..m].iter().chain(&y[750 - m..]).all(|v| v.abs() < 1e-4), "a crest inside the end margin");
+}
+#[test] fn crests_are_deterministic_per_seed() {
+    let xz = line(750);
+    let run = |seed| { let mut y = vec![0.0f32; 750]; add_crests(&mut y, &xz, 4.0, f32::MIN, seed, &crest_cfg()); y };
+    assert_eq!(run(5), run(5));
+    assert_ne!(run(5), run(6));
+}
+#[test] fn no_crest_in_a_tight_bend_or_on_a_causeway() {
+    // a half circle of radius 40 m in the middle of a long line
+    let mut xz = line(300);
+    let (cx, cz) = (xz[299].0, 40.0);
+    for k in 1..=40 { let a = -std::f32::consts::FRAC_PI_2 + std::f32::consts::PI * k as f32 / 40.0; xz.push((cx + 40.0 * a.cos(), cz + 40.0 * a.sin())); }
+    let n = xz.len(); let mut y = vec![0.0f32; n];
+    add_crests(&mut y, &xz, 4.0, f32::MIN, 9, &crest_cfg());
+    let bend = 299..n.min(340);
+    assert!(y[bend].iter().all(|v| v.abs() < 1e-4), "crest in the bend");
+    // causeway: the floor is only 1 m below the road, crests are refused everywhere
+    let xz = line(750); let mut y = vec![1.0f32; 750];
+    add_crests(&mut y, &xz, 4.0, 0.0, 3, &crest_cfg());
+    assert!(y.iter().all(|v| *v == 1.0));
+}
+#[test] fn tiny_inputs_are_left_alone() {
+    for n in 0..4 { let xz = line(n); let mut y = vec![2.0f32; n]; add_crests(&mut y, &xz, 4.0, f32::MIN, 1, &crest_cfg()); assert!(y.iter().all(|v| *v == 2.0)); }
+}

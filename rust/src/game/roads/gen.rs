@@ -129,7 +129,8 @@ fn build_road(kind: RoadKind, poly: &[(f32, f32)], base: &Terrain, seed: u64) ->
     let floor = base.water_level().map_or(f32::MIN, |l| l + 0.4);
     let raw: Vec<f32> = xz.iter().map(|p| base.height(p.0, p.1).max(floor)).collect();
     let spacing = shape::length(&xz) / (xz.len().max(2) - 1) as f32;
-    let y = shape::profile(&raw, spacing);
+    let mut y = shape::profile(&raw, spacing);
+    if kind == RoadKind::Stage { shape::add_crests(&mut y, &xz, spacing, base.water_level().unwrap_or(f32::MIN), seed, &super::cfg::cfg().crest); }
     let w = shape::widths(kind, &xz, spacing, seed);
     let mut pts = Vec::with_capacity(xz.len());
     let mut s = 0.0;
