@@ -13,6 +13,7 @@ pub mod desktop;
 pub mod garage;
 pub mod autopilot;
 pub mod grip;
+pub mod lines;
 pub mod input;
 pub mod materials;
 pub mod math;

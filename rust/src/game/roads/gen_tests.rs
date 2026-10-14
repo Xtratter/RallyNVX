@@ -96,3 +96,20 @@ fn net(seed: u64) -> (Terrain, RoadNet) { let t = Terrain::new(seed); let n = ge
     let v: Vec<String> = (k..ys.len() - k).filter(|&i| ex(i) > 0.4 && ex(i) >= ex(i - 1) && ex(i) > ex(i + 1)).take(8).map(|i| format!("{:.0}(+{:.1})", s.pts[i].s, ex(i))).collect();
     println!("CRESTS {} m: {}", s.length(), v.join(" "));
 }
+#[test] fn the_stage_has_a_start_checks_every_kilometre_and_a_finish() {
+    use crate::game::lines::LineKind;
+    for seed in [3u64, 9] {
+        let (_, n) = net(seed);
+        let stage = &n.roads[1];
+        let lines = crate::game::roads::stage_lines(stage);
+        assert_eq!(lines[0].kind, LineKind::Start);
+        assert_eq!(lines.last().unwrap().kind, LineKind::Finish);
+        let s_of = |l: &crate::game::lines::Line| stage.pts.iter().min_by(|a, b| ((a.pos - l.pos).len()).partial_cmp(&(b.pos - l.pos).len()).unwrap()).unwrap().s;
+        let s: Vec<f32> = lines.iter().map(s_of).collect();
+        assert!((s[0] - 25.0).abs() < 6.0 && (s[s.len() - 1] - (stage.length() - 12.0)).abs() < 6.0, "{s:?}");
+        assert!(s.windows(2).all(|w| w[1] > w[0]), "increasing");
+        let checks = lines.iter().filter(|l| l.kind == LineKind::Check).count();
+        assert_eq!(checks, ((stage.length() - 250.0) / 1000.0).ceil() as usize - 1, "seed {seed}");
+        assert!(lines.iter().all(|l| (l.dir.len() - 1.0).abs() < 1e-3 && l.width >= 6.0));
+    }
+}

@@ -6,9 +6,7 @@ use super::math::V3;
 use super::roads::cfg::CityLoopCfg;
 use super::terrain::hash01;
 
-/// A line across the street: its centre, the unit direction of travel and whether it is the start/finish line.
-#[derive(Clone, Copy, Debug)]
-pub struct Line { pub pos: V3, pub dir: V3, pub start: bool }
+pub use super::lines::{Line, LineKind};
 
 #[derive(Clone, Debug)]
 pub struct SuperSpecial { pub pts: Vec<V3>, pub lines: Vec<Line>, pub length: f32 }
@@ -56,10 +54,10 @@ pub fn build(site: &CitySite, seed: u64, c: &CityLoopCfg) -> SuperSpecial {
     let mut s_at = vec![0.0f32; pts.len()];
     for i in 1..pts.len() { length += (pts[i] - pts[i - 1]).len(); s_at[i] = length; }
     let dir_at = |i: usize| { let (a, b) = (pts[i.saturating_sub(1)], pts[(i + 1).min(pts.len() - 1)]); let d = b - a; let l = d.len().max(1e-3); V3 { x: d.x / l, y: 0.0, z: d.z / l } };
-    let mut lines = vec![Line { pos: pts[0], dir: dir_at(0), start: true }];
+    let mut lines = vec![Line { pos: pts[0], dir: dir_at(0), width: 12.0, kind: LineKind::Start }];
     let mut s = c.check_every;
     while s < length - 80.0 {
-        if let Some(i) = s_at.iter().position(|v| *v >= s) { lines.push(Line { pos: pts[i], dir: dir_at(i), start: false }); }
+        if let Some(i) = s_at.iter().position(|v| *v >= s) { lines.push(Line { pos: pts[i], dir: dir_at(i), width: 12.0, kind: LineKind::Check }); }
         s += c.check_every;
     }
     SuperSpecial { pts, lines, length }

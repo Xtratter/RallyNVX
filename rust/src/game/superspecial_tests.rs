@@ -35,7 +35,7 @@ fn cross(a: V3, b: V3, c: V3, d: V3) -> bool {
 #[test] fn the_lines_stand_on_the_loop_and_the_first_is_the_start() {
     let s = site();
     let l = build(&s, 5, &cfg().city_loop);
-    assert!(l.lines[0].start && l.lines.iter().skip(1).all(|x| !x.start));
+    assert!(l.lines[0].kind == LineKind::Start && l.lines.iter().skip(1).all(|x| x.kind == LineKind::Check));
     assert!(l.lines.len() >= 2 && l.lines.len() as f32 <= l.length / cfg().city_loop.check_every + 2.0);
     for x in &l.lines {
         assert!(l.pts.iter().any(|p| (*p - x.pos).len() < 1.0));

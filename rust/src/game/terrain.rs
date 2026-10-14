@@ -43,11 +43,11 @@ fn fbm(seed: u64, x: f32, z: f32, octaves: u32) -> f32 {
 }
 
 #[derive(Clone, Debug)]
-pub struct Terrain { pub seed: u64, scale: f32, sites: [Option<CitySite>; 2], water: Option<f32>, roads: Option<Arc<RoadNet>>, city_loop: Option<Arc<super::superspecial::SuperSpecial>> }
+pub struct Terrain { pub seed: u64, scale: f32, sites: [Option<CitySite>; 2], water: Option<f32>, roads: Option<Arc<RoadNet>>, city_loop: Option<Arc<super::superspecial::SuperSpecial>>, stage_lines: Arc<Vec<super::lines::Line>> }
 
 impl Terrain {
     pub fn new(seed: u64) -> Terrain {
-        let raw = Terrain { seed, scale: 1.0, sites: [None; 2], water: None, roads: None, city_loop: None };
+        let raw = Terrain { seed, scale: 1.0, sites: [None; 2], water: None, roads: None, city_loop: None, stage_lines: Arc::new(Vec::new()) };
         let with_sites = Terrain { sites: city_sites(seed, &raw), ..raw.clone() };
         Terrain { water: with_sites.pick_water_level(), ..with_sites }
     }
@@ -71,7 +71,7 @@ impl Terrain {
     /// Flat terrain under water up to `level` (tests).
     pub fn flooded(level: f32) -> Terrain { Terrain { water: Some(level), ..Terrain::flat() } }
     /// Height 0 everywhere (tests, vehicle tuning).
-    pub fn flat() -> Terrain { Terrain { seed: 0, scale: 0.0, sites: [None; 2], water: None, roads: None, city_loop: None } }
+    pub fn flat() -> Terrain { Terrain { seed: 0, scale: 0.0, sites: [None; 2], water: None, roads: None, city_loop: None, stage_lines: Arc::new(Vec::new()) } }
 
     /// The heightfield without city plateaus.
     pub fn raw_height(&self, x: f32, z: f32) -> f32 {
@@ -120,8 +120,13 @@ impl Terrain {
         let base = Terrain::new(seed);
         let net = roads::gen::generate(seed, &base);
         let city_loop = base.sites().first().map(|s| Arc::new(super::superspecial::build(s, seed, &roads::cfg::cfg().city_loop)));
-        Terrain { roads: Some(Arc::new(net)), city_loop, ..base }
+        let stage_lines = Arc::new(net.roads.iter().find(|r| r.kind == roads::RoadKind::Stage).map(roads::stage_lines).unwrap_or_default());
+        Terrain { roads: Some(Arc::new(net)), city_loop, stage_lines, ..base }
     }
+    /// The special stage's lines (start, checks, finish); empty without roads.
+    pub fn stage_lines(&self) -> &[super::lines::Line] { &self.stage_lines }
+    /// Every line to draw: the stage's, then the city loop's.
+    pub fn all_lines(&self) -> impl Iterator<Item = &super::lines::Line> { self.stage_lines.iter().chain(self.city_loop.iter().flat_map(|l| l.lines.iter())) }
     /// The city super-special loop of the level (the game's terrain has it, `Terrain::new` does not).
     pub fn city_loop(&self) -> Option<&super::superspecial::SuperSpecial> { self.city_loop.as_deref() }
     /// Tests: this terrain with the city loop of its first city.

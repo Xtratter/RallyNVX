@@ -33,6 +33,24 @@ pub struct RoadPt { pub pos: V3, pub width: f32, pub s: f32 }
 pub struct Road { pub kind: RoadKind, pub pts: Vec<RoadPt> }
 impl Road { pub fn length(&self) -> f32 { self.pts.last().map_or(0.0, |p| p.s) } }
 
+/// The lines of a special stage: the start at 25 m, a check line every 1000 m, the finish 12 m before the end.
+pub fn stage_lines(stage: &Road) -> Vec<super::lines::Line> {
+    use super::lines::{Line, LineKind};
+    let len = stage.length();
+    let at = |s: f32, kind: LineKind| -> Option<Line> {
+        let i = stage.pts.iter().position(|p| p.s >= s)?;
+        let (a, b) = (stage.pts[i.saturating_sub(1)], stage.pts[(i + 1).min(stage.pts.len() - 1)]);
+        let (dx, dz) = (b.pos.x - a.pos.x, b.pos.z - a.pos.z);
+        let l = dx.hypot(dz).max(1e-3);
+        Some(Line { pos: stage.pts[i].pos, dir: v3(dx / l, 0.0, dz / l), width: stage.pts[i].width + 2.0, kind })
+    };
+    let mut out: Vec<Line> = at(25.0, LineKind::Start).into_iter().collect();
+    let mut s = 1000.0;
+    while s < len - 250.0 { out.extend(at(s, LineKind::Check)); s += 1000.0; }
+    out.extend(at((len - 12.0).max(26.0), LineKind::Finish));
+    out
+}
+
 /// The closest road point to a query: `dist` to the centre line, the road height `y`, the half-width, `s` along the road.
 #[derive(Clone, Copy, Debug)]
 pub struct RoadHit { pub road: usize, pub seg: usize, pub t: f32, pub dist: f32, pub y: f32, pub half: f32, pub s: f32, pub tangent: V3, pub side: f32 }
