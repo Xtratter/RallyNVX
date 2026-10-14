@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.19.1 - autopilot settings on the button
+
+- Changed: the autopilot's settings (style and the own style's numbers) moved from the Settings screen into a panel that opens with a long press on the Autopilot button; changes apply at once while driving
+
 ## 2.19.0 - autopilot's own style
 
 - Added: the autopilot's own style (Settings -> Autopilot style -> Own): cornering speed, late braking, top speed, corner cutting, slides and the margin to the road edge are set in steps; the style also joins the long-press cycle on the button

@@ -78,7 +78,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { autopilotOn = false; showAutopilot(); Native.gameReset() }
         button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { autopilotOn = false; showAutopilot(); seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
         autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, 284f, 168f) { setAutopilot(!autopilotOn) }
-        autopilotBtn?.setOnLongClickListener { cycleAutopilotStyle(); true }   // long press: the next driving style
+        autopilotBtn?.setOnLongClickListener { showAutopilotPanel(); true }   // long press: the autopilot settings
         button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
             handbrakeBtn = this
             applyControlLayout()
@@ -122,13 +122,42 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         fun step(key: String, list: FloatArray) = list[Controls.apStep(this, key, list.size)]
         Native.gameAutopilotTune(step("ap_lat", Controls.AP_LAT), step("ap_brake", Controls.AP_BRAKE), step("ap_cut", Controls.AP_CUT), step("ap_speed", Controls.AP_SPEED), Controls.apStep(this, "ap_slide", 2).toFloat(), step("ap_edge", Controls.AP_EDGE))
     }
-    /** Long press on the button: calm -> normal -> aggressive -> own -> calm (kept as the setting, applied at once while driving). */
-    private fun cycleAutopilotStyle() {
-        autopilotStyle = (Controls.autopilotStyle(this) + 1) % Controls.AP_STYLES
-        sendAutopilotTune()
-        Controls.setAutopilotStyle(this, autopilotStyle)
-        if (autopilotOn && running) Native.gameAutopilot(autopilotStyle)
-        showAutopilot()
+    private var autopilotPanel: FrameLayout? = null
+    /** Long press on the button: the autopilot settings (style and the own style's numbers), applied at once. */
+    private fun showAutopilotPanel() {
+        autopilotPanel?.let { it.visibility = View.VISIBLE; (it.tag as? () -> Unit)?.invoke(); return }
+        val dp = resources.displayMetrics.density
+        fun px(v: Float) = (v * dp).toInt()
+        val refreshers = ArrayList<() -> Unit>()
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        fun changed() { autopilotStyle = Controls.autopilotStyle(this); sendAutopilotTune(); if (autopilotOn && running) Native.gameAutopilot(autopilotStyle); showAutopilot(); refreshers.forEach { it() } }
+        fun row(text: String, value: () -> String, onClick: () -> Unit) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            r.addView(TextView(this).apply { this.text = text; textSize = 15f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+            val btn = M3Widgets.button(this, value(), M3Widgets.ButtonKind.TONAL) {}
+            btn.setOnClickListener { onClick(); changed() }
+            refreshers.add { (btn as? TextView)?.text = value() }
+            r.addView(btn, LinearLayout.LayoutParams(px(150f), px(44f)))
+            list.addView(r, LinearLayout.LayoutParams(px(480f), -2).apply { topMargin = px(8f) })
+        }
+        val names = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"))
+        row(t("Style", "Стиль"), { names[Controls.autopilotStyle(this)] }) { Controls.setAutopilotStyle(this, DriveMath.cycle(Controls.autopilotStyle(this), Controls.AP_STYLES)) }
+        fun apRow(text: String, key: String, size: Int, show: (Int) -> String) =
+            row(text, { show(Controls.apStep(this, key, size)) }) { Controls.setApStep(this, key, DriveMath.cycle(Controls.apStep(this, key, size), size)) }
+        apRow(t("Own: cornering speed", "Свой: скорость в поворотах"), "ap_lat", Controls.AP_LAT.size) { "${(Controls.AP_LAT[it] * 100).toInt()} %" }
+        apRow(t("Own: late braking", "Свой: позднее торможение"), "ap_brake", Controls.AP_BRAKE.size) { "${(Controls.AP_BRAKE[it] * 100).toInt()} %" }
+        apRow(t("Own: top speed", "Свой: макс. скорость"), "ap_speed", Controls.AP_SPEED.size) { "${(Controls.AP_SPEED[it] * 100).toInt()} %" }
+        apRow(t("Own: corner cutting", "Свой: срезание поворотов"), "ap_cut", Controls.AP_CUT.size) { "${(Controls.AP_CUT[it] * 100).toInt()} %" }
+        apRow(t("Own: slides", "Свой: заносы"), "ap_slide", 2) { if (it == 1) t("On", "Вкл") else t("Off", "Выкл") }
+        apRow(t("Own: margin to the edge", "Свой: запас до края"), "ap_edge", Controls.AP_EDGE.size) { "${Controls.AP_EDGE[it]} ${t("m", "м")}" }
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        content.addView(label(t("Autopilot", "Автопилот"), 22f))
+        content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(230f)))
+        val p = panel(content)
+        content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(12f) })
+        p.tag = { refreshers.forEach { it() } }
+        p.visibility = View.VISIBLE
+        autopilotPanel = p
     }
     private fun showAutopilot() {
         val name = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"))[autopilotStyle.coerceIn(0, 3)]
@@ -153,6 +182,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
         intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
+        if (intent.getIntExtra("autopilotpanel", 0) > 0) handler.postDelayed({ showAutopilotPanel() }, 1500)   // debug/test: the autopilot settings
         intent.getIntExtra("road", 0).let { if (it > 0) Native.gameOnRoad(it) }   // debug/test: start on a road
         intent.getIntExtra("autopilot", 0).let { if (it > 0) handler.postDelayed({ Controls.setAutopilotStyle(this, it - 1); setAutopilot(true) }, 1500) }   // debug/test: the autopilot drives (1 calm, 2 normal, 3 aggressive)
         // debug/test: a camera orbit (radians) and a held throttle (after 1.5 s) without touching the screen
