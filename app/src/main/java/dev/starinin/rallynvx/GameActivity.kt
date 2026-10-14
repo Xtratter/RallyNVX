@@ -108,11 +108,11 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             newLevelBtn?.visibility = View.GONE   // a rally has its fixed level
             fun overlay(size: Float, bold: Boolean) = TextView(this).apply { textSize = size; gravity = Gravity.CENTER; setTextColor(M3.TEXT); if (bold) typeface = M3.medium; visibility = View.GONE }
             rallyTimer = overlay(18f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)); fontFeatureSettings = "tnum"; visibility = View.VISIBLE }
-            root.addView(rallyTimer, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = px(24f) })
-            rallyCount = overlay(96f, true).apply { setShadowLayer(8f, 0f, 2f, 0xAA000000.toInt()) }
+            root.addView(rallyTimer, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = px(16f) })
+            rallyCount = overlay(96f, true).apply { setTextColor(0xFFFFFFFF.toInt()); setShadowLayer(10f, 0f, 3f, 0xDD000000.toInt()) }
             root.addView(rallyCount, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
             rallyToast = overlay(18f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)) }
-            root.addView(rallyToast, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = px(84f) })
+            root.addView(rallyToast, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = px(72f) })
         }
         // sound on/off (kept in SharedPreferences)
         audio = AudioEngine(this)
@@ -202,7 +202,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val stageBest = RallyData.record(this, rally, rallyStage)
         resultsPanel?.let { root.removeView(it) }
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
-        content.addView(label(RallyData.stageName(rallyStage) + " — " + t("finished", "завершён"), 22f))
+        content.addView(label(t("Stage ", "Этап ") + "${rallyStage + 1}/${RallyData.STAGE_COUNT} " + t("finished", "завершён"), 22f))
+        content.addView(label(RallyData.stageName(rallyStage), 15f))
         fun line(text: String) = content.addView(label(text, 16f), LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(6f) })
         line(t("Time ", "Время ") + RallyData.time(time) + (if (penalty > 0f) "  + " + t("penalties ", "штрафы ") + "${penalty.toInt()} " + t("s", "с") else ""))
         line(t("Total ", "Итого ") + RallyData.time(total))
