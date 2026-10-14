@@ -170,3 +170,15 @@ use crate::game::vehicle::VehicleSpec as RoadCar;
     }
     assert!(!World::new(4).place_on_road(1));
 }
+
+#[test] fn driving_on_dirt_raises_dust_in_the_world_and_the_view_carries_it() {
+    let mut w = World::new(1);
+    assert!(w.view(1).dust.is_empty());
+    w.vehicle.force_surface = Some(crate::game::surface::Surface::Dirt);
+    for _ in 0..120 { w.step(&Input::default(), 1.0 / 60.0); }
+    w.vehicle.vel = w.vehicle.forward() * 18.0;
+    for _ in 0..240 { w.step(&Input { throttle: 0.4, ..Default::default() }, 1.0 / 60.0); }
+    assert!(w.view(1).dust.len() > 5, "{}", w.view(1).dust.len());
+    w.dust.set_level(0);
+    assert!(w.view(1).dust.is_empty());
+}

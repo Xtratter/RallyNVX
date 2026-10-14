@@ -55,6 +55,7 @@ mod game {
         profile: Option<Profile>, profile_path: Option<PathBuf>, paused: bool,
         director: crate::audio::Director,
         car: crate::game::vehicle::VehicleSpec, garage: bool,
+        dust_level: i32,
         auto_fallback: bool, monitor: crate::game::rendermode::FallbackMonitor, fell_back: bool,
     }
 
@@ -63,7 +64,7 @@ mod game {
             let seed = super::level_seed(seed);
             Game { world: World::with_roads(seed, crate::game::vehicle::VehicleSpec::offroader()), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::offroader(), garage: false, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false }
+                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::offroader(), garage: false, dust_level: 1, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
@@ -76,6 +77,8 @@ mod game {
         /// The player drags on the screen: orbit the chase camera (radians); `camera_release` when the finger goes up.
         pub fn camera_drag(&mut self, dyaw: f32, dpitch: f32) { self.world.cam.drag(dyaw, dpitch); }
         pub fn camera_release(&mut self) { self.world.cam.set_dragging(false); }
+        /// Tyre dust: 0 off, 1 normal, 2 lots.
+        pub fn set_dust(&mut self, level: i32) { self.dust_level = level.clamp(0, 2); self.world.dust.set_level(self.dust_level); }
         pub fn place_on_road(&mut self, mode: i32) -> bool { self.world.place_on_road(mode) }
         pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }
         pub fn place_in_city(&mut self) -> bool { self.world.place_in_city() }
@@ -84,7 +87,7 @@ mod game {
         pub fn new_level(&mut self, seed: u64) {
             self.monitor.warm_up(6.0);
             let seed = super::level_seed(seed);
-            self.world = World::with_roads(seed, self.car); self.seed = seed; self.input = Input::default(); self.acc = 0.0;
+            self.world = World::with_roads(seed, self.car); self.world.dust.set_level(self.dust_level); self.seed = seed; self.input = Input::default(); self.acc = 0.0;
         }
 
         /// Loads (or creates) the profile at `path`; the selected car (with its upgrades) drives in the free-drive world.

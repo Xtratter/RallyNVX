@@ -149,6 +149,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun applyControls() {
         applyRender()
         Native.audioVolume(Controls.volume(this))
+        if (running) Native.gameDust(Controls.dust(this))
         val d = drive ?: return
         d.configure(Controls.mode(this), Controls.sens(this), Controls.pedalsLeft(this), Controls.pedalsAnalog(this))
         applyControlLayout()

@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 
 use super::camera_follow::FollowCam;
+use super::dust::{Dust, Particle};
 use super::grip::LooseMap;
 use super::carlights::{self, CarLights, Lamps};
 use super::city::City;
@@ -25,6 +26,8 @@ pub struct World {
     pub cities: Vec<City>,
     /// The loose layer of the special stage (worn by the wheels, reset with the level).
     pub loose: LooseMap,
+    /// Tyre dust and spray.
+    pub dust: Dust,
     pub tracks: Tracks,
     /// The car this world is built for (a restart or a placement helper makes the same car again).
     pub car_spec: VehicleSpec,
@@ -58,7 +61,7 @@ impl World {
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
         let loose = terrain.roads().map_or_else(LooseMap::empty, LooseMap::new);
-        World { terrain, vehicle, cam, time: 0.0, cities, loose, tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }
+        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }
     }
 
     /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
@@ -118,6 +121,7 @@ impl World {
         self.ensure_props(tx, tz, 1);
         let near = self.nearby_props();
         self.vehicle.step_with(&self.terrain, &near, &inp, dt, &mut self.loose);
+        self.dust.update(&self.vehicle, &self.terrain, self.time, dt);
         let v = &mut self.vehicle;
         v.pos.x = v.pos.x.clamp(-WORLD_LIMIT, WORLD_LIMIT);
         v.pos.z = v.pos.z.clamp(-WORLD_LIMIT, WORLD_LIMIT);
@@ -208,7 +212,7 @@ impl World {
 pub struct WorldView<'a> {
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
-    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub lights: CarLights, pub lamps: Lamps,
+    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub lights: CarLights, pub lamps: Lamps, pub dust: Vec<Particle>,
     pub time: f32, pub cities: &'a [City], pub tracks: &'a Tracks,
 }
 
@@ -219,7 +223,7 @@ impl World {
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
         let dl = self.daylight();
-        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle),
+        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(),
             time: self.time, cities: &self.cities, tracks: &self.tracks }
     }
 }
