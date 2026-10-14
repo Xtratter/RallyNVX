@@ -47,3 +47,4 @@ fn count(s: &[Sign], k: SignKind) -> usize { s.iter().filter(|x| x.kind == k).co
     assert!(a.iter().zip(&b).all(|(p, q)| p.kind == q.kind && p.pos == q.pos));
     for (i, k) in SignKind::ALL.iter().enumerate() { assert_eq!(k.index(), i); }
     assert!(stage_signs(&Terrain::flat()).is_empty());
+}
