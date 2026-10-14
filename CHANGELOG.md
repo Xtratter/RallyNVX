@@ -2,8 +2,9 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
-## 2.19.1 - autopilot settings on the button
+## 2.20.0 - side roads and junctions
 
+- Added: 4-7 junctions along the special stage with gravel side roads (150-450 m, 5 m wide, a flared mouth flush with the stage) that end in a dead end; they have the stage's loose layer, ditches and rocky edge; numbers in `rust/roads.json` (`side`)
 - Changed: the autopilot's settings (style and the own style's numbers) moved from the Settings screen into a panel that opens with a long press on the Autopilot button; changes apply at once while driving
 
 ## 2.19.0 - autopilot's own style

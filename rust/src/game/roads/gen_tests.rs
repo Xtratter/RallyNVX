@@ -13,7 +13,7 @@ fn net(seed: u64) -> (Terrain, RoadNet) { let t = Terrain::new(seed); let n = ge
     let mut in_target = 0;
     for seed in 1..=14u64 {
         let (t, n) = net(seed);
-        assert_eq!(n.roads.len(), 2, "seed {seed}");
+        assert!(n.roads.len() >= 2 && n.roads[2..].iter().all(|r| r.kind == RoadKind::Side), "seed {seed}");
         let (lia, stage) = (&n.roads[0], &n.roads[1]);
         assert_eq!((lia.kind, stage.kind), (RoadKind::Liaison, RoadKind::Stage));
         for r in &n.roads {
@@ -66,7 +66,7 @@ fn net(seed: u64) -> (Terrain, RoadNet) { let t = Terrain::new(seed); let n = ge
     for seed in [4u64, 12] {
         let t = Terrain::new(seed);
         let n = generate(seed, &t);
-        assert_eq!(n.roads.len(), 2);
+        assert!(n.roads.len() >= 2);
         assert!(n.roads[1].length() > 3000.0 && n.roads[1].pts.windows(2).all(|w| (w[1].pos - w[0].pos).len() < 5.5));
     }
 }

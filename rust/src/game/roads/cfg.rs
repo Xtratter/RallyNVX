@@ -8,8 +8,13 @@ pub struct CrestCfg {
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DitchCfg { pub depth: f32, pub width: f32, pub offset: f32 }
+/// Side roads (junctions with dead ends along the stage).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RoadsCfg { pub crest: CrestCfg, pub ditch_stage: DitchCfg, pub ditch_liaison: DitchCfg, pub verge: f32, pub rock_band: (f32, f32), pub rock_candidates: u32 }
+pub struct SideCfg {
+    pub count: (u32, u32), pub spacing: (f32, f32), pub keep_ends: f32, pub min_radius: f32, pub angle: (f32, f32), pub length: (f32, f32), pub width: f32, pub min_clear: f32,
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RoadsCfg { pub side: SideCfg, pub crest: CrestCfg, pub ditch_stage: DitchCfg, pub ditch_liaison: DitchCfg, pub verge: f32, pub rock_band: (f32, f32), pub rock_candidates: u32 }
 
 pub const EMBEDDED: &str = include_str!("../../../roads.json");
 
@@ -44,7 +49,14 @@ impl RoadsCfg {
         };
         let verge = num(&obj(&v, "verge")?, "verge", "gravel_width", 0.0, 2.0)?;
         let r = obj(&v, "rocks")?;
-        Ok(RoadsCfg { crest, ditch_stage: ditch("stage")?, ditch_liaison: ditch("liaison")?, verge, rock_band: pair(&r, "rocks", "band", 2.0, 30.0)?, rock_candidates: num(&r, "rocks", "candidates", 0.0, 200.0)? as u32 })
+        let sd = obj(&v, "side")?;
+        let count = pair(&sd, "side", "count", 0.0, 20.0)?;
+        let side = SideCfg {
+            count: (count.0 as u32, count.1 as u32), spacing: pair(&sd, "side", "spacing", 100.0, 5000.0)?, keep_ends: num(&sd, "side", "keep_ends", 0.0, 2000.0)?,
+            min_radius: num(&sd, "side", "min_radius", 20.0, 1000.0)?, angle: pair(&sd, "side", "angle", 30.0, 150.0)?, length: pair(&sd, "side", "length", 50.0, 2000.0)?,
+            width: num(&sd, "side", "width", 3.0, 12.0)?, min_clear: num(&sd, "side", "min_clear", 8.0, 200.0)?,
+        };
+        Ok(RoadsCfg { side, crest, ditch_stage: ditch("stage")?, ditch_liaison: ditch("liaison")?, verge, rock_band: pair(&r, "rocks", "band", 2.0, 30.0)?, rock_candidates: num(&r, "rocks", "candidates", 0.0, 200.0)? as u32 })
     }
 }
 

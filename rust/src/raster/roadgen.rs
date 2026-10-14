@@ -18,7 +18,8 @@ pub fn road_mesh(t: &Terrain, tx: i32, tz: i32) -> Option<Mesh> {
     let (x0, z0) = (tx as f32 * TILE_SIZE, tz as f32 * TILE_SIZE);
     let (mut verts, mut idx) = (Vec::new(), Vec::new());
     for road in &net.roads {
-        let code = match road.kind { RoadKind::Liaison => 100.0, RoadKind::Stage => 0.0 };
+        let code = match road.kind { RoadKind::Liaison => 100.0, RoadKind::Stage | RoadKind::Side => 0.0 };
+        let lift = if road.kind == RoadKind::Side { LIFT + 0.01 } else { LIFT };   // a side road's mouth lies over the stage's ribbon
         for i in 0..road.pts.len().saturating_sub(1) {
             let (a, b) = (road.pts[i], road.pts[i + 1]);
             let (mx, mz) = ((a.pos.x + b.pos.x) * 0.5, (a.pos.z + b.pos.z) * 0.5);
@@ -27,8 +28,8 @@ pub fn road_mesh(t: &Terrain, tx: i32, tz: i32) -> Option<Mesh> {
             for (p, k) in [(a, i), (b, i + 1)] {
                 let (sx, sz) = side(road, k);
                 let h = p.width * 0.5;
-                verts.push([p.pos.x + sx * h, p.pos.y + LIFT, p.pos.z + sz * h, 1.0, p.s, code + p.width]);
-                verts.push([p.pos.x - sx * h, p.pos.y + LIFT, p.pos.z - sz * h, -1.0, p.s, code + p.width]);
+                verts.push([p.pos.x + sx * h, p.pos.y + lift, p.pos.z + sz * h, 1.0, p.s, code + p.width]);
+                verts.push([p.pos.x - sx * h, p.pos.y + lift, p.pos.z - sz * h, -1.0, p.s, code + p.width]);
             }
             idx.extend_from_slice(&[base, base + 2, base + 1, base + 1, base + 2, base + 3]);
         }

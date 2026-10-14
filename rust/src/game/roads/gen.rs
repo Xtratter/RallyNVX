@@ -123,7 +123,10 @@ fn wet_points(road: &Road, base: &Terrain) -> Vec<(f32, f32)> {
     road.pts.iter().filter(|p| base.is_water(p.pos.x, p.pos.z, 0.0)).map(|p| (p.pos.x, p.pos.z)).collect()
 }
 
-fn build_road(kind: RoadKind, poly: &[(f32, f32)], base: &Terrain, seed: u64) -> Road {
+fn build_road(kind: RoadKind, poly: &[(f32, f32)], base: &Terrain, seed: u64) -> Road { build_road_with(kind, poly, base, seed, None) }
+
+/// As `build_road`; `pin_start` pulls the first points' height to the given one over 20-90 m (a side road meeting the stage flush).
+pub fn build_road_with(kind: RoadKind, poly: &[(f32, f32)], base: &Terrain, seed: u64, pin_start: Option<f32>) -> Road {
     let xz = shape::smooth_curve(&despike(poly.to_vec()));
     // a road never lies under a lake: where it must cross water it runs on a causeway 0.4 m above the surface
     let floor = base.water_level().map_or(f32::MIN, |l| l + 0.4);
@@ -131,7 +134,12 @@ fn build_road(kind: RoadKind, poly: &[(f32, f32)], base: &Terrain, seed: u64) ->
     let spacing = shape::length(&xz) / (xz.len().max(2) - 1) as f32;
     let mut y = shape::profile(&raw, spacing);
     if kind == RoadKind::Stage { shape::add_crests(&mut y, &xz, spacing, base.water_level().unwrap_or(f32::MIN), seed, &super::cfg::cfg().crest); }
-    let w = shape::widths(kind, &xz, spacing, seed);
+    if let Some(py) = pin_start {
+        let delta = py - y[0];
+        for (i, v) in y.iter_mut().enumerate() { let t = ((spacing * i as f32 - 20.0) / 70.0).clamp(0.0, 1.0); *v += delta * (1.0 - t * t * (3.0 - 2.0 * t)); }
+    }
+    let mut w = shape::widths(kind, &xz, spacing, seed);
+    if kind == RoadKind::Side { for (i, v) in w.iter_mut().enumerate() { let s = spacing * i as f32; *v = v.max(8.0 - (8.0 - *v) * (s / 14.0).min(1.0)); } }   // the mouth flares to 8 m
     let mut pts = Vec::with_capacity(xz.len());
     let mut s = 0.0;
     for i in 0..xz.len() {
@@ -230,7 +238,12 @@ pub fn generate_with(seed: u64, base: &Terrain, cfg: GenCfg) -> RoadNet {
     }
 
     log::info!("roads: {} stage attempts, {} ms in total", tried, t0.elapsed().as_millis());
-    RoadNet::new(vec![liaison.expect("the liaison loop always sets it"), stage.expect("the stage loop always sets it")])
+    let (liaison, stage) = (liaison.expect("the liaison loop always sets it"), stage.expect("the stage loop always sets it"));
+    let sides = super::side::side_roads(&stage, base, seed, &super::cfg::cfg().side);
+    log::info!("roads: {} side roads", sides.len());
+    let mut roads = vec![liaison, stage];
+    roads.extend(sides);
+    RoadNet::new(roads)
 }
 
 #[cfg(test)]

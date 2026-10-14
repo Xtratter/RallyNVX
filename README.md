@@ -18,7 +18,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 
 - **Game**: off-road free drive on random seeded levels with an arcade car, chase camera and touch or keyboard controls (see [docs/game.md](docs/game.md))
 - **City**: procedural cities with streets, parks and buildings 4-90 m; solid buildings (see [docs/game.md](docs/game.md))
-- **Roads**: a random tarmac liaison and a gravel special stage in every level, carved into the terrain, with crests, ditches and a rocky edge (see [docs/game.md](docs/game.md))
+- **Roads**: a random tarmac liaison and a gravel special stage in every level, carved into the terrain, with crests, ditches, a rocky edge and side roads (see [docs/game.md](docs/game.md))
 - **Dust**: tyre dust and spray by surface, with an Off / Normal / Lots setting (see [docs/game.md](docs/game.md))
 - **Garage**: a second car (the Vulpes WRC, a simplified model based on "Peugeot 206 WRC" by vecarz, CC BY-NC-SA 4.0), four upgrades per car and a turntable preview (see [docs/game.md](docs/game.md))
 - **Render modes**: Raster or Hybrid (soft shadows, long hill shadows, ambient occlusion) with an optional automatic fallback (see [docs/game.md](docs/game.md))

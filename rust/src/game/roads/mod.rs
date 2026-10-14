@@ -9,6 +9,7 @@ pub mod cfg;
 pub mod gen;
 pub mod path;
 pub mod shape;
+pub mod side;
 
 /// Spatial hash cell, the shoulder where the ground eases back to nature, the widest half-width and the reach of a road.
 pub const CELL: f32 = 32.0;
@@ -17,8 +18,12 @@ pub const MAX_HALF: f32 = 5.0;
 pub const INFLUENCE: f32 = MAX_HALF + SHOULDER;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RoadKind { Liaison, Stage }
-impl RoadKind { pub fn surface(self) -> Surface { match self { RoadKind::Liaison => Surface::Asphalt, RoadKind::Stage => Surface::Gravel } } }
+pub enum RoadKind { Liaison, Stage, Side }
+impl RoadKind {
+    pub fn surface(self) -> Surface { match self { RoadKind::Liaison => Surface::Asphalt, RoadKind::Stage | RoadKind::Side => Surface::Gravel } }
+    /// The stage and its side roads: gravel with a loose layer, deep ditches and a rocky edge.
+    pub fn is_gravel(self) -> bool { self != RoadKind::Liaison }
+}
 
 /// A centre-line point: `pos.y` is the road height (the profile), `s` the distance along the road in metres.
 #[derive(Clone, Copy, Debug)]

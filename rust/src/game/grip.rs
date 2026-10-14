@@ -107,7 +107,7 @@ pub struct LooseMap { roads: Vec<Vec<f32>> }
 impl LooseMap {
     pub fn empty() -> LooseMap { LooseMap { roads: Vec::new() } }
     pub fn new(net: &RoadNet) -> LooseMap {
-        LooseMap { roads: net.roads.iter().map(|r| if r.kind == RoadKind::Stage { vec![1.0; ((r.length() / CELL_S) as usize + 2) * NX] } else { Vec::new() }).collect() }
+        LooseMap { roads: net.roads.iter().map(|r| if r.kind.is_gravel() { vec![1.0; ((r.length() / CELL_S) as usize + 2) * NX] } else { Vec::new() }).collect() }
     }
     fn index(&self, road: usize, s: f32, side: f32) -> Option<usize> {
         let cells = self.roads.get(road)?;

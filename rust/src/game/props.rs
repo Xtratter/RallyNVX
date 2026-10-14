@@ -41,7 +41,7 @@ pub fn tile_props(t: &Terrain, tx: i32, tz: i32) -> Vec<Prop> {
             let (x, z) = ((tx as f32 + a) * TILE_SIZE, (tz as f32 + b) * TILE_SIZE);
             let Some(hit) = t.road_hit(x, z) else { continue };
             let edge = hit.dist - hit.half;
-            let stage = t.roads().map_or(false, |n| n.roads[hit.road].kind == super::roads::RoadKind::Stage);
+            let stage = t.roads().map_or(false, |n| n.roads[hit.road].kind.is_gravel());
             if !stage || edge < cfg.rock_band.0 || edge > cfg.rock_band.1 { continue; }
             if t.in_city(x, z, 100.0) || t.is_water(x, z, 1.0) || t.normal(x, z).y < 0.85 || x.hypot(z) < MIN_PROP_DIST { continue; }
             let radius = 0.5 + c * 0.9;

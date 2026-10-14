@@ -110,7 +110,7 @@ impl Terrain {
     fn ditch(&self, hit: &RoadHit) -> f32 {
         let Some(net) = self.roads.as_ref() else { return 0.0 };
         let cfg = roads::cfg::cfg();
-        let d = if net.roads[hit.road].kind == roads::RoadKind::Stage { cfg.ditch_stage } else { cfg.ditch_liaison };
+        let d = if net.roads[hit.road].kind.is_gravel() { cfg.ditch_stage } else { cfg.ditch_liaison };
         if let Some(l) = self.water { if hit.y - l < cfg.crest.causeway_clear { return 0.0; } }
         let t = ((hit.dist - hit.half - d.offset).abs() / d.width).min(1.0);
         d.depth * (1.0 - smooth(t))

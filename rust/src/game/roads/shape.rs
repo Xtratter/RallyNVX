@@ -110,6 +110,7 @@ pub fn profile(raw: &[f32], spacing: f32) -> Vec<f32> {
 pub fn widths(kind: RoadKind, pts: &[(f32, f32)], spacing: f32, seed: u64) -> Vec<f32> {
     let n = pts.len();
     if kind == RoadKind::Liaison { return vec![8.0; n]; }
+    if kind == RoadKind::Side { return vec![super::cfg::cfg().side.width; n]; }
     let raw: Vec<f32> = (0..n).map(|i| {
         let s = i as f32 * spacing;
         let base = 5.0 + 4.0 * value_noise(seed ^ 0x51DE, s / 350.0, 0.0);
