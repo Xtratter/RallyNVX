@@ -39,6 +39,7 @@ object Native {
     /** Tyre dust: 0 off, 1 normal, 2 lots. */
     @JvmStatic external fun gameDust(level: Int)
     @JvmStatic external fun gameAutopilot(style: Int)
+    @JvmStatic external fun gameAutopilotTune(lat: Float, brake: Float, offset: Float, speed: Float, slide: Float, edge: Float)
     @JvmStatic external fun gameInCity(mode: Int)
     /** Debug/test: start every level at this time of day (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk); negative = off. */
     @JvmStatic external fun gameTimeOfDay(phase: Float)

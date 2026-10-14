@@ -38,3 +38,15 @@ fn world_terrain(seed: u64) -> Terrain {
     let ap = Autopilot::start(&t, &v, car, 1).unwrap();
     assert!(ap.route().length() > 3000.0, "a stage route, not a field route: {}", ap.route().length());
 }
+#[test] fn the_custom_style_limits_the_top_speed_and_keeps_its_distance_from_the_edge() {
+    use crate::game::autopilot::{chain_route, cfg::{cfg_style, reset_custom, set_custom}};
+    let car = VehicleSpec::offroader();
+    let t = world_terrain(5);
+    let free = chain_route(&t, &car, &cfg_style(1)).unwrap();
+    set_custom(0.9, 0.8, 0.55, 0.5, 0.0, 3.0);
+    let capped = chain_route(&t, &car, &cfg_style(3)).unwrap();
+    reset_custom();
+    let top = |r: &super::super::route::Route| r.speed.iter().cloned().fold(0.0, f32::max);
+    assert!(top(&capped) <= car.max_speed * 0.5 + 0.01 && top(&free) > top(&capped), "{} vs {}", top(&capped), top(&free));
+    assert_eq!(capped.len(), free.len());
+}

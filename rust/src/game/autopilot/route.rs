@@ -4,8 +4,6 @@ use crate::game::math::{v3, V3};
 use crate::game::roads::shape::radius;
 
 const G: f32 = 9.81;
-/// Margin kept to the road edge (half a car width plus a little).
-const EDGE_MARGIN: f32 = 1.4;
 
 /// What the speed profile needs to know about the car and the ground (`stop_at_end`: the last point is a standstill).
 #[derive(Clone, Copy, Debug)]
@@ -27,7 +25,7 @@ impl Route {
     pub fn build_with(centre: &[V3], width: &[f32], mu: &[f32], lim: Limits, cfg: &AutoCfg) -> Route {
         let n = centre.len();
         assert!(n >= 3 && width.len() == n && mu.len() == n, "a route needs at least three points");
-        let p = taut(centre, width, cfg.offset_max);
+        let p = taut(centre, width, cfg.offset_max, cfg.edge_margin);
         let mut s = vec![0.0f32; n];
         for i in 1..n { s[i] = s[i - 1] + ((p[i].x - p[i - 1].x).hypot(p[i].z - p[i - 1].z)).max(1e-3); }
         // curvature, widened to the worst of +-3 points so the car brakes before the bend
@@ -80,10 +78,10 @@ impl Route {
 /// The line of least curvature inside the corridor `+-offset_max * (width / 2 - margin)`: Gauss-Seidel sweeps of the
 /// biharmonic smoothing (every point goes to `(4 (p-1 + p+1) - (p-2 + p+2)) / 6`, projected on its own normal and clamped
 /// to the corridor), the first and last two points stay on the centre line. Outside-inside-outside comes out by itself.
-fn taut(c: &[V3], width: &[f32], offset_max: f32) -> Vec<V3> {
+fn taut(c: &[V3], width: &[f32], offset_max: f32, edge_margin: f32) -> Vec<V3> {
     let n = c.len();
     let nor: Vec<V3> = (0..n).map(|i| { let (a, b) = (c[i.saturating_sub(1)], c[(i + 1).min(n - 1)]); let (tx, tz) = (b.x - a.x, b.z - a.z); let l = tx.hypot(tz).max(1e-3); v3(-tz / l, 0.0, tx / l) }).collect();
-    let lim: Vec<f32> = (0..n).map(|i| offset_max * (width[i] * 0.5 - EDGE_MARGIN).max(0.0)).collect();
+    let lim: Vec<f32> = (0..n).map(|i| offset_max * (width[i] * 0.5 - edge_margin).max(0.0)).collect();
     let mut d = vec![0.0f32; n];
     if n < 7 || lim.iter().all(|l| *l <= 0.0) { return c.to_vec(); }
     let pos = |d: &[f32], i: usize| (c[i].x + nor[i].x * d[i], c[i].z + nor[i].z * d[i]);

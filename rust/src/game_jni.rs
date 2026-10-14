@@ -120,6 +120,7 @@ mod android {
     }
     /// Tyre dust: 0 off, 1 normal, 2 lots.
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameAutopilot(_e: JNIEnv, _c: JClass, style: jint) { send(GCmd::Autopilot(style)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameAutopilotTune(_e: JNIEnv, _c: JClass, lat: jfloat, brake: jfloat, offset: jfloat, speed: jfloat, slide: jfloat, edge: jfloat) { crate::game::autopilot::cfg::set_custom(lat, brake, offset, speed, slide, edge); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameDust(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Dust(level)); }
     /// Debug/test: put the car on a road facing along it (1 liaison, 2 stage start, 3 stage middle, 4 stage end).
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameOnRoad(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::OnRoad(mode)); }

@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.19.0 - autopilot's own style
+
+- Added: the autopilot's own style (Settings -> Autopilot style -> Own): cornering speed, late braking, top speed, corner cutting, slides and the margin to the road edge are set in steps; the style also joins the long-press cycle on the button
+
 ## 2.18.1 - autopilot on the whole drive
 
 - Added: three autopilot styles (calm / normal / aggressive): Settings -> Autopilot style, or a long press on the button while driving; the aggressive style slides through bends (steering by the direction of travel, a handbrake flick into slow bends) and is about 10 % faster on the stage; the numbers are in `rust/autopilot.json` (`styles`)

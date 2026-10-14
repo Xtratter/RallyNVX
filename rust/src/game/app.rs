@@ -25,7 +25,7 @@ fn surface_code(s: crate::game::surface::Surface) -> u8 {
 
 /// Flat state for the UI. `[0]` fps, `[1]` km/h, `[2]` seed (24-bit), `[3]` frame ms, `[16]` money, `[25]` signed forward
 /// speed of the car, km/h, `[26]` hybrid render mode active (0/1), `[27]` fell back from hybrid to raster automatically (0/1),
-/// `[28]` the surface under the car (0 grass, 1 dirt, 2 sand, 3 rock, 4 gravel, 5 asphalt, 6 water), `[29]` the autopilot style plus one while it drives (1 calm, 2 normal, 3 aggressive; 0 off);
+/// `[28]` the surface under the car (0 grass, 1 dirt, 2 sand, 3 rock, 4 gravel, 5 asphalt, 6 water), `[29]` the autopilot style plus one while it drives (1 calm, 2 normal, 3 aggressive, 4 custom; 0 off);
 /// the other slots are zero (kept so the indices stay put).
 pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, fps: f32, frame_ms: f32, seed: u64) {
     *out = [0.0; STAT_LEN];

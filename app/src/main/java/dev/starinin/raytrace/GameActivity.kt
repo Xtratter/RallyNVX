@@ -42,7 +42,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             val s = Native.gameStats()
             hud.text = (if (s[27] > 0.5f) t("Raster (auto) · ", "Растр (авто) · ") else "") + "${s[1].toInt()} km/h" + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}" + (if (s[26] > 0.5f) " · " + t("hybrid", "гибрид") else "") + " · " + arrayOf(t("grass", "трава"), t("dirt", "грунт"), t("sand", "песок"), t("rock", "скала"), t("gravel", "гравий"), t("asphalt", "асфальт"), t("water", "вода")).getOrElse(s[28].toInt()) { "" }
             if ((s[29] > 0.5f) != autopilotOn) { autopilotOn = s[29] > 0.5f; showAutopilot() }   // it switches itself off at the finish
-            if (autopilotOn && s[29].toInt() - 1 != autopilotStyle) { autopilotStyle = (s[29].toInt() - 1).coerceIn(0, 2); showAutopilot() }
+            if (autopilotOn && s[29].toInt() - 1 != autopilotStyle) { autopilotStyle = (s[29].toInt() - 1).coerceIn(0, 3); showAutopilot() }
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
         }
@@ -114,17 +114,24 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun setAutopilot(on: Boolean) {
         if (!running) return
         if (on) autopilotStyle = Controls.autopilotStyle(this)
+        if (on) sendAutopilotTune()
         autopilotOn = on; Native.gameAutopilot(if (on) autopilotStyle else -1); showAutopilot()
     }
-    /** Long press on the button: calm -> normal -> aggressive -> calm (kept as the setting, applied at once while driving). */
+    /** Hands the own style's numbers (settings) to the game. */
+    private fun sendAutopilotTune() {
+        fun step(key: String, list: FloatArray) = list[Controls.apStep(this, key, list.size)]
+        Native.gameAutopilotTune(step("ap_lat", Controls.AP_LAT), step("ap_brake", Controls.AP_BRAKE), step("ap_cut", Controls.AP_CUT), step("ap_speed", Controls.AP_SPEED), Controls.apStep(this, "ap_slide", 2).toFloat(), step("ap_edge", Controls.AP_EDGE))
+    }
+    /** Long press on the button: calm -> normal -> aggressive -> own -> calm (kept as the setting, applied at once while driving). */
     private fun cycleAutopilotStyle() {
-        autopilotStyle = (Controls.autopilotStyle(this) + 1) % 3
+        autopilotStyle = (Controls.autopilotStyle(this) + 1) % Controls.AP_STYLES
+        sendAutopilotTune()
         Controls.setAutopilotStyle(this, autopilotStyle)
         if (autopilotOn && running) Native.gameAutopilot(autopilotStyle)
         showAutopilot()
     }
     private fun showAutopilot() {
-        val name = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"))[autopilotStyle.coerceIn(0, 2)]
+        val name = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"))[autopilotStyle.coerceIn(0, 3)]
         (autopilotBtn as? android.widget.TextView)?.text = if (autopilotOn) "● $name" else t("Autopilot", "Автопилот")
         autopilotBtn?.alpha = if (autopilotOn) 1f else 0.85f
     }

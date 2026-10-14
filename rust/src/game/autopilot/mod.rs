@@ -68,7 +68,7 @@ pub fn chain_route(t: &super::terrain::Terrain, car: &VehicleSpec, c: &AutoCfg) 
     }
     for p in &stage.pts { push(p.pos, p.width, mu_of(stage.kind.surface())); }
     if centre.len() < 7 { return None; }
-    let lim = Limits { mu: 1.0, v_max: car.max_speed, accel: 0.5 * car.engine_force / car.mass, stop_at_end: true };
+    let lim = Limits { mu: 1.0, v_max: car.max_speed * c.speed_cap, accel: 0.5 * car.engine_force / car.mass, stop_at_end: true };
     Some(Route::build_with(&centre, &width, &mu, lim, c))
 }
 
@@ -78,7 +78,7 @@ impl Autopilot {
     /// The same with a driving style: 0 calm, 1 normal, 2 aggressive.
     pub fn on_route_styled(route: Route, car: VehicleSpec, v: &Vehicle, style: i32) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg: cfg_style(style), style: style.clamp(0, 2), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, next: None, joined_at: None, recoveries: 0 }
+        Autopilot { route, car, cfg: cfg_style(style), style: style.clamp(0, 3), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, next: None, joined_at: None, recoveries: 0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
@@ -96,7 +96,7 @@ impl Autopilot {
         Some(ap)
     }
 
-    /// 0 calm, 1 normal, 2 aggressive.
+    /// 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers.
     pub fn style(&self) -> i32 { self.style }
     pub fn route(&self) -> &Route { &self.route }
     pub fn progress(&self) -> f32 { self.route.s[self.idx] }

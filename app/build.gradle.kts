@@ -11,8 +11,8 @@ android {
         applicationId = "dev.starinin.raytrace"
         minSdk = 28
         targetSdk = 34
-        versionCode = 31
-        versionName = "2.18.1"
+        versionCode = 32
+        versionName = "2.19.0"
         ndk { abiFilters += "arm64-v8a" }
     }
     buildTypes {

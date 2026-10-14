@@ -27,8 +27,19 @@ object Controls {
     fun setRenderMode(c: Context, v: Int) = p(c).edit().putInt("render_mode", v.coerceIn(0, 1)).putInt("render_rev", renderRev(c) + 1).apply()
     fun renderRev(c: Context) = p(c).getInt("render_rev", 0)
     fun dust(c: Context): Int = p(c).getInt("dust", 1).coerceIn(0, 2)
-    fun autopilotStyle(c: Context): Int = p(c).getInt("autopilot_style", 1).coerceIn(0, 2)
-    fun setAutopilotStyle(c: Context, v: Int) = p(c).edit().putInt("autopilot_style", v.coerceIn(0, 2)).apply()
+    /** Autopilot style: 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers. */
+    const val AP_STYLES = 4
+    fun autopilotStyle(c: Context): Int = p(c).getInt("autopilot_style", 1).coerceIn(0, AP_STYLES - 1)
+    fun setAutopilotStyle(c: Context, v: Int) = p(c).edit().putInt("autopilot_style", v.coerceIn(0, AP_STYLES - 1)).apply()
+    /** The own style's numbers as steps of these lists (cornering speed, braking, top speed, corner cutting, edge margin). */
+    val AP_LAT = floatArrayOf(0.5f, 0.7f, 0.9f, 1.1f, 1.3f, 1.5f, 1.7f)
+    val AP_BRAKE = floatArrayOf(0.5f, 0.65f, 0.8f, 0.95f, 1.1f)
+    val AP_SPEED = floatArrayOf(0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 1.0f)
+    val AP_CUT = floatArrayOf(0.0f, 0.25f, 0.4f, 0.55f, 0.7f, 0.85f)
+    val AP_EDGE = floatArrayOf(0.8f, 1.4f, 2.0f, 3.0f)
+    private val AP_DEFAULT = mapOf("ap_lat" to 2, "ap_brake" to 2, "ap_speed" to 5, "ap_cut" to 3, "ap_slide" to 0, "ap_edge" to 1)
+    fun apStep(c: Context, key: String, size: Int): Int = p(c).getInt(key, AP_DEFAULT[key] ?: 0).coerceIn(0, size - 1)
+    fun setApStep(c: Context, key: String, v: Int) = p(c).edit().putInt(key, v).apply()
     fun setDust(c: Context, v: Int) = p(c).edit().putInt("dust", v.coerceIn(0, 2)).apply()
     fun autoFallback(c: Context) = p(c).getBoolean("auto_fallback", false)
     fun setAutoFallback(c: Context, v: Boolean) = p(c).edit().putBoolean("auto_fallback", v).apply()

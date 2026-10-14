@@ -7,6 +7,8 @@
   "crest_speed": 30.0,
   "field_speed": 20.0,
   "stuck_time": 4.0,
+  "speed_cap": 1.0,
+  "edge_margin": 1.4,
   "slide": 0,
   "flick_ratio": 1.15,
   "flick_time": 0.3,

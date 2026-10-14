@@ -36,7 +36,16 @@ class SettingsActivity : Activity() {
         row(t("Render mode", "Режим рендера"), { if (Controls.renderMode(this) == 1) t("Hybrid", "Гибрид") else t("Raster", "Растр") }) { Controls.setRenderMode(this, 1 - Controls.renderMode(this)) }
         row(t("Auto fallback to Raster", "Откат на Растр"), { if (Controls.autoFallback(this)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.setAutoFallback(this, !Controls.autoFallback(this)) }
         row(t("Dust", "Пыль"), { arrayOf(t("Off", "Выкл"), t("Normal", "Обычная"), t("Lots", "Много"))[Controls.dust(this)] }) { Controls.setDust(this, DriveMath.cycle(Controls.dust(this), 3)) }
-        row(t("Autopilot style", "Стиль автопилота"), { arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"))[Controls.autopilotStyle(this)] }) { Controls.setAutopilotStyle(this, DriveMath.cycle(Controls.autopilotStyle(this), 3)) }
+        row(t("Autopilot style", "Стиль автопилота"), { apStyleName(Controls.autopilotStyle(this)) }) { Controls.setAutopilotStyle(this, DriveMath.cycle(Controls.autopilotStyle(this), Controls.AP_STYLES)) }
+        fun apRow(label: String, key: String, size: Int, show: (Int) -> String) =
+            row(label, { show(Controls.apStep(this, key, size)) }) { Controls.setApStep(this, key, DriveMath.cycle(Controls.apStep(this, key, size), size)) }
+        // the own style ("Custom"): how much the autopilot risks and how fast it goes
+        apRow(t("Own style: cornering speed", "Свой стиль: скорость в поворотах"), "ap_lat", Controls.AP_LAT.size) { "${(Controls.AP_LAT[it] * 100).toInt()} %" }
+        apRow(t("Own style: late braking", "Свой стиль: позднее торможение"), "ap_brake", Controls.AP_BRAKE.size) { "${(Controls.AP_BRAKE[it] * 100).toInt()} %" }
+        apRow(t("Own style: top speed", "Свой стиль: макс. скорость"), "ap_speed", Controls.AP_SPEED.size) { "${(Controls.AP_SPEED[it] * 100).toInt()} %" }
+        apRow(t("Own style: corner cutting", "Свой стиль: срезание поворотов"), "ap_cut", Controls.AP_CUT.size) { "${(Controls.AP_CUT[it] * 100).toInt()} %" }
+        apRow(t("Own style: slides", "Свой стиль: заносы"), "ap_slide", 2) { if (it == 1) t("On", "Вкл") else t("Off", "Выкл") }
+        apRow(t("Own style: margin to the edge", "Свой стиль: запас до края"), "ap_edge", Controls.AP_EDGE.size) { "${Controls.AP_EDGE[it]} ${t("m", "м")}" }
         row(t("Steering", "Руль"), { arrayOf(t("Buttons", "Кнопки"), t("Wheel", "Колесо"), t("Tilt", "Наклон"))[Controls.mode(this)] }) { Controls.setMode(this, DriveMath.cycle(Controls.mode(this), Controls.MODES)) }
         row(t("Sensitivity", "Чувствительность"), { arrayOf(t("Low", "Низкая"), t("Normal", "Обычная"), t("High", "Высокая"))[Controls.sens(this)] }) { Controls.setSens(this, DriveMath.cycle(Controls.sens(this), 3)) }
         row(t("Volume", "Громкость"), { "${(DriveMath.VOLUME[Controls.volumeStep(this)] * 100).toInt()} %" }) {
@@ -53,6 +62,8 @@ class SettingsActivity : Activity() {
         col.setBackgroundColor(M3.base)
         setContentView(ScrollView(this).apply { isFillViewport = true; setBackgroundColor(M3.base); addView(col, android.widget.FrameLayout.LayoutParams(-1, -2)) })
     }
+
+    private fun apStyleName(i: Int) = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"))[i.coerceIn(0, 3)]
 
     override fun onResume() { super.onResume(); updaters.forEach { it() } }
 }
