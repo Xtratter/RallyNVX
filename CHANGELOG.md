@@ -2,6 +2,13 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.13.0 - day and night (unreleased, ships with the car lights)
+
+- Added: a full day-night cycle (a day is 12 minutes): the sun and the moon travel a full circle; sunrise and sunset colour the sky, the night is dark but passable by moonlight; one light source switches from the sun to the moon with no shadow jumps; a level always starts by day
+- Added: a visible sun disc with a glow, a moon with phases (its lit side faces the sun) and stars; clouds darken at night; windows of the city buildings and the street lamps glow at night
+- Fixed: the sky was drawn mirrored vertically, so clouds and the sun glow were never where they should be
+- Debug: the intent extra `tod` (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk) freezes the clock for screenshots
+
 ## 2.12.0 - cars only, real Vulpes WRC data
 
 - Removed: the helicopter, the drone and every air mission (rings, sling cargo, recon, rescue), their controls, sounds, models and settings. The mission list is now three deliveries and three checkpoint races, two of them in the city. Results saved for the removed missions are ignored; money, the garage and car results stay
