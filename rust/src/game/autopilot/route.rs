@@ -11,8 +11,9 @@ const EDGE_MARGIN: f32 = 1.4;
 #[derive(Clone, Copy, Debug)]
 pub struct Limits { pub mu: f32, pub v_max: f32, pub accel: f32, pub stop_at_end: bool }
 
+/// `half`: the half width of the road at every point (0 off the roads).
 #[derive(Clone, Debug)]
-pub struct Route { pub p: Vec<V3>, pub s: Vec<f32>, pub kappa: Vec<f32>, pub speed: Vec<f32> }
+pub struct Route { pub p: Vec<V3>, pub s: Vec<f32>, pub kappa: Vec<f32>, pub speed: Vec<f32>, pub half: Vec<f32> }
 
 fn xz(a: V3) -> (f32, f32) { (a.x, a.z) }
 
@@ -52,7 +53,7 @@ impl Route {
             let a = (lim.accel - G * dy / ds).max(0.3);
             speed[i + 1] = speed[i + 1].min((speed[i] * speed[i] + 2.0 * a * ds).sqrt());
         }
-        Route { p, s, kappa, speed }
+        Route { p, s, kappa, speed, half: width.iter().map(|w| w * 0.5).collect() }
     }
 
     pub fn len(&self) -> usize { self.p.len() }

@@ -31,6 +31,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var running = false
     private var handbrake = false
     private var autopilotOn = false
+    private var autopilotStyle = 1
     private var autopilotBtn: View? = null
     private var seed = 0L
     private lateinit var audio: AudioEngine
@@ -41,6 +42,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             val s = Native.gameStats()
             hud.text = (if (s[27] > 0.5f) t("Raster (auto) · ", "Растр (авто) · ") else "") + "${s[1].toInt()} km/h" + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}" + (if (s[26] > 0.5f) " · " + t("hybrid", "гибрид") else "") + " · " + arrayOf(t("grass", "трава"), t("dirt", "грунт"), t("sand", "песок"), t("rock", "скала"), t("gravel", "гравий"), t("asphalt", "асфальт"), t("water", "вода")).getOrElse(s[28].toInt()) { "" }
             if ((s[29] > 0.5f) != autopilotOn) { autopilotOn = s[29] > 0.5f; showAutopilot() }   // it switches itself off at the finish
+            if (autopilotOn && s[29].toInt() - 1 != autopilotStyle) { autopilotStyle = (s[29].toInt() - 1).coerceIn(0, 2); showAutopilot() }
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
         }
@@ -75,7 +77,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             }
         button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { autopilotOn = false; showAutopilot(); Native.gameReset() }
         button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { autopilotOn = false; showAutopilot(); seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
-        autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, 284f) { setAutopilot(!autopilotOn) }
+        autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, 284f, 168f) { setAutopilot(!autopilotOn) }
+        autopilotBtn?.setOnLongClickListener { cycleAutopilotStyle(); true }   // long press: the next driving style
         button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
             handbrakeBtn = this
             applyControlLayout()
@@ -110,10 +113,19 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     /** Turns the autopilot on or off (any touch of the wheel or pedals turns it off). */
     private fun setAutopilot(on: Boolean) {
         if (!running) return
-        autopilotOn = on; Native.gameAutopilot(on); showAutopilot()
+        if (on) autopilotStyle = Controls.autopilotStyle(this)
+        autopilotOn = on; Native.gameAutopilot(if (on) autopilotStyle else -1); showAutopilot()
+    }
+    /** Long press on the button: calm -> normal -> aggressive -> calm (kept as the setting, applied at once while driving). */
+    private fun cycleAutopilotStyle() {
+        autopilotStyle = (Controls.autopilotStyle(this) + 1) % 3
+        Controls.setAutopilotStyle(this, autopilotStyle)
+        if (autopilotOn && running) Native.gameAutopilot(autopilotStyle)
+        showAutopilot()
     }
     private fun showAutopilot() {
-        (autopilotBtn as? android.widget.TextView)?.text = if (autopilotOn) t("● Autopilot", "● Автопилот") else t("Autopilot", "Автопилот")
+        val name = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"))[autopilotStyle.coerceIn(0, 2)]
+        (autopilotBtn as? android.widget.TextView)?.text = if (autopilotOn) "● $name" else t("Autopilot", "Автопилот")
         autopilotBtn?.alpha = if (autopilotOn) 1f else 0.85f
     }
 
@@ -135,7 +147,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
         intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
         intent.getIntExtra("road", 0).let { if (it > 0) Native.gameOnRoad(it) }   // debug/test: start on a road
-        intent.getIntExtra("autopilot", 0).let { if (it > 0) handler.postDelayed({ setAutopilot(true) }, 1500) }   // debug/test: the autopilot drives
+        intent.getIntExtra("autopilot", 0).let { if (it > 0) handler.postDelayed({ Controls.setAutopilotStyle(this, it - 1); setAutopilot(true) }, 1500) }   // debug/test: the autopilot drives (1 calm, 2 normal, 3 aggressive)
         // debug/test: a camera orbit (radians) and a held throttle (after 1.5 s) without touching the screen
         val camYaw = intent.getFloatExtra("camyaw", 0f); val camPitch = intent.getFloatExtra("campitch", 0f)
         if (camYaw != 0f || camPitch != 0f) Native.gameCamera(camYaw, camPitch)

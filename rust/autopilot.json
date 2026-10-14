@@ -6,5 +6,12 @@
   "offset_max": 0.55,
   "crest_speed": 30.0,
   "field_speed": 20.0,
-  "stuck_time": 4.0
+  "stuck_time": 4.0,
+  "slide": 0,
+  "flick_ratio": 1.15,
+  "flick_time": 0.3,
+  "styles": {
+    "calm":       { "lat_factor": 0.65, "brake_factor": 0.6 },
+    "aggressive": { "lat_factor": 1.4, "brake_factor": 1.0, "slide": 1 }
+  }
 }

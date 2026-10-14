@@ -18,7 +18,7 @@ fn world_terrain(seed: u64) -> Terrain {
         let Some(from) = [(220.0, 120.0), (-300.0, 200.0), (400.0, -300.0), (-500.0, -400.0), (700.0, 650.0)].iter().map(|o| (m.x + o.0, m.z + o.1))
             .find(|f| near(*f) > 80.0 && !t.is_water(f.0, f.1, 5.0) && f.0.abs() < 3500.0 && f.1.abs() < 3500.0) else { continue };
         let v = Vehicle::new(car, v3(from.0, t.height(from.0, from.1) + 1.1, from.1), 0.0);
-        let ap = Autopilot::start(&t, &v, car).expect("a stage exists");
+        let ap = Autopilot::start(&t, &v, car, 1).expect("a stage exists");
         let r = ap.route();
         let last = *r.p.last().unwrap();
         let d_stage = stage.pts.iter().map(|p| (p.pos.x - last.x).hypot(p.pos.z - last.z)).fold(f32::INFINITY, f32::min);
@@ -35,6 +35,6 @@ fn world_terrain(seed: u64) -> Terrain {
     let stage = t.roads().unwrap().roads.iter().find(|r| r.kind == RoadKind::Stage).unwrap();
     let p = stage.pts[100].pos;
     let v = Vehicle::new(car, v3(p.x + 3.0, p.y + 1.1, p.z), 0.0);
-    let ap = Autopilot::start(&t, &v, car).unwrap();
+    let ap = Autopilot::start(&t, &v, car, 1).unwrap();
     assert!(ap.route().length() > 3000.0, "a stage route, not a field route: {}", ap.route().length());
 }

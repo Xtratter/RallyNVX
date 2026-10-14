@@ -27,6 +27,8 @@ object Controls {
     fun setRenderMode(c: Context, v: Int) = p(c).edit().putInt("render_mode", v.coerceIn(0, 1)).putInt("render_rev", renderRev(c) + 1).apply()
     fun renderRev(c: Context) = p(c).getInt("render_rev", 0)
     fun dust(c: Context): Int = p(c).getInt("dust", 1).coerceIn(0, 2)
+    fun autopilotStyle(c: Context): Int = p(c).getInt("autopilot_style", 1).coerceIn(0, 2)
+    fun setAutopilotStyle(c: Context, v: Int) = p(c).edit().putInt("autopilot_style", v.coerceIn(0, 2)).apply()
     fun setDust(c: Context, v: Int) = p(c).edit().putInt("dust", v.coerceIn(0, 2)).apply()
     fun autoFallback(c: Context) = p(c).getBoolean("auto_fallback", false)
     fun setAutoFallback(c: Context, v: Boolean) = p(c).edit().putBoolean("auto_fallback", v).apply()

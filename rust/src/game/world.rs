@@ -71,8 +71,10 @@ impl World {
 
     /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
     /// Turns the autopilot on (it joins the stage from wherever the car is) or off; returns whether it is on afterwards.
-    pub fn set_autopilot(&mut self, on: bool) -> bool {
-        self.autopilot = if on { super::autopilot::Autopilot::start(&self.terrain, &self.vehicle, self.car_spec) } else { None };
+    pub fn set_autopilot(&mut self, on: bool) -> bool { self.set_autopilot_style(if on { 1 } else { -1 }) }
+    /// Style -1 off, 0 calm, 1 normal, 2 aggressive (slides allowed).
+    pub fn set_autopilot_style(&mut self, style: i32) -> bool {
+        self.autopilot = if style >= 0 { super::autopilot::Autopilot::start(&self.terrain, &self.vehicle, self.car_spec, style.min(2)) } else { None };
         self.autopilot.is_some()
     }
     pub fn autopilot_on(&self) -> bool { self.autopilot.is_some() }

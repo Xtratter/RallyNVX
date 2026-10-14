@@ -4,6 +4,7 @@
 
 ## 2.18.1 - autopilot on the whole drive
 
+- Added: three autopilot styles (calm / normal / aggressive): Settings -> Autopilot style, or a long press on the button while driving; the aggressive style slides through bends (steering by the direction of travel, a handbrake flick into slow bends) and is about 10 % faster on the stage; the numbers are in `rust/autopilot.json` (`styles`)
 - Fixed: the autopilot no longer cuts across the fields from the start: it drives the whole way (the liaison, the city streets between its end and the stage start, the stage) and stops at the finish
 - Changed: the car may use its full top speed (no speed caps except the grip in bends, braking distance and crests); cross-country the cap is 20 m/s, crests 30 m/s (`rust/autopilot.json`)
 

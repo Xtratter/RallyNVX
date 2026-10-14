@@ -6,7 +6,7 @@ pub mod streets;
 #[cfg(test)]
 mod stage_tests;
 
-use self::cfg::{cfg, AutoCfg};
+use self::cfg::{cfg, cfg_style, AutoCfg};
 use self::route::{Limits, Route};
 use super::grip::grip;
 use super::input::Input;
@@ -23,8 +23,11 @@ pub struct Autopilot {
     route: Route,
     car: VehicleSpec,
     cfg: AutoCfg,
+    style: i32,
     idx: usize,
     stuck: f32,
+    /// The handbrake flick in progress (seconds left) and the time until the next one may start.
+    flick: f32, cooldown: f32,
     /// The stage route and where to join it, while a field route is being driven.
     next: Option<(Route, usize)>,
     /// Route progress (m) where the stage was joined from the field: the speed is kept tame for 80 m after it.
@@ -71,26 +74,30 @@ pub fn chain_route(t: &super::terrain::Terrain, car: &VehicleSpec, c: &AutoCfg) 
 
 impl Autopilot {
     /// An autopilot for a car that is already on (or next to) `route`.
-    pub fn on_route(route: Route, car: VehicleSpec, v: &Vehicle) -> Autopilot {
+    pub fn on_route(route: Route, car: VehicleSpec, v: &Vehicle) -> Autopilot { Autopilot::on_route_styled(route, car, v, 1) }
+    /// The same with a driving style: 0 calm, 1 normal, 2 aggressive.
+    pub fn on_route_styled(route: Route, car: VehicleSpec, v: &Vehicle, style: i32) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg: cfg(), idx, stuck: 0.0, next: None, joined_at: None, recoveries: 0 }
+        Autopilot { route, car, cfg: cfg_style(style), style: style.clamp(0, 2), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, next: None, joined_at: None, recoveries: 0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
     /// the city streets, the stage), elsewhere it first drives a field route to the nearest road point. `None` when the
     /// level has no stage.
-    pub fn start(t: &super::terrain::Terrain, v: &Vehicle, car: VehicleSpec) -> Option<Autopilot> {
-        let c = cfg();
+    pub fn start(t: &super::terrain::Terrain, v: &Vehicle, car: VehicleSpec, style: i32) -> Option<Autopilot> {
+        let c = cfg_style(style);
         let chain = chain_route(t, &car, &c)?;
         let (k, d) = chain.nearest(v.pos.x, v.pos.z);
-        if d <= 15.0 { return Some(Autopilot::on_route(chain, car, v)); }
+        if d <= 15.0 { return Some(Autopilot::on_route_styled(chain, car, v, style)); }
         let to = chain.p[k];
-        let Some(field) = join::field_route(t, &car, (v.pos.x, v.pos.z), (to.x, to.z), &c) else { return Some(Autopilot::on_route(chain, car, v)) };
-        let mut ap = Autopilot::on_route(field, car, v);
+        let Some(field) = join::field_route(t, &car, (v.pos.x, v.pos.z), (to.x, to.z), &c) else { return Some(Autopilot::on_route_styled(chain, car, v, style)) };
+        let mut ap = Autopilot::on_route_styled(field, car, v, style);
         ap.next = Some((chain, k));
         Some(ap)
     }
 
+    /// 0 calm, 1 normal, 2 aggressive.
+    pub fn style(&self) -> i32 { self.style }
     pub fn route(&self) -> &Route { &self.route }
     pub fn progress(&self) -> f32 { self.route.s[self.idx] }
 
@@ -114,6 +121,9 @@ impl Autopilot {
         let want = self.route.speed[(i + 4).min(self.route.len() - 1)].max(if remaining > 12.0 { 3.5 } else { 0.0 });
         let tame = self.joined_at.map_or(f32::MAX, |s0| if self.route.s[i] - s0 < 80.0 { self.cfg.field_speed * 1.25 } else { f32::MAX });
         let want = want.min(tame);
+        // off the line: slow down in proportion to how far into the road's edge the car has drifted
+        let half = self.route.half[i];
+        let want = if half > 1.0 && d > 0.55 * half { want * (1.0 - (d - 0.55 * half) / (0.6 * half)).clamp(0.45, 1.0) } else { want };
         if v.flipped() { cmd.reset = true; self.recoveries += 1; self.stuck = 0.0; }
         self.stuck = if speed.abs() < 1.0 && want > 3.0 { self.stuck + dt } else { 0.0 };
         if remaining < 25.0 && self.stuck > 2.0 { cmd.done = true; return cmd; }   // stopped just short of the line
@@ -132,7 +142,12 @@ impl Autopilot {
         let right = v.right();
         let lat = dx * right.x + dz * right.z;
         let wheelbase = (self.car.wheels[0].z - self.car.wheels[2].z).abs().max(1.0);
-        let delta = (2.0 * wheelbase * lat / (ld * ld)).atan();
+        let long = dx * v.forward().x + dz * v.forward().z;
+        let (vf, vr) = (v.vel.x * v.forward().x + v.vel.z * v.forward().z, v.vel.x * right.x + v.vel.z * right.z);
+        // slide assist: aim the velocity (not the nose) at the target and add the drift angle as counter-steer
+        let beta = if self.cfg.slide > 0.0 && v.vel.len() > 5.0 && vf > 0.0 { vr.atan2(vf) * self.cfg.slide } else { 0.0 };
+        let alpha = lat.atan2(long.max(0.1)) - beta;
+        let delta = (2.0 * wheelbase * alpha.sin() / ld).atan() + beta;
         let max_a = self.car.steer_max / (1.0 + v.vel.len() / self.car.steer_speed_ref);
         let steer = (delta / max_a).clamp(-1.0, 1.0);
 
@@ -140,6 +155,21 @@ impl Autopilot {
         let e = want - speed;
         let (throttle, brake, amt) = if e > 0.3 { ((0.25 + 0.35 * e).clamp(0.0, 1.0), false, 0.0) }
             else if e < -0.7 { (0.0, true, (-e * 0.3).clamp(0.1, 1.0)) } else { (0.0, false, 0.0) };
+        // handbrake flick: into a tight bend taken above the grip limit the rear is let go for a moment so the car rotates
+        self.cooldown = (self.cooldown - dt).max(0.0);
+        let mut handbrake = false;
+        if self.cfg.slide > 0.0 {
+            if self.flick > 0.0 { self.flick -= dt; handbrake = true; }
+            else if self.cooldown <= 0.0 && speed > 9.0 {
+                let (_, ahead) = self.route.ahead(i, 18.0 + 0.5 * speed);
+                let k_max = self.route.kappa[i..=self.route.ahead(i, 18.0 + 0.5 * speed).0].iter().cloned().fold(0.0, f32::max);
+                let mu = self.car.mu * 0.62;   // loose gravel: the worst case; asphalt only makes it safer
+                let v_grip = if k_max > 1e-4 { (mu * 9.81 / k_max).sqrt() } else { f32::MAX };
+                let _ = ahead;
+                if k_max > 0.022 && speed > v_grip * self.cfg.flick_ratio { self.flick = self.cfg.flick_time; self.cooldown = 2.0; handbrake = true; }
+            }
+        }
+        if handbrake { cmd.input = Input { throttle: 0.0, steer, brake: false, handbrake: true, ..Default::default() }; return cmd; }
         cmd.input = Input { throttle, steer, brake, brake_amt: amt, ..Default::default() };
         cmd
     }
