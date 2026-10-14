@@ -18,3 +18,5 @@ Tech debt (user, 2026-10-14): weather conditions (rain, fog, snow, wet surfaces)
 Roads order (user, 2026-10-14): first A (stage relief: crests/jumps, ditches and banks, roadside props), then B (topology: junctions, side roads, city super-special loop), then the rally mode. Research on real rally stages first.
 
 Tech debt (user, 2026-10-14): the autopilot's further improvement: machine vision (the car sees the road through a camera/depth view instead of reading the route) and self-training (the car learns by itself how to drive faster and steadier: reinforcement learning or numeric tuning of the style numbers over many simulated runs). Not now; the current autopilot (`game/autopilot`, styles in `rust/autopilot.json`) stays as the baseline and the reference driver for tests.
+
+Tech debt (user, 2026-10-14): recording your own pace notes (the player records or edits the co-driver's calls for a stage); the generated notes with the system voice (R2, v2.23.0) come first.
