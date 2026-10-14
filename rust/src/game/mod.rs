@@ -1,6 +1,7 @@
 //! Off-road game: pure CPU gameplay (no wgpu). Rendering lives in `crate::raster`.
 pub mod app;
 pub mod daylight;
+pub mod dust;
 pub mod rendermode;
 pub mod scatter;
 pub mod api;
