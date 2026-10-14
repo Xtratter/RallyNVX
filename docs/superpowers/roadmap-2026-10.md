@@ -12,3 +12,7 @@ Order agreed with the user on 2026-10-14. Each item is brainstormed (spec, plan)
 Update 2026-10-14 (late): the old delivery/race missions were removed (v2.14.0, free drive only, garage free). The rally mode (special stages with times) is a planned OPTION beside free drive; the stage runner, markers, HUD and results will be built for rally when item 4 and the roads exist.
 
 Tech debt (user, 2026-10-14): the wind's side force on the car (a light push at speed in the open) is NOT done; the wind (direction/speed/gusts) is visible and audible only (dust, clouds, grass and tree sway, wind sound).
+
+Tech debt (user, 2026-10-14): weather conditions (rain, fog, snow, wet surfaces) and the seasons (summer, autumn, winter, spring: foliage, ground colour, snow, grip) are NOT done; planned later.
+
+Roads order (user, 2026-10-14): first A (stage relief: crests/jumps, ditches and banks, roadside props), then B (topology: junctions, side roads, city super-special loop), then the rally mode. Research on real rally stages first.
