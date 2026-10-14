@@ -1,4 +1,4 @@
-//! The generated rally hatchback (Peugeot 206 WRC style): a lofted tub with flared arches, a greenhouse with a roof
+//! The generated rally hatchback (Vulpes WRC style): a lofted tub with flared arches, a greenhouse with a roof
 //! scoop, a bumper intake with four spot lamps, a big rear wing on stands, mirrors and a side exhaust. The body frame
 //! starts at the ground (+z forward, +y up, +x to the car's left); base dimensions 1.78 x 1.44 x 3.96 m are scaled to the spec.
 use super::vehicle_models::{add_box, add_cylinder, build_wheel, loft, scaled, Axis, CarModel, Mesh3, CHROME, MAT_EMISSIVE, MAT_GLASS, MAT_PAINT, MAT_PLASTIC};
@@ -7,9 +7,9 @@ use crate::game::{math::{v3, Q}, vehicle::VehicleSpec};
 const BLACK: [f32; 3] = [0.05, 0.05, 0.065];
 const BLUE: [f32; 3] = [0.10, 0.22, 0.62];
 
-const ASSET: &[u8] = include_bytes!("../../assets/peugeot206.rcar");
+const ASSET: &[u8] = include_bytes!("../../assets/rally_car.rcar");
 
-/// The rally car: the simplified Peugeot 206 WRC asset (see `assets/ASSET-LICENSE.md`), scaled to the spec size; the
+/// The rally car: the simplified Vulpes WRC asset (see `assets/ASSET-LICENSE.md`), scaled to the spec size; the
 /// generated hatchback below is the fallback when the asset cannot be read.
 pub fn build_rally(spec: &VehicleSpec) -> CarModel {
     match super::rcar::parse(ASSET) {
@@ -21,7 +21,7 @@ pub fn build_rally(spec: &VehicleSpec) -> CarModel {
             for v in &mut wheel.verts { v.pos = [v.pos[0] * spec.look.wheel_width / 0.226, v.pos[1] * k, v.pos[2] * k]; }
             CarModel { body, wheel }
         }
-        Err(e) => { log::error!("peugeot206.rcar unusable ({e}); using the generated hatchback"); build_generated(spec) }
+        Err(e) => { log::error!("rally_car.rcar unusable ({e}); using the generated hatchback"); build_generated(spec) }
     }
 }
 

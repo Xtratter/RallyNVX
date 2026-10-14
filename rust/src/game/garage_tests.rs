@@ -30,6 +30,6 @@ fn spec(id: &str) -> VehicleSpec { VehicleSpec::by_id(id).unwrap() }
 #[test] fn upgrade_prices_are_one_two_and_four_times_the_base() {
     let s = spec("offroader");
     assert_eq!((upgrade_price(&s, 0), upgrade_price(&s, 1), upgrade_price(&s, 2), upgrade_price(&s, 3)), (Some(300), Some(600), Some(1200), None));
-    let p = spec("peugeot206");
+    let p = spec("vulpes");
     assert_eq!((upgrade_price(&p, 0), upgrade_price(&p, 2)), (Some(750), Some(3000)));
 }

@@ -5,7 +5,7 @@ use crate::raster::vehicle_models::{build_car, car_body_pose, car_wheel_poses, M
 /// Triangles of the rally car in total (body plus four wheels): lowered step by step after phone measurements.
 const CAR_TRI_BUDGET: usize = 30_000;
 
-fn peugeot() -> VehicleSpec { VehicleSpec::by_id("peugeot206").unwrap() }
+fn peugeot() -> VehicleSpec { VehicleSpec::by_id("vulpes").unwrap() }
 fn check(m: &Mesh3, name: &str) {
     assert!(!m.verts.is_empty() && m.idx.len() % 3 == 0 && m.idx.iter().all(|&i| (i as usize) < m.verts.len()), "{name}");
     for v in &m.verts { assert!(v.pos.iter().all(|c| c.is_finite()), "{name}"); let l = (v.nrm[0].powi(2) + v.nrm[1].powi(2) + v.nrm[2].powi(2)).sqrt(); assert!((l - 1.0).abs() < 1e-3, "{name} normal {l}"); }

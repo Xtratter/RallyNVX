@@ -18,6 +18,9 @@ pub struct Profile { pub version: u32, pub money: u32, pub profile_seed: u64, pu
 
 pub(super) fn kind_id(k: MissionKind) -> u64 { match k { MissionKind::Cargo => 0, MissionKind::Race => 1, MissionKind::Rings => 2, MissionKind::Sling => 3, MissionKind::Recon => 4, MissionKind::Rescue => 5 } }
 
+/// Car ids that were renamed: the 2.11.0 profile files used `peugeot206` for what is now `vulpes`.
+fn legacy_id(id: &str) -> &str { if id == "peugeot206" { "vulpes" } else { id } }
+
 impl Profile {
     pub fn new(seed: u64) -> Profile { Profile { version: PROFILE_VERSION, money: 0, profile_seed: seed, round: 0, results: Vec::new(), garage: Garage::new() } }
 
@@ -49,14 +52,15 @@ impl Profile {
         let mut garage = Garage::new();
         if let Some(g) = v.get("garage") {
             if let Some(cars) = g.get("cars").and_then(Value::as_object) {
-                for (id, l) in cars {
+                for (raw_id, l) in cars {
+                    let id = legacy_id(raw_id);
                     if VehicleSpec::by_id(id).is_none() { continue; }
                     let lv = |k: &str| l.get(k).and_then(Value::as_u64).unwrap_or(0).min(MAX_LEVEL as u64) as u8;
                     let levels = [lv("engine"), lv("tyres"), lv("suspension"), lv("brakes")];
-                    match garage.cars.iter_mut().find(|(i, _)| i == id) { Some(c) => c.1 = levels, None => garage.cars.push((id.clone(), levels)) }
+                    match garage.cars.iter_mut().find(|(i, _)| i == id) { Some(c) => c.1 = levels, None => garage.cars.push((id.to_string(), levels)) }
                 }
             }
-            if let Some(sel) = g.get("selected").and_then(Value::as_str) { if garage.owns(sel) { garage.selected = sel.to_string(); } }
+            if let Some(sel) = g.get("selected").and_then(Value::as_str) { let sel = legacy_id(sel); if garage.owns(sel) { garage.selected = sel.to_string(); } }
         }
         Ok(Profile { version: PROFILE_VERSION, money, profile_seed, round, results, garage })
     }

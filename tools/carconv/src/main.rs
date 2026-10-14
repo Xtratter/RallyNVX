@@ -22,7 +22,7 @@ fn keep_body(n: &str) -> bool {
     // the underbody and inner arches close the shell, so nothing is seen through it
     let closers = ["x0_under_f", "x0_under_b", "x0_main_body_undercarriage", "x0_wing_fl_int", "x0_wing_fr_int", "x0_bumper_fm_int", "x0_bumper_bm_int"];
     if closers.iter().any(|c| n == *c) { return true; }
-    let bad = ["_int", "int_", "lock", "under", "engine", "snow", "gravel", "spare", "suspension", "wishbone", "disc", "caliper", "mud", "CO_DRIVER", "Wipers", "LED", "notes", "Sabo", "INT_", "boot_int", "undercarriage", "standard_pbr", "exhaust_cardan", "_ints", "Light_bar_ints", "tow_hook"];
+    let bad = ["_int", "int_", "lock", "under", "engine", "snow", "gravel", "spare", "suspension", "wishbone", "disc", "caliper", "mud", "CO_DRIVER", "Wipers", "LED", "notes", "Sabo", "INT_", "boot_int", "undercarriage", "standard_pbr", "anagram", "exhaust_cardan", "_ints", "Light_bar_ints", "tow_hook"];
     if bad.iter().any(|b| n.contains(b)) { return false; }
     let good = ["x0_main_body", "x0_bonnet", "x0_boot", "x0_bumper_fm", "x0_bumper_bm", "x0_spoiler_b", "x0_door_f", "x0_wing_f", "x0_wing_mirror", "x0_window_", "Light_front", "Ligth_front", "Ligth_rear", "Light_bar", "Light_2_brake", "Ligth_2_brake", "x0_exhaust_bl", "x0_f_body_part", "x0_front_anagram"];
     good.iter().any(|g| n.starts_with(g))

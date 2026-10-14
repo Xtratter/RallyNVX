@@ -29,7 +29,7 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
     private var shown = -1          // the car on the turntable (index in the vehicles file)
     private var running = false
 
-    private fun carName(i: Int) = when (i) { 0 -> t("Off-roader", "Внедорожник"); 1 -> "Peugeot 206 WRC"; else -> t("Car", "Машина") + " ${i + 1}" }
+    private fun carName(i: Int) = when (i) { 0 -> t("Off-roader", "Внедорожник"); 1 -> "Vulpes WRC"; else -> t("Car", "Машина") + " ${i + 1}" }
     private val upgradeNames get() = arrayOf(t("Engine", "Двигатель"), t("Tyres", "Шины"), t("Suspension", "Подвеска"), t("Brakes", "Тормоза"))
 
     override fun onCreate(b: Bundle?) {

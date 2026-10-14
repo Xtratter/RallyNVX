@@ -78,9 +78,9 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
 }
 #[test] fn cars_carry_model_price_and_upgrade_cost_with_defaults() {
     let p = embedded();
-    let ids = p.car_ids(); assert_eq!(ids, vec!["offroader".to_string(), "peugeot206".to_string()]);
+    let ids = p.car_ids(); assert_eq!(ids, vec!["offroader".to_string(), "vulpes".to_string()]);
     let o = p.car("offroader").unwrap(); assert_eq!((o.style, o.price, o.upgrade_cost), (CarStyle::Suv, 0, 300));
-    let g = p.car("peugeot206").unwrap();
+    let g = p.car("vulpes").unwrap();
     assert_eq!((g.style, g.price, g.upgrade_cost), (CarStyle::Rally, 3000, 750));
     assert_eq!((g.mass, g.size.x, g.size.y, g.size.z), (1230.0, 1.91, 1.50, 3.97));
     assert_eq!(g.wheels, [v3(-0.767, 0.10, 1.237), v3(0.767, 0.10, 1.237), v3(-0.767, 0.10, -1.210), v3(0.767, 0.10, -1.210)]);
@@ -92,6 +92,6 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     let bad = EMBEDDED.replacen("\"price\": 3000", "\"price\": -5", 1);
     let e = Params::from_json(&bad).unwrap_err(); assert!(e.contains("price"), "{e}");
     let none = EMBEDDED.replacen("\"model\": \"rally\",", "", 1).replacen("\"price\": 3000,", "", 1).replacen("\"upgrade_cost\": 750,", "", 1);
-    let p = Params::from_json(&none).unwrap(); let g = p.car("peugeot206").unwrap();
+    let p = Params::from_json(&none).unwrap(); let g = p.car("vulpes").unwrap();
     assert_eq!((g.style, g.price, g.upgrade_cost), (CarStyle::Suv, 0, 300));
 }

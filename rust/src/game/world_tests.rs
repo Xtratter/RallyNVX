@@ -406,7 +406,7 @@ mod rescue_fixes {
 mod garage_world {
     use super::*;
     use crate::game::vehicle::VehicleSpec;
-    fn peugeot() -> VehicleSpec { VehicleSpec::by_id("peugeot206").unwrap() }
+    fn peugeot() -> VehicleSpec { VehicleSpec::by_id("vulpes").unwrap() }
     #[test] fn worlds_use_the_given_car_and_the_placement_helpers_keep_it() {
         let mut w = World::new_with(7, peugeot());
         assert_eq!((w.vehicle.spec.mass, w.car_spec.mass), (1230.0, 1230.0));

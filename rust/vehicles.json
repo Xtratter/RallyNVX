@@ -23,7 +23,7 @@
       },
       "look": { "body_color": [0.75, 0.12, 0.08], "accent_color": [0.15, 0.15, 0.17], "glass_tint": [0.10, 0.16, 0.22], "wheel_width": 0.32 }
     },
-    "peugeot206": {
+    "vulpes": {
       "model": "rally",
       "price": 3000,
       "upgrade_cost": 750,

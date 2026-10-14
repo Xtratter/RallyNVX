@@ -163,21 +163,21 @@ mod peugeot {
         }
     }
     #[test] fn the_peugeot_rests_on_flat_ground_and_out_accelerates_the_offroader() {
-        let (mut p, t) = car_of("peugeot206");
+        let (mut p, t) = car_of("vulpes");
         run(&mut p, &t, Input::default(), 3.0);
         assert!(p.up().y > 0.99 && p.vel.len() < 0.2 && p.pos.y > 0.3 && p.pos.y < 0.8, "y {} vel {}", p.pos.y, p.vel.len());
         let go = |id: &str| { let (mut v, t) = car_of(id); run(&mut v, &t, Input { throttle: 1.0, ..Default::default() }, 5.0); v.speed() };
-        assert!(go("peugeot206") > go("offroader") + 2.0, "peugeot {} offroader {}", go("peugeot206"), go("offroader"));
+        assert!(go("vulpes") > go("offroader") + 2.0, "peugeot {} offroader {}", go("vulpes"), go("offroader"));
     }
     #[test] fn the_peugeot_does_not_roll_in_hard_turns_and_reverses_properly() {
         for (pre, secs) in [(0.4, 3.0), (0.7, 5.0), (1.0, 8.0), (1.0, 15.0)] { for steer in [1.0, -1.0] { for thr in [1.0, 0.0] {
-            let (mut v, t) = car_of("peugeot206");
+            let (mut v, t) = car_of("vulpes");
             run(&mut v, &t, Input { throttle: pre, ..Default::default() }, secs);
             let mut worst: f32 = 1.0;
             for _ in 0..(5.0 / DT) as usize { v.step(&t, &[], &Input { throttle: thr, steer, ..Default::default() }, DT); worst = worst.min(v.up().y); }
             assert!(worst > 0.7, "rolled: pre {pre}/{secs}s steer {steer} thr {thr}: {worst}");
         } } }
-        let (mut v, t) = car_of("peugeot206");
+        let (mut v, t) = car_of("vulpes");
         run(&mut v, &t, Input { throttle: -1.0, ..Default::default() }, 6.0);
         assert!(v.speed() < -5.0, "reverse {}", v.speed());
     }

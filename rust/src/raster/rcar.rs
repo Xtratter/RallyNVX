@@ -33,10 +33,10 @@ pub fn parse(d: &[u8]) -> Result<(Mesh3, Mesh3), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const PEUGEOT: &[u8] = include_bytes!("../../assets/peugeot206.rcar");
+    const PEUGEOT: &[u8] = include_bytes!("../../assets/rally_car.rcar");
 
     #[test] fn the_embedded_peugeot_parses_and_is_sane() {
-        let (b, w) = parse(PEUGEOT).expect("peugeot206.rcar must parse");
+        let (b, w) = parse(PEUGEOT).expect("rally_car.rcar must parse");
         assert!(b.tris() > 3000 && w.tris() > 200, "{} / {} triangles", b.tris(), w.tris());
         for m in [&b, &w] {
             assert!(m.idx.iter().all(|&i| (i as usize) < m.verts.len()));
