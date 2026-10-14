@@ -16,7 +16,7 @@ pub fn step_budget(acc: &mut f32, dt: f32, max_steps: usize) -> usize {
     n
 }
 
-pub const STAT_LEN: usize = 64;
+pub const STAT_LEN: usize = 96;
 
 fn surface_code(s: crate::game::surface::Surface) -> u8 {
     use crate::game::surface::Surface::*;
@@ -25,7 +25,7 @@ fn surface_code(s: crate::game::surface::Surface) -> u8 {
 
 /// Flat state for the UI. `[0]` fps, `[1]` km/h, `[2]` seed (24-bit), `[3]` frame ms, `[16]` money, `[25]` signed forward
 /// speed of the car, km/h, `[26]` hybrid render mode active (0/1), `[27]` fell back from hybrid to raster automatically (0/1),
-/// `[28]` the surface under the car (0 grass, 1 dirt, 2 sand, 3 rock, 4 gravel, 5 asphalt, 6 water), `[42]` the serial of the last pace note, `[43]` metres to the next one, `[44]` the progress along the stage; `[30..41]` the rally run (0 none, 1 countdown, 2 running, 3 finished; time; penalty; countdown digit; stage; next line; lines; last event code, serial and value; assisted; total), `[29]` the autopilot style plus one while it drives (1 calm, 2 normal, 3 aggressive, 4 custom; 0 off);
+/// `[28]` the surface under the car (0 grass, 1 dirt, 2 sand, 3 rock, 4 gravel, 5 asphalt, 6 water), `[45..77]` the next four pace notes as 4 x 8 numbers (see `Playback::upcoming`), `[42]` the serial of the last pace note, `[43]` metres to the next one, `[44]` the progress along the stage; `[30..41]` the rally run (0 none, 1 countdown, 2 running, 3 finished; time; penalty; countdown digit; stage; next line; lines; last event code, serial and value; assisted; total), `[29]` the autopilot style plus one while it drives (1 calm, 2 normal, 3 aggressive, 4 custom; 0 off);
 /// the other slots are zero (kept so the indices stay put).
 /// The text of the last pace note (serial, Russian, English) for the UI thread to fetch.
 pub static NOTE_TEXT: std::sync::Mutex<(u32, String, String, String)> = std::sync::Mutex::new((0, String::new(), String::new(), String::new()));
@@ -39,6 +39,7 @@ pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, fps: f32, fr
         use crate::game::rally::Phase;
         out[30] = match r.run.phase { Phase::Countdown => 1.0, Phase::Running => 2.0, Phase::Finished => 3.0 };
         out[31] = r.run.time; out[32] = r.run.penalty; out[33] = r.run.countdown_digit() as f32; out[34] = r.stage as f32;
+        for (i, u) in r.pace.upcoming(4).iter().enumerate() { out[45 + i * 8..53 + i * 8].copy_from_slice(u); }   // the pictogram strip
         out[42] = r.note.0 as f32; out[43] = r.pace.to_next(); out[44] = r.pace.progress();
         { let mut t = NOTE_TEXT.lock().unwrap_or_else(|e| e.into_inner()); if t.0 != r.note.0 { *t = (r.note.0, r.note.1.clone(), r.note.2.clone(), r.note_clips.clone()); } }
         out[35] = r.run.next_line() as f32; out[36] = r.run.line_count() as f32;

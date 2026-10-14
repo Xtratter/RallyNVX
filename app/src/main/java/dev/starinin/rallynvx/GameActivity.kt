@@ -49,6 +49,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var resultsPanel: FrameLayout? = null
     private var newLevelBtn: View? = null
     private var noteBar: TextView? = null
+    private var paceStrip: PaceStrip? = null
     private var noteUntil = 0L
     private var lastNote = 0
     private var tts: android.speech.tts.TextToSpeech? = null
@@ -122,7 +123,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             root.addView(rallyCount, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
             rallyToast = overlay(18f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)) }
             noteBar = overlay(20f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)) }
-            root.addView(noteBar, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = px(70f); leftMargin = px(16f) })
+            root.addView(noteBar, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = px(120f); leftMargin = px(16f) })
+            paceStrip = PaceStrip(this).apply { visibility = View.GONE }
+            root.addView(paceStrip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = px(64f); leftMargin = px(12f) })
             val lang = if (java.util.Locale.getDefault().language == "ru") "ru" else "en"
             voiceLang = lang
             studioVoice = Controls.voice(this, lang)
@@ -144,7 +147,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         audio = AudioEngine(this)
         val soundBtn = M3Widgets.button(this, if (audio.muted) "🔇" else "🔊", M3Widgets.ButtonKind.TONAL) {}
         soundBtn.setOnClickListener { audio.muted = !audio.muted; (soundBtn as? android.widget.TextView)?.text = if (audio.muted) "🔇" else "🔊" }
-        root.addView(soundBtn, FrameLayout.LayoutParams(px(52f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(140f), 0, 0) })
+        root.addView(soundBtn, FrameLayout.LayoutParams(px(52f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(if (rallyIdx > 0) 168f else 140f), 0, 0) })
         setContentView(root)
     }
 
@@ -212,6 +215,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             if (msg.isNotEmpty()) { rallyToast?.text = msg; rallyToast?.visibility = View.VISIBLE; toastUntil = System.currentTimeMillis() + 2500 }
         }
         if (rallyToast?.visibility == View.VISIBLE && System.currentTimeMillis() > toastUntil) rallyToast?.visibility = View.GONE
+        if (Controls.paceMode(this) > 0 && phase in 1..2) { paceStrip?.update(s); paceStrip?.visibility = View.VISIBLE } else paceStrip?.visibility = View.GONE
         val note = s[42].toInt()
         if (note > 0 && note != lastNote && phase == 2 && Controls.paceMode(this) > 0) {
             lastNote = note

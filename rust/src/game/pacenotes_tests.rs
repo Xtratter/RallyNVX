@@ -133,3 +133,21 @@ fn corners(notes: &[Note]) -> Vec<Corner> { notes.iter().filter_map(|n| if let N
     let easy = generate(&path(&[(150.0, 0.0), (140.0 * 0.6, 34.4), (150.0, 0.0)]), &[]);
     assert_eq!(corners(&easy)[0].sev, 6);
 }
+
+#[test] fn the_upcoming_strip_lists_the_next_notes_with_their_distances() {
+    let p = path(&[(300.0, 0.0), (50.0, 60.0), (300.0, 0.0), (50.0, -60.0), (300.0, 0.0)]);
+    let notes = generate(&p, &[]);
+    let mut pb = Playback::new(p.clone(), notes.clone());
+    pb.update(p[10], 20.0, 0.05);
+    let up = pb.upcoming(4);
+    assert!(up.len() >= 2 && up.len() <= 4);
+    assert_eq!(up[0][0], 1.0, "a corner first");
+    assert!(up[0][4] > 200.0 && up[0][4] < 330.0, "{up:?}");
+    assert!(up.windows(2).all(|w| w[1][4] > w[0][4]), "distances increase");
+    assert_eq!(up.last().unwrap().len(), 8);
+    // the finish encodes as kind 4; a car past a note no longer lists it
+    let mut pb = Playback::new(p.clone(), notes);
+    pb.update(*p.last().unwrap(), 20.0, 0.05);
+    let up = pb.upcoming(4);
+    assert!(up.iter().all(|u| u[4] > -15.0));
+}

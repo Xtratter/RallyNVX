@@ -146,6 +146,20 @@ impl Note {
     }
 }
 
+/// A note as the 8 numbers of `Playback::upcoming`.
+pub fn encode(n: &Note, dist: f32, gap: f32) -> [f32; 8] {
+    match n.kind {
+        NoteKind::Corner(c) => {
+            let flags = (c.tightens as u8) | ((c.opens as u8) << 1) | ((c.long as u8) << 2) | ((c.into.is_some() as u8) << 3);
+            let (il, is) = c.into.map_or((0.0, 0.0), |(l, s)| (l as u8 as f32, s as f32));
+            [1.0, c.left as u8 as f32, c.sev as f32, flags as f32, dist, il, is, gap]
+        }
+        NoteKind::Crest { big } => [2.0, 0.0, 0.0, if big { 16.0 } else { 0.0 }, dist, 0.0, 0.0, gap],
+        NoteKind::Junction { left } => [3.0, left as u8 as f32, 0.0, 0.0, dist, 0.0, 0.0, gap],
+        NoteKind::Finish => [4.0, 0.0, 0.0, 0.0, dist, 0.0, 0.0, 0.0],
+    }
+}
+
 /// The notes of one stage and the car's progress through them.
 pub struct Playback {
     path: Vec<V3>,
@@ -190,6 +204,15 @@ impl Playback {
             return Some(k);
         }
         None
+    }
+
+    /// The next `n` notes ahead of the car (from 15 m behind it) for the pictogram strip, each as 8 numbers:
+    /// kind (1 corner, 2 crest, 3 junction, 4 finish), left (1/0), severity, flags (1 tightens, 2 opens, 4 long, 8 into, 16 jump),
+    /// metres from the car, the second corner's left (1/0) and severity when it runs into one, and the gap to the next note.
+    pub fn upcoming(&self, n: usize) -> Vec<[f32; 8]> {
+        let car = self.progress();
+        let first = self.notes.iter().position(|x| x.s > car - 15.0).unwrap_or(self.notes.len());
+        (first..self.notes.len().min(first + n)).map(|k| encode(&self.notes[k], self.notes[k].s - car, self.notes.get(k + 1).map_or(0.0, |x| x.s - self.notes[k].s))).collect()
     }
 
     /// The clips of note `k` with the distance to the following note.
