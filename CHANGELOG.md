@@ -2,12 +2,13 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
-## 2.13.0 - day and night (unreleased, ships with the car lights)
+## 2.13.0 - day and night, car lights (unreleased)
 
 - Added: a full day-night cycle (a day is 12 minutes): the sun and the moon travel a full circle; sunrise and sunset colour the sky, the night is dark but passable by moonlight; one light source switches from the sun to the moon with no shadow jumps; a level always starts by day
 - Added: a visible sun disc with a glow, a moon with phases (its lit side faces the sun) and stars; clouds darken at night; windows of the city buildings and the street lamps glow at night
+- Added: headlights (automatic at dusk and night) that light the ground and objects ahead, red tail and brake lights, white reverse lights with a glow on the ground behind the car
 - Fixed: the sky was drawn mirrored vertically, so clouds and the sun glow were never where they should be
-- Debug: the intent extra `tod` (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk) freezes the clock for screenshots
+- Debug: the intent extras `tod` and `lights` (0 headlights, 1 + brake, 2 + reverse) for screenshots; `tod` (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk) freezes the clock for screenshots
 
 ## 2.12.0 - cars only, real Vulpes WRC data
 

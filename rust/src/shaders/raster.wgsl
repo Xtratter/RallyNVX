@@ -1,7 +1,7 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
-    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>,
+    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
@@ -150,6 +150,21 @@ fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: 
     let diff = max(dot(n, sun), 0.0) * sh;
     let amb = mix(vec3<f32>(0.20, 0.22, 0.26) * mix(1.0, 0.12, u.disc.w), u.sky_top.rgb * 0.55, n.y * 0.5 + 0.5);
     var c = albedo * (u.sun_col.rgb * diff + amb);
+    if (u.hl_pos.w > 0.0) {
+        let dv = wp - u.hl_pos.xyz;
+        let dist = length(dv);
+        let l = dv / max(dist, 0.001);
+        let cone = smoothstep(u.hl_dir.w, u.hl_dir.w + 0.06, dot(l, normalize(u.hl_dir.xyz)));
+        let fall = clamp(1.0 - dist / 55.0, 0.0, 1.0);
+        // a beam on a grazing surface (the ground far ahead) is weak by n.l alone: keep a floor so the beam reaches far
+        c = c + albedo * vec3<f32>(1.0, 0.93, 0.80) * (9.0 * cone * fall * (0.25 + 0.75 * max(dot(n, -l), 0.0)));
+    }
+    if (u.tl_col.w > 0.0) {
+        let dv = wp - u.tl_pos.xyz;
+        let dist = length(dv);
+        let att = clamp(1.0 - dist / u.tl_col.w, 0.0, 1.0);
+        c = c + albedo * u.tl_col.rgb * (att * att * (0.35 + 0.65 * max(dot(n, -dv / max(dist, 0.001)), 0.0)) * 4.0);
+    }
     if (sharp > 0.0) {
         let v = normalize(u.cam.xyz - wp);
         let h = normalize(sun + v);

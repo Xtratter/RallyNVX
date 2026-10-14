@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Headlights on when `daylight.night > 0.25`; cone half-angle 30 deg, range 48 m, intensity 6; point light behind: radius 7 m.
+- Headlights on when `daylight.night > 0.25`; cone half-angle 22 deg, range 55 m, intensity 9; point light behind: radius 7 m.
 - `Uni` 352 -> 416 bytes, new fields appended at the end in the same order in WGSL.
 - Lamp height above ground: SUV 0.95 m, rally 0.62 m; front/rear at +-(length/2 - 0.08), x at +-0.34 of the width.
 - Docs EN+RU; commit trailer `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`; no release (ships with day-night as v2.13.0 after the user's go).

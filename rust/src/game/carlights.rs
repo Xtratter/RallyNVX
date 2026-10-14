@@ -40,7 +40,7 @@ pub fn lamps(v: &Vehicle) -> Lamps {
         head: [at(-x, half_l), at(x, half_l)],
         tail: [at(-x, -half_l), at(x, -half_l)],
         rev: [at(-x * 0.55, -half_l), at(x * 0.55, -half_l)],
-        head_dir: v.rot.rotate(v3(0.0, -0.09, 1.0).norm()),
+        head_dir: v.rot.rotate(v3(0.0, -0.05, 1.0).norm()),
     }
 }
 

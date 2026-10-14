@@ -27,9 +27,9 @@ const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 struct Uni {
     vp: [f32; 16], light_vp: [f32; 16], inv_vp: [f32; 16],
     cam: [f32; 4], sun: [f32; 4], fog: [f32; 4], sky_top: [f32; 4], sky_hor: [f32; 4], sun_col: [f32; 4],
-    mode: [f32; 4], cam_tile: [f32; 4], moon: [f32; 4], disc: [f32; 4],
+    mode: [f32; 4], cam_tile: [f32; 4], moon: [f32; 4], disc: [f32; 4], hl_pos: [f32; 4], hl_dir: [f32; 4], tl_pos: [f32; 4], tl_col: [f32; 4],
 }
-const _: () = assert!(std::mem::size_of::<Uni>() == 352);
+const _: () = assert!(std::mem::size_of::<Uni>() == 416);
 
 /// One instance: model matrix, per-axis scale (for normals), colour. Matches the instance vertex layout (96 bytes).
 #[repr(C)]
@@ -365,6 +365,9 @@ impl Raster {
         let centre = wv.vehicle.pos;
         let up = if wv.sun.y.abs() > 0.99 { v3(0., 0., 1.) } else { v3(0., 1., 0.) };
         let light_vp = mat_mul(ortho(-70., 70., -70., 70., 1., 300.), look_at(centre + wv.sun * 150.0, centre, up));
+        let hc = (wv.lamps.head[0] + wv.lamps.head[1]) * 0.5;
+        let tc = (wv.lamps.tail[0] + wv.lamps.tail[1]) * 0.5 - v3(0., 0.3, 0.);
+        let tail_glow = if wv.lights.reverse { [0.8, 0.8, 0.78, 7.0] } else if wv.lights.brake { [0.5, 0.04, 0.02, 7.0] } else if wv.lights.head { [0.12, 0.01, 0.005, 4.0] } else { [0.0; 4] };
         let uni = Uni { vp: flatten(vp), light_vp: flatten(light_vp), inv_vp: flatten(inverse(vp)),
             cam: [wv.cam_pos.x, wv.cam_pos.y, wv.cam_pos.z, 0.], sun: [wv.sun.x, wv.sun.y, wv.sun.z, 0.],
             fog: [1.0 / 330.0, wv.time, 0., 0.], sky_top: [wv.daylight.sky_top[0], wv.daylight.sky_top[1], wv.daylight.sky_top[2], 0.],
@@ -372,7 +375,11 @@ impl Raster {
             sun_col: [wv.daylight.sun_col[0], wv.daylight.sun_col[1], wv.daylight.sun_col[2], 0.],
             mode: [self.hybrid as u8 as f32, 0., 0., 0.], cam_tile: [cx as f32, cz as f32, 0., 0.],
             moon: [wv.daylight.moon.x, wv.daylight.moon.y, wv.daylight.moon.z, 0.],
-            disc: [wv.daylight.sun_disc.x, wv.daylight.sun_disc.y, wv.daylight.sun_disc.z, wv.daylight.night] };
+            disc: [wv.daylight.sun_disc.x, wv.daylight.sun_disc.y, wv.daylight.sun_disc.z, wv.daylight.night],
+            hl_pos: [hc.x, hc.y, hc.z, if wv.lights.head { 1.0 } else { 0.0 }],
+            hl_dir: [wv.lamps.head_dir.x, wv.lamps.head_dir.y, wv.lamps.head_dir.z, 0.927],
+            tl_pos: [tc.x, tc.y, tc.z, 0.],
+            tl_col: tail_glow };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // a new level invalidates every cache keyed by tile coordinates
@@ -415,6 +422,14 @@ impl Raster {
         let (bq, bp) = vm::car_body_pose(veh);
         ml[0].push(MInst { m: mmat(bq, bp), tint: [1.0; 4] });
         for p in vm::car_wheel_poses(veh, self.wheel_spin) { ml[1].push(MInst { m: mmat(p.0, p.1), tint: [1.0; 4] }); }
+        {
+            let (lights, lamps, rot) = (&wv.lights, &wv.lamps, wv.vehicle.rot);
+            let mut glow = |p: V3, s: V3, col: [f32; 3]| lists[0].push(inst_glow(rot, p, s, col));
+            if lights.head { for p in lamps.head { glow(p, v3(0.24, 0.13, 0.08), [1.0, 0.97, 0.85]); } }
+            let tail_col = if lights.brake { [1.0, 0.05, 0.03] } else if lights.head { [0.35, 0.02, 0.01] } else { [0.0; 3] };
+            if tail_col[0] > 0.0 { for p in lamps.tail { glow(p, v3(0.28, 0.1, 0.06), tail_col); } }
+            if lights.reverse { for p in lamps.rev { glow(p, v3(0.16, 0.1, 0.06), [1.0, 1.0, 0.95]); } }
+        }
         if let Some(level) = wv.terrain.water_level() {
             if veh.speed().abs() > 2.0 {
                 let tick = (wv.time * 16.0) as i32;
