@@ -27,6 +27,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var hintView: TextView? = null
     private var sensors: android.hardware.SensorManager? = null
     private var tiltListener: android.hardware.SensorEventListener? = null
+    private var sentRender = -1
+    private var sentAuto = -1
     private var needTiltCal = true   // the pose at the start of a drive is the centre (and after "Recalibrate" in the settings)
     private lateinit var hud: Hud
     private lateinit var root: FrameLayout
@@ -53,7 +55,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private val tick = object : Runnable {
         override fun run() {
             val s = Native.gameStats()
-            hud.text = (if (s[20] > 0f) "${s[1].toInt()} km/h · ${s[19].toInt()} m" else "${s[1].toInt()} km/h") + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}"
+            hud.text = (if (s[27] > 0.5f) t("Raster (auto) · ", "Растр (авто) · ") else "") + (if (s[20] > 0f) "${s[1].toInt()} km/h · ${s[19].toInt()} m" else "${s[1].toInt()} km/h") + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}"
             if (mission >= 0) updateMission(s)
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (mission >= 0 || drive != null) 100 else 250)
@@ -206,7 +208,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         if (running) { Native.gameResize(w, hh); return }
         Native.gameStart(h.surface, w, hh, seed, profile, mission)
         Native.gameQuality(Quality.index(this))
-        intent.getIntExtra("hybrid", -1).let { if (it >= 0) Native.gameRenderMode(it) }   // debug/test: force a render mode
+        sentRender = -1; sentAuto = -1; applyRender()
+        intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
         intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
         running = true
         audio.start()
@@ -224,7 +227,16 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             .apply { if (left) setMargins((28f * dp).toInt(), 0, 0, (214f * dp).toInt()) else setMargins(0, 0, (28f * dp).toInt(), (214f * dp).toInt()) }
     }
 
+    /** Sends the render mode and the fallback option to a running game (only when they changed). */
+    private fun applyRender() {
+        if (!running) return
+        val mode = Controls.renderMode(this); val auto = if (Controls.autoFallback(this)) 1 else 0
+        if (mode != sentRender) { Native.gameRenderMode(mode); sentRender = mode }
+        if (auto != sentAuto) { Native.gameAutoFallback(auto == 1); sentAuto = auto }
+    }
+
     private fun applyControls() {
+        applyRender()
         Native.audioVolume(Controls.volume(this))
         val d = drive ?: return
         d.configure(Controls.mode(this), Controls.sens(this), Controls.pedalsLeft(this), Controls.pedalsAnalog(this))

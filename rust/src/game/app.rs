@@ -24,7 +24,7 @@ pub const STAT_LEN: usize = 64;
 /// `[12]` result (0 none, 1 passed, 2 failed), `[13]` medal 0..3, `[14]` payout, `[15]` failure (1 time, 2 cargo,
 /// 3 abandoned, 4 crashed), `[16]` money, `[17]` mission kind (0 cargo, 1 race, 2 rings, 3 sling, 4 recon, 5 rescue), `[18]` run counter
 /// (bumped on every mission start), `[19]` altitude above ground, `[20]` aircraft (0 none, 1 heli, 2 drone), `[21]` rope taut,
-/// `[22]` target height above the aircraft, `[23]` rescue people aboard, `[24]` rescue boarding progress, `[25]` signed forward speed of the car, km/h.
+/// `[22]` target height above the aircraft, `[23]` rescue people aboard, `[24]` rescue boarding progress, `[25]` signed forward speed of the car, km/h, `[26]` hybrid render mode active (0/1), `[27]` fell back from hybrid to raster automatically (0/1).
 pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, payout: u32, fps: f32, frame_ms: f32, seed: u64, run: u32) {
     use crate::game::flight::AircraftKind;
     use crate::game::missions::MissionKind;
@@ -79,6 +79,7 @@ mod game {
         profile: Option<Profile>, profile_path: Option<PathBuf>, missions: Vec<Mission>,
         current: Option<usize>, paused: bool, recorded: bool, payout: u32, run_id: u32,
         director: crate::audio::Director,
+        auto_fallback: bool, monitor: crate::game::rendermode::FallbackMonitor, fell_back: bool,
     }
 
     impl Game {
@@ -86,7 +87,7 @@ mod game {
             let seed = super::level_seed(seed);
             Game { world: World::new(seed), raster, input: Input::default(), flight: FlightInput::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0, run_id: 0, director: crate::audio::Director::new() }
+                profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0, run_id: 0, director: crate::audio::Director::new(), auto_fallback: false, monitor: crate::game::rendermode::FallbackMonitor::new(), fell_back: false }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
@@ -94,7 +95,8 @@ mod game {
         /// Quality level 0/1/2 (Low/Medium/High) sets the city draw distance: 300 / 400 / 450 m.
         pub fn set_quality(&mut self, level: i32) { self.raster.set_city_radius([300.0, 400.0, 450.0][level.clamp(0, 2) as usize]); }
         pub fn set_city_radius(&mut self, r: f32) { self.raster.set_city_radius(r); }
-        pub fn set_hybrid(&mut self, on: bool) { self.raster.set_hybrid(on); }
+        pub fn set_hybrid(&mut self, on: bool) { self.raster.set_hybrid(on); self.monitor.reset(); if on { self.fell_back = false; } }
+        pub fn set_auto_fallback(&mut self, on: bool) { self.auto_fallback = on; self.monitor.reset(); }
         pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }
         pub fn place_in_city(&mut self) -> bool { self.world.place_in_city() }
         pub fn place_near_water(&mut self) -> bool { self.world.place_near_water() }
@@ -159,9 +161,13 @@ mod game {
             self.frame_ms = t0.elapsed().as_secs_f32() * 1000.0;
             self.fps_n += 1;
             let el = self.fps_t.elapsed().as_secs_f32();
-            if el >= 0.5 { self.fps = self.fps_n as f32 / el; self.fps_n = 0; self.fps_t = Instant::now(); }
+            if el >= 0.5 {
+                self.fps = self.fps_n as f32 / el; self.fps_n = 0; self.fps_t = Instant::now();
+                if !self.paused && self.monitor.update(self.fps, el, self.raster.is_hybrid(), self.auto_fallback) { self.raster.set_hybrid(false); self.fell_back = true; }
+            }
             let mut s = [0.0f32; STAT_LEN];
             fill_state(&mut s, &self.world, self.profile.as_ref().map_or(0, |p| p.money), self.payout, self.fps, self.frame_ms, self.seed, self.run_id);
+            s[26] = self.raster.is_hybrid() as u8 as f32; s[27] = self.fell_back as u8 as f32;
             *self.stats.lock().unwrap() = s;
         }
     }

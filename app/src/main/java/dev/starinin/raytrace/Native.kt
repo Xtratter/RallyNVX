@@ -22,6 +22,8 @@ object Native {
     @JvmStatic external fun gameQuality(level: Int)
     /** 0 raster, 1 hybrid (PCSS soft shadows, terrain ray shadows, ambient occlusion). */
     @JvmStatic external fun gameRenderMode(mode: Int)
+    /** With it on, the game drops from hybrid to raster after four slow seconds (see game::rendermode). */
+    @JvmStatic external fun gameAutoFallback(on: Boolean)
     /** Debug placement: 1 = next to the first city, 2 = at its centre (an aircraft 120 m above it). */
     @JvmStatic external fun gameInCity(mode: Int)
     @JvmStatic external fun gamePause(p: Boolean)

@@ -14,6 +14,8 @@ object DriveMath {
     const val REVERSE_KMH = 3f        // at or below this speed the brake pedal reverses
 
     fun cycle(i: Int, n: Int) = (i + 1) % n
+    /** Default render mode by quality index: hybrid (1) on High (2), raster (0) otherwise. */
+    fun defaultRender(quality: Int) = if (quality == 2) 1 else 0
 
     /** Angle of (x, y) around (cx, cy) in degrees with y pointing up on the screen (touch y grows downwards): right 0, up 90, left 180, down -90. */
     fun wheelAngleDeg(x: Float, y: Float, cx: Float, cy: Float): Float =

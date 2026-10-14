@@ -142,3 +142,10 @@ class DriveMathButtonsTest {
         assertEquals(0f, DriveMath.Buttons().step(-1f, false, true, 1), 0f)
     }
 }
+
+class RenderDefaultTest {
+    @Test fun hybridByDefaultOnlyOnHighQuality() {
+        assertEquals(1, DriveMath.defaultRender(2))
+        for (q in listOf(-1, 0, 1, 3, 99)) assertEquals(0, DriveMath.defaultRender(q))
+    }
+}

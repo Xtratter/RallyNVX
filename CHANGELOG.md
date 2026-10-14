@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.10.0 - hybrid render mode
+
+- Added: a Hybrid render mode next to Raster (Settings, default on only with High quality): soft sun shadows (PCSS), long terrain shadows by ray marching a height map, and ambient occlusion (terrain hollows, plant and rock bases, building feet)
+- Added: an optional automatic fallback to Raster when the frame rate stays below 50 for four seconds (off by default; the HUD says "Raster (auto)")
+- Changed: the settings screen has "Render mode" and "Auto fallback to Raster" rows
+
 ## 2.9.0 - car controls and settings
 
 - Added: gas and brake pedals and steering for the car instead of the two sticks: two arrow buttons by default, an on-screen wheel or tilt of the phone as options; the pedals give full gas and full brake on touch by default, with an "Adjustable" force option (the lower the touch, the harder the press); the brake pedal reverses when stopped or rolling backwards

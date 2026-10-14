@@ -465,8 +465,8 @@ impl Raster {
             let yaw = Q::axis_angle(v3(0., 1., 0.), yaw_of(p.pos));
             let k = nature_models::tint(p.pos); let tint = [k[0], k[1], k[2], 1.0];
             match p.kind {
-                PropKind::Rock => put(&mut ml, SLOT_ROCK + nature_models::variant(2, p.pos), p.pos, MInst { m: mmat_s(yaw, p.pos + v3(0., 0.4 * p.radius, 0.), p.radius), tint }),
-                PropKind::Tree => put(&mut ml, SLOT_TREE + nature_models::variant(0, p.pos), p.pos, MInst { m: mmat_s(yaw, p.pos, p.height), tint }),
+                PropKind::Rock => put(&mut ml, SLOT_ROCK + nature_models::variant(2, p.pos), p.pos, MInst { m: mmat_s(yaw, p.pos + v3(0., 0.4 * p.radius, 0.), p.radius), tint: [tint[0], tint[1], tint[2], 3.0] }),
+                PropKind::Tree => put(&mut ml, SLOT_TREE + nature_models::variant(0, p.pos), p.pos, MInst { m: mmat_s(yaw, p.pos, p.height), tint: [tint[0], tint[1], tint[2], 2.0] }),
             }
         }
         let (bx, bz) = (tile_of(wv.cam_pos.x), tile_of(wv.cam_pos.z));
@@ -474,7 +474,7 @@ impl Raster {
             let bushes = self.bush_cache.entry((tx, tz)).or_insert_with(|| scatter::tile_bushes(wv.terrain, tx, tz));
             for b in bushes.iter() {
                 let k = nature_models::tint(b.pos);
-                put(&mut ml, SLOT_BUSH + nature_models::variant(1, b.pos), b.pos, MInst { m: mmat_s(Q::axis_angle(v3(0., 1., 0.), yaw_of(b.pos)), b.pos, b.scale), tint: [k[0], k[1], k[2], 1.0] });
+                put(&mut ml, SLOT_BUSH + nature_models::variant(1, b.pos), b.pos, MInst { m: mmat_s(Q::axis_angle(v3(0., 1., 0.), yaw_of(b.pos)), b.pos, b.scale), tint: [k[0], k[1], k[2], 2.0] });
             }
         } }
         self.bush_cache.retain(|&(tx, tz), _| (tx - bx).abs() <= DRAW_TILES + 2 && (tz - bz).abs() <= DRAW_TILES + 2);

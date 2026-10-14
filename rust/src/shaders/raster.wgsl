@@ -176,10 +176,15 @@ fn mat_sample(layer: i32, uv: vec2<f32>) -> vec3<f32> {
     a = pow(a, vec3<f32>(1.35));   // the maps are stored linear and bright; this deepens and saturates them
     let snow = smoothstep(34.0, 44.0, i.wp.y) * (1.0 - smoothstep(0.1, 0.3, 1.0 - n.y));
     a = mix(a, vec3<f32>(0.85, 0.86, 0.90), snow);
+    if (u.mode.x > 0.5 && distance(i.wp, u.cam.xyz) < 260.0) {
+        // hybrid: hollows and valleys are darker (concavity from the height atlas, 4 taps at 3 m)
+        let hn = (terrain_h(i.wp.x + 3.0, i.wp.z) + terrain_h(i.wp.x - 3.0, i.wp.z) + terrain_h(i.wp.x, i.wp.z + 3.0) + terrain_h(i.wp.x, i.wp.z - 3.0)) * 0.25;
+        a = a * (1.0 - clamp((hn - i.wp.y) * 0.22, 0.0, 0.45));
+    }
     return vec4<f32>(lit(a, i.wp, n), 1.0);
 }
 
-struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32 };
+struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32 };
 
 fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec4<f32>) -> vec3<f32> {
     return (mat4x4<f32>(m0, m1, m2, m3) * vec4<f32>(p, 1.0)).xyz;
@@ -201,6 +206,10 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     o.n = normalize(m0.xyz * n.x + m1.xyz * n.y + m2.xyz * n.z);   // uniform scale + rotation
     o.col = c.rgb * tint.rgb;
     o.mat = c.a * 255.0;
+    // hybrid occlusion near the ground: tint.a 2 = plants (base at the origin), 3 = rocks (base 0.7 below the origin)
+    let base = select(0.0, -0.7, tint.a > 2.5);
+    let hgt = (p.y - base) * length(m1.xyz);
+    o.ao = select(1.0, mix(0.55, 1.0, smoothstep(0.0, 1.8, hgt)), tint.a > 1.5);
     return o;
 }
 @vertex fn vs_model_shadow(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>, @location(2) c: vec4<f32>,
@@ -216,14 +225,15 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
 }
 @fragment fn fs_model(i: MOut) -> @location(0) vec4<f32> {
     let n = normalize(i.n);
+    let occl = mix(1.0, i.ao, u.mode.x);
     let m = i32(i.mat + 0.5);
     if (m == 5) { return vec4<f32>(finish(i.col * 2.2), 1.0); }       // lamps
-    if (m == 1) { return vec4<f32>(shade(i.col, i.wp, n, 1.2, 90.0), 1.0); }   // glass
-    if (m == 4) { return vec4<f32>(shade(i.col, i.wp, n, 0.9, 60.0), 1.0); }   // chrome
-    if (m == 6) { return vec4<f32>(shade_lite(i.col, i.wp, n), 1.0); }   // foliage
-    if (m == 0) { return vec4<f32>(shade(i.col, i.wp, n, 0.5, 40.0), 1.0); }   // paint
-    if (m == 2) { return vec4<f32>(shade(i.col, i.wp, n, 0.04, 8.0), 1.0); }   // rubber
-    return vec4<f32>(shade(i.col, i.wp, n, 0.15, 16.0), 1.0);                  // plastic
+    if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0), 1.0); }   // glass
+    if (m == 4) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.9, 60.0), 1.0); }   // chrome
+    if (m == 6) { return vec4<f32>(shade_lite(i.col * occl, i.wp, n), 1.0); }   // foliage
+    if (m == 0) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.5, 40.0), 1.0); }   // paint
+    if (m == 2) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.04, 8.0), 1.0); }   // rubber
+    return vec4<f32>(shade(i.col * occl, i.wp, n, 0.15, 16.0), 1.0);                  // plastic
 }
 
 struct IOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) emi: f32,
@@ -285,6 +295,7 @@ fn inst_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec
             let fr = pow(1.0 - max(dot(n, v), 0.0), 3.0);
             albedo = mix(albedo, vec3<f32>(0.50, 0.68, 0.80) * 0.8 + sky_gradient(reflect(-v, n)) * (0.1 + 0.5 * fr), win * 0.85);
         }
+        if (u.mode.x > 0.5) { albedo = albedo * mix(0.62, 1.0, smoothstep(0.0, 5.0, i.wp.y - (i.ctr.y - i.size.y * 0.5))); }   // hybrid: darker at the base
         return vec4<f32>(lit(albedo, i.wp, n), 1.0);
     }
     // colour alpha > 1.5 marks glowing mission markers: unlit and not hidden by fog

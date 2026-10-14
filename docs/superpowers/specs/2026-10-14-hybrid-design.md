@@ -20,3 +20,6 @@ Host tests: f32 to f16 conversion, `heights_from_mesh` (lod 0 equals the terrain
 
 ## 5. Out of scope
 Ray-traced reflections, shadows beyond the loaded tiles, denoising beyond the depth-aware upsample, mode B.
+
+## 6. Changes after the device measurements
+The SSAO post pass was built and measured on the POCO F3 (High, forest): Raster 103 fps, Hybrid with PCSS and terrain ray shadows 85-89 fps, Hybrid with SSAO 48-51 fps (the offscreen scene plus the depth store cost about 5 ms, the occlusion pass about 2 ms, and a sampled depth texture costs about 10 % even in Raster), and the occlusion looked noisy on grass. **Ruling: the post pipeline is dropped.** Hybrid occlusion is forward and nearly free: terrain hollows darken by the concavity read from the height atlas (4 taps at 3 m, within 260 m), plants and rocks darken towards their base (instance `tint.a` 2 = plants, 3 = rocks; strength `mix(0.55, 1, smoothstep(0, 1.8, height above the base))`), building facades darken towards their base (62 % at the foot, full at 5 m). Hybrid then runs at 80-83 fps in the forest and the city.

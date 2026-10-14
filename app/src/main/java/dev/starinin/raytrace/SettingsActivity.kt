@@ -33,6 +33,8 @@ class SettingsActivity : Activity() {
             col.addView(r, LinearLayout.LayoutParams(px(520f), -2).apply { topMargin = px(12f) })
         }
         row(t("Graphics quality", "Качество графики"), { Quality.label(Quality.index(this)) + " ⟳" }) { Quality.save(this, DriveMath.cycle(Quality.index(this), Quality.NAMES.size)) }
+        row(t("Render mode", "Режим рендера"), { if (Controls.renderMode(this) == 1) t("Hybrid", "Гибрид") else t("Raster", "Растр") }) { Controls.setRenderMode(this, 1 - Controls.renderMode(this)) }
+        row(t("Auto fallback to Raster", "Откат на Растр"), { if (Controls.autoFallback(this)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.setAutoFallback(this, !Controls.autoFallback(this)) }
         row(t("Steering", "Руль"), { arrayOf(t("Buttons", "Кнопки"), t("Wheel", "Колесо"), t("Tilt", "Наклон"))[Controls.mode(this)] }) { Controls.setMode(this, DriveMath.cycle(Controls.mode(this), Controls.MODES)) }
         row(t("Sensitivity", "Чувствительность"), { arrayOf(t("Low", "Низкая"), t("Normal", "Обычная"), t("High", "Высокая"))[Controls.sens(this)] }) { Controls.setSens(this, DriveMath.cycle(Controls.sens(this), 3)) }
         row(t("Volume", "Громкость"), { "${(DriveMath.VOLUME[Controls.volumeStep(this)] * 100).toInt()} %" }) {

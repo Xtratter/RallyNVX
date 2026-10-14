@@ -54,6 +54,10 @@ Air missions use a helicopter or a drone (the card shows which). Sticks released
 - **Recon** (drone): hover for 2 s inside every zone (40 m), in any order.
 - Medals, rewards and the profile work as for ground missions. The drone is faster and tilts more; the helicopter is steadier.
 
+## Render modes
+
+Settings has **Render mode**: *Raster* (the fast classic look) or *Hybrid*. Hybrid adds soft sun shadows (sharp at the foot of a tree, softer further away), long shadows of hills from a height map (dawn and dusk shadows reach far across the land) and ambient occlusion (hollows, tree and rock bases and building feet are darker). Hybrid is on by default only with High graphics quality and costs roughly 15-20 % of the frame rate (about 80 fps against 100 in a forest on a POCO F3). **Auto fallback to Raster** (off by default) drops to Raster for the rest of the drive when the frame rate stays below 50 for four seconds, and the HUD says so.
+
 ## Settings
 
 The main menu and the pause panel open **Settings**: graphics quality (applies at the next start), steering (buttons, wheel or tilt), pedal force (full on touch or adjustable), sensitivity (low / normal / high), volume (0 / 25 / 50 / 75 / 100 %), the side of the pedals (the wheel goes to the other side), recalibrating the tilt centre (the pose at the start of a drive is the centre) and showing the hints again. The helicopter and the drone keep their two sticks. A short hint appears the first time you drive with each steering type.
@@ -133,6 +137,10 @@ No garage, rescue missions or NPC orders yet, and only the raster renderer (mode
 - **Подвес** (вертолёт): повисите ниже 4 м над грузом 1,5 с, чтобы зацепить, довезите до зелёной площадки и мягко опустите внутри круга; удары о землю и сильное раскачивание портят груз.
 - **Разведка** (дрон): повисите 2 с в каждой зоне (40 м), в любом порядке.
 - Медали, награды и профиль работают как в наземных миссиях. Дрон быстрее и сильнее наклоняется; вертолёт устойчивее.
+
+## Режимы рендера
+
+В настройках есть **Режим рендера**: *Растр* (быстрый классический вид) или *Гибрид*. Гибрид добавляет мягкие тени от солнца (резкие у основания дерева, дальше мягче), длинные тени холмов по карте высот (тени на рассвете и закате далеко ложатся по земле) и затенение углов (впадины, основания деревьев и камней и подножия зданий темнее). Гибрид включён по умолчанию только при высоком качестве графики и стоит примерно 15–20 % частоты кадров (около 80 fps против 100 в лесу на POCO F3). **Откат на Растр** (по умолчанию выключен) переключает на Растр до конца поездки, если частота кадров держится ниже 50 в течение четырёх секунд, и HUD сообщает об этом.
 
 ## Настройки
 
