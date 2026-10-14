@@ -5,8 +5,8 @@
 A scene is a JSON file. Three scenes are built in (`rust/scenes/classic.json`, `sunroom.json`, `materials.json`: copy one as a starting point).
 Put your own `.json` files here and pick them on the **Scene** tab:
 
-- Android: `/sdcard/Android/data/dev.starinin.raytrace/files/scenes/`
-- Linux: `~/.config/raytrace/scenes/` (honours `XDG_CONFIG_HOME`)
+- Android: `/sdcard/Android/data/dev.starinin.rallynvx/files/scenes/`
+- Linux: `~/.config/rallynvx/scenes/` (honours `XDG_CONFIG_HOME`)
 
 A file with an error is not loaded; the reason is shown (a toast on Android, red text in the Linux panel).
 
@@ -48,8 +48,8 @@ Walls are just boxes; leave a gap (for example two ceiling boxes with a slit bet
 Сцена — JSON-файл. Три сцены встроены (`rust/scenes/classic.json`, `sunroom.json`, `materials.json`: скопируйте любую как основу).
 Свои `.json` кладите сюда и выбирайте на вкладке **«Сцена»**:
 
-- Android: `/sdcard/Android/data/dev.starinin.raytrace/files/scenes/`
-- Linux: `~/.config/raytrace/scenes/` (учитывает `XDG_CONFIG_HOME`)
+- Android: `/sdcard/Android/data/dev.starinin.rallynvx/files/scenes/`
+- Linux: `~/.config/rallynvx/scenes/` (учитывает `XDG_CONFIG_HOME`)
 
 Файл с ошибкой не загружается, причина показывается (уведомление на Android, красный текст в панели Linux).
 

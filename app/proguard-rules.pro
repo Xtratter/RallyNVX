@@ -1,1 +1,1 @@
--keep class dev.starinin.raytrace.Native { *; }
+-keep class dev.starinin.rallynvx.Native { *; }

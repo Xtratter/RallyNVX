@@ -77,7 +77,7 @@ States: `Ready` (timer not started) → `Running` → `Done(Passed{medal,reward}
 ### 2.5 Profile (`meta.rs`)
 
 `Profile { version: u32, money: u32, profile_seed: u64, round: u32, results: Vec<{seed, kind, medal, best_time}> }`.
-- JSON in the app's internal storage (`<files>/profile.json`; desktop `~/.config/raytrace/profile.json`).
+- JSON in the app's internal storage (`<files>/profile.json`; desktop `~/.config/rallynvx/profile.json`).
 - Atomic write (temp file + rename). A corrupt file or a newer `version` is renamed to `profile.json.bak` and a
   fresh profile is created (never silently overwritten). `profile_seed` is random on first run.
 
@@ -114,7 +114,7 @@ Host tests (no GPU), each with a failing-first run:
   prop distance and world-limit rules and the line-height rule; `time_limit` formula; difficulty gating.
 - Profile: save/load roundtrip; corrupt file moved to `.bak`; newer version; atomic write leaves no temp file.
 - Marker list from `MissionRun` (beacon plus rings, next highlighted).
-- CI smoke: a mission started from an env var on desktop (`RAYTRACE_MISSION=0`) produces a screenshot with the
+- CI smoke: a mission started from an env var on desktop (`RALLYNVX_MISSION=0`) produces a screenshot with the
   beacon visible.
 
 ## 4. Risks

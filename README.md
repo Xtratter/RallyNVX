@@ -1,4 +1,4 @@
-# Raytrace
+# RallyNVX
 
 [Русский](README.ru.md) · **English**
 
@@ -96,7 +96,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 ## Architecture
 
 ```
-app/ (Gradle, Kotlin)            rust/ (cargo, cdylib libraytrace.so)
+app/ (Gradle, Kotlin)            rust/ (cargo, cdylib librallynvx.so)
   MainActivity                     lib.rs      logger + module wiring
   RenderView : SurfaceView  --->   jni_api.rs  JNI entry points, render thread
   SettingsSheet (kit UI)           renderer.rs frame loop, adaptive resolution, camera
@@ -138,14 +138,14 @@ export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
 
 ## Linux desktop (x86-64)
 
-The same renderer runs on desktop Linux (tested target: Manjaro / Arch, any Vulkan 1.1 GPU) as `raytrace-desktop`: a winit window with an
-egui settings panel (same tabs, presets and languages as the Android app; the language follows `LANG`, override with `RAYTRACE_LANG=en|ru`).
-Settings are saved to `~/.config/raytrace/settings.ini`.
+The same renderer runs on desktop Linux (tested target: Manjaro / Arch, any Vulkan 1.1 GPU) as `rallynvx-desktop`: a winit window with an
+egui settings panel (same tabs, presets and languages as the Android app; the language follows `LANG`, override with `RALLYNVX_LANG=en|ru`).
+Settings are saved to `~/.config/rallynvx/settings.ini`.
 
 - **Mouse**: drag to look/orbit, wheel to zoom. **Keys** (layout independent): W A S D = left stick, arrows = right stick, Tab = panel, F = fullscreen, H = HUD, R = reset camera, Esc = quit
-- **Install**: download `raytrace-<version>-linux-x86_64.tar.gz` or the `Raytrace-<version>-x86_64.AppImage` from the Releases page, or build the package: `cd packaging/arch && makepkg -si`
+- **Install**: download `rallynvx-<version>-linux-x86_64.tar.gz` or the `RallyNVX-<version>-x86_64.AppImage` from the Releases page, or build the package: `cd packaging/arch && makepkg -si`
 - **Run-time dependencies**: a Vulkan driver (`vulkan-radeon`, `vulkan-intel` or `nvidia-utils`), `vulkan-icd-loader`, `libxkbcommon-x11` (X11) or `wayland`
-- **From source**: `cd rust && cargo run --release --features desktop --bin raytrace-desktop`
+- **From source**: `cd rust && cargo run --release --features desktop --bin rallynvx-desktop`
 - CI builds the binary on Ubuntu, runs the unit tests and smoke-runs it on software Vulkan (lavapipe) under Xvfb; performance on real desktop GPUs has not been measured yet
 
 ## Benchmarks

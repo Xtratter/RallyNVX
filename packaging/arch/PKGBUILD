@@ -1,10 +1,10 @@
 # Maintainer: Xtratter
-pkgname=raytrace
+pkgname=rallynvx
 pkgver=1.8.0
 pkgrel=1
 pkgdesc='Real-time SDF ray tracer (Rust, wgpu/Vulkan) with an egui settings panel'
 arch=('x86_64')
-url='https://github.com/Xtratter/raytrace'
+url='https://github.com/Xtratter/rallynvx'
 license=('Apache-2.0')
 depends=('vulkan-icd-loader' 'libxkbcommon' 'libxkbcommon-x11' 'wayland' 'libx11' 'libxcursor' 'libxi' 'libxrandr')
 makedepends=('cargo')
@@ -18,7 +18,7 @@ prepare() {
 
 build() {
   cd "$pkgname-$pkgver/rust"
-  cargo build --frozen --release --features desktop --bin raytrace-desktop
+  cargo build --frozen --release --features desktop --bin rallynvx-desktop
 }
 
 check() {
@@ -28,8 +28,8 @@ check() {
 
 package() {
   cd "$pkgname-$pkgver"
-  install -Dm755 rust/target/release/raytrace-desktop "$pkgdir/usr/bin/raytrace"
-  install -Dm644 packaging/linux/raytrace.desktop "$pkgdir/usr/share/applications/raytrace.desktop"
-  install -Dm644 packaging/linux/raytrace.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/raytrace.svg"
+  install -Dm755 rust/target/release/rallynvx-desktop "$pkgdir/usr/bin/rallynvx"
+  install -Dm644 packaging/linux/rallynvx.desktop "$pkgdir/usr/share/applications/rallynvx.desktop"
+  install -Dm644 packaging/linux/rallynvx.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/rallynvx.svg"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.starinin.raytrace"
+    namespace = "dev.starinin.rallynvx"
     compileSdk = 35
     buildToolsVersion = "35.0.0"
     defaultConfig {
-        applicationId = "dev.starinin.raytrace"
+        applicationId = "dev.starinin.rallynvx"
         minSdk = 28
         targetSdk = 34
         versionCode = 32

@@ -1,4 +1,4 @@
-# Raytrace
+# RallyNVX
 
 **Русский** · [English](README.md)
 
@@ -96,7 +96,7 @@
 ## Архитектура
 
 ```
-app/ (Gradle, Kotlin)            rust/ (cargo, cdylib libraytrace.so)
+app/ (Gradle, Kotlin)            rust/ (cargo, cdylib librallynvx.so)
   MainActivity                     lib.rs      логгер, подключение модулей
   RenderView : SurfaceView  --->   jni_api.rs  точки входа JNI, поток рендера
   SettingsSheet (kit UI)           renderer.rs цикл кадра, адаптивное разрешение, камера
@@ -136,14 +136,14 @@ export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
 
 ## Linux (x86-64)
 
-Тот же рендерер работает на десктопном Linux (проверяемая цель: Manjaro / Arch, любая GPU с Vulkan 1.1) как `raytrace-desktop`: окно winit
-с панелью настроек на egui (те же вкладки, пресеты и языки, что в Android-приложении; язык берётся из `LANG`, переопределяется `RAYTRACE_LANG=en|ru`).
-Настройки сохраняются в `~/.config/raytrace/settings.ini`.
+Тот же рендерер работает на десктопном Linux (проверяемая цель: Manjaro / Arch, любая GPU с Vulkan 1.1) как `rallynvx-desktop`: окно winit
+с панелью настроек на egui (те же вкладки, пресеты и языки, что в Android-приложении; язык берётся из `LANG`, переопределяется `RALLYNVX_LANG=en|ru`).
+Настройки сохраняются в `~/.config/rallynvx/settings.ini`.
 
 - **Мышь**: перетаскивание — взгляд/орбита, колесо — зум. **Клавиши** (не зависят от раскладки): W A S D — левый стик, стрелки — правый, Tab — панель, F — во весь экран, H — HUD, R — сброс камеры, Esc — выход
-- **Установка**: скачайте `raytrace-<версия>-linux-x86_64.tar.gz` или `Raytrace-<версия>-x86_64.AppImage` со страницы Releases либо соберите пакет: `cd packaging/arch && makepkg -si`
+- **Установка**: скачайте `rallynvx-<версия>-linux-x86_64.tar.gz` или `RallyNVX-<версия>-x86_64.AppImage` со страницы Releases либо соберите пакет: `cd packaging/arch && makepkg -si`
 - **Зависимости времени выполнения**: драйвер Vulkan (`vulkan-radeon`, `vulkan-intel` или `nvidia-utils`), `vulkan-icd-loader`, `libxkbcommon-x11` (X11) или `wayland`
-- **Из исходников**: `cd rust && cargo run --release --features desktop --bin raytrace-desktop`
+- **Из исходников**: `cd rust && cargo run --release --features desktop --bin rallynvx-desktop`
 - CI собирает бинарник на Ubuntu, гоняет юнит-тесты и запускает его на программном Vulkan (lavapipe) под Xvfb; скорость на реальных десктопных GPU пока не измерялась
 
 ## Замеры

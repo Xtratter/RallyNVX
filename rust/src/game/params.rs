@@ -101,14 +101,14 @@ impl Params {
     pub fn car(&self, id: &str) -> Option<VehicleSpec> { self.cars.iter().find(|(i, _)| i == id).map(|(_, c)| *c) }
 }
 
-/// The active parameters: the embedded file, or the file named by `RAYTRACE_VEHICLES` when it parses.
+/// The active parameters: the embedded file, or the file named by `RALLYNVX_VEHICLES` when it parses.
 pub fn get() -> &'static Params {
     static P: OnceLock<Params> = OnceLock::new();
     P.get_or_init(|| {
-        if let Some(path) = std::env::var_os("RAYTRACE_VEHICLES") {
+        if let Some(path) = std::env::var_os("RALLYNVX_VEHICLES") {
             match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| Params::from_json(&t)) {
                 Ok(p) => { log::info!("vehicle parameters loaded from {path:?}"); return p; }
-                Err(e) => log::error!("RAYTRACE_VEHICLES {path:?} ignored: {e}"),
+                Err(e) => log::error!("RALLYNVX_VEHICLES {path:?} ignored: {e}"),
             }
         }
         Params::from_json(EMBEDDED).expect("embedded vehicles.json is invalid")

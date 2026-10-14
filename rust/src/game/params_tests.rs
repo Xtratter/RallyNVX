@@ -15,7 +15,7 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     assert_eq!((c.aero, c.ang_damp, c.handbrake_grip, c.reverse_factor, c.max_susp_factor), (0.35, 0.8, 0.4, 0.4, 5.0));
 }
 #[test] fn the_active_parameters_are_the_embedded_ones_by_default() {
-    if std::env::var_os("RAYTRACE_VEHICLES").is_none() { assert_eq!(get().car("offroader").unwrap().mass, 1500.0); }
+    if std::env::var_os("RALLYNVX_VEHICLES").is_none() { assert_eq!(get().car("offroader").unwrap().mass, 1500.0); }
 }
 #[test] fn an_override_changes_the_specs_and_inertia_scales_with_mass() {
     let text = EMBEDDED.replacen("\"mass\": 1500", "\"mass\": 3000", 1);

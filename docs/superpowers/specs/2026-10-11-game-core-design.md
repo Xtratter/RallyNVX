@@ -4,7 +4,7 @@ Status: draft for review. Date: 2026-10-11.
 
 ## 1. Product vision (whole game, for context)
 
-Raytrace becomes an off-road driving game: random levels from a seed, cars on
+RallyNVX becomes an off-road driving game: random levels from a seed, cars on
 rough terrain, helicopters and drones over cities, missions, garage and
 progression. Offline, RU+EN, Android first, desktop kept. Near-photorealistic
 look, delivered through three selectable render modes:

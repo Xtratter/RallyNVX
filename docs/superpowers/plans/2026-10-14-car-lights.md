@@ -188,7 +188,7 @@ JNI (next to `gameTimeOfDay`):
 
 ```rust
     /// Debug/test: force the car lights (0 headlights, 1 + brake, 2 + reverse); negative = normal.
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameLightsDebug(_e: JNIEnv, _c: JClass, mode: jint) {
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameLightsDebug(_e: JNIEnv, _c: JClass, mode: jint) {
         crate::game::carlights::set_debug(if mode >= 0 { Some(mode as u8) } else { None });
     }
 ```
@@ -253,7 +253,7 @@ with, before the literal: `let hc = (wv.lamps.head[0] + wv.lamps.head[1]) * 0.5;
 - [ ] **Step 4: Device check** (phone awake; hybrid; both cars if the profile allows, the off-roader is the default):
 
 ```bash
-cd ~/projects/raytrace && for m in 0 1 2; do ~/.cache/devtest.sh 2.13.0 L_$m --ei mission -1 --ef tod 0.0 --ei lights $m --el seed 7 --ei hybrid 1 2>&1 | grep -E "^e:|FATAL|panic" | tail -2; done
+cd ~/projects/rallynvx && for m in 0 1 2; do ~/.cache/devtest.sh 2.13.0 L_$m --ei mission -1 --ef tod 0.0 --ei lights $m --el seed 7 --ei hybrid 1 2>&1 | grep -E "^e:|FATAL|panic" | tail -2; done
 ```
 Read `L_0..L_2.png`: the cone lights the grass and trees ahead with a soft edge, tail lamps show at the rear (red, brighter with `lights=1`), reverse lamps white with `lights=2` and a white glow on the ground behind. Daytime (`--ef tod 0.5`, no `lights`) must look exactly as before (no cone, no lamps). Expected fps >= 45. If the glow cubes are hidden inside the body, move the lamps outwards by 0.05 m in `carlights::lamps` (and keep the test green).
 

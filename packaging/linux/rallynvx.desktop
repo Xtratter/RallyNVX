@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=RallyNVX
+Name[ru]=RallyNVX
+Comment=Real-time SDF ray tracer (Vulkan)
+Comment[ru]=Трассировщик лучей по SDF в реальном времени (Vulkan)
+Exec=rallynvx
+Icon=rallynvx
+Categories=Graphics;Utility;
+Terminal=false

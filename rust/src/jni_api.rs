@@ -1,4 +1,4 @@
-//! JNI entry points (dev.starinin.raytrace.Native) and the render thread.
+//! JNI entry points (dev.starinin.rallynvx.Native) and the render thread.
 use std::sync::mpsc::{channel, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -21,7 +21,7 @@ fn send(c: Cmd) {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_dev_starinin_raytrace_Native_start(env: JNIEnv, _c: JClass, surface: JObject, w: jint, h: jint) {
+pub extern "system" fn Java_dev_starinin_rallynvx_Native_start(env: JNIEnv, _c: JClass, surface: JObject, w: jint, h: jint) {
     crate::init_logger();
     stop_engine();
     let win = unsafe { NativeWindow::from_surface(env.get_raw() as *mut _, surface.as_raw() as *mut _) };
@@ -31,7 +31,7 @@ pub extern "system" fn Java_dev_starinin_raytrace_Native_start(env: JNIEnv, _c: 
     let st = stats.clone();
     let st2 = stats.clone();
     let (w, h) = (w.max(1) as u32, h.max(1) as u32);
-    let handle = std::thread::Builder::new().name("raytrace".into()).spawn(move || {
+    let handle = std::thread::Builder::new().name("rallynvx".into()).spawn(move || {
         // Unwinding panics (e.g. wgpu after a GPU watchdog reset, or Gfx::new failing) must end
         // only this thread, not the process; stats are zeroed when the thread ends so the HUD shows 0 fps, not stale values.
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
@@ -76,16 +76,16 @@ fn stop_engine() {
     }
 }
 
-#[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_stop(_e: JNIEnv, _c: JClass) { stop_engine(); }
-#[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_resize(_e: JNIEnv, _c: JClass, w: jint, h: jint) { send(Cmd::Resize(w.max(1) as u32, h.max(1) as u32)); }
-#[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_setParam(_e: JNIEnv, _c: JClass, id: jint, v: jfloat) { send(Cmd::Param(id, v)); }
-#[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_orbit(_e: JNIEnv, _c: JClass, dx: jfloat, dy: jfloat) { send(Cmd::Orbit(dx, dy)); }
-#[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_sticks(_e: JNIEnv, _c: JClass, lx: jfloat, ly: jfloat, rx: jfloat, ry: jfloat) { send(Cmd::Sticks(lx, ly, rx, ry)); }
-#[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_zoom(_e: JNIEnv, _c: JClass, f: jfloat) { send(Cmd::Zoom(f)); }
-#[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_resetCamera(_e: JNIEnv, _c: JClass) { send(Cmd::ResetCam); }
+#[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_stop(_e: JNIEnv, _c: JClass) { stop_engine(); }
+#[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_resize(_e: JNIEnv, _c: JClass, w: jint, h: jint) { send(Cmd::Resize(w.max(1) as u32, h.max(1) as u32)); }
+#[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_setParam(_e: JNIEnv, _c: JClass, id: jint, v: jfloat) { send(Cmd::Param(id, v)); }
+#[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_orbit(_e: JNIEnv, _c: JClass, dx: jfloat, dy: jfloat) { send(Cmd::Orbit(dx, dy)); }
+#[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_sticks(_e: JNIEnv, _c: JClass, lx: jfloat, ly: jfloat, rx: jfloat, ry: jfloat) { send(Cmd::Sticks(lx, ly, rx, ry)); }
+#[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_zoom(_e: JNIEnv, _c: JClass, f: jfloat) { send(Cmd::Zoom(f)); }
+#[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_resetCamera(_e: JNIEnv, _c: JClass) { send(Cmd::ResetCam); }
 
 #[no_mangle]
-pub extern "system" fn Java_dev_starinin_raytrace_Native_stats(env: JNIEnv, _c: JClass) -> jfloatArray {
+pub extern "system" fn Java_dev_starinin_rallynvx_Native_stats(env: JNIEnv, _c: JClass) -> jfloatArray {
     let s = ENGINE.lock().unwrap().as_ref().map(|e| *e.stats.lock().unwrap()).unwrap_or([0.0; 16]);
     let arr = env.new_float_array(16).unwrap();
     env.set_float_array_region(&arr, 0, &s).unwrap();
@@ -94,7 +94,7 @@ pub extern "system" fn Java_dev_starinin_raytrace_Native_stats(env: JNIEnv, _c: 
 
 /// Parses a scene file's JSON and, if valid, switches the renderer to it. Returns "" on success, else a readable error.
 #[no_mangle]
-pub extern "system" fn Java_dev_starinin_raytrace_Native_loadScene(mut env: JNIEnv, _c: JClass, json: jni::objects::JString) -> jni::sys::jstring {
+pub extern "system" fn Java_dev_starinin_rallynvx_Native_loadScene(mut env: JNIEnv, _c: JClass, json: jni::objects::JString) -> jni::sys::jstring {
     let text: String = match env.get_string(&json) { Ok(s) => s.into(), Err(_) => String::from("{") };
     let msg = match crate::scene::parse(&text) {
         Ok(d) => { send(Cmd::Scene(Box::new(d))); String::new() }

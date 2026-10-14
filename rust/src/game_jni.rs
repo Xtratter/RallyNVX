@@ -1,4 +1,4 @@
-//! JNI entry points of the game (dev.starinin.raytrace.Native.game*) and its render thread.
+//! JNI entry points of the game (dev.starinin.rallynvx.Native.game*) and its render thread.
 use crate::game::input::Input;
 
 /// Commands from Kotlin as an `Input` (non-finite axes become 0, axes are clamped).
@@ -53,7 +53,7 @@ mod android {
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_dev_starinin_raytrace_Native_gameStart(mut env: JNIEnv, _c: JClass, surface: JObject, w: jint, h: jint, seed: jlong, profile: jni::objects::JString, garage: jboolean) {
+    pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameStart(mut env: JNIEnv, _c: JClass, surface: JObject, w: jint, h: jint, seed: jlong, profile: jni::objects::JString, garage: jboolean) {
         crate::init_logger();
         stop_engine();
         let win = unsafe { NativeWindow::from_surface(env.get_raw() as *mut _, surface.as_raw() as *mut _) };
@@ -105,35 +105,35 @@ mod android {
         *ENGINE.lock().unwrap() = Some(Engine { tx, handle: Some(handle), stats });
     }
 
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameStop(_e: JNIEnv, _c: JClass) { stop_engine(); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameResize(_e: JNIEnv, _c: JClass, w: jint, h: jint) { send(GCmd::Resize(w.max(1) as u32, h.max(1) as u32)); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameInput(_e: JNIEnv, _c: JClass, throttle: jfloat, steer: jfloat, brake: jboolean, handbrake: jboolean, brake_amt: jfloat) {
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameStop(_e: JNIEnv, _c: JClass) { stop_engine(); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameResize(_e: JNIEnv, _c: JClass, w: jint, h: jint) { send(GCmd::Resize(w.max(1) as u32, h.max(1) as u32)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameInput(_e: JNIEnv, _c: JClass, throttle: jfloat, steer: jfloat, brake: jboolean, handbrake: jboolean, brake_amt: jfloat) {
         send(GCmd::Input(merge_input(throttle, steer, brake != 0, handbrake != 0, brake_amt)));
     }
     /// Debug/test: force the car lights (0 headlights, 1 + brake, 2 + reverse); negative = normal.
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameLightsDebug(_e: JNIEnv, _c: JClass, mode: jint) {
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameLightsDebug(_e: JNIEnv, _c: JClass, mode: jint) {
         crate::game::carlights::set_debug(if mode >= 0 { Some(mode as u8) } else { None });
     }
     /// Debug/test: every level starts at this time of day (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk); negative clears it.
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameTimeOfDay(_e: JNIEnv, _c: JClass, phase: jfloat) {
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameTimeOfDay(_e: JNIEnv, _c: JClass, phase: jfloat) {
         crate::game::daylight::set_debug_phase(if phase >= 0.0 { Some(phase) } else { None });
     }
     /// Tyre dust: 0 off, 1 normal, 2 lots.
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameAutopilot(_e: JNIEnv, _c: JClass, style: jint) { send(GCmd::Autopilot(style)); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameAutopilotTune(_e: JNIEnv, _c: JClass, lat: jfloat, brake: jfloat, offset: jfloat, speed: jfloat, slide: jfloat, edge: jfloat) { crate::game::autopilot::cfg::set_custom(lat, brake, offset, speed, slide, edge); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameDust(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Dust(level)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAutopilot(_e: JNIEnv, _c: JClass, style: jint) { send(GCmd::Autopilot(style)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAutopilotTune(_e: JNIEnv, _c: JClass, lat: jfloat, brake: jfloat, offset: jfloat, speed: jfloat, slide: jfloat, edge: jfloat) { crate::game::autopilot::cfg::set_custom(lat, brake, offset, speed, slide, edge); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameDust(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Dust(level)); }
     /// Debug/test: put the car on a road facing along it (1 liaison, 2 stage start, 3 stage middle, 4 stage end).
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameOnRoad(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::OnRoad(mode)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameOnRoad(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::OnRoad(mode)); }
     /// The player drags on the screen: orbit the chase camera by (yaw, pitch) radians.
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameCamera(_e: JNIEnv, _c: JClass, dyaw: jfloat, dpitch: jfloat) { send(GCmd::Camera(dyaw, dpitch)); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameCameraUp(_e: JNIEnv, _c: JClass) { send(GCmd::CameraUp); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameInCity(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::InCity(mode)); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameQuality(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Quality(level)); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameRenderMode(_e: JNIEnv, _c: JClass, m: jint) { send(GCmd::RenderMode(m)); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameAutoFallback(_e: JNIEnv, _c: JClass, on: jboolean) { send(GCmd::AutoFallback(on != 0)); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameGarageCar(_e: JNIEnv, _c: JClass, i: jint) { send(GCmd::GarageCar(i)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameCamera(_e: JNIEnv, _c: JClass, dyaw: jfloat, dpitch: jfloat) { send(GCmd::Camera(dyaw, dpitch)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameCameraUp(_e: JNIEnv, _c: JClass) { send(GCmd::CameraUp); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameInCity(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::InCity(mode)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameQuality(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Quality(level)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameRenderMode(_e: JNIEnv, _c: JClass, m: jint) { send(GCmd::RenderMode(m)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAutoFallback(_e: JNIEnv, _c: JClass, on: jboolean) { send(GCmd::AutoFallback(on != 0)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameGarageCar(_e: JNIEnv, _c: JClass, i: jint) { send(GCmd::GarageCar(i)); }
     #[no_mangle]
-    pub extern "system" fn Java_dev_starinin_raytrace_Native_garageInfo(mut env: JNIEnv, _c: JClass, path: jni::objects::JString) -> jfloatArray {
+    pub extern "system" fn Java_dev_starinin_rallynvx_Native_garageInfo(mut env: JNIEnv, _c: JClass, path: jni::objects::JString) -> jfloatArray {
         let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
         let v = crate::game::api::garage_info(std::path::Path::new(&p));
         let arr = env.new_float_array(v.len() as i32).unwrap();
@@ -141,37 +141,37 @@ mod android {
         arr.into_raw()
     }
     #[no_mangle]
-    pub extern "system" fn Java_dev_starinin_raytrace_Native_garageBuyCar(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, i: jint) -> jboolean {
+    pub extern "system" fn Java_dev_starinin_rallynvx_Native_garageBuyCar(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, i: jint) -> jboolean {
         let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
         crate::game::api::garage_buy_car(std::path::Path::new(&p), i.max(0) as usize) as jboolean
     }
     #[no_mangle]
-    pub extern "system" fn Java_dev_starinin_raytrace_Native_garageSelect(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, i: jint) -> jboolean {
+    pub extern "system" fn Java_dev_starinin_rallynvx_Native_garageSelect(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, i: jint) -> jboolean {
         let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
         crate::game::api::garage_select(std::path::Path::new(&p), i.max(0) as usize) as jboolean
     }
     #[no_mangle]
-    pub extern "system" fn Java_dev_starinin_raytrace_Native_garageBuyUpgrade(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, i: jint, up: jint) -> jboolean {
+    pub extern "system" fn Java_dev_starinin_rallynvx_Native_garageBuyUpgrade(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, i: jint, up: jint) -> jboolean {
         let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
         crate::game::api::garage_buy_upgrade(std::path::Path::new(&p), i.max(0) as usize, up.max(0) as usize) as jboolean
     }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gamePause(_e: JNIEnv, _c: JClass, p: jboolean) { send(GCmd::Pause(p != 0)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gamePause(_e: JNIEnv, _c: JClass, p: jboolean) { send(GCmd::Pause(p != 0)); }
     /// Audio thread: fills `buf` (PCM16 mono, 44.1 kHz) with the next samples. Never panics.
     #[no_mangle]
-    pub extern "system" fn Java_dev_starinin_raytrace_Native_audioRender(env: JNIEnv, _c: JClass, buf: jni::objects::JShortArray) {
+    pub extern "system" fn Java_dev_starinin_rallynvx_Native_audioRender(env: JNIEnv, _c: JClass, buf: jni::objects::JShortArray) {
         let n = env.get_array_length(&buf).unwrap_or(0).max(0) as usize;
         if n == 0 { return; }
         let mut v = vec![0i16; n];
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::audio::render_into(&mut v)));
         let _ = env.set_short_array_region(&buf, 0, &v);
     }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_audioVolume(_e: JNIEnv, _c: JClass, v: jfloat) { crate::audio::set_volume(v); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_audioMute(_e: JNIEnv, _c: JClass, m: jboolean) { crate::audio::set_muted(m != 0); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameReset(_e: JNIEnv, _c: JClass) { send(GCmd::Reset); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameNewLevel(_e: JNIEnv, _c: JClass, seed: jlong) { send(GCmd::NewLevel(seed as u64)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_audioVolume(_e: JNIEnv, _c: JClass, v: jfloat) { crate::audio::set_volume(v); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_audioMute(_e: JNIEnv, _c: JClass, m: jboolean) { crate::audio::set_muted(m != 0); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameReset(_e: JNIEnv, _c: JClass) { send(GCmd::Reset); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameNewLevel(_e: JNIEnv, _c: JClass, seed: jlong) { send(GCmd::NewLevel(seed as u64)); }
 
     #[no_mangle]
-    pub extern "system" fn Java_dev_starinin_raytrace_Native_gameStats(env: JNIEnv, _c: JClass) -> jfloatArray {
+    pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameStats(env: JNIEnv, _c: JClass) -> jfloatArray {
         let s = ENGINE.lock().unwrap().as_ref().map(|e| *e.stats.lock().unwrap()).unwrap_or([0.0; STAT_LEN]);
         let arr = env.new_float_array(STAT_LEN as i32).unwrap();
         env.set_float_array_region(&arr, 0, &s).unwrap();

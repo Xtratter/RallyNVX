@@ -16,7 +16,7 @@
 
 - Added: crests and jumps on the special stage (series of 3-5, 0.6-2 m high, a long take-off and a short landing side; none in tight bends, near the road ends or on a causeway)
 - Added: ditches along both road edges (deeper on the stage), a 0.8 m loose gravel verge and rocks 4-8 m from the stage
-- Added: `rust/roads.json` holds all these numbers; a `roads.json` next to the profile or `RAYTRACE_ROADS` overrides them without a rebuild
+- Added: `rust/roads.json` holds all these numbers; a `roads.json` next to the profile or `RALLYNVX_ROADS` overrides them without a rebuild
 - Added: the Autopilot button (beside Reset and New level): it joins the special stage from anywhere, drives the least-curvature line at the speed the grip allows and stops at the finish; any touch of the controls hands control back; numbers in `rust/autopilot.json`
 
 ## 2.17.0 - tyre dust
@@ -31,7 +31,7 @@
 - Added: the grip, the tyres' side stiffness and the rolling resistance depend on the surface under every wheel (asphalt, gravel, dirt, grass, sand, rock, shallow water); off the tarmac the car is noticeably slipperier, sand is slow
 - Added: a loose gravel layer on the special stage: the wheels sweep it into a packed, grippier line while the sides stay loose; the map resets with a new level
 - Added: the HUD shows the name of the surface under the car
-- Added: the grip numbers live in `rust/surfaces.json` (embedded); a `surfaces.json` next to the profile (Android) or `RAYTRACE_SURFACES` (desktop) overrides them without a rebuild
+- Added: the grip numbers live in `rust/surfaces.json` (embedded); a `surfaces.json` next to the profile (Android) or `RALLYNVX_SURFACES` (desktop) overrides them without a rebuild
 
 ## 2.15.0 - roads
 
@@ -133,27 +133,27 @@
 
 ## 2.2.1 - vehicle parameters in one file
 
-- Changed: all numbers of the car, helicopter, drone, flight rules and the sling now live in `rust/vehicles.json` (embedded in the app); no behaviour change. Desktop can try another file with `RAYTRACE_VEHICLES=path` (docs/vehicles.md)
+- Changed: all numbers of the car, helicopter, drone, flight rules and the sling now live in `rust/vehicles.json` (embedded in the app); no behaviour change. Desktop can try another file with `RALLYNVX_VEHICLES=path` (docs/vehicles.md)
 
 ## 2.2.0 - flight
 
 - Added: a helicopter and a drone with arcade controls (sticks released = hover, soft landing or crash) and three air missions: ring races, cargo on a sling (helicopter) and drone recon
 - Added: the mission list now has six missions; new flight HUD (altitude, speed, rope state), goal rings, pads and recon zones in the world
-- Desktop: flight keys (W/S pitch, A/D roll, Q/E yaw, Up/Down lift); `RAYTRACE_MISSION=4` starts the ring mission
+- Desktop: flight keys (W/S pitch, A/D roll, Q/E yaw, Up/Down lift); `RALLYNVX_MISSION=4` starts the ring mission
 - Known: no cities and no rescue yet; locking the screen mid-mission restarts it
 
 ## 2.1.0 - missions
 
 - Added: missions: a list of four random missions (two cargo deliveries, two checkpoint races) with a goal beacon and checkpoint rings, a timer, cargo integrity (hits, hard landings and rollovers damage it), an arrow and distance to the target, pause and results screens
 - Added: bronze / silver / gold medals by time and cargo condition, money rewards, a saved profile (money, best medal and time per mission; a corrupt file is kept as `.bak`), Refresh for a new list
-- Added: main menu (Missions / Free drive / Scenes / Quality) with the money shown; desktop: `RAYTRACE_MISSION=<0..3>` starts a mission, `M` aborts it (docs/game.md)
+- Added: main menu (Missions / Free drive / Scenes / Quality) with the money shown; desktop: `RALLYNVX_MISSION=<0..3>` starts a mission, `M` aborts it (docs/game.md)
 
 ## 2.0.0 - off-road game
 
 - Added: a game next to the scene viewer: "Free drive" on a random level (every level has a seed shown in the HUD; the same seed gives the same level)
 - Added: seeded hilly terrain with rocks and trees, an arcade off-road car with suspension, drift (handbrake) and collisions, a chase camera, touch controls (left stick steer/throttle, right stick down brake) and keyboard on desktop
 - Added: a raster renderer (render mode C) with tiled terrain LODs, fog, sky and a sun shadow map; Low / Medium / High resolution on the start screen
-- Added: start screen (Free drive / Scenes / Quality); desktop: `raytrace-desktop --game [seed]` (docs/game.md)
+- Added: start screen (Free drive / Scenes / Quality); desktop: `rallynvx-desktop --game [seed]` (docs/game.md)
 - Unchanged: the ray-traced Scenes mode and its scene files
 
 ## 1.8.0 - prism
@@ -182,7 +182,7 @@
 
 ## 1.4.0 - Linux desktop build
 
-- Added: `raytrace-desktop` for x86-64 Linux (winit window + egui settings panel, mouse and keyboard camera, settings saved to `~/.config/raytrace/settings.ini`), packaged as a tar.gz, an AppImage and an Arch `PKGBUILD`
+- Added: `rallynvx-desktop` for x86-64 Linux (winit window + egui settings panel, mouse and keyboard camera, settings saved to `~/.config/rallynvx/settings.ini`), packaged as a tar.gz, an AppImage and an Arch `PKGBUILD`
 - Changed: `Gfx` can be created from any wgpu surface and draws an optional overlay after the present pass; presets and setting keys are now also in Rust
 - The Android app is unchanged (still 1.3.0)
 

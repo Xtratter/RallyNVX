@@ -28,7 +28,7 @@
 - [ ] Write `cfg_tests.rs`: embedded json parses; each numeric range rejected when invalid (crest height min>max, length<=0, ditch depth<0, verge<0) with a message naming the field; garbage json returns Err.
 - [ ] Run `cargo test --lib roads::cfg` - FAIL (module missing).
 - [ ] Implement by copying the `GripTable` pattern from `game/grip.rs` (embedded `include_str!`, `OnceLock`/`RwLock`, override file); values: crest height [0.6,2.0], length [30,60], spacing [150,250], series [3,5], series_gap [500,900], min_radius 120, keep_ends 150, asym 0.35, max_slope 0.10, causeway_clear 1.5; ditch stage {depth 0.55, width 1.3, offset 1.8}, liaison {0.25, 1.0, 1.8}; verge 0.8; rocks band [4,8], candidates 24.
-- [ ] Wire `load_override` next to the `surfaces.json` override in `Game::with_profile` and `RAYTRACE_ROADS` env for the desktop.
+- [ ] Wire `load_override` next to the `surfaces.json` override in `Game::with_profile` and `RALLYNVX_ROADS` env for the desktop.
 - [ ] Run tests - PASS. Commit `feat: roads.json and its loader`.
 
 ### Task 2: crests in the profile

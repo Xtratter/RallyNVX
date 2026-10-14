@@ -122,7 +122,7 @@ Host tests (no GPU), failing first:
 - Generation: 6 missions, kinds and aircraft rules, determinism, point rules over 200 seeds, `roll` never
   panics for extreme arguments, the sling/recon alternation by round parity.
 - State array fields; profile keys for the new kinds (round trip, old profiles with kind ids 0/1 still load).
-- CI smoke: desktop `RAYTRACE_MISSION=<air slot>` with an autopilot (flies towards the target) takes a
+- CI smoke: desktop `RALLYNVX_MISSION=<air slot>` with an autopilot (flies towards the target) takes a
   screenshot showing the aircraft and a ring or pad.
 
 ## 4. Risks

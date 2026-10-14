@@ -1,4 +1,4 @@
-# Raytrace 1.2 — half-resolution GI Implementation Plan
+# RallyNVX 1.2 — half-resolution GI Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -17,7 +17,7 @@
 - Defaults: the Balanced preset row must equal the `params.json` defaults.
 - Kit files `app/src/main/java/io/github/xtratter/uikit/*` are never edited. UI strings bilingual via `t(en, ru)`. No sliders.
 - Every commit message ends with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`; do not change git config; no secrets/IPs in commits. Branch: `feat/gi-halfres`.
-- **Phone rules:** host-only work by default. Tasks 1-7 never touch the phone (no `su`, adb, install, launch, screencap, logcat). Only Task 8 uses the device, only when the controller says the user allows it, with short runs: after each test `su -c 'am force-stop dev.starinin.raytrace'` and `su -c 'am start -n com.termux/com.termux.app.TermuxActivity'`; `su` only for pm install (copy the APK to `/data/local/tmp` with `su -c cp` first), `pm clear dev.starinin.raytrace`, `am start/force-stop` (`--es dbg "id=v,..."` works in debug builds only), `logcat -c/-d -s raytrace`, `screencap` to `/sdcard/claude/`.
+- **Phone rules:** host-only work by default. Tasks 1-7 never touch the phone (no `su`, adb, install, launch, screencap, logcat). Only Task 8 uses the device, only when the controller says the user allows it, with short runs: after each test `su -c 'am force-stop dev.starinin.rallynvx'` and `su -c 'am start -n com.termux/com.termux.app.TermuxActivity'`; `su` only for pm install (copy the APK to `/data/local/tmp` with `su -c cp` first), `pm clear dev.starinin.rallynvx`, `am start/force-stop` (`--es dbg "id=v,..."` works in debug builds only), `logcat -c/-d -s rallynvx`, `screencap` to `/sdcard/claude/`.
 - Honest benchmarks only: A/B in the same session, GPU clocks vary ~25%; never claim numbers that were not measured.
 
 ## Review Focus
@@ -49,7 +49,7 @@ params.json, README(.ru).md, CHANGELOG(.ru).md, docs/bench.md, app/build.gradle.
 ### Task 1: Param `gi_res`, flags, pure helpers, Params extension
 
 **Files:**
-- Create: `rust/src/gi.rs`; Modify: `rust/src/lib.rs`, `rust/src/params.rs`, `rust/src/gfx.rs` (GpuParams only), `rust/src/renderer.rs` (struct fill only), `rust/src/shaders/common.wgsl`, `params.json`, `app/src/main/java/dev/starinin/raytrace/Settings.kt`, `app/src/test/java/dev/starinin/raytrace/SettingsTest.kt`
+- Create: `rust/src/gi.rs`; Modify: `rust/src/lib.rs`, `rust/src/params.rs`, `rust/src/gfx.rs` (GpuParams only), `rust/src/renderer.rs` (struct fill only), `rust/src/shaders/common.wgsl`, `params.json`, `app/src/main/java/dev/starinin/rallynvx/Settings.kt`, `app/src/test/java/dev/starinin/rallynvx/SettingsTest.kt`
 - Test: inline tests in `gi.rs`, `params.rs`; `SettingsTest.kt`
 
 **Interfaces:**
@@ -548,7 +548,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"`
 ### Task 6: Per-pass GPU timestamps, stats 16, HUD
 
 **Files:**
-- Modify: `rust/src/gfx.rs`, `rust/src/renderer.rs`, `rust/src/jni_api.rs`, `app/src/main/java/dev/starinin/raytrace/Hud.kt`, `app/src/main/java/dev/starinin/raytrace/MainActivity.kt` (only if it indexes stats), `app/src/main/java/dev/starinin/raytrace/Native.kt` (doc only)
+- Modify: `rust/src/gfx.rs`, `rust/src/renderer.rs`, `rust/src/jni_api.rs`, `app/src/main/java/dev/starinin/rallynvx/Hud.kt`, `app/src/main/java/dev/starinin/rallynvx/MainActivity.kt` (only if it indexes stats), `app/src/main/java/dev/starinin/rallynvx/Native.kt` (doc only)
 - Test: pure helper test for `pass_ms` conversion in `gfx.rs`? (not GPU-bound: put `fn ticks_to_ms(begin: u64, end: u64, period_ns: f32) -> f32` in `gi.rs`-style pure code in `rust/src/profile.rs`, host-tested)
 
 **Interfaces:**
@@ -591,7 +591,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"`
 ### Task 7: UI chip, presets, docs, version 1.2.0, signed APK
 
 **Files:**
-- Modify: `app/src/main/java/dev/starinin/raytrace/{SettingsSheet,Presets}.kt`, `app/src/test/java/dev/starinin/raytrace/PresetsTest.kt`, `app/build.gradle.kts`, `rust/Cargo.toml` (+ `Cargo.lock`), `README.md`, `README.ru.md`, `CHANGELOG.md`, `CHANGELOG.ru.md`, `~/projects/releases/raytrace-1.2.0.md`
+- Modify: `app/src/main/java/dev/starinin/rallynvx/{SettingsSheet,Presets}.kt`, `app/src/test/java/dev/starinin/rallynvx/PresetsTest.kt`, `app/build.gradle.kts`, `rust/Cargo.toml` (+ `Cargo.lock`), `README.md`, `README.ru.md`, `CHANGELOG.md`, `CHANGELOG.ru.md`, `~/projects/releases/rallynvx-1.2.0.md`
 - Test: `PresetsTest`
 
 **Interfaces:**
@@ -615,8 +615,8 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"`
 ```
 Run `./gradlew --no-daemon testDebugUnitTest --tests '*PresetsTest*' -q` — expected FAIL (`balancedMatchesDefaults`/new tests).
 - [ ] **Step 2: Implement.** `Presets.kt`: add `Ids.GI_RES` to `CONTROLLED` and `ORDER` (append at the END of both lists) and one more column to each row of `TABLE` (Performance `2f`, Balanced `1f`, Quality `0f`). `SettingsSheet.light()`: after the GI switch add `chips(t("GI resolution", "Разрешение GI"), Ids.GI_RES, listOf(t("Full", "Полное") to 0f, t("Half", "Половина") to 1f, t("Quarter", "Четверть") to 2f))`. Run the tests — Expected: PASS.
-- [ ] **Step 3: Version + docs.** `app/build.gradle.kts` versionName `1.2.0`, versionCode 3; `rust/Cargo.toml` version `1.2.0` (Cargo.lock updates on build). README.md/README.ru.md: features (GI computed at half/quarter resolution with temporal accumulation and bilateral upsampling, per-pass GPU timings in the HUD "Full" mode), settings table row for GI resolution, architecture pipeline diagram updated (trace -> gi_trace -> temporal -> gi_temporal -> gi_atrous -> atrous -> composite -> present), known limitations (GI of the rotating sponge lags ~6 frames; GI shadows approximate). Do NOT put any performance number in docs yet (Task 8 measures); write "measured results: see docs/bench.md (1.2 section pending device check)". CHANGELOG.md/.ru.md: `1.2.0` entry (Added: GI resolution setting, half/quarter-res GI pass, per-pass timings; Changed: default GI is half resolution). Release notes `~/projects/releases/raytrace-1.2.0.md` (EN + RU, no numbers yet).
-- [ ] **Step 4: Build + sign (host only)** — `cd rust && cargo test --lib`, `./gradlew --no-daemon testDebugUnitTest assembleRelease -q` (long timeout), then `zipalign -f -p 4 app/build/outputs/apk/release/app-release-unsigned.apk ~/tmp/rtsign/al120.apk && apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out ~/tmp/rtsign/raytrace-1.2.0-arm64.apk ~/tmp/rtsign/al120.apk && apksigner verify --print-certs ~/tmp/rtsign/raytrace-1.2.0-arm64.apk | grep SHA-256` (starts `9d30a1f9`). Also build the DEBUG APK for Task 8 (`assembleDebug`).
+- [ ] **Step 3: Version + docs.** `app/build.gradle.kts` versionName `1.2.0`, versionCode 3; `rust/Cargo.toml` version `1.2.0` (Cargo.lock updates on build). README.md/README.ru.md: features (GI computed at half/quarter resolution with temporal accumulation and bilateral upsampling, per-pass GPU timings in the HUD "Full" mode), settings table row for GI resolution, architecture pipeline diagram updated (trace -> gi_trace -> temporal -> gi_temporal -> gi_atrous -> atrous -> composite -> present), known limitations (GI of the rotating sponge lags ~6 frames; GI shadows approximate). Do NOT put any performance number in docs yet (Task 8 measures); write "measured results: see docs/bench.md (1.2 section pending device check)". CHANGELOG.md/.ru.md: `1.2.0` entry (Added: GI resolution setting, half/quarter-res GI pass, per-pass timings; Changed: default GI is half resolution). Release notes `~/projects/releases/rallynvx-1.2.0.md` (EN + RU, no numbers yet).
+- [ ] **Step 4: Build + sign (host only)** — `cd rust && cargo test --lib`, `./gradlew --no-daemon testDebugUnitTest assembleRelease -q` (long timeout), then `zipalign -f -p 4 app/build/outputs/apk/release/app-release-unsigned.apk ~/tmp/rtsign/al120.apk && apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out ~/tmp/rtsign/rallynvx-1.2.0-arm64.apk ~/tmp/rtsign/al120.apk && apksigner verify --print-certs ~/tmp/rtsign/rallynvx-1.2.0-arm64.apk | grep SHA-256` (starts `9d30a1f9`). Also build the DEBUG APK for Task 8 (`assembleDebug`).
 - [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: GI resolution setting and presets; docs; version 1.2.0
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"`
@@ -625,17 +625,17 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"`
 
 ### Task 8: Device A/B verification, benchmarks, release (controller-gated: needs the user's phone)
 
-**Files:** `docs/bench.md`, `README.md`, `README.ru.md`, `~/projects/releases/raytrace-1.2.0.md`
+**Files:** `docs/bench.md`, `README.md`, `README.ru.md`, `~/projects/releases/rallynvx-1.2.0.md`
 
 Run ONLY when the controller states that the user allows a short device session. If the phone is not available, stop after Step 0 and report; the controller will schedule it.
 
 - [ ] **Step 0: Preconditions** — Task 7 committed; debug APK built at `app/build/outputs/apk/debug/app-debug.apk`.
 - [ ] **Step 1: Install the debug build** — `su -c "cp $PWD/app/build/outputs/apk/debug/app-debug.apk /data/local/tmp/rt-dbg.apk && pm install -r /data/local/tmp/rt-dbg.apk"`.
-- [ ] **Step 2: A/B in one session, back to back** (each: `su -c "pm clear dev.starinin.raytrace; logcat -c; am start -n dev.starinin.raytrace/.MainActivity --es dbg '<dbg>'"`, wait 10 s, `logcat -d -s raytrace | grep fps | tail -3`, one `screencap -p /sdcard/claude/gi-<name>.png`, then `am force-stop` + return to Termux). Common settings: `19=0,18=0,2=0,1=1` (fixed camera, animation off, fixed 0.33x). Runs: `A: 30=0` (inline GI, same as 1.1.0), `B: 30=1`, `C: 30=2`, `D: 30=1,12=0` (GI off, control), plus the same `A,B` once more in reverse order (`B` then `A`) to expose drift. Record gpu ms, fps and (if the HUD/log shows them) per-pass times. Repeat `30=1` with the clean-defaults setting (no dbg, release preset Balanced defaults) once for the adaptive-floor figure.
+- [ ] **Step 2: A/B in one session, back to back** (each: `su -c "pm clear dev.starinin.rallynvx; logcat -c; am start -n dev.starinin.rallynvx/.MainActivity --es dbg '<dbg>'"`, wait 10 s, `logcat -d -s rallynvx | grep fps | tail -3`, one `screencap -p /sdcard/claude/gi-<name>.png`, then `am force-stop` + return to Termux). Common settings: `19=0,18=0,2=0,1=1` (fixed camera, animation off, fixed 0.33x). Runs: `A: 30=0` (inline GI, same as 1.1.0), `B: 30=1`, `C: 30=2`, `D: 30=1,12=0` (GI off, control), plus the same `A,B` once more in reverse order (`B` then `A`) to expose drift. Record gpu ms, fps and (if the HUD/log shows them) per-pass times. Repeat `30=1` with the clean-defaults setting (no dbg, release preset Balanced defaults) once for the adaptive-floor figure.
 - [ ] **Step 3: Image fidelity** — decode two screenshots (A vs B, and A vs C) with a stdlib-only PNG reader (zlib/struct; write the script to `~/tmp/imgstat.py`, do not commit it) and compare mean RGB inside fixed regions (floor near the green wall, floor near the orange wall, back wall centre, the Menger cube face) and the global mean; acceptance: each region's mean within 5% of A, and B/C show the green/orange bleeding. View the screenshots with the Read tool at object silhouettes (sphere/torus edges) for light leaks; report honestly what you see.
 - [ ] **Step 4: Sanity** — path-tracing (`0=1`) and GI-off hybrid (`12=0`) run without errors; mirror/glass spheres look right (no double GI brightening); toggling `30` in sequence across launches never crashes; `logcat -d | grep -iE 'FATAL|panic|ANR in'` is empty.
-- [ ] **Step 5: Docs** — append a `1.2 GI` section to `docs/bench.md` with the A/B table (fps, gpu ms, scale, conditions, order, date) and the fidelity numbers; update README/README.ru benchmark lines with ONLY measured numbers (state "Balanced default" figure from the clean-defaults run and the speedup B vs A measured back-to-back); update `~/projects/releases/raytrace-1.2.0.md`. If the speedup is below 30% or fidelity fails the 5% bound, say so plainly in the docs and the report; do not publish claims.
-- [ ] **Step 6: Restore the phone** — install the release build `su -c "cp ~/tmp/rtsign/raytrace-1.2.0-arm64.apk /data/local/tmp/rt-final.apk && pm install -r /data/local/tmp/rt-final.apk && pm clear dev.starinin.raytrace"` (rebuild + re-sign first if docs/version changed the APK: they do not, only the debug/release build output matters), Termux in the foreground.
+- [ ] **Step 5: Docs** — append a `1.2 GI` section to `docs/bench.md` with the A/B table (fps, gpu ms, scale, conditions, order, date) and the fidelity numbers; update README/README.ru benchmark lines with ONLY measured numbers (state "Balanced default" figure from the clean-defaults run and the speedup B vs A measured back-to-back); update `~/projects/releases/rallynvx-1.2.0.md`. If the speedup is below 30% or fidelity fails the 5% bound, say so plainly in the docs and the report; do not publish claims.
+- [ ] **Step 6: Restore the phone** — install the release build `su -c "cp ~/tmp/rtsign/rallynvx-1.2.0-arm64.apk /data/local/tmp/rt-final.apk && pm install -r /data/local/tmp/rt-final.apk && pm clear dev.starinin.rallynvx"` (rebuild + re-sign first if docs/version changed the APK: they do not, only the debug/release build output matters), Termux in the foreground.
 - [ ] **Step 7: Commit** — `git add -A && git commit -m "docs: 1.2 GI benchmarks
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"`. Do not push or tag: the controller publishes after the final review.

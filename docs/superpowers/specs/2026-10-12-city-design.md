@@ -94,7 +94,7 @@ parks exist; `roof_at`, `inside`, `buildings_near` agree with brute force on ran
 soft landing on a roof and take-off again; sling cargo rests on a roof; props and mission points avoid cities
 (`roll` over 200 seeds still passes its rules); renders: pure helpers for the instance list (culling by radius,
 budget never exceeded, order of the fill, facade flag set); CI smoke: a desktop run placed next to a city shows
-buildings (`RAYTRACE_SEED` + autodrive towards the first city, screenshot).
+buildings (`RALLYNVX_SEED` + autodrive towards the first city, screenshot).
 
 ## 4. Risks
 

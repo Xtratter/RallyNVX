@@ -16,7 +16,7 @@ Junctions, side roads, the city super-special loop (step B); marker posts and fe
 
 ## Design
 
-- `rust/roads.json` (embedded, overridable by a `roads.json` beside `profile.json` on Android or `RAYTRACE_ROADS` on the desktop, same pattern as `surfaces.json`): crest, ditch, verge and rock numbers. `game/roads/cfg.rs` parses and validates it (readable errors, ranges).
+- `rust/roads.json` (embedded, overridable by a `roads.json` beside `profile.json` on Android or `RALLYNVX_ROADS` on the desktop, same pattern as `surfaces.json`): crest, ditch, verge and rock numbers. `game/roads/cfg.rs` parses and validates it (readable errors, ranges).
 - Crests (`shape::add_crests`, stage roads only): after the smoothed profile is built, series of 3-5 crests are added to the height, spacing 150-250 m inside a series, 500-900 m between series. A crest is a half-cosine bump of height 0.6-2.0 m and length 30-60 m, asymmetric (the take-off side is longer than the landing side, factor 0.35), its height capped so the added slope never exceeds 0.10. Candidates are skipped where the curve radius within the crest window is below 120 m, within 150 m of the road ends, and on a causeway (the road lies less than 1.5 m above the water). The two ends keep their exact heights.
 - Ditches (`Terrain::height`, in the road blend): beyond the road edge a smooth trench, stage 0.55 m deep and 1.3 m wide centred 1.8 m from the edge, liaison 0.25 m / 1.0 m; no ditch where the road lies less than 1.5 m above the water. The existing shoulder easing (8 m) gives the bank on the outside.
 - Verge: `surface_at` returns gravel up to 0.8 m beyond the edge of a stage road (dirt after that up to 2 m, as before), so the verge is loose gravel for grip and dust.

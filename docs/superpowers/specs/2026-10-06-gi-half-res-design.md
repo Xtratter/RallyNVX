@@ -1,4 +1,4 @@
-# Raytrace 1.2 — half-resolution GI pass (design)
+# RallyNVX 1.2 — half-resolution GI pass (design)
 
 Date: 2026-10-06. Builds on v1.1.0. Device: POCO F3 (Adreno 650).
 

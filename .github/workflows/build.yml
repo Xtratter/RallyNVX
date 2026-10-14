@@ -37,7 +37,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           retention-days: 1
-          name: raytrace-${{ github.sha }}
+          name: rallynvx-${{ github.sha }}
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
@@ -53,34 +53,34 @@ jobs:
         run: |
           cd rust
           cargo test --lib --features desktop
-          cargo build --release --features desktop --bin raytrace-desktop
+          cargo build --release --features desktop --bin rallynvx-desktop
       - name: Smoke run on software Vulkan, one screenshot per built-in scene
         run: |
           for sc in 0 1 2 3; do
-            RAYTRACE_SCENE=$sc RAYTRACE_PANEL=0 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/raytrace-desktop > smoke$sc.log 2>&1 & sleep 75; xwd -root -silent | convert xwd:- screenshot$sc.png; kill %1" || true
+            RALLYNVX_SCENE=$sc RALLYNVX_PANEL=0 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/rallynvx-desktop > smoke$sc.log 2>&1 & sleep 75; xwd -root -silent | convert xwd:- screenshot$sc.png; kill %1" || true
             cat smoke$sc.log | grep -v naga
             grep -q "adapter:" smoke$sc.log
             ! grep -qi "panicked\|panic:" smoke$sc.log
           done
       - name: Smoke run of the game on software Vulkan, one screenshot
         run: |
-          RAYTRACE_SEED=42 RAYTRACE_AUTODRIVE=1 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/raytrace-desktop --game > smoke-game.log 2>&1 & sleep 45; xwd -root -silent | convert xwd:- screenshot-game.png; kill %1" || true
+          RALLYNVX_SEED=42 RALLYNVX_AUTODRIVE=1 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/rallynvx-desktop --game > smoke-game.log 2>&1 & sleep 45; xwd -root -silent | convert xwd:- screenshot-game.png; kill %1" || true
           grep -v naga smoke-game.log
           grep -q "adapter:" smoke-game.log
           ! grep -qi "panicked\|panic:" smoke-game.log
-          RAYTRACE_MISSION=0 RAYTRACE_PROFILE=$PWD/profile-smoke.json RAYTRACE_AUTODRIVE=1 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/raytrace-desktop --game > smoke-mission.log 2>&1 & sleep 22; xwd -root -silent | convert xwd:- screenshot-mission.png; kill %1" || true
+          RALLYNVX_MISSION=0 RALLYNVX_PROFILE=$PWD/profile-smoke.json RALLYNVX_AUTODRIVE=1 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/rallynvx-desktop --game > smoke-mission.log 2>&1 & sleep 22; xwd -root -silent | convert xwd:- screenshot-mission.png; kill %1" || true
           grep -v naga smoke-mission.log
           grep -q "adapter:" smoke-mission.log
           ! grep -qi "panicked\|panic:" smoke-mission.log
-          RAYTRACE_MISSION=4 RAYTRACE_PROFILE=$PWD/profile-smoke.json RAYTRACE_AUTODRIVE=1 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/raytrace-desktop --game > smoke-air.log 2>&1 & sleep 22; xwd -root -silent | convert xwd:- screenshot-air.png; kill %1" || true
+          RALLYNVX_MISSION=4 RALLYNVX_PROFILE=$PWD/profile-smoke.json RALLYNVX_AUTODRIVE=1 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/rallynvx-desktop --game > smoke-air.log 2>&1 & sleep 22; xwd -root -silent | convert xwd:- screenshot-air.png; kill %1" || true
           grep -v naga smoke-air.log
           grep -q "adapter:" smoke-air.log
           ! grep -qi "panicked\|panic:" smoke-air.log
-          RAYTRACE_SEED=7 RAYTRACE_AT_CITY=1 RAYTRACE_AUTODRIVE=1 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/raytrace-desktop --game > smoke-city.log 2>&1 & sleep 22; xwd -root -silent | convert xwd:- screenshot-city.png; kill %1" || true
+          RALLYNVX_SEED=7 RALLYNVX_AT_CITY=1 RALLYNVX_AUTODRIVE=1 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/rallynvx-desktop --game > smoke-city.log 2>&1 & sleep 22; xwd -root -silent | convert xwd:- screenshot-city.png; kill %1" || true
           grep -v naga smoke-city.log
           grep -q "adapter:" smoke-city.log
           ! grep -qi "panicked\|panic:" smoke-city.log
-          RAYTRACE_SEED=7 RAYTRACE_MISSION=3 RAYTRACE_PROFILE=$PWD/profile-smoke.json RAYTRACE_AUTODRIVE=1 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/raytrace-desktop --game > smoke-urban.log 2>&1 & sleep 22; xwd -root -silent | convert xwd:- screenshot-urban.png; kill %1" || true
+          RALLYNVX_SEED=7 RALLYNVX_MISSION=3 RALLYNVX_PROFILE=$PWD/profile-smoke.json RALLYNVX_AUTODRIVE=1 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/rallynvx-desktop --game > smoke-urban.log 2>&1 & sleep 22; xwd -root -silent | convert xwd:- screenshot-urban.png; kill %1" || true
           grep -v naga smoke-urban.log
           grep -q "adapter:" smoke-urban.log
           ! grep -qi "panicked\|panic:" smoke-urban.log
@@ -93,9 +93,9 @@ jobs:
       - name: Package
         run: |
           v=$(grep -m1 '^version' rust/Cargo.toml | cut -d'"' -f2)
-          d=raytrace-$v-linux-x86_64
+          d=rallynvx-$v-linux-x86_64
           mkdir "$d"
-          cp rust/target/release/raytrace-desktop "$d/raytrace"
+          cp rust/target/release/rallynvx-desktop "$d/rallynvx"
           cp LICENSE README.md README.ru.md "$d/"
           cp -r packaging/linux/* "$d/"
           tar czf "$d.tar.gz" "$d"
@@ -104,18 +104,18 @@ jobs:
         run: |
           v=$(grep -m1 '^version' rust/Cargo.toml | cut -d'"' -f2)
           mkdir -p AppDir/usr/bin
-          cp rust/target/release/raytrace-desktop AppDir/usr/bin/raytrace
-          cp packaging/linux/raytrace.desktop packaging/linux/raytrace.svg AppDir/
-          printf '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/usr/bin/raytrace" "$@"\n' > AppDir/AppRun
+          cp rust/target/release/rallynvx-desktop AppDir/usr/bin/rallynvx
+          cp packaging/linux/rallynvx.desktop packaging/linux/rallynvx.svg AppDir/
+          printf '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/usr/bin/rallynvx" "$@"\n' > AppDir/AppRun
           chmod +x AppDir/AppRun
           curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool
-          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir "Raytrace-$v-x86_64.AppImage"
-          echo "APPIMAGE=Raytrace-$v-x86_64.AppImage" >> "$GITHUB_ENV"
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir "RallyNVX-$v-x86_64.AppImage"
+          echo "APPIMAGE=RallyNVX-$v-x86_64.AppImage" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
           retention-days: 1
-          name: raytrace-linux-${{ github.sha }}
+          name: rallynvx-linux-${{ github.sha }}
           path: |
             ${{ env.TARBALL }}
             ${{ env.APPIMAGE }}

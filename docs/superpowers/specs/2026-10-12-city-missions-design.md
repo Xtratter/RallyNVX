@@ -85,7 +85,7 @@ Host tests (no GPU), failing first:
 - World: urban starts are outside buildings (the hull push-out leaves the car where it is), the car can drive from
   the start to the first checkpoint along the street with a simple host autopilot (steer towards the target) without
   being stuck; an aircraft at the urban start can reach the first ring; the sling cargo spawns on the roof and stays.
-- CI smoke: desktop `RAYTRACE_MISSION=3` (the urban race) with autodrive; screenshot.
+- CI smoke: desktop `RALLYNVX_MISSION=3` (the urban race) with autodrive; screenshot.
 
 ## 7. Risks
 
