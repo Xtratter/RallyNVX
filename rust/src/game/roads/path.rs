@@ -17,7 +17,7 @@ pub fn value_noise(seed: u64, x: f32, z: f32) -> f32 {
     top + (bot - top) * v
 }
 
-pub struct Grid { pub cell: f32, pub half: f32, pub n: usize, h: Vec<f32>, wet: Vec<bool>, city: Vec<bool>, noise: Vec<f32> }
+pub struct Grid { pub cell: f32, pub half: f32, pub n: usize, h: Vec<f32>, wet: Vec<bool>, shore: Vec<bool>, city: Vec<bool>, noise: Vec<f32> }
 
 #[derive(Copy, Clone)]
 struct Node { f: f32, i: u32 }
@@ -40,7 +40,9 @@ impl Grid {
             city.push(t.in_city(x, z, 40.0));
             noise.push(value_noise(t.seed ^ 0x40AD, x / 320.0, z / 320.0));
         } }
-        Grid { cell, half, n, h, wet, city, noise }
+        // a one-cell buffer round every lake: smoothing cuts corners, so a road must not hug the water
+        let shore: Vec<bool> = (0..n * n).map(|k| { let (i, j) = ((k % n) as i32, (k / n) as i32); (-1..=1).any(|dj| (-1..=1).any(|di| { let (a, b) = (i + di, j + dj); a >= 0 && b >= 0 && a < n as i32 && b < n as i32 && wet[b as usize * n + a as usize] })) }).collect();
+        Grid { cell, half, n, h, wet, shore, city, noise }
     }
 
     fn cell_index(&self, x: f32, z: f32) -> (usize, usize) {
@@ -48,6 +50,16 @@ impl Grid {
         (f(x), f(z))
     }
     fn world(&self, i: usize) -> (f32, f32) { (-self.half + (i % self.n) as f32 * self.cell, -self.half + (i / self.n) as f32 * self.cell) }
+    /// Marks every cell within `radius` of (x, z) as water (a pond the coarse grid missed).
+    pub fn mark_wet(&mut self, x: f32, z: f32, radius: f32) {
+        let r = (radius / self.cell).ceil() as i32;
+        let (ci, cj) = self.cell_index(x, z);
+        for dj in -r..=r { for di in -r..=r {
+            let (i, j) = (ci as i32 + di, cj as i32 + dj);
+            if i < 0 || j < 0 || i >= self.n as i32 || j >= self.n as i32 { continue; }
+            if ((di * di + dj * dj) as f32).sqrt() * self.cell <= radius { let k = j as usize * self.n + i as usize; self.wet[k] = true; self.shore[k] = true; }
+        } }
+    }
     pub fn is_wet(&self, x: f32, z: f32) -> bool { let (i, j) = self.cell_index(x, z); self.wet[j * self.n + i] }
 
     fn step_cost(&self, a: usize, b: usize, diag: bool, avoid_city: bool) -> f32 {
@@ -55,7 +67,7 @@ impl Grid {
         let slope = (self.h[b] - self.h[a]).abs() / d;
         let rough = (slope / 0.10).powi(2).min(40.0);
         let mut c = d * (1.0 + 0.9 * rough) * (1.0 + 0.8 * self.noise[b]);
-        if self.wet[b] { c += 25.0 * d; }
+        if self.wet[b] { c += 60.0 * d; } else if self.shore[b] { c += 8.0 * d; }
         if avoid_city && self.city[b] { c += 20.0 * d; }
         c
     }
