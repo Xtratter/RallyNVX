@@ -4,7 +4,7 @@
 
 /// The numbers of `surfaces.json` -> `fluid`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FluidCfg { pub cell: f32, pub n: [usize; 3], pub iterations: u32, pub settle: f32, pub decay: f32, pub inject: f32, pub absorb: f32, pub drag: f32, pub steps: u32 }
+pub struct FluidCfg { pub debug: bool, pub cell: f32, pub n: [usize; 3], pub iterations: u32, pub settle: f32, pub decay: f32, pub inject: f32, pub absorb: f32, pub drag: f32, pub steps: u32 }
 
 impl FluidCfg {
     pub fn from_json(text: &str) -> Result<FluidCfg, String> {
@@ -15,7 +15,8 @@ impl FluidCfg {
             if x < lo || x > hi { return Err(format!("fluid: \"{key}\" must be between {lo} and {hi} (got {x})")); }
             Ok(x as f32)
         };
-        Ok(FluidCfg { cell: num("cell", 0.25, 3.0)?, n: [num("nx", 8.0, 256.0)? as usize, num("ny", 4.0, 64.0)? as usize, num("nz", 8.0, 256.0)? as usize],
+        let debug = f.get("debug").and_then(|d| d.as_f64()).map_or(false, |d| d > 0.5);   // optional: draws any dust in green
+        Ok(FluidCfg { debug, cell: num("cell", 0.25, 3.0)?, n: [num("nx", 8.0, 256.0)? as usize, num("ny", 4.0, 64.0)? as usize, num("nz", 8.0, 256.0)? as usize],
             iterations: num("iterations", 1.0, 64.0)? as u32, settle: num("settle", 0.0, 3.0)?, decay: num("decay", 0.0, 2.0)?, inject: num("inject", 0.0, 10.0)?,
             absorb: num("absorb", 0.01, 10.0)?, drag: num("drag", 0.0, 5.0)?, steps: num("steps", 8.0, 128.0)? as u32 })
     }
@@ -184,6 +185,36 @@ impl Fluid {
         for c in self.cells() { let d = self.dens[self.idx(c)]; if d > 0.0 { let p = self.centre(window.cell_of(c)); for a in 0..3 { s[a] += p[a] * d; } m += d; } }
         if m > 0.0 { [s[0] / m, s[1] / m, s[2] / m] } else { [0.0; 3] }
     }
+}
+
+/// What the GPU needs of the car and its wheels each step (see `fluid.wgsl`, struct F).
+#[derive(Clone, Copy, Debug)]
+pub struct Packed {
+    pub car: [f32; 4], pub car_half: [f32; 4], pub car_vel: [f32; 4],
+    pub wpos: [[f32; 4]; 4], pub wvel: [[f32; 4]; 4], pub wcol: [[f32; 4]; 4],
+}
+
+/// The car's box (its yaw, size, velocity) and the four wheel emitters: the dust rate from the surface under each wheel
+/// (rolling and sliding, as the particle dust), the air the wheel throws (back and up, more when it slips) and the dust colour.
+pub fn pack(v: &super::vehicle::Vehicle, cfg: &FluidCfg, table: &super::grip::GripTable) -> Packed {
+    let fwd = v.forward();
+    let yaw = fwd.x.atan2(fwd.z);
+    let s = v.spec.size;
+    let mut p = Packed { car: [v.pos.x, v.pos.y + 0.1, v.pos.z, yaw], car_half: [s.x * 0.5 + 0.05, s.y * 0.5, s.z * 0.5 + 0.05, 0.0], car_vel: [v.vel.x, v.vel.y, v.vel.z, 0.0],
+        wpos: [[0.0; 4]; 4], wvel: [[0.0, 0.0, 0.0, 1.0]; 4], wcol: [[0.0; 4]; 4] };
+    for w in 0..4 {
+        let info = v.wheels[w];
+        if !info.grounded || !info.speed.is_finite() || !info.slide.is_finite() || !info.lat_slip.is_finite() || !info.contact.is_finite() { continue; }
+        let d = table.dust(info.surface);
+        let roll = if info.speed > 2.0 { d.roll * 14.0 * (info.speed / 20.0).min(1.5) } else { 0.0 };
+        let slide = d.slide * (40.0 * info.slide.min(1.5) + 18.0 * (info.lat_slip / 6.0).min(1.5));
+        let rate = (roll + slide) * cfg.inject * 0.35;
+        p.wpos[w] = [info.contact.x, info.contact.y + 0.15, info.contact.z, rate];
+        let up = 1.5 + 2.0 * info.slide.min(1.5);
+        p.wvel[w] = [-v.vel.x * 0.55, up, -v.vel.z * 0.55, 1.0];
+        p.wcol[w] = [d.color[0], d.color[1], d.color[2], 0.0];
+    }
+    p
 }
 
 #[cfg(test)]

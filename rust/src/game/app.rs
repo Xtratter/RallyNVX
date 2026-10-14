@@ -92,7 +92,7 @@ mod game {
         pub fn camera_drag(&mut self, dyaw: f32, dpitch: f32) { self.world.cam.drag(dyaw, dpitch); }
         pub fn camera_release(&mut self) { self.world.cam.set_dragging(false); }
         /// Tyre dust: 0 off, 1 normal, 2 lots.
-        pub fn set_dust(&mut self, level: i32) { self.dust_level = level.clamp(0, 2); self.world.dust.set_level(self.dust_level); }
+        pub fn set_dust(&mut self, level: i32) { self.dust_level = level.clamp(0, 3); self.world.dust.set_level(self.dust_level); }
         /// Rally: stage 0 the special stage, 1 the city loop, -1 leaves the rally mode.
         pub fn rally(&mut self, stage: i32) { if stage < 0 { self.world.rally_stop(); } else { self.world.rally_start(stage as u32); } }
         pub fn set_signs(&mut self, on: bool) { self.world.signs_on = on; }

@@ -4,9 +4,9 @@ fn small() -> (Fluid, Window) { let n = [16, 8, 16]; (Fluid::new(n, 1.0), Window
 
 #[test] fn the_embedded_numbers_parse_and_bad_ones_are_named() {
     let c = cfg();
-    assert_eq!(c.n, [128, 20, 128]);
+    assert_eq!(c.n, [96, 16, 96]);
     assert!(c.cell > 0.0 && c.iterations >= 8);
-    let bad = super::super::grip::EMBEDDED.replace("\"iterations\": 16", "\"iterations\": 0");
+    let bad = super::super::grip::EMBEDDED.replace("\"iterations\": 8", "\"iterations\": 0");
     assert!(FluidCfg::from_json(&bad).unwrap_err().contains("iterations"));
     assert!(FluidCfg::from_json("{}").unwrap_err().contains("fluid"));
 }
@@ -84,4 +84,31 @@ fn small() -> (Fluid, Window) { let n = [16, 8, 16]; (Fluid::new(n, 1.0), Window
     f.dens.iter_mut().for_each(|d| *d = 1.0);
     f.recycle(&wnd, &b);
     assert_eq!(f.dens.iter().filter(|d| **d == 0.0).count(), 3 * 8 * 16);
+}
+
+#[test] fn the_wheel_emitters_follow_the_surface_and_the_ground_contact() {
+    use crate::game::{grip, math::v3, surface::Surface, vehicle::{Vehicle, VehicleSpec, WheelInfo}};
+    let table = grip::table();
+    let mut v = Vehicle::new(VehicleSpec::offroader(), v3(5.0, 1.0, 5.0), 0.7);
+    v.vel = v3(10.0, 0.0, 12.0);
+    let wheel = |s: Surface, slide: f32| WheelInfo { grounded: true, surface: s, contact: v3(5.0, 0.4, 5.0), speed: 15.0, lat_slip: 2.0 * slide, slide };
+    v.wheels = [wheel(Surface::Sand, 0.5); 4];
+    let sand = pack(&v, &cfg(), &table);
+    v.wheels = [wheel(Surface::Grass, 0.5); 4];
+    let grass = pack(&v, &cfg(), &table);
+    assert!(sand.wpos[0][3] > grass.wpos[0][3] * 2.0, "sand {} vs grass {}", sand.wpos[0][3], grass.wpos[0][3]);
+    // the thrown air goes back (against the car's velocity) and up
+    assert!(sand.wvel[0][0] < 0.0 && sand.wvel[0][2] < 0.0 && sand.wvel[0][1] > 1.0);
+    // a wheel in the air emits nothing, a sliding one more than a rolling one
+    v.wheels = [wheel(Surface::Gravel, 0.0); 4];
+    let rolling = pack(&v, &cfg(), &table);
+    v.wheels = [wheel(Surface::Gravel, 1.0); 4];
+    let sliding = pack(&v, &cfg(), &table);
+    assert!(sliding.wpos[0][3] > rolling.wpos[0][3] * 2.0);
+    v.wheels[1].grounded = false;
+    assert_eq!(pack(&v, &cfg(), &table).wpos[1][3], 0.0);
+    // the car's box has the car's yaw and size; everything is finite
+    let p = pack(&v, &cfg(), &table);
+    assert!((p.car[3] - 0.7).abs() < 1e-3 && p.car_half[2] > 1.5);
+    assert!(p.wpos.iter().chain(&p.wvel).chain(&p.wcol).all(|w| w.iter().all(|x| x.is_finite())));
 }

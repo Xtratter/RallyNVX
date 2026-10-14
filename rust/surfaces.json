@@ -9,5 +9,5 @@
   "loose_layer": { "wear_per_metre": 0.5 },
   "dust": { "cap_normal": 400, "cap_lots": 800 },
   "wind": { "speed": 2.5, "gust": 0.35 },
-  "fluid": { "cell": 0.75, "nx": 128, "ny": 20, "nz": 128, "iterations": 16, "settle": 0.35, "decay": 0.12, "inject": 0.9, "absorb": 0.55, "drag": 0.6, "steps": 48 }
+  "fluid": { "cell": 1.0, "nx": 96, "ny": 16, "nz": 96, "iterations": 8, "settle": 0.35, "decay": 0.12, "inject": 5.0, "absorb": 1.5, "drag": 0.6, "steps": 32 }
 }

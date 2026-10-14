@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
+use super::{fluid_gpu, sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::scatter::{self, Bush};
@@ -142,6 +142,7 @@ pub struct Raster {
     pl_water: wgpu::RenderPipeline,
     pl_road: wgpu::RenderPipeline,
     pl_dust: wgpu::RenderPipeline,
+    fluid: Option<fluid_gpu::FluidGpu>,
     dust_buf: wgpu::Buffer,
     cache_seed: u64,
     car_key: [u32; 12],
@@ -193,7 +194,7 @@ impl Raster {
         };
         surface.configure(&device, &config);
 
-        let depth = depth_tex(&device, config.width, config.height, false);
+        let depth = depth_tex(&device, config.width, config.height, true);
         let shadow = depth_tex(&device, SHADOW_SIZE, SHADOW_SIZE, true);
         let ubuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("uni"), size: std::mem::size_of::<Uni>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
@@ -309,6 +310,7 @@ impl Raster {
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_dust"), compilation_options: Default::default(), targets: &target_blend }),
             primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
         });
+        let fluid = fluid_gpu::FluidGpu::new(&adapter, &device, &queue, &bgl_main, &module, format);
         let dust_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_inst"), size: (dustgen::MAX_INST * std::mem::size_of::<dustgen::DustInst>()) as u64, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let pl_terrain_sh = mk("terrain_sh", &lay_shadow, "vs_terrain_shadow", None, &[mesh_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
         let pl_inst = mk("inst", &lay_main, "vs_inst", Some("fs_inst"), &[mesh_layout.clone(), inst_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
@@ -329,7 +331,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, fluid, dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -366,7 +368,7 @@ impl Raster {
         if w == self.config.width && h == self.config.height { return; }
         self.config.width = w; self.config.height = h;
         self.surface.configure(&self.device, &self.config);
-        self.depth = depth_tex(&self.device, w, h, false);
+        self.depth = depth_tex(&self.device, w, h, true);
     }
 
     /// Draws one frame. A lost or outdated surface is reconfigured and the frame skipped (never panics).
@@ -530,7 +532,8 @@ impl Raster {
         if !mall.is_empty() { self.queue.write_buffer(&self.mbuf, 0, bytemuck::cast_slice(&mall)); }
         let dinst = dustgen::instances(&wv.dust, wv.cam_pos);
         if !dinst.is_empty() { self.queue.write_buffer(&self.dust_buf, 0, bytemuck::cast_slice(&dinst)); }
-        let dust_n = dinst.len() as u32;
+        let fluid_on = wv.fluid.is_some() && self.fluid.is_some();
+        let dust_n = if fluid_on { 0 } else { dinst.len() as u32 };
         let mut all: Vec<Inst> = Vec::new();
         let mut ranges = [(0u32, 0u32); 4];
         for k in 0..4 {
@@ -550,6 +553,9 @@ impl Raster {
             let d = c - centre; d.x.hypot(d.z) < 180.0
         };
         let mut enc = self.device.create_command_encoder(&Default::default());
+        if let (true, Some(fl), Some(pk)) = (fluid_on, self.fluid.as_mut(), wv.fluid.as_ref()) {
+            fl.update(&self.device, &self.queue, &mut enc, wv.terrain, [wv.vehicle.pos.x, wv.vehicle.pos.y, wv.vehicle.pos.z], [wv.wind.x, wv.wind.y, wv.wind.z], pk, wv.time);
+        }
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow"), color_attachments: &[],
@@ -593,7 +599,7 @@ impl Raster {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, resolve_target: None,
                     ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: wv.daylight.sky_hor[0] as f64 * 0.7, g: wv.daylight.sky_hor[1] as f64 * 0.7, b: wv.daylight.sky_hor[2] as f64 * 0.7, a: 1.0 }), store: wgpu::StoreOp::Store } })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.depth.1,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }), stencil_ops: None }),
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: if fluid_on { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard } }), stencil_ops: None }),
                 timestamp_writes: None, occlusion_query_set: None });
             rp.set_bind_group(0, &self.bg_main, &[]);
             rp.set_pipeline(&self.pl_sky);
@@ -640,6 +646,9 @@ impl Raster {
                 rp.set_vertex_buffer(0, self.dust_buf.slice(..));
                 rp.draw(0..6, 0..dust_n);
             }
+        }
+        if let (true, Some(fl)) = (fluid_on, self.fluid.as_mut()) {
+            fl.draw(&self.device, &self.queue, &mut enc, &view, &self.depth.1, &self.bg_main, (self.config.width, self.config.height));
         }
         self.queue.submit([enc.finish()]);
         frame.present();
