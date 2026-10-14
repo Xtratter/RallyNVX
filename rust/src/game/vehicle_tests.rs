@@ -285,3 +285,27 @@ fn cornering_accel(surface: Surface, spec: VehicleSpec) -> f32 {
     v.step(&t, &[], &Input::default(), 1.0 / 60.0);
     assert!(v.wheels.iter().all(|w| !w.grounded));
 }
+
+#[test] fn a_car_flies_off_a_crest_and_lands_in_one_piece() {
+    use crate::game::roads::{Road, RoadKind, RoadNet, RoadPt};
+    // a straight road along +z with one asymmetric crest (take-off 40.5 m, landing 19.5 m, 1.2 m high) at z = 300
+    let bump = |z: f32| { let d = z - 300.0; let half = if d < 0.0 { 40.5 } else { 19.5 }; if d.abs() < half { 1.2 * 0.5 * (1.0 + (std::f32::consts::PI * d / half).cos()) } else { 0.0 } };
+    let pts = (0..=240).map(|i| { let z = -100.0 + i as f32 * 4.0; RoadPt { pos: v3(0.0, bump(z), z), width: 8.0, s: i as f32 * 4.0 } }).collect();
+    let t = Terrain::flat().with_net(RoadNet::new(vec![Road { kind: RoadKind::Stage, pts }]));
+    let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., 1.0, 0.), 0.0);
+    v.vel = v3(0.0, 0.0, 30.0);
+    let (mut air, mut longest, mut max_speed) = (0.0f32, 0.0f32, 0.0f32);
+    let mut loose = crate::game::grip::LooseMap::new(t.roads().unwrap());
+    for _ in 0..(14.0 / DT) as usize {
+        let inp = Input { throttle: if v.speed() < 30.0 { 1.0 } else { 0.0 }, ..Default::default() };   // keeps about 30 m/s
+        v.step_with(&t, &[], &inp, DT, &mut loose);
+        assert!(v.pos.is_finite() && v.vel.is_finite(), "NaN");
+        max_speed = max_speed.max(v.vel.len());
+        if v.wheels.iter().all(|w| !w.grounded) { air += DT; longest = longest.max(air); } else { air = 0.0; }
+    }
+    assert!(longest >= 0.15, "the car never left the ground (longest air {longest} s)");
+    assert!(max_speed < 45.0, "{max_speed}");
+    assert!(v.pos.z > 330.0, "the car should be past the crest, z {}", v.pos.z);
+    assert!(v.up().y > 0.5 && !v.flipped(), "up.y {}", v.up().y);
+    assert!(v.wheels.iter().all(|w| w.grounded) || v.vel.len() < 1.0);
+}

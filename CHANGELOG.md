@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.18.0 - stage relief
+
+- Added: crests and jumps on the special stage (series of 3-5, 0.6-2 m high, a long take-off and a short landing side; none in tight bends, near the road ends or on a causeway)
+- Added: ditches along both road edges (deeper on the stage), a 0.8 m loose gravel verge and rocks 4-8 m from the stage
+- Added: `rust/roads.json` holds all these numbers; a `roads.json` next to the profile or `RAYTRACE_ROADS` overrides them without a rebuild
+
 ## 2.17.0 - tyre dust
 
 - Added: tyre dust and spray that depend on the surface (beige on gravel and dirt, thick yellow on sand, almost none on grass, smoke on tarmac in a hard slide, spray on water): rolling makes a thin trail, sliding and wheelspin make thick clouds; the puffs rise, widen, drift with the wind and fade; they are dark at night and thin out near the camera
