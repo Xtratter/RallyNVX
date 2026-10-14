@@ -49,3 +49,13 @@ fn dist(a: (f32, f32), b: (f32, f32)) -> f32 { (a.0 - b.0).hypot(a.1 - b.1) }
 #[test] #[ignore] fn dbg_counts() {
     for seed in 1..=14u64 { let (_, n) = net(seed); let s: Vec<String> = n.roads.iter().filter(|r| r.kind == RoadKind::Side).map(|r| format!("{:.0}", r.length())).collect(); println!("COUNT seed {seed}: {} [{}]", s.len(), s.join(" ")); }
 }
+#[test] #[ignore] fn dbg_junctions_21() {
+    let t = Terrain::with_roads(21);
+    let n = t.roads().unwrap();
+    let stage = &n.roads[1];
+    for r in n.roads.iter().filter(|r| r.kind == RoadKind::Side) {
+        let p0 = (r.pts[0].pos.x, r.pts[0].pos.z);
+        let s = stage.pts.iter().min_by(|a, b| dist(p0, (a.pos.x, a.pos.z)).partial_cmp(&dist(p0, (b.pos.x, b.pos.z))).unwrap()).unwrap().s;
+        println!("JUNCTION s {s:.0} len {:.0}", r.length());
+    }
+}
