@@ -12,7 +12,7 @@ fn manhattan(a: V3, b: V3) -> f32 { (a.x - b.x).abs() + (a.z - b.z).abs() }
     for key in 0..200u64 {
         let row = start_row(key); assert!((1..=10).contains(&row));
         let c = city(key % 7 + 1);
-        for u in [cargo(&c, key), race(&c, key), rings(&c, key), sling(&c, key)] {
+        for u in [cargo(&c, key), race(&c, key)] {
             assert_eq!(u.start, c.west_edge(row), "urban starts are the west edge intersection of the row");
             assert!(c.roof_at(u.start.x, u.start.z).is_none());
         }
@@ -45,58 +45,12 @@ fn manhattan(a: V3, b: V3) -> f32 { (a.x - b.x).abs() + (a.z - b.z).abs() }
         assert!(u.points[0].x > u.start.x && (u.points[0].z - u.start.z).abs() < 1e-3, "the first leg runs east");
     }
 }
-#[test] fn urban_rings_hang_over_the_street_between_the_houses() {
-    for key in 0..300u64 {
-        let c = city(key % 11 + 1); let u = rings(&c, key);
-        assert!((5..=8).contains(&u.points.len()), "{} rings, key {key}", u.points.len());
-        assert_eq!(u.yaw, None);
-        for p in &u.points {
-            assert!(on_street(&c, *p), "ring centre over a street line: {p:?}");
-            let h = p.y - c.site.centre.y; assert!(h >= 18.0 - 1e-3 && h <= 40.0 + 1e-3, "height {h}");
-        }
-        let first = u.points[0];
-        assert!(first.x > u.start.x && (first.z - u.start.z).abs() < 1e-3, "ring 0 is the midpoint of the first (east) segment: {first:?}");
-        assert!((first.x - (u.start.x + PITCH / 2.0)).abs() < 1e-3);
-    }
-}
-#[test] fn sling_pads_are_on_roofs_within_the_distance_bands() {
-    let mut exact = 0;
-    for key in 0..300u64 {
-        let c = city(key % 11 + 1); let u = sling(&c, key);
-        assert_eq!(u.points.len(), 2); assert_eq!(u.yaw, None);
-        for p in &u.points {
-            let b = c.buildings.iter().find(|b| p.x >= b.min.x && p.x <= b.max.x && p.z >= b.min.z && p.z <= b.max.z).expect("a pad must be on a building");
-            assert!((p.y - b.max.y).abs() < 1e-3 && b.max.y - c.site.centre.y >= 20.0 - 1e-3 && b.size().x >= 14.0 - 1e-3 && b.size().z >= 14.0 - 1e-3);
-        }
-        assert_ne!(u.points[0], u.points[1]);
-        let (da, ab) = ((u.points[0].x - u.start.x).hypot(u.points[0].z - u.start.z), (u.points[1].x - u.points[0].x).hypot(u.points[1].z - u.points[0].z));
-        if da <= 300.0 && ab >= 200.0 && ab <= 600.0 { exact += 1; }
-    }
-    assert!(exact > 270, "the distance bands should hold almost always: {exact}/300");
-}
 #[test] fn generators_are_deterministic_and_never_panic_for_extreme_keys() {
     let c = city(7);
     for key in [0u64, 1, u64::MAX, 0xFF_FFFF] {
         assert_eq!(cargo(&c, key).points, cargo(&c, key).points);
         assert_eq!(race(&c, key).points, race(&c, key).points);
-        let _ = (rings(&c, key), sling(&c, key));
     }
     let tiny = City::from_buildings(CitySite { centre: v3(0., 0., 0.), half: HALF }, vec![]);
-    let _ = (cargo(&tiny, 1), race(&tiny, 1), rings(&tiny, 1));
-    assert_eq!(sling(&tiny, 1).points.len(), 2);
-}
-#[test] fn urban_rings_carry_flat_street_direction_normals() {
-    for key in 0..200u64 {
-        let c = city(key % 11 + 1); let u = rings(&c, key);
-        assert_eq!(u.normals.len(), u.points.len());
-        for n in &u.normals { assert!(n.y == 0.0 && (n.len() - 1.0).abs() < 1e-5 && (n.x.abs() == 1.0 || n.z.abs() == 1.0), "{n:?}"); }
-        assert_eq!(u.normals[0], v3(1.0, 0.0, 0.0), "ring 0 faces east");
-        // each normal is the direction of the street segment its ring hangs over
-        for (p, n) in u.points.iter().zip(&u.normals) {
-            let (u1, w1) = ((p.x - (c.site.centre.x - HALF)) / PITCH, (p.z - (c.site.centre.z - HALF)) / PITCH);
-            let on_x_street = (w1 - w1.round()).abs() * PITCH <= 1e-2;      // the ring is on a street running along x
-            assert!(if on_x_street { n.x.abs() == 1.0 } else { n.z.abs() == 1.0 }, "normal {n:?} at {p:?}");
-            let _ = u1;
-        }
-    }
+    let _ = (cargo(&tiny, 1), race(&tiny, 1));
 }

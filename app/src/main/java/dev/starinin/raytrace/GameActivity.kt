@@ -20,7 +20,6 @@ import io.github.xtratter.uikit.M3Widgets
  * Mission HUD: timer, cargo integrity, arrow and distance to the target; pause and results panels.
  */
 class GameActivity : Activity(), SurfaceHolder.Callback {
-    private var sticks: SticksLayer? = null
     private var drive: DriveControls? = null
     private var carThr = 0f; private var carSteer = 0f; private var carBrake = false; private var carAmt = 0f
     private var handbrakeBtn: View? = null
@@ -36,12 +35,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private val handler = Handler(Looper.getMainLooper())
     private var running = false
     private var handbrake = false
-    private var lx = 0f; private var ly = 0f; private var ry = 0f
     private var seed = 0L
     private var mission = -1
     private lateinit var audio: AudioEngine
-    private var air = false
-    private var rx = 0f
     private var profile = ""
 
     private var timer: Hud? = null
@@ -56,7 +52,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private val tick = object : Runnable {
         override fun run() {
             val s = Native.gameStats()
-            hud.text = (if (s[27] > 0.5f) t("Raster (auto) · ", "Растр (авто) · ") else "") + (if (s[20] > 0f) "${s[1].toInt()} km/h · ${s[19].toInt()} m" else "${s[1].toInt()} km/h") + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}" + (if (s[26] > 0.5f) " · " + t("hybrid", "гибрид") else "")
+            hud.text = (if (s[27] > 0.5f) t("Raster (auto) · ", "Растр (авто) · ") else "") + "${s[1].toInt()} km/h" + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}" + (if (s[26] > 0.5f) " · " + t("hybrid", "гибрид") else "")
             if (mission >= 0) updateMission(s)
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (mission >= 0 || drive != null) 100 else 250)
@@ -69,7 +65,6 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         seed = intent.getLongExtra("seed", System.nanoTime()) and 0xFFFFFFL   // 24-bit: the HUD shows it exactly
         mission = intent.getIntExtra("mission", -1)
-        air = intent.getBooleanExtra("air", false)
         profile = intent.getStringExtra("profile") ?: ""
         val dp = resources.displayMetrics.density
         fun px(v: Float) = (v * dp).toInt()
@@ -82,22 +77,17 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             sv.holder.setFixedSize((dm.widthPixels * scale).toInt().coerceAtLeast(2), (dm.heightPixels * scale).toInt().coerceAtLeast(2))
         }
         root.addView(sv, FrameLayout.LayoutParams(-1, -1))
-        if (air) {
-            sticks = SticksLayer(this).also { it.onChange = { x, y, rX, rY -> lx = x; ly = y; rx = rX; ry = rY; sendInput() } }
-            root.addView(sticks, FrameLayout.LayoutParams(-1, -1))
-        } else {
-            drive = DriveControls(this).also { it.onChange = { thr, steer, brake, amt -> carThr = thr; carSteer = steer; carBrake = brake; carAmt = amt; sendInput() } }
-            root.addView(drive, FrameLayout.LayoutParams(-1, -1))
-        }
+        drive = DriveControls(this).also { it.onChange = { thr, steer, brake, amt -> carThr = thr; carSteer = steer; carBrake = brake; carAmt = amt; sendInput() } }
+        root.addView(drive, FrameLayout.LayoutParams(-1, -1))
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
         fun button(label: String, gravity: Int, top: Float, end: Float, w: Float = 120f, onClick: () -> Unit) =
             M3Widgets.button(this, label, M3Widgets.ButtonKind.TONAL, onClick).also {
                 root.addView(it, FrameLayout.LayoutParams(px(w), px(48f), gravity).apply { setMargins(0, px(top), px(end), 0) })
             }
-        if (!air) button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { Native.gameReset() }
+        button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { Native.gameReset() }
         if (mission < 0) button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
-        if (!air) button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
+        button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
             handbrakeBtn = this
             applyControlLayout()
             setOnTouchListener { _, e ->
@@ -168,10 +158,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val left = (s[6] - s[5]).coerceAtLeast(0f)
         val kind = s[17].toInt()
         timer?.text = (if (phase == 1) t("Go!", "Вперёд!") else "%d:%02d".format(left.toInt() / 60, left.toInt() % 60)) +
-            (if (kind == 1 || kind == 2) "  ·  ${minOf(s[10].toInt() + 1, s[11].toInt())}/${s[11].toInt()}" else if (kind == 4) "  ·  ${s[10].toInt()}/${s[11].toInt()}" else if (kind == 5) "  ·  ${s[10].toInt()}/${(s[11].toInt() - 1).coerceAtLeast(1)}  ·  👥 ${s[23].toInt()}" else "")
-        bar?.visibility = if (kind == 0 || kind == 3 || kind == 5) View.VISIBLE else View.GONE
+            (if (kind == 1) "  ·  ${minOf(s[10].toInt() + 1, s[11].toInt())}/${s[11].toInt()}" else "")
+        bar?.visibility = if (kind == 0) View.VISIBLE else View.GONE
         bar?.progress = s[7].toInt()
-        arrow?.setAngle(s[9]); dist?.text = (if (s[21] > 0.5f) "📦 " else "") + "${s[8].toInt()} m" + (if (s[24] > 0f) "  ·  ${(s[24] * 100).toInt()}%" else "")
+        arrow?.setAngle(s[9]); dist?.text = "${s[8].toInt()} m"
         if (s[12] != 0f && !resultShown && s[18] != ignoreRun) showResult(s)
         if (s[12] == 0f && resultShown) { resultShown = false; resultPanel?.visibility = View.GONE }
     }
@@ -186,10 +176,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         fun px(v: Float) = (v * dp).toInt()
         if (s[12] == 1f) {
             c.addView(label(arrayOf("", "🥉", "🥈", "🥇")[s[13].toInt().coerceIn(0, 3)] + "  " + t("Mission complete", "Миссия выполнена"), 22f))
-            c.addView(label(t("Time: ", "Время: ") + "%d:%02d".format(s[5].toInt() / 60, s[5].toInt() % 60) + if (s[17] == 0f || s[17] == 3f || s[17] == 5f) "   " + t("Cargo: ", "Груз: ") + "${s[7].toInt()}%" else ""))
+            c.addView(label(t("Time: ", "Время: ") + "%d:%02d".format(s[5].toInt() / 60, s[5].toInt() % 60) + if (s[17] == 0f) "   " + t("Cargo: ", "Груз: ") + "${s[7].toInt()}%" else ""))
             c.addView(label(t("Reward: ", "Награда: ") + "+${s[14].toInt()} $   ·   " + t("Money: ", "Деньги: ") + "${s[16].toInt()} $"))
         } else {
-            val why = when (s[15].toInt()) { 1 -> t("Out of time", "Время вышло"); 2 -> if (s[17].toInt() == 5) t("Passengers hurt", "Пассажиры пострадали") else t("Cargo destroyed", "Груз разбит"); 4 -> t("Crashed", "Авария"); else -> t("Abandoned", "Миссия брошена") }
+            val why = when (s[15].toInt()) { 1 -> t("Out of time", "Время вышло"); 2 -> t("Cargo destroyed", "Груз разбит"); else -> t("Abandoned", "Миссия брошена") }
             c.addView(label(t("Failed", "Провал") + ": " + why, 22f))
         }
         c.addView(M3Widgets.button(this, t("Retry", "Ещё раз"), M3Widgets.ButtonKind.FILLED) { ignoreRun = Native.gameStats()[18]; Native.gameRestart(); resultShown = false; p.visibility = View.GONE },
@@ -201,7 +191,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
 
     private fun sendInput() {
         if (!running) return
-        if (air) Native.gameFlight(lx, ly, ry, rx) else Native.gameInput(carThr, carSteer, carBrake, handbrake, carAmt)
+        Native.gameInput(carThr, carSteer, carBrake, handbrake, carAmt)
     }
 
     override fun surfaceCreated(h: SurfaceHolder) { running = false }
@@ -299,7 +289,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onResume() { super.onResume(); handler.post(tick); if (running) audio.start(); drive?.paused = false; applyControls() }
     override fun onPause() {
-        audio.stop(); handler.removeCallbacks(tick); sticks?.release(); drive?.paused = true; stopTilt(); handbrake = false; sendInput()
+        audio.stop(); handler.removeCallbacks(tick); drive?.paused = true; stopTilt(); handbrake = false; sendInput()
         if (mission >= 0 && !resultShown) showPause()
         super.onPause()
     }

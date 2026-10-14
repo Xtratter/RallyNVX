@@ -1,21 +1,14 @@
 //! JNI entry points of the game (dev.starinin.raytrace.Native.game*) and its render thread.
-use crate::game::{flight::FlightInput, input::Input};
+use crate::game::input::Input;
 
 /// Commands from Kotlin as an `Input` (non-finite axes become 0, axes are clamped).
 pub fn merge_input(throttle: f32, steer: f32, brake: bool, handbrake: bool, brake_amt: f32) -> Input {
     Input { throttle, steer, brake, handbrake, brake_amt, reset: false }.sanitized()
 }
 
-/// Flight sticks from Kotlin as a `FlightInput` (non-finite axes become 0, axes are clamped).
-pub fn merge_flight(yaw: f32, lift: f32, pitch: f32, roll: f32) -> FlightInput { FlightInput { yaw, lift, pitch, roll }.sanitized() }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test] fn flight_input_merge_sanitizes() {
-        let f = merge_flight(f32::NAN, 3.0, -3.0, 0.5);
-        assert_eq!((f.yaw, f.lift, f.pitch, f.roll), (0.0, 1.0, -1.0, 0.5));
-    }
     #[test] fn merge_input_sanitizes_and_maps() {
         let i = merge_input(f32::NAN, 2.0, true, false, 0.4);
         assert_eq!((i.throttle, i.steer, i.brake, i.handbrake, i.reset, i.brake_amt), (0.0, 1.0, true, false, false, 0.4));
@@ -36,11 +29,11 @@ mod android {
     use jni::JNIEnv;
     use ndk::native_window::NativeWindow;
 
-    use super::{merge_flight, merge_input};
-    use crate::game::{app::{Game, STAT_LEN}, flight::FlightInput, input::Input};
+    use super::merge_input;
+    use crate::game::{app::{Game, STAT_LEN}, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), Flight(FlightInput), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Restart, Abort, Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
+    enum GCmd { Input(Input), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Restart, Abort, Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -85,7 +78,6 @@ mod android {
                         match rx.try_recv() {
                             Ok(GCmd::Stop) => break 'run,
                             Ok(GCmd::Input(i)) => { let reset = g.input.reset; g.input = i; g.input.reset = reset; }
-                            Ok(GCmd::Flight(f)) => g.flight = f,
                             Ok(GCmd::Reset) => g.input.reset = true,
                             Ok(GCmd::NewLevel(s)) => g.new_level(s),
                             Ok(GCmd::Resize(w, h)) => g.resize(w, h),
@@ -117,9 +109,6 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameResize(_e: JNIEnv, _c: JClass, w: jint, h: jint) { send(GCmd::Resize(w.max(1) as u32, h.max(1) as u32)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameInput(_e: JNIEnv, _c: JClass, throttle: jfloat, steer: jfloat, brake: jboolean, handbrake: jboolean, brake_amt: jfloat) {
         send(GCmd::Input(merge_input(throttle, steer, brake != 0, handbrake != 0, brake_amt)));
-    }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameFlight(_e: JNIEnv, _c: JClass, yaw: jfloat, lift: jfloat, pitch: jfloat, roll: jfloat) {
-        send(GCmd::Flight(merge_flight(yaw, lift, pitch, roll)));
     }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameInCity(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::InCity(mode)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameQuality(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Quality(level)); }

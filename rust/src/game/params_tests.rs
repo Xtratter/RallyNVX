@@ -1,5 +1,5 @@
 use super::*;
-use crate::game::{flight::AircraftKind, math::v3};
+use crate::game::math::v3;
 
 fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehicles.json must parse") }
 
@@ -13,19 +13,6 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     assert_eq!((c.engine_force, c.brake_force, c.max_speed, c.mu), (14000.0, 16000.0, 35.0, 1.1));
     assert_eq!((c.steer_max, c.steer_speed_ref, c.steer_rate, c.lateral_k, c.rolling), (0.55, 15.0, 3.0, 12.0, 40.0));
     assert_eq!((c.aero, c.ang_damp, c.handbrake_grip, c.reverse_factor, c.max_susp_factor), (0.35, 0.8, 0.4, 0.4, 5.0));
-}
-#[test] fn the_aircraft_keep_their_known_numbers() {
-    let p = embedded();
-    let h = p.aircraft(AircraftKind::Heli);
-    assert_eq!((h.tilt_lag, h.max_speed, h.drag, h.vmax, h.vacc, h.yaw_rate, h.yaw_lag, h.radius), (0.25, 35.0, 0.13, 6.0, 4.0, 1.6, 0.3, 1.8));
-    assert!((h.max_tilt - 25f32.to_radians()).abs() < 1e-6);
-    let d = p.aircraft(AircraftKind::Drone);
-    assert_eq!((d.tilt_lag, d.max_speed, d.drag, d.vmax, d.vacc, d.yaw_rate, d.yaw_lag, d.radius), (0.25, 28.0, 0.29, 10.0, 12.0, 3.0, 0.15, 0.7));
-    assert!((d.max_tilt - 40f32.to_radians()).abs() < 1e-6);
-    for a in [h, d] { assert_eq!((a.ceiling, a.soft_speed, a.ground_damp), (400.0, 3.0, 4.0)); assert!((a.soft_tilt - 20f32.to_radians()).abs() < 1e-6); }
-}
-#[test] fn the_sling_keeps_its_known_numbers() {
-    assert_eq!(embedded().sling, SlingSpec { rope: 8.0, k: 60.0, c: 6.0, drag: 0.3 });
 }
 #[test] fn the_active_parameters_are_the_embedded_ones_by_default() {
     if std::env::var_os("RAYTRACE_VEHICLES").is_none() { assert_eq!(get().car("offroader").unwrap().mass, 1500.0); }
@@ -45,9 +32,6 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     let e = Params::from_json(&no_mass).unwrap_err(); assert!(e.contains("mass") && e.contains("offroader"), "{e}");
     let neg = EMBEDDED.replacen("\"mass\": 1500", "\"mass\": -5", 1);
     let e = Params::from_json(&neg).unwrap_err(); assert!(e.contains("mass"), "{e}");
-    let rope0 = EMBEDDED.replacen("\"rope\": 8.0", "\"rope\": 0.0", 1);
-    assert_ne!(rope0, EMBEDDED);
-    let e = Params::from_json(&rope0).unwrap_err(); assert!(e.contains("rope"), "{e}");
     let bad_wheels = EMBEDDED.replacen("[-0.95, 0.35, 1.4]", "[-0.95, 0.0]", 1);
     let e = Params::from_json(&bad_wheels).unwrap_err(); assert!(e.contains("wheel"), "{e}");
 }
@@ -56,11 +40,10 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     let c = p.car("offroader").unwrap();
     assert_eq!(c.size, v3(2.0, 1.4, 4.2));
     assert!(c.look.body.iter().all(|v| (0.0..=1.0).contains(v)) && c.look.wheel_width > 0.1);
-    let h = p.aircraft(AircraftKind::Heli); assert!(h.look.body[0] > h.look.body[2], "the heli is orange");
     // a file without any look section still loads, with defaults
     let no_look = EMBEDDED.replace("\"look\":", "\"_unused\":");
     let q = Params::from_json(&no_look).unwrap();
-    for l in [q.car("offroader").unwrap().look, q.aircraft(AircraftKind::Heli).look, q.aircraft(AircraftKind::Drone).look] {
+    for l in [q.car("offroader").unwrap().look] {
         assert!(l.body.iter().chain(&l.accent).chain(&l.glass).all(|v| (0.0..=1.0).contains(v)) && l.wheel_width > 0.0);
     }
     let custom = EMBEDDED.replacen("\"body_color\": [0.75, 0.12, 0.08]", "\"body_color\": [0.1, 0.2, 0.3]", 1);
@@ -84,7 +67,7 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     assert_eq!((g.style, g.price, g.upgrade_cost), (CarStyle::Rally, 3000, 750));
     assert_eq!((g.mass, g.size.x, g.size.y, g.size.z), (1230.0, 1.91, 1.50, 3.97));
     assert_eq!(g.wheels, [v3(-0.767, 0.10, 1.237), v3(0.767, 0.10, 1.237), v3(-0.767, 0.10, -1.210), v3(0.767, 0.10, -1.210)]);
-    assert_eq!((g.rest, g.radius, g.spring, g.damper, g.engine_force, g.brake_force, g.max_speed, g.mu), (0.32, 0.326, 32000.0, 3200.0, 12500.0, 14000.0, 52.0, 1.2));
+    assert_eq!((g.rest, g.radius, g.spring, g.damper, g.engine_force, g.brake_force, g.max_speed, g.mu), (0.32, 0.326, 32000.0, 3200.0, 18000.0, 14000.0, 52.0, 1.2));
 }
 #[test] fn bad_model_or_price_is_a_readable_error() {
     let bad = EMBEDDED.replacen("\"model\": \"rally\"", "\"model\": \"boat\"", 1);

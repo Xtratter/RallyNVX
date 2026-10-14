@@ -12,8 +12,7 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
 #[test] fn roll_is_deterministic_and_shaped() {
     let a = roll(77, 0, 0); let b = roll(77, 0, 0);
     assert_eq!(a.len(), 6);
-    assert_eq!(a.iter().map(|m| m.kind).collect::<Vec<_>>(), vec![MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race, MissionKind::Rings, MissionKind::Sling]);
-    assert_eq!(roll(77, 1, 0)[5].kind, MissionKind::Recon);
+    assert_eq!(a.iter().map(|m| m.kind).collect::<Vec<_>>(), vec![MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race]);
     for (x, y) in a.iter().zip(&b) { assert_eq!((x.seed, x.goal, x.checkpoints.len()), (y.seed, y.goal, y.checkpoints.len())); }
     let c = roll(77, 1, 0);
     assert!(a.iter().zip(&c).any(|(x, y)| x.seed != y.seed), "refresh must change the list");
@@ -23,17 +22,14 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
         match m.kind {
             MissionKind::Cargo => assert_eq!(m.checkpoints, vec![m.goal]),
             MissionKind::Race if m.urban => assert!((6..=10).contains(&m.checkpoints.len()), "{}", m.checkpoints.len()),
-            MissionKind::Race | MissionKind::Rings => assert!((5..=8).contains(&m.checkpoints.len()), "{}", m.checkpoints.len()),
-            MissionKind::Sling => assert_eq!(m.checkpoints.len(), 2),
-            MissionKind::Recon => assert!((3..=5).contains(&m.checkpoints.len())),
-            MissionKind::Rescue => assert!((2..=4).contains(&m.checkpoints.len())),
+            MissionKind::Race => assert!((5..=8).contains(&m.checkpoints.len()), "{}", m.checkpoints.len()),
         }
         assert_eq!(*m.checkpoints.last().unwrap(), m.goal);
         assert!(m.seed <= 0xFF_FFFF);
     } }
 }
 #[test] fn generated_points_obey_the_rules_over_many_seeds() {
-    for ps in 0..200u64 { for m in roll(ps * 7919, (ps % 5) as u32, 0).into_iter().filter(|m| !m.is_air() && !m.urban) {
+    for ps in 0..200u64 { for m in roll(ps * 7919, (ps % 5) as u32, 0).into_iter().filter(|m| !m.urban) {
         let t = Terrain::new(m.seed);
         for p in &m.checkpoints {
             assert!(t.normal(p.x, p.z).y >= 0.94, "slope at {p:?} seed {ps}");
@@ -78,7 +74,7 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
     assert!(flipped > 0, "the probe must actually flip some difficulties");
 }
 #[test] fn ground_mission_points_stay_out_of_cities() {
-    for ps in 0..200u64 { for m in roll(ps * 7919, (ps % 5) as u32, 0).into_iter().filter(|m| !m.is_air() && !m.urban) {
+    for ps in 0..200u64 { for m in roll(ps * 7919, (ps % 5) as u32, 0).into_iter().filter(|m| !m.urban) {
         let t = Terrain::new(m.seed);
         for p in &m.checkpoints { assert!(!t.in_city(p.x, p.z, 20.0), "point {p:?} inside a city, seed {ps}"); }
     } }
@@ -87,24 +83,18 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
     for ps in 0..100u64 {
         let l = roll(ps * 7919, (ps % 4) as u32, 0);
         assert_eq!(l.iter().map(|m| m.urban).collect::<Vec<_>>()[..4], [false, false, true, true], "slots 0-3");
-        assert!(l[5].urban == (l[5].kind == MissionKind::Sling), "sling is urban, recon is open");
+        assert!(!l[4].urban && !l[5].urban, "slots 4 and 5 are open");
         for m in l.iter().filter(|m| m.urban) {
             let t = Terrain::new(m.seed); let c = crate::game::city::City::build(t.sites()[0], m.seed);
             assert!((m.start.x - c.site.centre.x).abs() <= c.site.half + 0.01 && c.roof_at(m.start.x, m.start.z).is_none(), "urban start in the city, seed {ps}");
-            assert!(m.start_yaw.is_some() == matches!(m.kind, MissionKind::Cargo | MissionKind::Race));
+            assert!(m.start_yaw.is_some());
         }
         for m in l.iter().filter(|m| !m.urban) { assert!(m.start_yaw.is_none() && m.start.x == 0.0 && m.start.z == 0.0); }
     }
-    let rings_urban = (0..200u64).filter(|ps| roll(ps * 31, 0, 0)[4].urban).count();
-    assert!(rings_urban > 60 && rings_urban < 140, "about half of the rings are urban: {rings_urban}");
 }
 #[test] fn urban_time_limits_follow_the_formulas() {
     for ps in 0..100u64 { for m in roll(ps * 7919, (ps % 2) as u32, 0).into_iter().filter(|m| m.urban) {
-        let want = match m.kind {
-            MissionKind::Cargo | MissionKind::Race => 1.6 * m.length_m / 8.0 + 20.0,
-            MissionKind::Rings => 1.5 * (24.0 + 48.0 * (m.checkpoints.len() as f32 - 1.0)) / 10.0 + 20.0,   // the street length, not the diagonal
-            _ => 1.6 * m.length_m / 12.0 + 35.0 + 0.25 * (m.checkpoints.iter().map(|p| p.y).fold(f32::MIN, f32::max) - m.start.y),   // plus the climb to the roofs
-        };
+        let want = 1.6 * m.length_m / 8.0 + 20.0;
         assert!((m.time_limit - want).abs() < 1e-2, "{:?} {} vs {}", m.kind, m.time_limit, want);
         assert!((m.length_m - path_length(m.start, &m.checkpoints)).abs() < 1e-2);
     } }
@@ -112,16 +102,12 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
 #[test] fn urban_missions_never_panic_for_extreme_arguments() {
     for (ps, r, g) in [(0u64, 0u32, 0u32), (u64::MAX, u32::MAX, u32::MAX), (1, 1, 99)] { assert_eq!(roll(ps, r, g).len(), 6); }
 }
-#[test] fn urban_ring_normals_are_flat_and_the_urban_seed_is_salted() {
-    for ps in 0..100u64 { for m in roll(ps * 31, 0, 0).into_iter().filter(|m| m.urban && m.kind == MissionKind::Rings) {
-        for i in 0..m.checkpoints.len() { let n = ring_normal(&m, i); assert!(n.y == 0.0 && (n.len() - 1.0).abs() < 1e-5, "{n:?}"); }
-    } }
+#[test] fn the_urban_seed_is_salted() {
     for k in 0..50u64 { for d in 1..=3u8 { assert_ne!(mission_seed(k * 977, d, true), mission_seed(k * 977, d, false)); } }
 }
 #[test] fn ground_mission_points_are_never_in_a_lake() {
     let mut wet_levels = 0;
     for ps in 1..=40u64 { for m in roll(ps, 0, 0) {
-        if m.is_air() { continue; }
         let t = Terrain::new(m.seed);
         if t.water_level().is_some() { wet_levels += 1; }
         for p in std::iter::once(&m.start).chain(m.checkpoints.iter()) { assert!(!t.is_water(p.x, p.z, 1.5), "profile {ps} mission seed {}: point in water", m.seed); }
@@ -133,26 +119,4 @@ use crate::game::{math::v3, props::tile_props, terrain::Terrain, world::{tile_of
         for i in -20..20 { for j in -20..20 { let (x, z) = (i as f32 * 60.0, j as f32 * 60.0);
             if t.height(x, z) < l - 0.5 { assert!(!point_ok(&t, v3(x, t.height(x, z), z))); return; } } } }
     panic!("no wet point found");
-}
-#[test] fn the_sixth_slot_rotates_sling_recon_rescue() {
-    for r in 0..9u32 {
-        let want = match r % 3 { 0 => MissionKind::Sling, 1 => MissionKind::Recon, _ => MissionKind::Rescue };
-        assert_eq!(roll(77, r, 0)[5].kind, want, "round {r}");
-        assert_eq!(roll(77, r, 0).len(), 6);
-    }
-}
-#[test] fn rescue_missions_have_sites_a_base_and_the_documented_numbers() {
-    let mut seen = 0;
-    for ps in 0..40u64 { for m in roll(ps * 131, 2, 0).into_iter().filter(|m| m.kind == MissionKind::Rescue) {
-        seen += 1;
-        assert_eq!(m.aircraft, Some(crate::game::flight::AircraftKind::Heli)); assert!(!m.urban && m.is_air());
-        let sites = m.difficulty.clamp(1, 3) as usize;
-        assert_eq!(m.checkpoints.len(), sites + 1);
-        assert_eq!(m.goal, *m.checkpoints.last().unwrap());
-        let people: u32 = crate::game::airgen::rescue_people(m.seed, sites).iter().map(|c| *c as u32).sum();
-        let want_t = 1.5 * m.length_m / 14.0 + 25.0 + 12.0 * sites as f32 + 8.0;
-        assert!((m.time_limit - want_t).abs() < 1e-2, "{} vs {}", m.time_limit, want_t);
-        assert!((m.reward_base - (reward_base_for(m.length_m, m.difficulty) + 50.0 * people as f32)).abs() < 1e-2);
-    } }
-    assert!(seen > 20);
 }

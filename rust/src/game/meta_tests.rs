@@ -5,7 +5,7 @@ fn tmp(name: &str) -> std::path::PathBuf {
     let _ = std::fs::remove_dir_all(&d); std::fs::create_dir_all(&d).unwrap(); d.join("profile.json")
 }
 fn m(seed: u64, kind: MissionKind) -> Mission {
-    Mission { kind, seed, difficulty: 1, start: v3(0., 0., 0.), goal: v3(0., 0., 100.), checkpoints: vec![v3(0., 0., 100.)], length_m: 100.0, time_limit: 100.0, reward_base: 100.0, aircraft: None, urban: false, start_yaw: None, normals: vec![] }
+    Mission { kind, seed, difficulty: 1, start: v3(0., 0., 0.), goal: v3(0., 0., 100.), checkpoints: vec![v3(0., 0., 100.)], length_m: 100.0, time_limit: 100.0, reward_base: 100.0, urban: false, start_yaw: None }
 }
 #[test] fn json_roundtrip_keeps_everything() {
     let mut p = Profile::new(1234);
@@ -54,25 +54,14 @@ fn m(seed: u64, kind: MissionKind) -> Mission {
     let p = Profile::from_json("{\"version\":1,\"money\":10,\"profile_seed\":5,\"round\":2,\"results\":[{\"seed\":1,\"kind\":0,\"medal\":2,\"best_time\":30.0},{\"seed\":2,\"kind\":1,\"medal\":3,\"best_time\":20.0}]}").unwrap();
     assert_eq!((p.best_medal(1, MissionKind::Cargo), p.best_medal(2, MissionKind::Race)), (Medal::Silver, Medal::Gold));
 }
-#[test] fn air_kinds_round_trip() {
-    let mut p = Profile::new(3);
-    p.record(&m(7, MissionKind::Rings), Medal::Gold, 40.0);
-    p.record(&m(8, MissionKind::Recon), Medal::Bronze, 90.0);
-    p.record(&m(9, MissionKind::Sling), Medal::Silver, 70.0);
-    let q = Profile::from_json(&p.to_json()).unwrap();
-    assert_eq!((q.best_medal(7, MissionKind::Rings), q.best_medal(8, MissionKind::Recon), q.best_medal(9, MissionKind::Sling)), (Medal::Gold, Medal::Bronze, Medal::Silver));
-    assert_eq!(q.best_medal(7, MissionKind::Race), Medal::None);
+#[test] fn results_of_the_removed_air_missions_are_dropped_on_load() {
+    let p = Profile::from_json("{\"version\":1,\"money\":10,\"profile_seed\":5,\"round\":2,\"results\":[{\"seed\":1,\"kind\":2,\"medal\":3,\"best_time\":30.0},{\"seed\":2,\"kind\":0,\"medal\":2,\"best_time\":20.0},{\"seed\":3,\"kind\":5,\"medal\":1,\"best_time\":9.0}]}").unwrap();
+    assert_eq!(p.results.len(), 1);
+    assert_eq!(p.best_medal(2, MissionKind::Cargo), Medal::Silver);
 }
 #[test] fn unknown_kind_id_6_is_rejected() {
     assert!(Profile::from_json("{\"version\":1,\"money\":1,\"profile_seed\":1,\"round\":0,\"results\":[{\"seed\":1,\"kind\":6,\"medal\":1,\"best_time\":1.0}]}").is_err());
 }
-#[test] fn rescue_kind_round_trips() {
-    let mut p = Profile::new(3);
-    p.record(&m(11, MissionKind::Rescue), Medal::Gold, 77.0);
-    let q = Profile::from_json(&p.to_json()).unwrap();
-    assert_eq!(q.best_medal(11, MissionKind::Rescue), Medal::Gold);
-}
-
 mod garage_profile {
     use super::*;
     use crate::game::garage::Upgrade;

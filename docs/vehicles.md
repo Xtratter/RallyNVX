@@ -33,19 +33,9 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 | `handling.handbrake_grip` | rear grip factor with the handbrake (0..1; lower = more drift) |
 | `handling.reverse_speed_factor` | top reverse speed as a fraction of `max_speed` |
 
-`look` (optional, per car and aircraft): `body_color`, `accent`, `glass` (RGB 0..1, linear) and for cars `wheel_width` (m). They only change the generated model, not the handling.
+`look` (optional, per car): `body_color`, `accent`, `glass` (RGB 0..1, linear) and `wheel_width` (m). They only change the generated model, not the handling.
 
-## `aircraft.heli` and `aircraft.drone`
-
-`max_tilt_deg` (largest pitch/roll), `tilt_lag` (s), `max_speed` (m/s), `drag` (1/s), `vertical_speed` (m/s at full lift stick), `vertical_accel` (m/s²), `yaw_rate` (rad/s), `yaw_lag` (s), `radius` (collision radius, m).
-
-## `flight` (rules for all aircraft)
-
-`ceiling` (m), `soft_speed` (highest soft touchdown speed into the ground, m/s), `soft_tilt_deg` (largest soft tilt), `ground_damp` (ground friction, 1/s).
-
-## `sling`
-
-`rope` (rest length, m), `k` (rope spring), `c` (rope damper), `drag` (cargo air drag).
+The `vulpes` car follows the data of the real rally car it is modelled on: mass 1230 kg, track 1.534 m, wheelbase about 2.45 m, length about 4 m, 300 hp / about 550 N·m with full-time four-wheel drive. `engine_force` (18000 N at standstill, fading to zero at `max_speed`) is tuned to a 0-100 km/h time of about 3.9 s and `max_speed` (52 m/s, 187 km/h) matches the gravel gearing.
 
 ---
 
@@ -82,16 +72,6 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 | `handling.handbrake_grip` | доля сцепления задних колёс с ручником (0..1; меньше — сильнее занос) |
 | `handling.reverse_speed_factor` | максимальная скорость заднего хода как доля `max_speed` |
 
-`look` (необязательно, у машин и аппаратов): `body_color`, `accent`, `glass` (RGB 0..1, линейные) и у машин `wheel_width` (м). Меняют только сгенерированную модель, не управляемость.
+`look` (необязательно, у каждой машины): `body_color`, `accent`, `glass` (RGB 0..1, линейные) и `wheel_width` (м). Меняют только сгенерированную модель, не управляемость.
 
-## `aircraft.heli` и `aircraft.drone`
-
-`max_tilt_deg` (наибольший тангаж/крен), `tilt_lag` (с), `max_speed` (м/с), `drag` (1/с), `vertical_speed` (м/с при полном стике высоты), `vertical_accel` (м/с²), `yaw_rate` (рад/с), `yaw_lag` (с), `radius` (радиус столкновений, м).
-
-## `flight` (правила для всех аппаратов)
-
-`ceiling` (м), `soft_speed` (наибольшая мягкая скорость касания в землю, м/с), `soft_tilt_deg` (наибольший мягкий наклон), `ground_damp` (трение о землю, 1/с).
-
-## `sling`
-
-`rope` (длина троса в покое, м), `k` (пружина троса), `c` (демпфер троса), `drag` (сопротивление воздуха грузу).
+Машина `vulpes` следует данным настоящего раллийного автомобиля, по которому сделана модель: масса 1230 кг, колея 1,534 м, колёсная база около 2,45 м, длина около 4 м, 300 л.с. / около 550 Н·м, постоянный полный привод. `engine_force` (18000 Н с места, спадает до нуля к `max_speed`) подобрана под разгон до 100 км/ч за 3,9 с, а `max_speed` (52 м/с, 187 км/ч) соответствует гравийной передаточной паре.

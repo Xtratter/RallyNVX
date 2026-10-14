@@ -182,3 +182,12 @@ mod peugeot {
         assert!(v.speed() < -5.0, "reverse {}", v.speed());
     }
 }
+#[test] fn the_vulpes_accelerates_like_the_real_rally_car() {
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0., 1.0, 0.), 0.0);
+    for _ in 0..120 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+    let go = Input { throttle: 1.0, ..Default::default() };
+    let mut secs = 0.0; let mut best = 0.0f32;
+    while v.speed() < 100.0 / 3.6 && secs < 12.0 { v.step(&t, &[], &go, 1.0 / 120.0); secs += 1.0 / 120.0; best = best.max(v.speed()); }
+    assert!(secs > 3.5 && secs < 4.4, "0-100 km/h took {secs} s (best speed {best})");
+}

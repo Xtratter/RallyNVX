@@ -31,7 +31,7 @@
       "size": { "width": 1.91, "height": 1.50, "length": 3.97 },
       "wheels": [[-0.767, 0.10, 1.237], [0.767, 0.10, 1.237], [-0.767, 0.10, -1.210], [0.767, 0.10, -1.210]],
       "suspension": { "rest": 0.32, "radius": 0.326, "spring": 32000, "damper": 3200, "max_force_factor": 5.0 },
-      "engine_force": 12500,
+      "engine_force": 18000,
       "brake_force": 14000,
       "max_speed": 52,
       "grip": 1.2,
@@ -49,19 +49,5 @@
       },
       "look": { "body_color": [0.93, 0.93, 0.95], "accent_color": [0.75, 0.10, 0.12], "glass_tint": [0.06, 0.09, 0.14], "wheel_width": 0.226 }
     }
-  },
-  "aircraft": {
-    "heli": {
-      "max_tilt_deg": 25, "tilt_lag": 0.25, "max_speed": 35, "drag": 0.13,
-      "vertical_speed": 6.0, "vertical_accel": 4.0, "yaw_rate": 1.6, "yaw_lag": 0.3, "radius": 1.8,
-      "look": { "body_color": [0.95, 0.45, 0.10], "accent_color": [0.55, 0.55, 0.58], "glass_tint": [0.10, 0.16, 0.22], "wheel_width": 0.1 }
-    },
-    "drone": {
-      "max_tilt_deg": 40, "tilt_lag": 0.25, "max_speed": 28, "drag": 0.29,
-      "vertical_speed": 10.0, "vertical_accel": 12.0, "yaw_rate": 3.0, "yaw_lag": 0.15, "radius": 0.7,
-      "look": { "body_color": [0.15, 0.15, 0.18], "accent_color": [0.90, 0.90, 0.95], "glass_tint": [0.10, 0.16, 0.22], "wheel_width": 0.1 }
-    }
-  },
-  "flight": { "ceiling": 400, "soft_speed": 3.0, "soft_tilt_deg": 20, "ground_damp": 4.0 },
-  "sling": { "rope": 8.0, "k": 60, "c": 6, "drag": 0.3 }
+  }
 }

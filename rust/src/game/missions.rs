@@ -1,7 +1,5 @@
 //! Mission model and deterministic generation of the mission list.
-use super::airgen;
 use super::app::level_seed;
-use super::flight::AircraftKind;
 use super::math::{v3, V3};
 use super::props::tile_props;
 use super::terrain::{hash01, Terrain};
@@ -11,38 +9,15 @@ use super::world::{tile_of, WORLD_LIMIT};
 pub const GOAL_RADIUS: f32 = 6.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MissionKind { Cargo, Race, Rings, Sling, Recon, Rescue }
-
-impl MissionKind {
-    pub fn is_air(self) -> bool { matches!(self, MissionKind::Rings | MissionKind::Sling | MissionKind::Recon | MissionKind::Rescue) }
-}
-
-pub const RING_RADIUS_HELI: f32 = 8.0;
-pub const RING_RADIUS_DRONE: f32 = 6.0;
-pub const ZONE_RADIUS: f32 = 40.0;
+pub enum MissionKind { Cargo, Race }
 
 #[derive(Clone, Debug)]
 pub struct Mission {
     pub kind: MissionKind, pub seed: u64, pub difficulty: u8,
     pub start: V3, pub goal: V3, pub checkpoints: Vec<V3>,
     pub length_m: f32, pub time_limit: f32, pub reward_base: f32,
-    /// `None` for ground missions.
-    pub aircraft: Option<AircraftKind>,
     /// An urban mission starts in the city (`start`) and may fix the start heading.
     pub urban: bool, pub start_yaw: Option<f32>,
-    /// Ring plane normals when they are not the path direction (urban rings: flat, along the street); empty otherwise.
-    pub normals: Vec<V3>,
-}
-
-impl Mission {
-    pub fn is_air(&self) -> bool { self.kind.is_air() }
-}
-
-/// Plane normal of ring `i`: along the path from the previous point (or the start).
-pub fn ring_normal(m: &Mission, i: usize) -> V3 {
-    if let Some(n) = m.normals.get(i) { return *n; }
-    let prev = if i == 0 { m.start } else { m.checkpoints[i - 1] };
-    (m.checkpoints[i] - prev).norm()
 }
 
 pub fn path_length(start: V3, pts: &[V3]) -> f32 {
@@ -66,24 +41,6 @@ pub fn point_ok(t: &Terrain, p: V3) -> bool {
         if (pr.pos.x - p.x).hypot(pr.pos.z - p.z) < 8.0 + pr.radius { return false; }
     } } }
     true
-}
-
-/// A helicopter landing spot: a valid mission point on ground gentler than 14 degrees.
-pub fn landing_ok(t: &Terrain, p: V3) -> bool { point_ok(t, p) && t.normal(p.x, p.z).y >= 0.97 }
-
-/// The point nearest to (x, z) that passes `landing_ok` (rings up to 450 m out), else the nearest ordinary mission point.
-pub(super) fn nearest_landing(t: &Terrain, x: f32, z: f32) -> V3 {
-    let base = at(t, x, z);
-    if landing_ok(t, base) { return base; }
-    for ring in 1..=30 {
-        let r = ring as f32 * 15.0;
-        for d in 0..12 {
-            let a = d as f32 * std::f32::consts::TAU / 12.0;
-            let p = at(t, x + a.cos() * r, z + a.sin() * r);
-            if landing_ok(t, p) { return p; }
-        }
-    }
-    nearest_ok(t, x, z)
 }
 
 /// No 10 m step of the straight line a->b rises or falls more than 8 m (rough reachability check).
@@ -158,58 +115,31 @@ pub fn mission_seed(key: u64, difficulty: u8, urban: bool) -> u64 {
 }
 
 pub fn roll(profile_seed: u64, round: u32, gold_medals: u32) -> Vec<Mission> {
-    let kinds = [MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race, MissionKind::Rings,
-        match round % 3 { 0 => MissionKind::Sling, 1 => MissionKind::Recon, _ => MissionKind::Rescue }];
+    // slots 2 and 3 run through the city, the other four in the open
+    let kinds = [MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race, MissionKind::Cargo, MissionKind::Race];
     kinds.iter().enumerate().map(|(slot, &kind)| {
         let key = profile_seed ^ ((round as u64) << 20) ^ ((slot as u64 + 1) * 0x9E37_79B9);
         let r = hash01(key, slot as i32, 9);
         let difficulty = if gold_medals >= 3 { 1 + (r * 3.0) as u8 % 3 } else { 1 + (r * 2.0) as u8 % 2 };
         // difficulty is part of the identity: the same slot at another difficulty is a different mission
-        let urban_slot = matches!((slot, kind), (2, MissionKind::Cargo) | (3, MissionKind::Race) | (5, MissionKind::Sling))
-            || (slot == 4 && kind == MissionKind::Rings && hash01(key, slot as i32, 78) < 0.5);
+        let urban_slot = slot == 2 || slot == 3;
         let seed = mission_seed(key, difficulty, urban_slot);
         let t = Terrain::new(seed);
-        let city = || super::city::City::build(t.sites()[0], seed);          // every level has at least one city
-        let urban_data = match (slot, kind) {
-            (2, MissionKind::Cargo) => Some(urban::cargo(&city(), key)),
-            (3, MissionKind::Race) => Some(urban::race(&city(), key)),
-            (4, MissionKind::Rings) if urban_slot => Some(urban::rings(&city(), key)),
-            (5, MissionKind::Sling) => Some(urban::sling(&city(), key)),
-            _ => None,
-        };
-        let urban = urban_data.is_some();
-        let (aircraft, checkpoints) = match (kind, &urban_data) {
-            (MissionKind::Cargo, Some(u)) | (MissionKind::Race, Some(u)) => (None, u.points.clone()),
-            (MissionKind::Rings, Some(u)) => (Some(if hash01(key, slot as i32, 77) < 0.5 { AircraftKind::Drone } else { AircraftKind::Heli }), u.points.clone()),
-            (MissionKind::Sling, Some(u)) => (Some(AircraftKind::Heli), u.points.clone()),
-            (MissionKind::Cargo, None) => (None, vec![pick_goal(&t, key, difficulty)]),
-            (MissionKind::Race, None) => { let g = pick_goal(&t, key, difficulty); (None, race_points(&t, key, g)) }
-            (MissionKind::Rings, None) => {
-                let drone = hash01(key, slot as i32, 77) < 0.5;
-                let mut pts = airgen::rings_points(&t, key, drone);
-                airgen::clear_of_buildings(&t, seed, &mut pts, if drone { RING_RADIUS_DRONE } else { RING_RADIUS_HELI });
-                (Some(if drone { AircraftKind::Drone } else { AircraftKind::Heli }), pts)
-            }
-            (MissionKind::Sling, None) => (Some(AircraftKind::Heli), airgen::sling_points(&t, key)),
-            (MissionKind::Recon, _) => (Some(AircraftKind::Drone), airgen::recon_points(&t, key)),
-            (MissionKind::Rescue, _) => (Some(AircraftKind::Heli), airgen::rescue_points(&t, key, difficulty)),
+        let urban_data = urban_slot.then(|| {
+            let city = super::city::City::build(t.sites()[0], seed);          // every level has at least one city
+            if kind == MissionKind::Cargo { urban::cargo(&city, key) } else { urban::race(&city, key) }
+        });
+        let checkpoints = match (&urban_data, kind) {
+            (Some(u), _) => u.points.clone(),
+            (None, MissionKind::Cargo) => vec![pick_goal(&t, key, difficulty)],
+            (None, MissionKind::Race) => { let g = pick_goal(&t, key, difficulty); race_points(&t, key, g) }
         };
         let goal = *checkpoints.last().unwrap();
         let start = urban_data.as_ref().map_or_else(|| at(&t, 0.0, 0.0), |u| u.start);
         let start_yaw = urban_data.as_ref().and_then(|u| u.yaw);
-        let normals = urban_data.as_ref().map_or_else(Vec::new, |u| u.normals.clone());
         let length_m = path_length(start, &checkpoints);
-        let time_limit = match kind {
-            MissionKind::Rings if urban => 1.5 * (24.0 + 48.0 * (checkpoints.len() as f32 - 1.0)) / 10.0 + 20.0,   // the street length, not the diagonal between rings
-            MissionKind::Rings => 1.5 * length_m / if aircraft == Some(AircraftKind::Drone) { 15.0 } else { 18.0 } + 20.0,
-            MissionKind::Sling => 1.6 * length_m / 12.0 + 35.0 + 0.25 * (checkpoints.iter().map(|p| p.y).fold(f32::MIN, f32::max) - start.y).max(0.0),   // plus the climb to the roofs
-            MissionKind::Recon => 1.4 * length_m / 15.0 + 25.0,
-            MissionKind::Rescue => 1.5 * length_m / 14.0 + 25.0 + 12.0 * (checkpoints.len() as f32 - 1.0) + 8.0,
-            _ if urban => 1.6 * length_m / 8.0 + 20.0,
-            _ => time_limit_for(length_m),
-        };
-        let people_bonus = if kind == MissionKind::Rescue { 50.0 * airgen::rescue_people(seed, checkpoints.len() - 1).iter().map(|c| *c as f32).sum::<f32>() } else { 0.0 };
-        Mission { kind, seed, difficulty, start, goal, checkpoints, length_m, time_limit, reward_base: reward_base_for(length_m, difficulty) + people_bonus, aircraft, urban, start_yaw, normals }
+        let time_limit = if urban_data.is_some() { 1.6 * length_m / 8.0 + 20.0 } else { time_limit_for(length_m) };
+        Mission { kind, seed, difficulty, start, goal, checkpoints, length_m, time_limit, reward_base: reward_base_for(length_m, difficulty), urban: urban_data.is_some(), start_yaw }
     }).collect()
 }
 

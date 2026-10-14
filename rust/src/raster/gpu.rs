@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{citygen, heightatlas::{self, HeightAtlas}, watergen, meshes, models::{self, Part}, nature_models, texgen, vehicle_models as vm};
+use super::{citygen, heightatlas::{self, HeightAtlas}, watergen, meshes, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::scatter::{self, Bush};
@@ -51,10 +51,6 @@ fn inst_facade(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = in
 /// A street strip: even asphalt with lane marks drawn by the shader (colour alpha 4).
 fn inst_street(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = inst(rot, pos, s, color); i.color[3] = 4.0; i }
 
-fn push_part(lists: &mut [Vec<Inst>; 4], p: &Part) {
-    lists[p.mesh].push(if p.facade { inst_facade(p.rot, p.pos, p.scale, p.color) } else if p.glow { inst_glow(p.rot, p.pos, p.scale, p.color) } else { inst(p.rot, p.pos, p.scale, p.color) });
-}
-
 struct MeshBuf { vb: wgpu::Buffer, ib: wgpu::Buffer, n: u32, wb: Option<wgpu::Buffer> }
 
 /// A vehicle model mesh in the model pipeline's vertex format (28 bytes).
@@ -81,13 +77,12 @@ fn mmat(q: Q, p: V3) -> [f32; 16] {
     let (x, y, z) = (q.rotate(v3(1., 0., 0.)), q.rotate(v3(0., 1., 0.)), q.rotate(v3(0., 0., 1.)));
     [x.x, x.y, x.z, 0., y.x, y.y, y.z, 0., z.x, z.y, z.z, 0., p.x, p.y, p.z, 1.]
 }
-// slots: car body, wheel, heli body, rotor, tail rotor, drone body, propeller, 4 trees, 2 bushes, 3 rocks, grass tuft
-const SLOT_TREE: usize = 7;
-const SLOT_BUSH: usize = 11;
-const SLOT_ROCK: usize = 13;
-const SLOT_GRASS: usize = 16;
-const SLOT_PERSON: usize = 17;
-const MODEL_SLOTS: usize = 18;
+// slots: car body, wheel, 4 trees, 2 bushes, 3 rocks, grass tuft
+const SLOT_TREE: usize = 2;
+const SLOT_BUSH: usize = 6;
+const SLOT_ROCK: usize = 8;
+const SLOT_GRASS: usize = 11;
+const MODEL_SLOTS: usize = 12;
 const MAX_MODEL_INST: usize = 6144;
 const NEAR_SHADOW: f32 = 90.0;   // plants within this distance of the car cast shadows
 const MODEL_ATTRS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4];
@@ -302,10 +297,10 @@ impl Raster {
         let pl_model_sh = mk("model_sh", &lay_shadow, "vs_model_shadow", None, &[model_layout, minst_layout], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
         let pl_sky = mk("sky", &lay_main, "vs_sky", Some("fs_sky"), &[], depth_state(false, wgpu::CompareFunction::Always, no_bias));
 
-        let (car, heli, drone) = (vm::build_car(&crate::game::vehicle::VehicleSpec::offroader()), vm::build_heli(&crate::game::flight::AircraftSpec::of(crate::game::flight::AircraftKind::Heli)), vm::build_drone(&crate::game::flight::AircraftSpec::of(crate::game::flight::AircraftKind::Drone)));
+        let car = vm::build_car(&crate::game::vehicle::VehicleSpec::offroader());
         let nat = nature_models::build_all();
-        let models: Vec<ModelBuf> = [&car.body, &car.wheel, &heli.body, &heli.rotor, &heli.tail_rotor, &drone.body, &drone.prop].into_iter()
-            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass, &nat.person]).map(|m| model_buf(&device, m)).collect();
+        let models: Vec<ModelBuf> = [&car.body, &car.wheel].into_iter()
+            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass]).map(|m| model_buf(&device, m)).collect();
         assert_eq!(models.len(), MODEL_SLOTS);
         let mbuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("model_inst"), size: (MAX_MODEL_INST * std::mem::size_of::<MInst>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
@@ -412,29 +407,13 @@ impl Raster {
         let mut ml: [Vec<MInst>; MODEL_SLOTS] = Default::default();
         let dt = (wv.time - self.last_time).clamp(0.0, 0.1);
         self.last_time = wv.time;
-        if let Some(ac) = &wv.aircraft {
-            let mi = |(q, p): (Q, V3), tint: [f32; 4]| MInst { m: mmat(q, p), tint };
-            match ac.kind {
-                crate::game::flight::AircraftKind::Heli => {
-                    let h = vm::heli_poses(ac, wv.time);
-                    ml[2].push(mi(h.body, [1.0; 4])); ml[3].push(mi(h.rotor, [1.0; 4])); ml[4].push(mi(h.tail, [1.0; 4]));
-                }
-                _ => {
-                    let (body, props) = vm::drone_poses(ac, wv.time);
-                    ml[5].push(mi(body, [1.0; 4]));
-                    for p in props { ml[6].push(mi(p, [1.0; 4])); }
-                }
-            }
-        } else {
-            let veh = wv.vehicle;
-            self.wheel_spin += veh.speed() / veh.spec.radius * dt;
-            self.wheel_spin %= std::f32::consts::TAU;
-            let (bq, bp) = vm::car_body_pose(veh);
-            ml[0].push(MInst { m: mmat(bq, bp), tint: [1.0; 4] });
-            for p in vm::car_wheel_poses(veh, self.wheel_spin) { ml[1].push(MInst { m: mmat(p.0, p.1), tint: [1.0; 4] }); }
-        }
-        if let (Some(level), None) = (wv.terrain.water_level(), &wv.aircraft) {
-            let veh = wv.vehicle;
+        let veh = wv.vehicle;
+        self.wheel_spin += veh.speed() / veh.spec.radius * dt;
+        self.wheel_spin %= std::f32::consts::TAU;
+        let (bq, bp) = vm::car_body_pose(veh);
+        ml[0].push(MInst { m: mmat(bq, bp), tint: [1.0; 4] });
+        for p in vm::car_wheel_poses(veh, self.wheel_spin) { ml[1].push(MInst { m: mmat(p.0, p.1), tint: [1.0; 4] }); }
+        if let Some(level) = wv.terrain.water_level() {
             if veh.speed().abs() > 2.0 {
                 let tick = (wv.time * 16.0) as i32;
                 for (wi, p) in vm::car_wheel_poses(veh, 0.0).iter().enumerate() {
@@ -451,20 +430,11 @@ impl Raster {
         for tr in wv.tracks.iter() {
             lists[0].push(inst(crate::game::tracks::track_rot(tr.dir, tr.normal), tr.pos + tr.normal * 0.03, v3(0.3, 0.02, 0.45), [0.10, 0.075, 0.05]));
         }
-        if let Some(ac) = &wv.aircraft {
-            if let Some(s) = &wv.sling {
-                if s.attached { push_part(&mut lists, &models::rope_part(ac.pos + ac.rotation().rotate(v3(0., vm::HELI_LIFT - 1.3, 0.)), s.pos)); }
-                push_part(&mut lists, &models::cargo_part(s.pos));
-            }
-        }
         for mk in &wv.markers {
             use crate::game::world::MarkerKind;
             match mk.kind {
                 MarkerKind::Beacon => lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 60., 0.), v3(7.0, 120.0, 7.0), [1.0, 0.85, 0.25])),
                 MarkerKind::Ring => lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [0.25, 0.75, 1.0])),
-                MarkerKind::AirRing | MarkerKind::AirNext => for p in models::ring_parts(mk.pos, mk.normal, mk.radius, mk.kind == MarkerKind::AirNext) { push_part(&mut lists, &p); },
-                MarkerKind::Pad => push_part(&mut lists, &models::pad_part(mk.pos, mk.radius)),
-                MarkerKind::Zone => for p in models::zone_parts(mk.pos, wv.terrain.height(mk.pos.x, mk.pos.z), mk.radius) { push_part(&mut lists, &p); },
                 MarkerKind::Next => {
                     lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 0.3, 0.), v3(mk.radius * 2.0, 0.4, mk.radius * 2.0), [1.0, 0.35, 0.85]));
                     lists[1].push(inst_glow(Q::IDENT, mk.pos + v3(0., 7.5, 0.), v3(1.5, 15.0, 1.5), [1.0, 0.35, 0.85]));
@@ -514,13 +484,9 @@ impl Raster {
             }
         }
         let mut mall: Vec<MInst> = Vec::new();
-        // rescue: the survivors waiting at the pending sites (they cast shadows like the plants near the car)
-        for p in &wv.survivors { ml[SLOT_PERSON].push(MInst { m: mmat_s(Q::axis_angle(v3(0., 1., 0.), yaw_of(*p)), *p, 1.0), tint: [1.0; 4] }); }
-        mnear[SLOT_PERSON] = ml[SLOT_PERSON].len() as u32;
         let mut mranges = [(0u32, 0u32); MODEL_SLOTS];
         for k in 0..MODEL_SLOTS {
-            let reserve = if k == SLOT_GRASS { ml[SLOT_PERSON].len() } else { 0 };   // the survivors must not lose their place to grass
-            let take = ml[k].len().min((MAX_MODEL_INST - mall.len()).saturating_sub(reserve));
+            let take = ml[k].len().min(MAX_MODEL_INST - mall.len());
             mranges[k] = (mall.len() as u32, (mall.len() + take) as u32);
             mall.extend_from_slice(&ml[k][..take]);
         }

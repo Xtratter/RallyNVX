@@ -50,18 +50,16 @@ class MissionsActivity : Activity() {
         header.text = t("Missions", "Миссии") + "  ·  " + info[0].toInt() + " $"
         list.removeAllViews()
         for (i in 0 until 6) {
-            val o = 4 + i * 10
+            val o = 4 + i * 9
             val kind = info[o].toInt(); val diff = info[o + 2].toInt(); val len = info[o + 3]; val limit = info[o + 4]
             val base = info[o + 5]; val best = info[o + 6].toInt(); val bestT = info[o + 7]
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(px(16f), px(12f), px(16f), px(12f)); background = M3Surface(this@MissionsActivity, 20f, M3.surface)
             }
             card.addView(TextView(this).apply {
-                val air = info[o + 8].toInt()
-                val kindName = when (kind) { 0 -> t("Delivery", "Доставка"); 1 -> t("Race", "Гонка"); 2 -> t("Rings", "Кольца"); 3 -> t("Sling", "Подвес"); 5 -> t("Rescue", "Спасение"); else -> t("Recon", "Разведка") }
-                val acName = when (air) { 1 -> " · " + t("Helicopter", "Вертолёт"); 2 -> " · " + t("Drone", "Дрон"); else -> "" }
-                val urban = info[o + 9] > 0.5f
-                text = kindName + acName + (if (urban) " · " + t("City", "Город") else "") + "   " + "★".repeat(diff)
+                val kindName = if (kind == 0) t("Delivery", "Доставка") else t("Race", "Гонка")
+                val urban = info[o + 8] > 0.5f
+                text = kindName + (if (urban) " · " + t("City", "Город") else "") + "   " + "★".repeat(diff)
                 textSize = 18f; typeface = M3.medium; setTextColor(M3.TEXT)
             })
             card.addView(TextView(this).apply {
@@ -71,21 +69,16 @@ class MissionsActivity : Activity() {
             val detail = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = if (open == i) View.VISIBLE else View.GONE }
             detail.addView(TextView(this).apply {
                 text = when (kind) {
-                    0 -> if (info[o + 9] > 0.5f) t("Drive through the streets to the goal; buildings are solid and hits damage the cargo.", "Проедь по улицам до цели; здания твёрдые, а удары портят груз.")
+                    0 -> if (info[o + 8] > 0.5f) t("Drive through the streets to the goal; buildings are solid and hits damage the cargo.", "Проедь по улицам до цели; здания твёрдые, а удары портят груз.")
                          else t("Deliver the cargo before time runs out; hits, hard landings and rollovers damage it.", "Довези груз до конца времени; удары, жёсткие посадки и перевороты его портят.")
-                    1 -> if (info[o + 9] > 0.5f) t("Race through the street checkpoints in order.", "Проедь по порядку чекпойнты на улицах.")
+                    else -> if (info[o + 8] > 0.5f) t("Race through the street checkpoints in order.", "Проедь по порядку чекпойнты на улицах.")
                          else t("Pass every checkpoint in order before time runs out.", "Проедь все чекпойнты по порядку до конца времени.")
-                    2 -> if (info[o + 9] > 0.5f) t("Fly through the rings over the street, between the houses.", "Пролети кольца над улицей между домами.")
-                         else t("Fly through every ring in order before time runs out.", "Пролети все кольца по порядку до конца времени.")
-                    3 -> t("Hook the cargo on one roof and set it down on the green pad of another roof; swinging and bumps damage it.", "Зацепи груз на одной крыше и опусти на зелёную площадку другой крыши; раскачивание и удары его портят.")
-                    5 -> t("Land at each survivor site and wait for the people to board, then land on the base pad and wait to unload; hard landings hurt the passengers.", "Сядь на каждой площадке спасённых и дождись посадки людей, затем сядь на площадку базы и дождись высадки; жёсткие посадки ранят пассажиров.")
-                    else -> t("Hover inside each zone for 2 seconds, in any order.", "Повисите в каждой зоне 2 секунды, в любом порядке.")
                 } + "\n" +
                     t("Reward: ", "Награда: ") + "🥉 ${base.toInt()}  🥈 ${(base * 1.5f).toInt()}  🥇 ${(base * 2.2f).toInt()}"
                 textSize = 14f; setTextColor(M3.TEXT)
             })
             detail.addView(M3Widgets.button(this, t("Start", "Старт"), M3Widgets.ButtonKind.FILLED) {
-                startActivity(Intent(this, GameActivity::class.java).putExtra("mission", i).putExtra("air", kind >= 2).putExtra("profile", profile).putExtra("seed", System.nanoTime() and 0xFFFFFFL))
+                startActivity(Intent(this, GameActivity::class.java).putExtra("mission", i).putExtra("profile", profile).putExtra("seed", System.nanoTime() and 0xFFFFFFL))
             }, LinearLayout.LayoutParams(px(160f), px(46f)).apply { topMargin = px(8f) })
             card.addView(detail)
             card.setOnClickListener { open = if (open == i) -1 else i; build(false) }

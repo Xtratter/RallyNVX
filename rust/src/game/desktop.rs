@@ -55,17 +55,6 @@ impl State {
         // CI smoke: with RAYTRACE_AUTODRIVE the car steers towards the mission target so the beacon comes into view
         let st = self.game.stats();
         self.game.input.steer = if self.autodrive && st[4] > 0.0 { (st[9] * 2.0).clamp(-1.0, 1.0) } else { steer };
-        // flight keys: W/S pitch, A/D roll, Q/E yaw, Up/Down lift; the autopilot flies towards the mission target
-        self.game.flight = if self.autodrive && st[4] > 0.0 && st[20] > 0.0 {
-            crate::game::flight::FlightInput { yaw: (st[9] * 2.0).clamp(-1.0, 1.0), pitch: 0.5, lift: (st[22] * 0.15).clamp(-1.0, 1.0), roll: 0.0 }
-        } else {
-            crate::game::flight::FlightInput {
-                yaw: self.held(&[KeyCode::KeyE]) - self.held(&[KeyCode::KeyQ]),
-                lift: self.held(&[KeyCode::ArrowUp]) - self.held(&[KeyCode::ArrowDown]),
-                pitch: self.held(&[KeyCode::KeyW]) - self.held(&[KeyCode::KeyS]),
-                roll: self.held(&[KeyCode::KeyD]) - self.held(&[KeyCode::KeyA]),
-            }
-        };
         self.game.input.brake = self.keys.contains(&KeyCode::Space);
         self.game.input.handbrake = self.keys.contains(&KeyCode::ShiftLeft);
         self.game.frame();

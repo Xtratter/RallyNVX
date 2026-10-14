@@ -5,7 +5,7 @@ const DT: f32 = 1.0 / 60.0;
 fn mission(kind: MissionKind, pts: Vec<V3>) -> Mission {
     let goal = *pts.last().unwrap();
     let len = crate::game::missions::path_length(v3(0., 0., 0.), &pts);
-    Mission { kind, seed: 1, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: len, time_limit: 100.0, reward_base: 100.0, aircraft: None, urban: false, start_yaw: None, normals: vec![] }
+    Mission { kind, seed: 1, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: len, time_limit: 100.0, reward_base: 100.0, urban: false, start_yaw: None }
 }
 fn car(x: f32, z: f32) -> Vehicle { let mut v = Vehicle::new(VehicleSpec::offroader(), v3(x, 0.9, z), 0.0); v.contacts = 4; v }
 fn gas() -> Input { Input { throttle: 1.0, ..Default::default() } }

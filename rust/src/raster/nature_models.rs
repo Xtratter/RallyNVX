@@ -1,11 +1,11 @@
 //! Generated plants and rocks (no files). Unit conventions: a tree has a trunk of height 1.0 and a total height of
 //! about 1.8-1.9 (scale it by the prop's trunk height); a rock fits a unit sphere with semi-axes (1, 0.7, 1) (scale it by
 //! the prop's radius); bushes and grass tufts are used at their natural size.
-use super::vehicle_models::{add_box, add_cylinder, add_sphere, Axis, Mesh3, MAT_FOLIAGE, MAT_PLASTIC};
+use super::vehicle_models::{add_cylinder, add_sphere, Axis, Mesh3, MAT_FOLIAGE, MAT_PLASTIC};
 use crate::game::math::{v3, V3};
 use crate::game::terrain::hash01;
 
-pub struct NatureModels { pub trees: Vec<Mesh3>, pub bushes: Vec<Mesh3>, pub rocks: Vec<Mesh3>, pub grass: Mesh3, pub person: Mesh3 }
+pub struct NatureModels { pub trees: Vec<Mesh3>, pub bushes: Vec<Mesh3>, pub rocks: Vec<Mesh3>, pub grass: Mesh3 }
 
 const TRUNK: [f32; 3] = [0.30, 0.20, 0.12];
 
@@ -98,20 +98,6 @@ fn grass_tuft() -> Mesh3 {
     m
 }
 
-/// A survivor: 1.7 m tall, orange vest, dark trousers, arms slightly raised (waving for help).
-fn person() -> Mesh3 {
-    let mut m = Mesh3::default();
-    let (trousers, vest, skin) = ([0.10, 0.12, 0.25], [0.95, 0.45, 0.05], [0.80, 0.60, 0.48]);
-    for x in [-0.1f32, 0.1] { add_cylinder(&mut m, v3(x, 0.4, 0.0), Axis::Y, 0.08, 0.8, 6, trousers, MAT_PLASTIC); }
-    add_box(&mut m, v3(0.0, 1.1, 0.0), v3(0.2, 0.3, 0.11), crate::game::math::Q::IDENT, vest, MAT_PLASTIC);
-    for x in [-1.0f32, 1.0] {
-        let rot = crate::game::math::Q::axis_angle(v3(0.0, 0.0, 1.0), x * 0.4);
-        add_box(&mut m, v3(x * 0.30, 1.28, 0.0), v3(0.05, 0.25, 0.05), rot, vest, MAT_PLASTIC);
-    }
-    add_sphere(&mut m, v3(0.0, 1.57, 0.0), v3(0.11, 0.12, 0.11), 5, 7, skin, MAT_PLASTIC);
-    m
-}
-
 pub fn build_all() -> NatureModels {
     let trees = vec![
         conifer(&[(0.45, 0.55, 0.70), (0.85, 0.42, 0.65), (1.20, 0.28, 0.60)], [0.08, 0.26, 0.10]),
@@ -119,7 +105,7 @@ pub fn build_all() -> NatureModels {
         broadleaf(&[(v3(0.0, 1.25, 0.0), v3(0.55, 0.45, 0.55)), (v3(0.15, 1.6, 0.1), v3(0.4, 0.35, 0.4))], [0.20, 0.40, 0.10], 7, 8),
         broadleaf(&[(v3(0.0, 1.2, 0.0), v3(0.5, 0.4, 0.5)), (v3(0.3, 1.45, 0.0), v3(0.35, 0.3, 0.35)), (v3(-0.3, 1.5, 0.1), v3(0.35, 0.3, 0.35))], [0.28, 0.42, 0.12], 5, 7),
     ];
-    NatureModels { trees, bushes: vec![bush(0), bush(1)], rocks: vec![rock(0), rock(1), rock(2)], grass: grass_tuft(), person: person() }
+    NatureModels { trees, bushes: vec![bush(0), bush(1)], rocks: vec![rock(0), rock(1), rock(2)], grass: grass_tuft() }
 }
 
 /// Model variant for a prop of `kind` (0 tree, 1 bush, 2 rock) at `pos`; stable for the same position.

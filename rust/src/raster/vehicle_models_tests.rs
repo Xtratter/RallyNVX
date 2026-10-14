@@ -1,5 +1,5 @@
 use super::*;
-use crate::game::{flight::{Aircraft, AircraftKind, AircraftSpec}, input::Input, math::{v3, Q}, terrain::Terrain, vehicle::{Vehicle, VehicleSpec}};
+use crate::game::{input::Input, math::{v3, Q}, terrain::Terrain, vehicle::{Vehicle, VehicleSpec}};
 fn finite_unit(m: &Mesh3, name: &str) {
     assert!(!m.verts.is_empty() && m.idx.len() % 3 == 0, "{name}");
     assert!(m.idx.iter().all(|&i| (i as usize) < m.verts.len()), "{name} indices");
@@ -26,15 +26,6 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
     assert!(((whi.y - wlo.y) / 2.0 - spec.radius).abs() < spec.radius * 0.08, "wheel radius {}", (whi.y - wlo.y) / 2.0);
     assert!((wlo.x + whi.x).abs() < 0.02 && (wlo.y + whi.y).abs() < 0.02, "the wheel is centred on its axle");
 }
-#[test] fn the_helicopter_and_drone_models_are_valid_and_small_enough() {
-    let heli = build_heli(&AircraftSpec::of(AircraftKind::Heli)); let drone = build_drone(&AircraftSpec::of(AircraftKind::Drone));
-    for (m, n) in [(&heli.body, "heli body"), (&heli.rotor, "rotor"), (&heli.tail_rotor, "tail rotor"), (&drone.body, "drone body"), (&drone.prop, "prop")] { finite_unit(m, n); }
-    outward(&heli.body, "heli body"); outward_min(&drone.body, "drone body", 0.1);   // arms and legs make the drone less compact
-    assert!(heli.body.tris() + heli.rotor.tris() + heli.tail_rotor.tris() <= 2000);
-    assert!(drone.body.tris() + 4 * drone.prop.tris() <= 1000);
-    let (lo, hi) = heli.rotor.bounds(); assert!(hi.x - lo.x > 9.0 && hi.y - lo.y < 0.6, "the rotor is a wide flat disc of blades");
-    assert!(((lo.x + hi.x) / 2.0).abs() < 0.05 && ((lo.z + hi.z) / 2.0).abs() < 0.05, "centred on the hub");
-}
 #[test] fn wheel_poses_sit_at_the_mounts_and_front_wheels_steer() {
     let t = Terrain::flat(); let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., 1.1, 0.), 0.0);
     for _ in 0..120 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
@@ -46,22 +37,4 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
     assert!((axle(ps[0].0).z).abs() > 0.2 && (axle(ps[2].0).z).abs() < 0.05, "front wheels turn, rear wheels do not");
     let spun = car_wheel_poses(&v, 1.0);
     assert!((spun[0].0.rotate(v3(0., 1., 0.)) - p[0].0.rotate(v3(0., 1., 0.))).len() > 0.5, "spin rotates the wheel about its axle");
-}
-#[test] fn rotors_spin_about_their_hubs_and_follow_the_aircraft() {
-    let a = Aircraft::new(AircraftKind::Heli, v3(10., 20., 30.), 0.5);
-    let (p0, p1) = (heli_poses(&a, 0.0), heli_poses(&a, 0.05));
-    assert!((p0.rotor.1 - p1.rotor.1).len() < 1e-4, "the hub does not move");
-    assert!((p0.rotor.0.rotate(v3(1., 0., 0.)) - p1.rotor.0.rotate(v3(1., 0., 0.))).len() > 0.1, "the blades turn");
-    assert!((p0.rotor.1 - a.pos).len() < 3.0);
-    let d = Aircraft::new(AircraftKind::Drone, v3(0., 10., 0.), 0.0);
-    let (body, props) = drone_poses(&d, 0.0);
-    assert!((body.1 - d.pos).len() < 0.3);
-    for pr in props { assert!((pr.1 - d.pos).len() < 1.2 && pr.1.y > d.pos.y - 0.2); }
-}
-#[test] fn drone_arms_run_along_the_diagonals_to_the_motors() {
-    let m = build_drone(&AircraftSpec::of(AircraftKind::Drone));
-    for (sx, sz) in [(1.0f32, 1.0f32), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
-        let near = m.body.verts.iter().any(|v| (v.pos[1].abs() - 0.02).abs() < 1e-3 && (v.pos[0] - sx * 0.62).abs() < 0.08 && (v.pos[2] - sz * 0.62).abs() < 0.08);
-        assert!(near, "no arm reaches the motor at ({sx},{sz})");
-    }
 }

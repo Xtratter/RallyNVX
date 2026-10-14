@@ -6,7 +6,7 @@ use super::missions::{Mission, MissionKind, GOAL_RADIUS};
 use super::vehicle::Vehicle;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum Phase { Ready, Running, Done }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum Failure { TimeUp, CargoDestroyed, Abandoned, Crashed }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum Failure { TimeUp, CargoDestroyed, Abandoned }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Outcome { Passed { medal: Medal, time: f32, integrity: f32 }, Failed(Failure) }
 

@@ -1,13 +1,11 @@
-//! Vehicle parameters in one data file (`rust/vehicles.json`, embedded): cars, aircraft, flight rules, the sling rope.
-use super::flight::{AircraftKind, AircraftSpec};
-use super::sling::SlingSpec;
+//! Vehicle parameters in one data file (`rust/vehicles.json`, embedded): cars.
 use super::vehicle::{CarStyle, VehicleSpec};
 
 /// The embedded default file.
 pub const EMBEDDED: &str = include_str!("../../vehicles.json");
 
 #[derive(Clone, Debug)]
-pub struct Params { pub cars: Vec<(String, VehicleSpec)>, pub heli: AircraftSpec, pub drone: AircraftSpec, pub sling: SlingSpec }
+pub struct Params { pub cars: Vec<(String, VehicleSpec)> }
 
 use serde_json::Value;
 use std::sync::OnceLock;
@@ -90,22 +88,6 @@ fn parse_car(id: &str, v: &Value) -> Result<VehicleSpec, String> {
     })
 }
 
-fn parse_aircraft(id: &str, v: &Value, rules: &Value) -> Result<AircraftSpec, String> {
-    let ctx = format!("aircraft.{id}");
-    let ctx = ctx.as_str();
-    let fl = "flight";
-    let default = if id == "heli" { Look { body: [0.95, 0.45, 0.10], accent: [0.55, 0.55, 0.58], glass: [0.10, 0.16, 0.22], wheel_width: 0.1 } } else { Look { body: [0.15, 0.15, 0.18], accent: [0.90, 0.90, 0.95], glass: [0.10, 0.16, 0.22], wheel_width: 0.1 } };
-    let look = parse_look(v, ctx, default)?;
-    Ok(AircraftSpec {
-        look, max_tilt: between(v, "max_tilt_deg", ctx, 1.0, 80.0)?.to_radians(), tilt_lag: above(v, "tilt_lag", ctx, 0.0)?,
-        max_speed: above(v, "max_speed", ctx, 0.0)?, drag: between(v, "drag", ctx, 0.0, 100.0)?,
-        vmax: above(v, "vertical_speed", ctx, 0.0)?, vacc: above(v, "vertical_accel", ctx, 0.0)?,
-        yaw_rate: above(v, "yaw_rate", ctx, 0.0)?, yaw_lag: above(v, "yaw_lag", ctx, 0.0)?, radius: above(v, "radius", ctx, 0.0)?,
-        ceiling: above(rules, "ceiling", fl, 0.0)?, soft_speed: above(rules, "soft_speed", fl, 0.0)?,
-        soft_tilt: between(rules, "soft_tilt_deg", fl, 1.0, 89.0)?.to_radians(), ground_damp: between(rules, "ground_damp", fl, 0.0, 1e3)?,
-    })
-}
-
 impl Params {
     pub fn from_json(s: &str) -> Result<Params, String> {
         let v: Value = serde_json::from_str(s).map_err(|e| format!("vehicles file is not valid JSON: {e}"))?;
@@ -113,17 +95,10 @@ impl Params {
         let mut cars = Vec::new();
         for (id, c) in cars_v.as_object().unwrap() { cars.push((id.clone(), parse_car(id, c)?)); }
         if cars.is_empty() { return Err("vehicles: \"cars\" is empty".into()); }
-        let air = section(&v, "aircraft", "vehicles")?;
-        let rules = section(&v, "flight", "vehicles")?;
-        let heli = parse_aircraft("heli", section(air, "heli", "aircraft")?, rules)?;
-        let drone = parse_aircraft("drone", section(air, "drone", "aircraft")?, rules)?;
-        let sl = section(&v, "sling", "vehicles")?;
-        let sling = SlingSpec { rope: above(sl, "rope", "sling", 0.0)?, k: above(sl, "k", "sling", 0.0)?, c: between(sl, "c", "sling", 0.0, 1e6)?, drag: between(sl, "drag", "sling", 0.0, 100.0)? };
-        Ok(Params { cars, heli, drone, sling })
+        Ok(Params { cars })
     }
     pub fn car_ids(&self) -> Vec<String> { self.cars.iter().map(|(i, _)| i.clone()).collect() }
     pub fn car(&self, id: &str) -> Option<VehicleSpec> { self.cars.iter().find(|(i, _)| i == id).map(|(_, c)| *c) }
-    pub fn aircraft(&self, kind: AircraftKind) -> AircraftSpec { match kind { AircraftKind::Heli => self.heli, AircraftKind::Drone => self.drone } }
 }
 
 /// The active parameters: the embedded file, or the file named by `RAYTRACE_VEHICLES` when it parses.

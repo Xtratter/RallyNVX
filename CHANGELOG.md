@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.12.0 - cars only, real Vulpes WRC data
+
+- Removed: the helicopter, the drone and every air mission (rings, sling cargo, recon, rescue), their controls, sounds, models and settings. The mission list is now three deliveries and three checkpoint races, two of them in the city. Results saved for the removed missions are ignored; money, the garage and car results stay
+- Changed: the Vulpes WRC follows the data of the real rally car: 1230 kg, 300 hp class thrust tuned to about 3.9 s (checked by a unit test) from 0 to 100 km/h, top speed 52 m/s (187 km/h); see docs/vehicles.md
+- Changed: `vehicles.json` has only cars now (the aircraft, flight and sling sections are gone; a custom file may still contain them, they are ignored)
+
 ## 2.11.1 - the real Vulpes WRC model
 
 - Changed: the Vulpes WRC now uses a simplified copy of the real model (body 20 000 triangles, wheels 2 500 each, livery baked into vertex colours) instead of the generated hatchback; `tools/carconv` converts the glb and `tools/rcar_preview.py` previews it. Measured on a POCO F3: the frame rate did not change between 9 000 and 42 000 triangles for the car, so the quality stays high

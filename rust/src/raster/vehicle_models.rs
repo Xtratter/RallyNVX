@@ -1,7 +1,7 @@
 //! Generated vehicle meshes (no files): the off-roader, the helicopter and the drone, plus the pose helpers that place
 //! their moving parts. Vehicle local frame: +z forward, +y up, +x to the vehicle's left.
 use bytemuck::{Pod, Zeroable};
-use crate::game::{flight::{Aircraft, AircraftSpec}, math::{v3, Q, V3}, vehicle::{Vehicle, VehicleSpec}};
+use crate::game::{math::{v3, Q, V3}, vehicle::{Vehicle, VehicleSpec}};
 
 pub const MAT_PAINT: u8 = 0;
 pub const MAT_GLASS: u8 = 1;
@@ -114,9 +114,6 @@ pub(crate) fn loft(stations: &[(f32, f32, f32, f32)], ring: usize, exp: f32, col
 pub(crate) fn scaled(st: &[(f32, f32, f32, f32)], sx: f32, sy: f32, sz: f32) -> Vec<(f32, f32, f32, f32)> { st.iter().map(|&(z, w, a, b)| (z * sz, (w * sx).max(0.06), a * sy, b * sy)).collect() }
 
 pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3 }
-pub struct HeliModel { pub body: Mesh3, pub rotor: Mesh3, pub tail_rotor: Mesh3 }
-pub struct DroneModel { pub body: Mesh3, pub prop: Mesh3 }
-pub struct HeliPoses { pub body: (Q, V3), pub rotor: (Q, V3), pub tail: (Q, V3) }
 
 pub(crate) const CHROME: [f32; 3] = [0.75, 0.77, 0.80];
 pub(crate) const RUBBER: [f32; 3] = [0.04, 0.04, 0.045];
@@ -170,46 +167,6 @@ fn build_suv(spec: &VehicleSpec) -> CarModel {
     CarModel { body, wheel }
 }
 
-pub fn build_heli(spec: &AircraftSpec) -> HeliModel {
-    let l = spec.look;
-    let mut body = Mesh3::default();
-    body.append(&loft(&[(2.3, 0.1, -0.3, 0.2), (1.8, 0.8, -0.7, 0.9), (0.8, 1.05, -0.9, 1.1), (-0.6, 0.9, -0.8, 0.9), (-1.6, 0.35, -0.3, 0.4)], 16, 2.4, l.body, MAT_PAINT));
-    body.append(&loft(&[(0.6, 0.97, 0.10, 1.0), (1.4, 0.87, 0.0, 0.97), (2.15, 0.13, -0.2, 0.2)], 12, 2.2, l.glass, MAT_GLASS));
-    add_cylinder(&mut body, v3(0.0, 0.0, -3.7), Axis::Z, 0.2, 4.3, 12, l.body, MAT_PAINT);
-    add_box(&mut body, v3(0.0, 0.6, -5.6), v3(0.04, 0.7, 0.4), Q::IDENT, l.accent, MAT_PLASTIC);
-    add_box(&mut body, v3(0.0, 0.05, -5.5), v3(0.7, 0.03, 0.25), Q::IDENT, l.accent, MAT_PLASTIC);
-    for x in [0.9, -0.9] {
-        add_cylinder(&mut body, v3(x, -1.2, 0.2), Axis::Z, 0.06, 3.4, 8, CHROME, MAT_CHROME);
-        for z in [1.1, -0.6] { add_cylinder(&mut body, v3(x * 0.95, -0.95, z), Axis::Y, 0.05, 0.5, 8, CHROME, MAT_CHROME); }
-    }
-    add_cylinder(&mut body, v3(0.0, 1.25, 0.0), Axis::Y, 0.12, 0.5, 10, CHROME, MAT_CHROME);
-    let mut rotor = Mesh3::default();
-    add_cylinder(&mut rotor, V3::ZERO, Axis::Y, 0.18, 0.25, 12, CHROME, MAT_CHROME);
-    add_box(&mut rotor, V3::ZERO, v3(5.5, 0.03, 0.18), Q::IDENT, [0.08, 0.08, 0.1], MAT_PLASTIC);
-    add_box(&mut rotor, V3::ZERO, v3(0.18, 0.03, 5.5), Q::IDENT, [0.08, 0.08, 0.1], MAT_PLASTIC);
-    let mut tail_rotor = Mesh3::default();
-    add_box(&mut tail_rotor, V3::ZERO, v3(0.03, 0.5, 0.06), Q::IDENT, [0.08, 0.08, 0.1], MAT_PLASTIC);
-    add_box(&mut tail_rotor, V3::ZERO, v3(0.03, 0.06, 0.5), Q::IDENT, [0.08, 0.08, 0.1], MAT_PLASTIC);
-    HeliModel { body, rotor, tail_rotor }
-}
-
-pub fn build_drone(spec: &AircraftSpec) -> DroneModel {
-    let l = spec.look;
-    let mut body = Mesh3::default();
-    body.append(&loft(&[(0.35, 0.12, -0.04, 0.06), (0.15, 0.3, -0.07, 0.1), (-0.2, 0.3, -0.07, 0.1), (-0.35, 0.12, -0.04, 0.06)], 12, 2.6, l.body, MAT_PAINT));
-    for (sx, sz) in [(1.0f32, 1.0f32), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
-        let rot = Q::axis_angle(v3(0., 1., 0.), if sx * sz > 0.0 { -0.785 } else { 0.785 });
-        add_box(&mut body, v3(sx * 0.32, 0.0, sz * 0.32), v3(0.45, 0.02, 0.025), rot, l.accent, MAT_PLASTIC);
-        add_cylinder(&mut body, v3(sx * 0.62, 0.05, sz * 0.62), Axis::Y, 0.07, 0.1, 10, [0.1, 0.1, 0.12], MAT_PLASTIC);
-        add_cylinder(&mut body, v3(sx * 0.2, -0.12, sz * 0.2), Axis::Y, 0.015, 0.2, 6, CHROME, MAT_CHROME);
-    }
-    add_sphere(&mut body, v3(0.0, -0.1, 0.25), v3(0.07, 0.07, 0.07), 6, 8, [0.05, 0.05, 0.08], MAT_GLASS);
-    let mut prop = Mesh3::default();
-    add_box(&mut prop, V3::ZERO, v3(0.35, 0.006, 0.03), Q::IDENT, l.accent, MAT_PLASTIC);
-    add_box(&mut prop, V3::ZERO, v3(0.03, 0.006, 0.35), Q::IDENT, l.accent, MAT_PLASTIC);
-    DroneModel { body, prop }
-}
-
 pub fn car_wheel_poses(v: &Vehicle, spin: f32) -> [(Q, V3); 4] {
     let s = &v.spec;
     let mut out = [(Q::IDENT, V3::ZERO); 4];
@@ -223,19 +180,6 @@ pub fn car_wheel_poses(v: &Vehicle, spin: f32) -> [(Q, V3); 4] {
     out
 }
 
-/// The helicopter model sits 1 m above the aircraft position so that its skids touch the ground when landed.
-pub const HELI_LIFT: f32 = 1.0;
-
-pub fn heli_poses(a: &Aircraft, t: f32) -> HeliPoses {
-    let r = a.rotation();
-    let base = a.pos + r.rotate(v3(0.0, HELI_LIFT, 0.0));
-    HeliPoses {
-        body: (r, base),
-        rotor: (r.mul(Q::axis_angle(v3(0., 1., 0.), t * 25.0)), base + r.rotate(v3(0.0, 1.55, 0.0))),
-        tail: (r.mul(Q::axis_angle(v3(1., 0., 0.), t * 30.0)), base + r.rotate(v3(0.15, 0.9, -5.6))),
-    }
-}
-
 /// The body mesh is drawn 0.75 body-heights below the suspension attachment height (its own frame starts at y = 0.30)
 /// so the sills clear the ground by about half a metre; the attachment height itself sits above the centre of mass.
 pub fn car_body_pose(v: &Vehicle) -> (Q, V3) {
@@ -247,16 +191,6 @@ pub fn car_body_pose(v: &Vehicle) -> (Q, V3) {
     }
     let sy = v.spec.size.y / 1.4;
     (v.rot, v.pos + v.rot.rotate(v3(0.0, v.spec.wheels[0].y - 0.75 * sy, 0.0)))
-}
-
-pub fn drone_poses(a: &Aircraft, t: f32) -> ((Q, V3), [(Q, V3); 4]) {
-    let r = a.rotation();
-    let mut props = [(Q::IDENT, V3::ZERO); 4];
-    for (i, (sx, sz)) in [(1.0f32, 1.0f32), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)].into_iter().enumerate() {
-        let dir = if sx * sz > 0.0 { 1.0 } else { -1.0 };
-        props[i] = (r.mul(Q::axis_angle(v3(0., 1., 0.), t * 40.0 * dir)), a.pos + r.rotate(v3(sx * 0.62, 0.12, sz * 0.62)));
-    }
-    ((r, a.pos), props)
 }
 
 #[cfg(test)]

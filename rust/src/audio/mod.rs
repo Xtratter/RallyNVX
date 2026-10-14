@@ -1,4 +1,4 @@
-//! Procedural sound: a pure synthesiser (engine, rotor, rolling, wind, one-shot events) driven by `AudioParams` and
+//! Procedural sound: a pure synthesiser (engine, rolling, wind, one-shot events) driven by `AudioParams` and
 //! `Event`s. No files, no dependencies; the platform glue only pulls PCM from `Synth::render`.
 pub mod director;
 pub mod dsp;
@@ -11,7 +11,7 @@ pub use synth::{engine_freq, Synth};
 pub const RATE: u32 = 44_100;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Machine { #[default] None, Car, Heli, Drone }
+pub enum Machine { #[default] None, Car }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Surface { #[default] Ground, Water }
@@ -22,7 +22,7 @@ pub struct AudioParams { pub machine: Machine, pub rpm: f32, pub load: f32, pub 
 
 /// One-shot sounds. Strengths are 0..1.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Event { Touchdown(f32), Crash, Splash(f32), Checkpoint, Board, Success, Fail }
+pub enum Event { Touchdown(f32), Crash, Splash(f32), Checkpoint, Success, Fail }
 
 use std::sync::Mutex;
 

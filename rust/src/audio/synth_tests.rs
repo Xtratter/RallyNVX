@@ -13,7 +13,7 @@ fn run(s: &mut Synth, n: f32) -> Vec<f32> { let mut v = vec![0.0; secs(n)]; s.re
 
 #[test] fn output_stays_finite_and_in_range_under_random_sweeps() {
     let mut seed = 12345u32; let mut r = move || { seed = seed.wrapping_mul(1664525).wrapping_add(1013904223); (seed >> 8) as f32 / 16_777_216.0 };
-    for machine in [Machine::None, Machine::Car, Machine::Heli, Machine::Drone] {
+    for machine in [Machine::None, Machine::Car] {
         let mut s = Synth::new();
         for _ in 0..50 {
             s.set_params(&AudioParams { machine, rpm: r() * 1.4 - 0.2, load: r(), roll: r(), surface: if r() > 0.5 { Surface::Water } else { Surface::Ground }, slip: r(), wind: r(), active: true });

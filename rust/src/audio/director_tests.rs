@@ -1,13 +1,15 @@
 use super::*;
-use crate::game::{flight::{AircraftKind, Status}, input::Input, math::v3, missions::{Mission, MissionKind}, terrain::Terrain, world::World};
+use crate::game::{input::Input, math::{v3, V3}, missions::{Mission, MissionKind}, terrain::Terrain, world::World};
 
 fn settled() -> World { let mut w = World::new(7); for _ in 0..120 { w.step(&Input::default(), 1.0 / 60.0); } w }
-fn air_mission(kind: MissionKind, ac: AircraftKind, pts: Vec<crate::game::math::V3>) -> Mission {
+fn race_mission(pts: Vec<crate::game::math::V3>) -> Mission {
     let goal = *pts.last().unwrap();
-    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: Some(ac), urban: false, start_yaw: None, normals: vec![] }
+    Mission { kind: MissionKind::Race, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, urban: false, start_yaw: None }
 }
-fn heli_world() -> World { World::for_mission(air_mission(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 100.), v3(0., 30., 200.)])) }
-
+fn race_world() -> World {
+    let t = Terrain::new(42);
+    World::for_mission(race_mission(vec![v3(0., t.height(0., 100.), 100.), v3(0., t.height(0., 200.), 200.)]))
+}
 #[test] fn free_drive_at_rest_is_quiet_and_driving_raises_the_revs() {
     let mut w = settled(); let mut d = Director::new();
     let (p, ev) = d.update(&w, 0.0, true);
@@ -45,37 +47,20 @@ fn heli_world() -> World { World::for_mission(air_mission(MissionKind::Rings, Ai
     assert!(matches!(ev.as_slice(), [Event::Splash(s)] if *s > 0.3), "{ev:?}");
     assert!(d.update(&w, 1.0, true).1.is_empty());
 }
-#[test] fn aircraft_machines_revs_wind_and_touchdown() {
-    let mut w = heli_world(); let mut d = Director::new();
-    w.aircraft.as_mut().unwrap().status = Status::Landed;
-    let (p, _) = d.update(&w, 0.0, true);
-    assert_eq!(p.machine, Machine::Heli); assert!((p.rpm - 0.45).abs() < 1e-3, "{}", p.rpm);
-    { let a = w.aircraft.as_mut().unwrap(); a.status = Status::Flying; a.pos.y += 80.0; a.vel = v3(0., 0., 25.); }
-    let (p2, ev) = d.update(&w, 0.0, true);
-    assert!(p2.rpm > 0.6 && p2.wind > p.wind + 0.2 && ev.is_empty(), "{p2:?}");
-    { let a = w.aircraft.as_mut().unwrap(); a.vel = v3(0., -2.5, 0.); } d.update(&w, 0.0, true);
-    w.aircraft.as_mut().unwrap().status = Status::Landed;
-    assert!(matches!(d.update(&w, 0.0, true).1.as_slice(), [Event::Touchdown(s)] if *s > 0.5));
-    let dw = World::for_mission(air_mission(MissionKind::Recon, AircraftKind::Drone, vec![v3(0., 40., 100.)]));
-    assert_eq!(Director::new().update(&dw, 0.0, true).0.machine, Machine::Drone);
-    w.aircraft.as_mut().unwrap().status = Status::Crashed;
-    assert!(d.update(&w, 0.0, true).1.contains(&Event::Crash));
-}
-#[test] fn mission_progress_gives_checkpoint_board_and_one_result_event() {
-    let mut w = heli_world(); let mut d = Director::new();
-    w.step_with(&Input::default(), &crate::game::flight::FlightInput { yaw: 0.2, ..Default::default() }, 1.0 / 60.0);
+#[test] fn mission_progress_gives_checkpoint_and_one_result_event() {
+    let mut w = race_world(); let mut d = Director::new();
+    let go = Input { throttle: 1.0, ..Default::default() };
+    w.step(&go, 1.0 / 60.0);
     d.update(&w, 0.0, true);
-    // fly through ring 1
-    let mut crossed = false; let mut ev_all = Vec::new();
-    for (z0, z1) in [(99.0, 101.0), (199.0, 201.0)] {
-        for z in [z0, z1] { w.aircraft.as_mut().unwrap().pos = v3(0., 30., z); w.step_with(&Input::default(), &crate::game::flight::FlightInput { yaw: 0.2, ..Default::default() }, 1e-4); ev_all.extend(d.update(&w, 0.0, true).1); }
-        crossed = true;
+    let mut ev_all = Vec::new();
+    for z in [100.0f32, 200.0] {
+        w.vehicle.pos = v3(0., w.terrain.height(0., z) + 1.1, z); w.vehicle.vel = V3::ZERO;
+        w.step(&go, 1e-4); ev_all.extend(d.update(&w, 0.0, true).1);
     }
-    assert!(crossed);
     assert_eq!(ev_all.iter().filter(|e| **e == Event::Checkpoint).count(), 1, "{ev_all:?}");
     assert_eq!(ev_all.iter().filter(|e| **e == Event::Success).count(), 1, "{ev_all:?}");
     assert!(d.update(&w, 0.0, true).1.is_empty(), "the result is reported once");
-    let mut w = heli_world(); let mut d = Director::new(); d.update(&w, 0.0, true);
+    let mut w = race_world(); let mut d = Director::new(); d.update(&w, 0.0, true);
     w.abandon_mission();
     assert_eq!(d.update(&w, 0.0, true).1, vec![Event::Fail]);
 }
@@ -114,7 +99,7 @@ fn heli_world() -> World { World::for_mission(air_mission(MissionKind::Rings, Ai
     w.time += 0.4; d.update(&w, 0.0, true);
     w.time += 0.016; w.vehicle.contacts = 4;
     assert!(matches!(d.update(&w, 0.0, true).1.as_slice(), [Event::Touchdown(_)]));
-    let mut w = heli_world(); let mut d = Director::new(); d.update(&w, 0.0, true);
+    let mut w = race_world(); let mut d = Director::new(); d.update(&w, 0.0, true);
     w.abandon_mission();
     let (p, ev) = d.update(&w, 0.0, true);
     assert_eq!((p.machine, ev), (Machine::None, vec![Event::Fail]));

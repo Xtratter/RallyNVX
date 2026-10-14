@@ -45,7 +45,7 @@ use crate::game::math::Q;
 use crate::game::missions::{Mission, MissionKind};
 fn mk(kind: MissionKind, pts: Vec<V3>) -> Mission {
     let goal = *pts.last().unwrap();
-    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: None, urban: false, start_yaw: None, normals: vec![] }
+    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, urban: false, start_yaw: None }
 }
 #[test] fn for_mission_uses_the_mission_seed_and_starts_ready() {
     let w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
@@ -91,59 +91,6 @@ fn mk(kind: MissionKind, pts: Vec<V3>) -> Mission {
     let to_cam = (w.cam.pos - w.vehicle.pos).norm();
     assert!(to_cam.x * f.x + to_cam.z * f.z < -0.9, "camera must start behind the car");
 }
-fn air(kind: MissionKind, ac: crate::game::flight::AircraftKind, pts: Vec<V3>) -> Mission {
-    let goal = *pts.last().unwrap();
-    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, aircraft: Some(ac), urban: false, start_yaw: None, normals: vec![] }
-}
-use crate::game::flight::{AircraftKind, FlightInput};
-#[test] fn air_mission_starts_with_the_aircraft_3_m_up_facing_the_first_target() {
-    let w = World::for_mission(air(MissionKind::Rings, AircraftKind::Heli, vec![v3(300., 30., -200.), v3(600., 40., -400.)]));
-    let a = w.aircraft.as_ref().unwrap();
-    assert!((a.pos.y - (w.terrain.height(0., 0.) + 3.0)).abs() < 0.01);
-    let want = v3(300., 0., -200.).norm(); let f = a.forward();
-    assert!(f.x * want.x + f.z * want.z > 0.999);
-    assert!(w.air.is_some() && w.mission.is_none());
-    assert_eq!(w.player_pos(), a.pos);
-}
-#[test] fn air_steps_feed_the_aircraft_and_the_run() {
-    let mut w = World::for_mission(air(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 300.)]));
-    for _ in 0..60 { w.step_with(&Input::default(), &FlightInput { pitch: 1.0, ..Default::default() }, 1.0 / 60.0); }
-    assert!(w.aircraft.as_ref().unwrap().vel.len() > 1.0);
-    assert!(w.air.as_ref().unwrap().time() > 0.9);
-    assert!(w.run_info().is_some());
-}
-#[test] fn the_car_does_not_move_in_an_air_mission() {
-    let mut w = World::for_mission(air(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 300.)]));
-    let p = w.vehicle.pos;
-    for _ in 0..120 { w.step_with(&Input { throttle: 1.0, ..Default::default() }, &FlightInput::default(), 1.0 / 60.0); }
-    assert_eq!(w.vehicle.pos, p);
-}
-#[test] fn sling_missions_spawn_the_cargo_on_pad_a_and_attach_it_after_the_hover() {
-    let mut w = World::for_mission(air(MissionKind::Sling, AircraftKind::Heli, vec![v3(0., 0., 60.), v3(0., 0., 400.)]));
-    assert!(w.sling.as_ref().map_or(false, |s| !s.attached));
-    w.aircraft.as_mut().unwrap().pos = v3(0., w.terrain.height(0., 60.) + 2.5, 60.);
-    for _ in 0..140 { w.step_with(&Input::default(), &FlightInput { yaw: 0.2, ..Default::default() }, 1.0 / 60.0); }
-    assert!(w.sling.as_ref().unwrap().attached);
-}
-#[test] fn air_markers_and_run_info() {
-    let mut w = World::for_mission(air(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 100.), v3(0., 30., 200.)]));
-    let k = |w: &World| w.markers().iter().map(|m| m.kind).collect::<Vec<_>>();
-    assert_eq!(k(&w), vec![MarkerKind::AirNext, MarkerKind::AirRing]);
-    assert!((w.markers()[0].normal.len() - 1.0).abs() < 1e-3);
-    let ri = w.run_info().unwrap();
-    assert_eq!((ri.total, ri.next, ri.phase), (2, 0, crate::game::run::Phase::Ready));
-    let w2 = World::for_mission(air(MissionKind::Sling, AircraftKind::Heli, vec![v3(0., 0., 60.), v3(0., 0., 400.)]));
-    assert_eq!(w2.markers().iter().filter(|m| m.kind == MarkerKind::Pad).count(), 2);
-    let w3 = World::for_mission(air(MissionKind::Recon, AircraftKind::Drone, vec![v3(0., 40., 100.), v3(100., 50., 100.)]));
-    assert_eq!(w3.markers().iter().filter(|m| m.kind == MarkerKind::Zone).count(), 2);
-    w.abandon_mission();
-    assert!(w.markers().is_empty());
-}
-#[test] fn the_chase_camera_stays_above_the_terrain_for_an_aircraft_on_the_ground() {
-    let mut w = World::for_mission(air(MissionKind::Rings, AircraftKind::Drone, vec![v3(0., 30., 300.)]));
-    for _ in 0..600 { w.step_with(&Input::default(), &FlightInput { lift: -0.2, ..Default::default() }, 1.0 / 60.0); }
-    assert!(w.cam.pos.y >= w.terrain.height(w.cam.pos.x, w.cam.pos.z) + 0.89);
-}
 use crate::game::city::{Building, City, CitySite};
 fn walled_world() -> World {
     let mut w = World::new(1);
@@ -162,32 +109,6 @@ fn walled_world() -> World {
     for _ in 0..(8.0 / (1.0 / 60.0)) as usize { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
     assert!(w.vehicle.pos.z <= 30.0 - 0.9, "the car went through the wall: z {}", w.vehicle.pos.z);
     assert!(w.vehicle.pos.is_finite());
-}
-#[test] fn an_aircraft_that_hits_a_wall_crashes_but_one_above_the_roof_does_not() {
-    use crate::game::flight::{AircraftKind, FlightInput, Status};
-    let m = air(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 100.)]);
-    let mut w2 = World::for_mission(m.clone());
-    w2.cities = walled_world().cities;
-    let g = w2.terrain.height(0., 0.);
-    w2.aircraft.as_mut().unwrap().pos = v3(0., g + 10.0, 0.0);
-    for _ in 0..(6.0 / (1.0 / 60.0)) as usize { w2.step_with(&Input::default(), &FlightInput { pitch: 1.0, ..Default::default() }, 1.0 / 60.0); }
-    assert_eq!(w2.aircraft.as_ref().unwrap().status, Status::Crashed, "flying into the wall");
-    let mut w3 = World::for_mission(m);
-    w3.cities = walled_world().cities;
-    let top = w3.cities[0].buildings[0].max.y;
-    w3.aircraft.as_mut().unwrap().pos = v3(0., top + 12.0, 0.0);
-    for _ in 0..(4.0 / (1.0 / 60.0)) as usize { w3.step_with(&Input::default(), &FlightInput { pitch: 0.4, ..Default::default() }, 1.0 / 60.0); }
-    assert_ne!(w3.aircraft.as_ref().unwrap().status, Status::Crashed);
-}
-#[test] fn cargo_is_pushed_out_of_walls() {
-    use crate::game::flight::{AircraftKind, FlightInput};
-    let mut w = World::for_mission(air(MissionKind::Sling, AircraftKind::Heli, vec![v3(0., 0., 200.), v3(0., 0., 400.)]));
-    w.cities = walled_world().cities;
-    let base = w.cities[0].buildings[0].min.y;
-    w.sling.as_mut().unwrap().pos = v3(0.0, base + 10.0, 40.0);
-    w.step_with(&Input::default(), &FlightInput::default(), 1.0 / 60.0);
-    let p = w.sling.as_ref().unwrap().pos;
-    assert!(!(p.x.abs() < 20.0 && p.z > 30.0 && p.z < 50.0 && p.y < base + 30.0), "cargo still inside the building at {p:?}");
 }
 #[test] fn place_near_city_puts_the_player_outside_the_first_city_facing_it() {
     let mut w = World::new(7);
@@ -216,8 +137,7 @@ fn walled_world() -> World {
         assert!(w.vehicle.pos.z <= 10.0 - 0.9 || w.vehicle.pos.z > 30.0 + 0.9 && false, "z {}", w.vehicle.pos.z);
     }
 }
-#[test] fn place_in_city_puts_the_car_on_a_street_at_the_centre_and_the_aircraft_above_the_roofs() {
-    use crate::game::flight::{AircraftKind, Status};
+#[test] fn place_in_city_puts_the_car_on_a_street_at_the_centre_() {
     let mut w = World::new(7);
     assert!(w.place_in_city());
     let c = &w.cities[0];
@@ -225,10 +145,6 @@ fn walled_world() -> World {
     assert!(c.inside(p.x, p.z) && (p.x - c.site.centre.x).abs() < 40.0 && (p.z - c.site.centre.z).abs() < 40.0, "{p:?}");
     assert!(c.roof_at(p.x, p.z).is_none(), "on a street, not inside a building");
     assert!(c.buildings_near(p, 1.5).is_empty() || !c.touches_side(p + v3(0., 0.5, 0.), 1.5));
-    let mut a = World::for_mission(air(MissionKind::Rings, AircraftKind::Heli, vec![v3(0., 30., 100.)]));
-    assert!(a.place_in_city());
-    let top = a.cities[0].buildings.iter().map(|b| b.max.y).fold(0.0f32, f32::max);
-    assert!(a.aircraft.as_ref().unwrap().pos.y > top + 20.0 && a.aircraft.as_ref().unwrap().status == Status::Flying);
     let mut none = World::new(1); none.cities.clear();
     assert!(!none.place_in_city());
 }
@@ -264,48 +180,15 @@ fn hull_free(w: &World) -> bool {
     }
     assert!(reached * 10 >= n * 9, "reached the first checkpoint in {reached}/{n} races");
 }
-#[test] fn urban_aircraft_start_above_the_street_and_reach_the_first_ring() {
-    use crate::game::flight::FlightInput;
-    let rings: Vec<Mission> = (0..80u64).flat_map(|ps| roll(ps * 31, 0, 0)).filter(|m| m.urban && m.kind == MissionKind::Rings).collect();
-    assert!(rings.len() >= 20);
-    let mut passed = 0;
-    for m in &rings {
-        let mut w = World::for_mission(m.clone());
-        assert!((w.aircraft.as_ref().unwrap().pos.y - (w.terrain.height(m.start.x, m.start.z) + 3.0)).abs() < 1e-3);
-        let target = m.checkpoints[0];
-        for _ in 0..(40.0 / (1.0 / 60.0)) as usize {
-            let a = *w.aircraft.as_ref().unwrap();
-            let f = a.forward();
-            let fi = FlightInput { yaw: (bearing(f.x, f.z, a.pos, target) * 2.0).clamp(-1.0, 1.0), pitch: 0.35, lift: ((target.y - a.pos.y) * 0.15).clamp(-1.0, 1.0), roll: 0.0 };
-            w.step_with(&Input::default(), &fi, 1.0 / 60.0);
-            if w.air.as_ref().unwrap().next_index() >= 1 { passed += 1; break; }
-            if w.aircraft.as_ref().unwrap().status == crate::game::flight::Status::Crashed { break; }
-        }
-    }
-    assert!(passed * 10 >= rings.len() * 8, "first ring passed in {passed}/{}", rings.len());
-}
-#[test] fn the_sling_cargo_spawns_on_the_roof_pad_and_stays() {
-    let slings: Vec<Mission> = (0..40u64).flat_map(|ps| roll(ps * 7919, 0, 0)).filter(|m| m.kind == MissionKind::Sling).collect();
-    assert!(!slings.is_empty());
-    for m in slings {
-        let mut w = World::for_mission(m.clone());
-        for _ in 0..180 { w.step_with(&Input::default(), &crate::game::flight::FlightInput::default(), 1.0 / 60.0); }
-        let s = w.sling.as_ref().unwrap();
-        assert!((s.pos.y - (m.checkpoints[0].y + 0.3)).abs() < 0.2 && s.vel.len() < 0.2 && !s.attached, "cargo drifted: {:?} vs pad {:?}", s.pos, m.checkpoints[0]);
-    }
-}
 #[test] fn open_missions_still_start_on_the_origin_plateau() {
-    let m = roll(5, 0, 0).into_iter().find(|m| !m.urban && !m.is_air()).unwrap();
+    let m = roll(5, 0, 0).into_iter().find(|m| !m.urban).unwrap();
     let w = World::for_mission(m);
     assert!(w.vehicle.pos.x.abs() < 1e-3 && w.vehicle.pos.z.abs() < 1e-3);
 }
-#[test] fn driving_leaves_tracks_in_the_world_but_not_in_air_missions() {
+#[test] fn driving_leaves_tracks_in_the_world() {
     let mut w = World::new(1);
     for _ in 0..180 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
     assert!(w.tracks.len() > 0);
-    let mut a = World::for_mission(air(MissionKind::Rings, crate::game::flight::AircraftKind::Heli, vec![v3(0., 30., 100.)]));
-    for _ in 0..180 { a.step_with(&Input { throttle: 1.0, ..Default::default() }, &crate::game::flight::FlightInput::default(), 1.0 / 60.0); }
-    assert_eq!(a.tracks.len(), 0);
 }
 #[test] fn the_view_carries_the_tracks() { let mut w = World::new(1); for _ in 0..120 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); } assert_eq!(w.view(1).tracks.len(), w.tracks.len()); }
 #[test] fn place_near_water_puts_the_car_on_dry_ground_facing_the_lake() {
@@ -315,92 +198,6 @@ fn hull_free(w: &World) -> bool {
     assert!(!w.terrain.is_water(p.x, p.z, 0.0));
     let f = w.vehicle.forward(); let (wx, wz) = (p.x + f.x * 22.0, p.z + f.z * 22.0);
     assert!(w.terrain.is_water(wx, wz, 0.5), "no lake 22 m ahead");
-}
-
-mod rescue {
-    use super::*;
-    use crate::game::{airgen::rescue_people, app::{fill_state, STAT_LEN}};
-    fn rescue_world() -> World {
-        let pts = vec![v3(0., 0., 120.), v3(0., 0., 240.), v3(150., 0., 120.)];
-        let mut m = air(MissionKind::Rescue, AircraftKind::Heli, pts);
-        m.difficulty = 2;
-        World::for_mission(m)
-    }
-    fn sit_on(w: &mut World, x: f32, z: f32, secs: f32) {
-        let y = w.terrain.height(x, z) + 0.3;
-        let a = w.aircraft.as_mut().unwrap(); a.pos = v3(x, y, z); a.vel = V3::ZERO;
-        for _ in 0..(secs / (1.0 / 60.0)) as usize { w.step_with(&Input::default(), &FlightInput { yaw: 0.2, ..Default::default() }, 1.0 / 60.0); }
-    }
-    #[test] fn rescue_world_is_a_heli_without_cargo_and_marks_every_stop() {
-        let w = rescue_world();
-        assert!(w.aircraft.is_some() && w.sling.is_none());
-        let m = w.markers();
-        assert_eq!(m.iter().filter(|k| k.kind == MarkerKind::Pad).count(), 3);
-        assert_eq!(m.iter().filter(|k| k.kind == MarkerKind::Beacon).count(), 1);
-        assert!(m.iter().filter(|k| k.kind == MarkerKind::Pad).all(|k| k.radius == GOAL_RADIUS));
-        let ri = w.run_info().unwrap();
-        assert_eq!((ri.total, ri.next), (3, 0));
-    }
-    #[test] fn survivors_stand_around_pending_sites_and_vanish_when_boarded() {
-        let mut w = rescue_world();
-        let people = rescue_people(42, 2);
-        let v = w.view(1).survivors;
-        assert_eq!(v.len() as u32, people.iter().map(|c| *c as u32).sum::<u32>());
-        for p in &v { assert!((p.x - 0.0).hypot(p.z - 120.0) < 5.0 || (p.x - 0.0).hypot(p.z - 240.0) < 5.0); assert!((p.y - w.terrain.height(p.x, p.z)).abs() < 1e-3); }
-        sit_on(&mut w, 0.0, 120.0, 3.3);
-        assert_eq!(w.view(1).survivors.len() as u32, people[1] as u32);
-        assert_eq!(w.markers().iter().filter(|k| k.kind == MarkerKind::Pad).count(), 2);
-    }
-    #[test] fn hud_state_reports_people_aboard_and_boarding_progress() {
-        let mut w = rescue_world(); let mut s = [0.0f32; STAT_LEN];
-        sit_on(&mut w, 0.0, 120.0, 1.5);
-        fill_state(&mut s, &w, 0, 0, 60.0, 4.0, 42, 0);
-        assert_eq!(s[17], 5.0); assert!(s[24] > 0.3 && s[24] < 0.7, "{}", s[24]); assert_eq!(s[23], 0.0);
-        sit_on(&mut w, 0.0, 120.0, 2.0);
-        fill_state(&mut s, &w, 0, 0, 60.0, 4.0, 42, 0);
-        assert_eq!((s[23], s[10], s[11]), (rescue_people(42, 2)[0] as f32, 1.0, 3.0));
-    }
-}
-
-mod rescue_fixes {
-    use super::*;
-    use crate::game::run::Phase;
-    fn world() -> World {
-        let mut m = air(MissionKind::Rescue, AircraftKind::Heli, vec![v3(0., 0., 400.), v3(300., 0., 0.)]);
-        m.difficulty = 1; World::for_mission(m)
-    }
-    #[test] fn a_real_descent_costs_integrity_before_it_becomes_a_crash() {
-        // flying the real aircraft physics: a descent below soft_speed is a landing, and a faster one hurts the passengers
-        let mut hurt = false;
-        for lift in [-0.15f32, -0.25, -0.35, -0.45, -0.55] {
-            let mut w = world();
-            let g = w.terrain.height(0., 0.);
-            w.aircraft.as_mut().unwrap().pos = v3(0., g + 10.0, 0.);
-            for _ in 0..1200 {
-                w.step_with(&Input::default(), &FlightInput { lift, yaw: 0.2, ..Default::default() }, 1.0 / 60.0);
-                if w.aircraft.as_ref().unwrap().status != crate::game::flight::Status::Flying { break; }
-            }
-            let (st, integ) = (w.aircraft.as_ref().unwrap().status, w.run_info().unwrap().integrity);
-            if st == crate::game::flight::Status::Landed && integ < 100.0 { hurt = true; assert!(integ > 0.0); }
-        }
-        assert!(hurt, "no soft landing ever cost integrity");
-    }
-    #[test] fn survivors_disappear_when_the_mission_ends() {
-        let mut w = world();
-        assert!(!w.survivors().is_empty());
-        w.abandon_mission();
-        assert_eq!(w.run_info().unwrap().phase, Phase::Done);
-        assert!(w.survivors().is_empty());
-    }
-    #[test] fn boarding_progress_is_cleared_when_the_run_ends() {
-        let mut w = world();
-        let y = w.terrain.height(0., 400.) + 0.3;
-        w.aircraft.as_mut().unwrap().pos = v3(0., y, 400.);
-        for _ in 0..90 { w.step_with(&Input::default(), &FlightInput { yaw: 0.2, ..Default::default() }, 1.0 / 60.0); }
-        assert!(w.air.as_ref().unwrap().rescue_progress() > 0.0);
-        w.abandon_mission();
-        assert_eq!(w.air.as_ref().unwrap().rescue_progress(), 0.0);
-    }
 }
 
 mod garage_world {
