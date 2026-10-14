@@ -5,8 +5,6 @@ use super::camera_follow::FollowCam;
 use super::carlights::{self, CarLights, Lamps};
 use super::city::City;
 use super::input::Input;
-use super::missions::{Mission, MissionKind, GOAL_RADIUS};
-use super::run::{MissionRun, Outcome, Phase};
 use super::daylight::{daylight, Daylight};
 use super::tracks::Tracks;
 use super::math::{v3, V3};
@@ -23,7 +21,6 @@ pub struct World {
     pub vehicle: Vehicle,
     pub cam: FollowCam,
     pub time: f32,
-    pub mission: Option<MissionRun>,
     pub cities: Vec<City>,
     pub tracks: Tracks,
     /// The car this world is built for (a restart or a placement helper makes the same car again).
@@ -41,7 +38,7 @@ impl World {
         let vehicle = Vehicle::new(car, v3(0.0, terrain.height(0.0, 0.0) + 1.1, 0.0), 0.0);
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
-        World { terrain, vehicle, cam, time: 0.0, mission: None, cities, tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }
+        World { terrain, vehicle, cam, time: 0.0, cities, tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }
     }
 
     /// The garage scene: the car settled on the flat spawn plateau, never driven; `step_garage` orbits the camera.
@@ -83,7 +80,6 @@ impl World {
         for c in &self.cities { c.resolve_hull(&mut self.vehicle.pos, &mut self.vehicle.vel, &mut self.vehicle.omega, self.vehicle.rot); }
         self.tracks.update(&self.vehicle, &self.terrain, dt);
         self.cam.update(&self.vehicle, &self.terrain, dt);
-        if let Some(r) = self.mission.as_mut() { r.update(&self.vehicle, &inp, inp.reset, dt); }
         self.time += dt;
     }
 
@@ -113,29 +109,7 @@ impl World {
     pub fn sun_dir(&self) -> V3 { self.daylight().sun }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)] pub enum MarkerKind { Beacon, Ring, Next }
-#[derive(Clone, Copy, Debug)] pub struct Marker { pub kind: MarkerKind, pub pos: V3, pub radius: f32 }
-
-/// What the HUD, the state array and the recorder read of a run.
-pub struct RunInfo<'a> {
-    pub mission: &'a Mission, pub phase: Phase, pub time: f32, pub integrity: f32,
-    pub next: usize, pub total: usize, pub outcome: Option<Outcome>, pub target: Option<V3>,
-}
-
 impl World {
-    pub fn for_mission(m: Mission) -> World { World::for_mission_with(m, VehicleSpec::offroader()) }
-
-    pub fn for_mission_with(m: Mission, car: VehicleSpec) -> World {
-        let mut w = World::new_with(m.seed, car);
-        // start at the mission start (the origin plateau, or a street in the city) facing the start heading or the first target
-        let pos = v3(m.start.x, w.terrain.height(m.start.x, m.start.z) + 1.1, m.start.z);
-        let yaw = m.start_yaw.unwrap_or_else(|| m.checkpoints.first().map_or(0.0, |t| { let (dx, dz) = (t.x - pos.x, t.z - pos.z); if dx.hypot(dz) > 1.0 { dx.atan2(dz) } else { 0.0 } }));
-        w.vehicle = Vehicle::new(w.car_spec, pos, yaw);
-        w.cam = FollowCam::new(&w.vehicle);
-        w.mission = Some(MissionRun::new(m));
-        w
-    }
-
     /// Puts the player at a street intersection near the centre of the first city. False without a city.
     pub fn place_in_city(&mut self) -> bool {
         let Some(c) = self.cities.first() else { return false };
@@ -182,39 +156,13 @@ impl World {
 
     pub fn player_pos(&self) -> V3 { self.vehicle.pos }
 
-    pub fn abandon_mission(&mut self) {
-        if let Some(r) = self.mission.as_mut() { r.abandon(); }
-    }
-
-    pub fn run_info(&self) -> Option<RunInfo<'_>> {
-        let r = self.mission.as_ref()?;
-        Some(RunInfo { mission: r.mission(), phase: r.phase(), time: r.time(), integrity: r.integrity(), next: r.next_index(),
-            total: r.mission().checkpoints.len(), outcome: r.outcome(), target: r.target() })
-    }
-
-    /// Beacon at the goal; races also show the remaining checkpoints, the next one highlighted. Empty when done.
-    pub fn markers(&self) -> Vec<Marker> {
-        let mk = |kind, pos, radius| Marker { kind, pos, radius };
-        let Some(r) = &self.mission else { return Vec::new() };
-        if r.phase() == Phase::Done { return Vec::new(); }
-        let m = r.mission();
-        let mut out = Vec::new();
-        if m.kind == MissionKind::Race {
-            for (i, p) in m.checkpoints.iter().enumerate() {
-                if i < r.next_index() { continue; }
-                out.push(mk(if i == r.next_index() { MarkerKind::Next } else { MarkerKind::Ring }, *p, GOAL_RADIUS));
-            }
-        }
-        out.push(mk(MarkerKind::Beacon, m.goal, GOAL_RADIUS));
-        out
-    }
 }
 
 /// What a render backend may read; gameplay never touches the GPU.
 pub struct WorldView<'a> {
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
-    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub lights: CarLights, pub lamps: Lamps, pub markers: Vec<Marker>,
+    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub lights: CarLights, pub lamps: Lamps,
     pub time: f32, pub cities: &'a [City], pub tracks: &'a Tracks,
 }
 
@@ -225,7 +173,7 @@ impl World {
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
         let dl = self.daylight();
-        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), markers: self.markers(),
+        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle),
             time: self.time, cities: &self.cities, tracks: &self.tracks }
     }
 }

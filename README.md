@@ -17,14 +17,12 @@ The interface is bilingual (English and Russian, follows the system language); t
 ## Features
 
 - **Game**: off-road free drive on random seeded levels with an arcade car, chase camera and touch or keyboard controls (see [docs/game.md](docs/game.md))
-- **Missions**: a list of random deliveries and checkpoint races with medals, money and a saved profile (see [docs/game.md](docs/game.md))
 - **City**: procedural cities with streets, parks and buildings 4-90 m; solid buildings (see [docs/game.md](docs/game.md))
 - **Garage**: a second car (the Vulpes WRC, a simplified model based on "Peugeot 206 WRC" by vecarz, CC BY-NC-SA 4.0), four upgrades per car and a turntable preview (see [docs/game.md](docs/game.md))
 - **Render modes**: Raster or Hybrid (soft shadows, long hill shadows, ambient occlusion) with an optional automatic fallback (see [docs/game.md](docs/game.md))
 - **Controls**: an on-screen steering wheel (or tilt) with gas and brake pedals for the car, and a settings screen (see [docs/game.md](docs/game.md))
 - **Sound**: procedural engine, rolling, wind and event sounds, no audio files (see [docs/game.md](docs/game.md))
 - **Graphics**: generated textures, vehicles, trees, rocks, grass, a moving sun with clouds, lakes and a detailed city (see [docs/game.md](docs/game.md))
-- **City missions**: urban deliveries and street races (see [docs/game.md](docs/game.md))
 - **Vehicle parameters**: every number of the cars in one file, `rust/vehicles.json` (see [docs/vehicles.md](docs/vehicles.md))
 - **Scenes**: four built in (Classic, Sun room, Materials, Prism with a dispersed rainbow) plus your own JSON files with spheres, boxes, prisms, sun and lamps, mirror, glossy, tinted and dispersive glass (see [docs/scenes.md](docs/scenes.md))
 - **Two modes**: *Hybrid* (one ray per pixel with shadows, global illumination, caustics, reflections and refraction) and

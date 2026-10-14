@@ -18,34 +18,13 @@ pub fn step_budget(acc: &mut f32, dt: f32, max_steps: usize) -> usize {
 
 pub const STAT_LEN: usize = 64;
 
-/// Flat state for the UI. `[0]` fps, `[1]` km/h, `[2]` seed (24-bit), `[3]` frame ms, `[4]` phase (0 free drive, 1 ready,
-/// 2 running, 3 done), `[5]` time, `[6]` time limit, `[7]` integrity, `[8]` distance to the target, `[9]` bearing to the
-/// target (rad, relative to the camera heading, positive = right), `[10]` next checkpoint, `[11]` checkpoint total,
-/// `[12]` result (0 none, 1 passed, 2 failed), `[13]` medal 0..3, `[14]` payout, `[15]` failure (1 time, 2 cargo,
-/// 3 abandoned), `[16]` money, `[17]` mission kind (0 cargo, 1 race), `[18]` run counter
-/// (bumped on every mission start), `[19]`..`[24]` unused (kept zero so the other indices stay put), `[25]` signed forward speed of the car, km/h, `[26]` hybrid render mode active (0/1), `[27]` fell back from hybrid to raster automatically (0/1).
-pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, payout: u32, fps: f32, frame_ms: f32, seed: u64, run: u32) {
-    use crate::game::missions::MissionKind;
-    use crate::game::run::{bearing, Failure, Outcome, Phase};
+/// Flat state for the UI. `[0]` fps, `[1]` km/h, `[2]` seed (24-bit), `[3]` frame ms, `[16]` money, `[25]` signed forward
+/// speed of the car, km/h, `[26]` hybrid render mode active (0/1), `[27]` fell back from hybrid to raster automatically (0/1);
+/// the other slots are zero (kept so the indices stay put).
+pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, fps: f32, frame_ms: f32, seed: u64) {
     *out = [0.0; STAT_LEN];
-    out[0] = fps; out[1] = w.vehicle.vel.len() * 3.6; out[2] = (seed & 0xFF_FFFF) as f32; out[3] = frame_ms; out[16] = money as f32; out[18] = run as f32;
+    out[0] = fps; out[1] = w.vehicle.vel.len() * 3.6; out[2] = (seed & 0xFF_FFFF) as f32; out[3] = frame_ms; out[16] = money as f32;
     out[25] = w.vehicle.speed() * 3.6;   // signed: negative while rolling backwards (the brake pedal reverses below 3 km/h)
-    let Some(r) = w.run_info() else { return };
-    out[4] = match r.phase { Phase::Ready => 1.0, Phase::Running => 2.0, Phase::Done => 3.0 };
-    out[5] = r.time; out[6] = r.mission.time_limit; out[7] = r.integrity;
-    out[10] = r.next as f32; out[11] = r.total as f32;
-    out[17] = match r.mission.kind { MissionKind::Cargo => 0.0, MissionKind::Race => 1.0 };
-    if let Some(t) = r.target {
-        let me = w.player_pos();
-        out[8] = (t - me).len();
-        let h = (w.cam.target - w.cam.pos).norm();
-        out[9] = bearing(h.x, h.z, me, t);
-    }
-    match r.outcome {
-        Some(Outcome::Passed { medal, .. }) => { out[12] = 1.0; out[13] = medal as u8 as f32; out[14] = payout as f32; }
-        Some(Outcome::Failed(f)) => { out[12] = 2.0; out[15] = match f { Failure::TimeUp => 1.0, Failure::CargoDestroyed => 2.0, Failure::Abandoned => 3.0 }; }
-        None => {}
-    }
 }
 
 #[cfg(any(target_os = "android", feature = "desktop"))]
@@ -58,16 +37,15 @@ mod game {
     use std::time::Instant;
 
     use super::{fill_state, step_budget, STAT_LEN, STEP};
-    use crate::game::{input::Input, meta::Profile, missions::{roll, Mission}, run::{Outcome, Phase}, world::World};
+    use crate::game::{input::Input, meta::Profile, world::World};
     use crate::raster::Raster;
 
-    /// World + renderer + fixed-step loop + optional profile and mission list. State layout: see `fill_state`.
+    /// World + renderer + fixed-step loop + optional profile. State layout: see `fill_state`.
     pub struct Game {
         world: World, raster: Raster, pub input: Input,
         acc: f32, last: Instant, fps_n: u32, fps_t: Instant, fps: f32, seed: u64, frame_ms: f32,
         stats: Arc<Mutex<[f32; STAT_LEN]>>,
-        profile: Option<Profile>, profile_path: Option<PathBuf>, missions: Vec<Mission>,
-        current: Option<usize>, paused: bool, recorded: bool, payout: u32, run_id: u32,
+        profile: Option<Profile>, profile_path: Option<PathBuf>, paused: bool,
         director: crate::audio::Director,
         car: crate::game::vehicle::VehicleSpec, garage: bool,
         auto_fallback: bool, monitor: crate::game::rendermode::FallbackMonitor, fell_back: bool,
@@ -78,7 +56,7 @@ mod game {
             let seed = super::level_seed(seed);
             Game { world: World::new(seed), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0, run_id: 0, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::offroader(), garage: false, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false }
+                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::offroader(), garage: false, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
@@ -96,27 +74,17 @@ mod game {
             self.monitor.warm_up(6.0);
             let seed = super::level_seed(seed);
             self.world = World::new_with(seed, self.car); self.seed = seed; self.input = Input::default(); self.acc = 0.0;
-            self.current = None; self.recorded = false; self.payout = 0;
         }
 
-        /// Loads (or creates) the profile at `path` and rolls the current mission list.
-        pub fn with_profile(&mut self, path: PathBuf, fresh_seed: u64) {
-            let p = Profile::load_or_new(&path, fresh_seed);
-            self.missions = roll(p.profile_seed, p.round, p.gold_count());
+        /// Loads (or creates) the profile at `path`; the selected car (with its upgrades) drives in the free-drive world.
+        pub fn with_profile(&mut self, path: PathBuf) {
+            let p = Profile::load_or_new(&path);
             self.car = p.selected_spec();
             self.world = World::new_with(self.seed, self.car);   // the free-drive world made in `new` used the default car
             self.profile = Some(p);
             self.profile_path = Some(path);
         }
 
-        pub fn start_mission(&mut self, index: usize) {
-            self.monitor.warm_up(6.0);
-            let Some(m) = self.missions.get(index).cloned() else { return };
-            self.seed = m.seed;
-            self.world = World::for_mission_with(m, self.car);
-            self.input = Input::default();
-            self.acc = 0.0; self.recorded = false; self.payout = 0; self.current = Some(index); self.paused = false; self.run_id = self.run_id.wrapping_add(1);
-        }
         /// The garage scene (a standing car and an orbiting camera) with the profile's selected car.
         pub fn start_garage_selected(&mut self) {
             let cars = crate::game::vehicle::VehicleSpec::all();
@@ -130,25 +98,12 @@ mod game {
             self.garage = true; self.paused = false;
             self.world = World::garage(*spec);
         }
-        pub fn restart_mission(&mut self) { if let Some(i) = self.current { self.start_mission(i); } }
-        pub fn abort_mission(&mut self) { self.world.abandon_mission(); }
         pub fn set_paused(&mut self, p: bool) { self.paused = p; self.last = Instant::now(); self.acc = 0.0; }
 
         pub fn speed_kmh(&self) -> f32 { self.world.vehicle.vel.len() * 3.6 }
         pub fn fps(&self) -> f32 { self.fps }
         pub fn seed(&self) -> u64 { self.seed }
         pub fn stats(&self) -> [f32; STAT_LEN] { *self.stats.lock().unwrap() }
-
-        /// A passed mission is recorded once (money, best medal, saved); failures are never recorded.
-        fn record_if_done(&mut self) {
-            if self.recorded { return; }
-            let Some(r) = self.world.run_info() else { return };
-            if let (Some(Outcome::Passed { medal, time, .. }), Some(p)) = (r.outcome, self.profile.as_mut()) {
-                self.payout = p.record(r.mission, medal, time);
-                if let Some(path) = &self.profile_path { let _ = p.save(path); }
-                self.recorded = true;
-            } else if r.phase == Phase::Done { self.recorded = true; }
-        }
 
         pub fn frame(&mut self) {
             let now = Instant::now();
@@ -161,7 +116,6 @@ mod game {
                     self.world.step(&self.input, STEP);
                     self.input.reset = false;
                 }
-                self.record_if_done();
             }
             let throttle = self.input.throttle;
             let (params, events) = self.director.update(&self.world, throttle, !self.paused);
@@ -176,7 +130,7 @@ mod game {
                 if !self.paused && self.monitor.update(self.fps, el, self.raster.is_hybrid(), self.auto_fallback) { self.raster.set_hybrid(false); self.fell_back = true; }
             }
             let mut s = [0.0f32; STAT_LEN];
-            fill_state(&mut s, &self.world, self.profile.as_ref().map_or(0, |p| p.money), self.payout, self.fps, self.frame_ms, self.seed, self.run_id);
+            fill_state(&mut s, &self.world, self.profile.as_ref().map_or(0, |p| p.money), self.fps, self.frame_ms, self.seed);
             s[26] = self.raster.is_hybrid() as u8 as f32; s[27] = self.fell_back as u8 as f32;
             *self.stats.lock().unwrap() = s;
         }

@@ -57,8 +57,7 @@ impl Synth {
     pub fn push(&mut self, e: Event) {
         if self.muted { return; }
         let (kind, strength) = match e {
-            Event::Touchdown(s) => (0u8, s), Event::Crash => (1, 1.0), Event::Splash(s) => (2, s), Event::Checkpoint => (3, 1.0),
-            Event::Success => (4, 1.0), Event::Fail => (5, 1.0),
+            Event::Touchdown(s) => (0u8, s), Event::Crash => (1, 1.0), Event::Splash(s) => (2, s),
         };
         let strength = if strength.is_finite() { strength.clamp(0.0, 1.0) } else { 0.0 };
         let slot = self.voices.iter().position(|v| !v.live)
@@ -69,11 +68,6 @@ impl Synth {
     fn voice_sample(v: &mut Voice, noise: f32, rate: f32) -> f32 {
         let dt = 1.0 / rate;
         let t = v.t; v.t += dt;
-        let note = |f: f32, start: f32, len: f32, t: f32| -> f32 {
-            if t < start || t >= start + len { return 0.0; }
-            let l = t - start;
-            (TAU * f * l).sin() * (l * 120.0).min(1.0) * (-(l / len) * 3.0).exp()
-        };
         let (out, end) = match v.kind {
             0 => { // touchdown: falling thump plus a little noise
                 v.phase = frac(v.phase + (45.0 + 35.0 * (-t * 18.0).exp()) * dt);
@@ -81,9 +75,7 @@ impl Synth {
             }
             1 => (v.lp1.run(noise, 0.2) * (-t * 3.5).exp() * 2.4 * (1.0 + 0.3 * (t * 90.0).sin()), t > 1.2),
             2 => { let hi = v.lp1.run(noise, 0.5) - v.lp2.run(noise, 0.05); (hi * (-t * 7.0).exp() * 1.4, t > 0.7) }
-            3 => (note(660.0, 0.0, 0.14, t) + note(880.0, 0.12, 0.28, t), t > 0.45),
-            4 => (note(523.0, 0.0, 0.16, t) + note(659.0, 0.15, 0.16, t) + note(784.0, 0.30, 0.4, t), t > 0.75),
-            _ => (note(330.0, 0.0, 0.24, t) + note(247.0, 0.22, 0.4, t), t > 0.65),
+            _ => (0.0, true),
         };
         if end { v.live = false; }
         out * (0.25 + 0.75 * v.strength).min(1.0) * 0.55

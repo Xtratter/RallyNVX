@@ -1,10 +1,10 @@
 //! Turns the game world into `AudioParams` and one-shot `Event`s by comparing each frame with the previous one.
 use super::{AudioParams, Event, Machine, Surface};
-use crate::game::{run::{Outcome, Phase}, world::World};
+use crate::game::world::World;
 
 pub struct Director {
     started: bool, time: f32, seed: u64,
-    grounded: bool, wet: bool, next: usize, reported: bool,
+    grounded: bool, wet: bool,
     hspeed: f32, vy: f32, air_time: f32, quiet_until: f32,
 }
 
@@ -12,7 +12,7 @@ impl Default for Director { fn default() -> Self { Director::new() } }
 
 impl Director {
     pub fn new() -> Director {
-        Director { started: false, time: 0.0, seed: 0, grounded: true, wet: false, next: 0, reported: false, hspeed: 0.0, vy: 0.0, air_time: 0.0, quiet_until: 0.0 }
+        Director { started: false, time: 0.0, seed: 0, grounded: true, wet: false, hspeed: 0.0, vy: 0.0, air_time: 0.0, quiet_until: 0.0 }
     }
 
     /// `throttle` is the player's throttle (-1..1), `active` is false while paused. Never emits events when inactive
@@ -23,8 +23,6 @@ impl Director {
         let fresh = !self.started || w.terrain.seed != self.seed || w.time < self.time - 1e-4;
         let dt = if fresh { 0.0 } else { (w.time - self.time).clamp(0.0, 0.5) };
         self.started = true; self.seed = w.terrain.seed; self.time = w.time;
-        let info = w.run_info();
-        let (next, phase, outcome) = info.as_ref().map_or((0, Phase::Ready, None), |r| (r.next, r.phase, r.outcome));
         let mut p = AudioParams { active, ..Default::default() };
         let v = &w.vehicle;
         let speed = v.vel.len();
@@ -48,15 +46,9 @@ impl Director {
             if !self.grounded && grounded && self.vy < -3.0 && self.air_time >= 0.3 { ev.push(Event::Touchdown((self.vy.abs() / 10.0).clamp(0.0, 1.0))); }
             if !self.wet && wet && hspeed > 2.0 { ev.push(Event::Splash((hspeed / 20.0).clamp(0.0, 1.0))); }
             if self.hspeed - hspeed > 6.0 { ev.push(Event::Crash); }
-            if next > self.next && phase == Phase::Running { ev.push(Event::Checkpoint); }
-            if let (Some(o), false) = (outcome, self.reported) {
-                ev.push(match o { Outcome::Passed { .. } => Event::Success, Outcome::Failed(_) => Event::Fail });
-            }
         }
         if grounded { self.air_time = 0.0; }
-        if outcome.is_some() { p.machine = Machine::None; }   // the engine stops under the result panel
-        if fresh { self.reported = outcome.is_some(); } else if outcome.is_some() { self.reported = true; }
-        self.grounded = grounded; self.wet = wet; self.next = next; self.hspeed = hspeed;
+        self.grounded = grounded; self.wet = wet; self.hspeed = hspeed;
         // keep the last airborne vertical speed for the touchdown strength
         if !grounded { self.vy = vy; } else if !fresh && grounded && self.vy > -0.001 { self.vy = vy; }
         (p, ev)

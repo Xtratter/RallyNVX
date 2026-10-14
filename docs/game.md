@@ -25,21 +25,11 @@ On Android the start screen has Quality: Low (0.5x), Medium (0.7x) and High (1.0
 
 ## Missions
 
-The main menu opens a list of six random missions: three **deliveries** and three **checkpoint races**, two of them urban. Tap a card for the briefing, then Start. The goal is a tall yellow pillar, race checkpoints are rings (the next one is pink); the HUD shows the timer, an arrow with the distance to the target and, for deliveries, the cargo condition.
-
-- **Time limit**: about 1.6 x the path length at 12 m/s plus 20 s. The clock starts with the first throttle.
-- **Cargo** (deliveries only, 100%): a hard hit (horizontal speed change above 6 m/s in a step), a hard landing after a jump, a rollover (8% per second) and the Reset button (5%) damage it; at 0% the mission fails.
-- **Medals**: Gold = within 60% of the time limit and cargo at least 90%; Silver = within 80% and at least 60%; otherwise Bronze. Races use time only.
-- **Reward** = base x 1 / 1.5 / 2.2 for Bronze / Silver / Gold. Replaying a mission pays the difference when you improve the medal, otherwise half.
-
-**Urban missions** (marked "City" on the card) take place in the level's city and start on a street at its west edge. The delivery goes through the streets (buildings are solid), the street race follows the turning intersections.
-
-- **Refresh** rolls a new list. Progress is saved in `files/profile.json` (desktop: `~/.config/raytrace/profile.json`); a damaged file is kept as `profile.json.bak`.
-- Desktop: `RAYTRACE_MISSION=0..5 raytrace-desktop --game` starts a mission, `M` abandons it.
+The delivery and race missions were removed in 2.14.0: the game is a free drive for now, and a rally mode (special stages with times) is planned. The profile (`files/profile.json`, desktop: none) keeps the money and the garage; a damaged file is kept as `profile.json.bak`.
 
 ## Garage
 
-The main menu has a **Garage**: a turntable view of the car, arrows to switch between cars and a panel with the money, the **Buy / Select** button and four upgrades per car: Engine (+8 / +16 / +25 % thrust, a little more top speed), Tyres (+5 / +10 / +15 % grip), Suspension (+10 / +20 / +30 % stiffness and damping) and Brakes (+20 / +40 / +60 %). A level costs 1x, 2x and 4x the car's upgrade price (300 for the off-roader, 750 for the Peugeot). Two cars: the off-roader (yours from the start) and the **Vulpes WRC** (3000): a light rally hatchback (a simplified model based on "Peugeot 206 WRC" by vecarz, CC BY-NC-SA 4.0, see `rust/assets/ASSET-LICENSE.md`), quicker and grippier but stiffer over bumps. The car you select, with its upgrades, is used in free drive and in every mission. Cars and prices live in `vehicles.json` (see docs/vehicles.md).
+The main menu has a **Garage**: a turntable view of the car, arrows to switch between cars and a panel with the money, the **Buy / Select** button and four upgrades per car: Engine (+8 / +16 / +25 % thrust, a little more top speed), Tyres (+5 / +10 / +15 % grip), Suspension (+10 / +20 / +30 % stiffness and damping) and Brakes (+20 / +40 / +60 %). A level costs 1x, 2x and 4x the car's upgrade price (300 for the off-roader, 750 for the Vulpes), but everything in the garage is free for now: nothing earns money until the rally mode, so the garage shows "Free" and purchases leave the balance alone. Two cars: the off-roader (yours from the start) and the **Vulpes WRC** (3000, free for now): a light rally hatchback (a simplified model based on "Peugeot 206 WRC" by vecarz, CC BY-NC-SA 4.0, see `rust/assets/ASSET-LICENSE.md`), quicker and grippier but stiffer over bumps. The car you select, with its upgrades, is used in free drive and in every mission. Cars and prices live in `vehicles.json` (see docs/vehicles.md).
 
 ## Render modes
 
@@ -63,7 +53,7 @@ The terrain is textured with generated materials (grass, dirt, sand, rock) blend
 
 ## Limits of this version
 
-No garage or NPC orders yet, and only the raster and hybrid renderers. The ray-traced Scenes mode is unchanged.
+No rally mode and no NPC orders yet, and only the raster and hybrid renderers. The ray-traced Scenes mode is unchanged.
 
 ---
 
@@ -92,21 +82,11 @@ No garage or NPC orders yet, and only the raster and hybrid renderers. The ray-t
 
 ## Миссии
 
-Главное меню открывает список из шести случайных миссий: три **доставки** и три **гонки по чекпойнтам**, две из них городские. Нажмите на карточку, чтобы увидеть брифинг, затем «Старт». Цель — высокий жёлтый столб, чекпойнты гонки — кольца (следующий розовый); в HUD таймер, стрелка с расстоянием до цели и, для доставок, состояние груза.
-
-- **Лимит времени**: примерно 1,6 x длина пути при 12 м/с плюс 20 с. Время идёт с первого нажатия газа.
-- **Груз** (только доставки, 100%): портят сильный удар (изменение горизонтальной скорости больше 6 м/с за шаг), жёсткая посадка после прыжка, переворот (8% в секунду) и кнопка «Сброс» (5%); при 0% миссия провалена.
-- **Медали**: золото — уложились в 60% лимита и груз не менее 90%; серебро — в 80% и не менее 60%; иначе бронза. В гонках только время.
-- **Награда** = база x 1 / 1,5 / 2,2 за бронзу / серебро / золото. Повторное прохождение платит разницу при улучшении медали, иначе половину.
-
-**Городские миссии** (на карточке пометка «Город») проходят в городе уровня и стартуют на улице у его западного края. Доставка идёт по улицам (здания твёрдые), гонка проходит поворотные перекрёстки.
-
-- **Обновить** создаёт новый список. Прогресс хранится в `files/profile.json` (десктоп: `~/.config/raytrace/profile.json`); повреждённый файл сохраняется как `profile.json.bak`.
-- Десктоп: `RAYTRACE_MISSION=0..5 raytrace-desktop --game` запускает миссию, `M` прерывает.
+Миссии «доставка» и «гонка» убраны в 2.14.0: пока игра — это свободная езда, а ралли-режим (спецучастки с временем) в планах. Профиль (`files/profile.json`) хранит деньги и гараж; повреждённый файл сохраняется как `profile.json.bak`.
 
 ## Гараж
 
-В главном меню есть **Гараж**: вид машины на поворотном круге, стрелки выбора машины и панель с деньгами, кнопкой **Купить / Выбрать** и четырьмя улучшениями для каждой машины: двигатель (+8 / +16 / +25 % тяги, чуть больше максимальной скорости), шины (+5 / +10 / +15 % сцепления), подвеска (+10 / +20 / +30 % жёсткости и демпфирования) и тормоза (+20 / +40 / +60 %). Уровень стоит 1x, 2x и 4x от цены улучшения машины (300 у внедорожника, 750 у Peugeot). Две машины: внедорожник (твой с самого начала) и **Vulpes WRC** (3000): лёгкий раллийный хэтчбек (упрощённая модель по «Peugeot 206 WRC» от vecarz, CC BY-NC-SA 4.0, см. `rust/assets/ASSET-LICENSE.md`), быстрее и цепче, но жёстче на кочках. Выбранная машина с её улучшениями используется в свободной езде и во всех миссиях. Машины и цены лежат в `vehicles.json` (см. docs/vehicles.md).
+В главном меню есть **Гараж**: вид машины на поворотном круге, стрелки выбора машины и панель с деньгами, кнопкой **Купить / Выбрать** и четырьмя улучшениями для каждой машины: двигатель (+8 / +16 / +25 % тяги, чуть больше максимальной скорости), шины (+5 / +10 / +15 % сцепления), подвеска (+10 / +20 / +30 % жёсткости и демпфирования) и тормоза (+20 / +40 / +60 %). Уровень стоит 1x, 2x и 4x от цены улучшения машины (300 у внедорожника, 750 у Vulpes), но в гараже всё пока бесплатно: деньги зарабатывать нечем до ралли-режима, поэтому гараж показывает «Бесплатно», а покупки не трогают баланс. Две машины: внедорожник (твой с самого начала) и **Vulpes WRC** (3000, пока бесплатно): лёгкий раллийный хэтчбек (упрощённая модель по «Peugeot 206 WRC» от vecarz, CC BY-NC-SA 4.0, см. `rust/assets/ASSET-LICENSE.md`), быстрее и цепче, но жёстче на кочках. Выбранная машина с её улучшениями используется в свободной езде и во всех миссиях. Машины и цены лежат в `vehicles.json` (см. docs/vehicles.md).
 
 ## Режимы рендера
 

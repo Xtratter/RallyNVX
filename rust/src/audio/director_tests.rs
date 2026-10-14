@@ -1,15 +1,7 @@
 use super::*;
-use crate::game::{input::Input, math::{v3, V3}, missions::{Mission, MissionKind}, terrain::Terrain, world::World};
+use crate::game::{input::Input, math::v3, terrain::Terrain, world::World};
 
 fn settled() -> World { let mut w = World::new(7); for _ in 0..120 { w.step(&Input::default(), 1.0 / 60.0); } w }
-fn race_mission(pts: Vec<crate::game::math::V3>) -> Mission {
-    let goal = *pts.last().unwrap();
-    Mission { kind: MissionKind::Race, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, urban: false, start_yaw: None }
-}
-fn race_world() -> World {
-    let t = Terrain::new(42);
-    World::for_mission(race_mission(vec![v3(0., t.height(0., 100.), 100.), v3(0., t.height(0., 200.), 200.)]))
-}
 #[test] fn free_drive_at_rest_is_quiet_and_driving_raises_the_revs() {
     let mut w = settled(); let mut d = Director::new();
     let (p, ev) = d.update(&w, 0.0, true);
@@ -47,23 +39,6 @@ fn race_world() -> World {
     assert!(matches!(ev.as_slice(), [Event::Splash(s)] if *s > 0.3), "{ev:?}");
     assert!(d.update(&w, 1.0, true).1.is_empty());
 }
-#[test] fn mission_progress_gives_checkpoint_and_one_result_event() {
-    let mut w = race_world(); let mut d = Director::new();
-    let go = Input { throttle: 1.0, ..Default::default() };
-    w.step(&go, 1.0 / 60.0);
-    d.update(&w, 0.0, true);
-    let mut ev_all = Vec::new();
-    for z in [100.0f32, 200.0] {
-        w.vehicle.pos = v3(0., w.terrain.height(0., z) + 1.1, z); w.vehicle.vel = V3::ZERO;
-        w.step(&go, 1e-4); ev_all.extend(d.update(&w, 0.0, true).1);
-    }
-    assert_eq!(ev_all.iter().filter(|e| **e == Event::Checkpoint).count(), 1, "{ev_all:?}");
-    assert_eq!(ev_all.iter().filter(|e| **e == Event::Success).count(), 1, "{ev_all:?}");
-    assert!(d.update(&w, 0.0, true).1.is_empty(), "the result is reported once");
-    let mut w = race_world(); let mut d = Director::new(); d.update(&w, 0.0, true);
-    w.abandon_mission();
-    assert_eq!(d.update(&w, 0.0, true).1, vec![Event::Fail]);
-}
 #[test] fn paused_is_inactive_without_events_and_a_new_world_is_silent() {
     let mut w = settled(); let mut d = Director::new();
     d.update(&w, 0.0, true);
@@ -92,15 +67,11 @@ fn race_world() -> World {
     w.time += 1.0 / 60.0; w.vehicle.contacts = 4;
     assert!(d.update(&w, 1.0, true).1.is_empty(), "no real jump, no thump");
 }
-#[test] fn a_real_jump_still_thumps_and_the_engine_stops_after_the_result() {
+#[test] fn a_real_jump_still_thumps_and_the_engine_keeps_running() {
     let mut w = settled(); let mut d = Director::new();
     d.update(&w, 0.0, true);
     w.time += 0.016; w.vehicle.contacts = 0; w.vehicle.vel.y = -7.0; d.update(&w, 0.0, true);
     w.time += 0.4; d.update(&w, 0.0, true);
     w.time += 0.016; w.vehicle.contacts = 4;
     assert!(matches!(d.update(&w, 0.0, true).1.as_slice(), [Event::Touchdown(_)]));
-    let mut w = race_world(); let mut d = Director::new(); d.update(&w, 0.0, true);
-    w.abandon_mission();
-    let (p, ev) = d.update(&w, 0.0, true);
-    assert_eq!((p.machine, ev), (Machine::None, vec![Event::Fail]));
 }

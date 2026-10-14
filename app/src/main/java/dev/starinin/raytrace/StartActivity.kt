@@ -11,7 +11,7 @@ import io.github.xtratter.uikit.M3
 import io.github.xtratter.uikit.M3Widgets
 import java.io.File
 
-/** Main menu: missions, free drive, scene viewer, quality. */
+/** Main menu: free drive, scene viewer, garage, settings. */
 class StartActivity : Activity() {
     private lateinit var money: TextView
     private val profile get() = File(filesDir, "profile.json").path
@@ -32,10 +32,7 @@ class StartActivity : Activity() {
         money = TextView(this).apply { textSize = 16f; gravity = Gravity.CENTER; setTextColor(M3.TEXT) }
         col.addView(money)
         fun add(v: android.view.View) = col.addView(v, LinearLayout.LayoutParams(px(280f), px(54f)).apply { topMargin = px(14f) })
-        add(M3Widgets.button(this, t("Missions", "Миссии"), M3Widgets.ButtonKind.FILLED) {
-            startActivity(Intent(this, MissionsActivity::class.java))
-        })
-        add(M3Widgets.button(this, t("Free drive", "Свободная езда"), M3Widgets.ButtonKind.TONAL) {
+        add(M3Widgets.button(this, t("Free drive", "Свободная езда"), M3Widgets.ButtonKind.FILLED) {
             startActivity(Intent(this, GameActivity::class.java).putExtra("seed", System.nanoTime() and 0xFFFFFFL).putExtra("profile", profile))
         })
         add(M3Widgets.button(this, t("Scenes", "Сцены"), M3Widgets.ButtonKind.TONAL) {
@@ -55,8 +52,7 @@ class StartActivity : Activity() {
     override fun onResume() { super.onResume(); refresh() }
 
     private fun refresh() {
-        val info = Native.missionsInfo(profile, System.nanoTime() and 0xFFFFFFL, false)
-        money.text = t("Money: ", "Деньги: ") + info[0].toInt()
+        money.visibility = android.view.View.GONE   // nothing earns money until the rally career (the garage is free for now)
     }
 }
 

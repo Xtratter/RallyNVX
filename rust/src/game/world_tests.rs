@@ -42,55 +42,6 @@ use crate::game::math::Q;
     assert!(!v.props.is_empty());
     assert!(v.sun.len() > 0.99);
 }
-use crate::game::missions::{Mission, MissionKind};
-fn mk(kind: MissionKind, pts: Vec<V3>) -> Mission {
-    let goal = *pts.last().unwrap();
-    Mission { kind, seed: 42, difficulty: 1, start: v3(0., 0., 0.), goal, checkpoints: pts, length_m: 300.0, time_limit: 100.0, reward_base: 100.0, urban: false, start_yaw: None }
-}
-#[test] fn for_mission_uses_the_mission_seed_and_starts_ready() {
-    let w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
-    assert_eq!(w.terrain.seed, 42);
-    assert!(w.vehicle.up().y > 0.99);
-    assert_eq!(w.mission.as_ref().unwrap().phase(), crate::game::run::Phase::Ready);
-}
-#[test] fn world_step_feeds_the_run() {
-    let mut w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
-    for _ in 0..30 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
-    assert!(w.mission.as_ref().unwrap().time() > 0.3);
-}
-#[test] fn cargo_markers_are_one_beacon() {
-    let w = World::for_mission(mk(MissionKind::Cargo, vec![v3(10., 2., 300.)]));
-    let m = w.markers();
-    assert_eq!(m.len(), 1);
-    assert_eq!((m[0].kind, m[0].pos), (MarkerKind::Beacon, v3(10., 2., 300.)));
-}
-#[test] fn race_markers_highlight_the_next_checkpoint_and_drop_passed_ones() {
-    let mut w = World::for_mission(mk(MissionKind::Race, vec![v3(0., 0., 100.), v3(0., 0., 200.), v3(0., 0., 300.)]));
-    let kinds = |w: &World| w.markers().iter().map(|m| m.kind).collect::<Vec<_>>();
-    assert_eq!(kinds(&w), vec![MarkerKind::Next, MarkerKind::Ring, MarkerKind::Ring, MarkerKind::Beacon]);
-    w.vehicle.pos = v3(0., 0.9, 100.0);
-    w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0);
-    assert_eq!(kinds(&w), vec![MarkerKind::Next, MarkerKind::Ring, MarkerKind::Beacon]);
-}
-#[test] fn no_markers_without_a_mission_or_when_done() {
-    assert!(World::new(1).markers().is_empty());
-    let mut w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
-    w.mission.as_mut().unwrap().abandon();
-    assert!(w.markers().is_empty());
-}
-#[test] fn view_carries_the_markers() {
-    let w = World::for_mission(mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]));
-    assert_eq!(w.view(1).markers.len(), 1);
-}
-#[test] fn mission_starts_facing_the_first_target_with_the_camera_behind() {
-    let w = World::for_mission(mk(MissionKind::Race, vec![v3(300., 0., -200.), v3(600., 0., -400.)]));
-    let want = v3(300., 0., -200.).norm();
-    let f = w.vehicle.forward();
-    assert!(f.x * want.x + f.z * want.z > 0.999, "forward {f:?}");
-    assert!(w.vehicle.up().y > 0.99);
-    let to_cam = (w.cam.pos - w.vehicle.pos).norm();
-    assert!(to_cam.x * f.x + to_cam.z * f.z < -0.9, "camera must start behind the car");
-}
 use crate::game::city::{Building, City, CitySite};
 fn walled_world() -> World {
     let mut w = World::new(1);
@@ -148,43 +99,6 @@ fn walled_world() -> World {
     let mut none = World::new(1); none.cities.clear();
     assert!(!none.place_in_city());
 }
-use crate::game::{missions::roll, run::bearing};
-fn urban_missions(kind: MissionKind, n: u64) -> Vec<Mission> {
-    (0..n).flat_map(|ps| roll(ps * 7919, 0, 0)).filter(|m| m.urban && m.kind == kind).collect()
-}
-fn hull_free(w: &World) -> bool {
-    let v = &w.vehicle;
-    [-1.4f32, 0.0, 1.4].iter().all(|z| { let c = v.pos + v.rot.rotate(v3(0.0, 0.5, *z)); w.cities.iter().all(|ct| ct.push_out(c, 1.0).is_none()) })
-}
-#[test] fn urban_cars_start_on_the_street_outside_buildings_facing_east() {
-    for m in urban_missions(MissionKind::Cargo, 40).into_iter().chain(urban_missions(MissionKind::Race, 40)) {
-        let w = World::for_mission(m.clone());
-        assert!((w.vehicle.pos.x - m.start.x).abs() < 1e-3 && (w.vehicle.pos.z - m.start.z).abs() < 1e-3);
-        assert!(w.vehicle.forward().x > 0.99, "east: {:?}", w.vehicle.forward());
-        assert!(hull_free(&w), "the hull overlaps a building at the start");
-    }
-}
-#[test] fn a_simple_autopilot_reaches_the_first_urban_race_checkpoint_along_the_street() {
-    let mut reached = 0; let races = urban_missions(MissionKind::Race, 60);
-    assert!(races.len() >= 30);
-    let n = races.len();
-    for m in races {
-        let mut w = World::for_mission(m.clone());
-        let target = m.checkpoints[0];
-        for _ in 0..(40.0 / (1.0 / 60.0)) as usize {
-            let f = w.vehicle.forward();
-            let steer = (bearing(f.x, f.z, w.vehicle.pos, target) * 2.0).clamp(-1.0, 1.0);
-            w.step(&Input { throttle: 0.5, steer, ..Default::default() }, 1.0 / 60.0);
-            if (w.vehicle.pos - target).len() <= 6.0 { reached += 1; break; }
-        }
-    }
-    assert!(reached * 10 >= n * 9, "reached the first checkpoint in {reached}/{n} races");
-}
-#[test] fn open_missions_still_start_on_the_origin_plateau() {
-    let m = roll(5, 0, 0).into_iter().find(|m| !m.urban).unwrap();
-    let w = World::for_mission(m);
-    assert!(w.vehicle.pos.x.abs() < 1e-3 && w.vehicle.pos.z.abs() < 1e-3);
-}
 #[test] fn driving_leaves_tracks_in_the_world() {
     let mut w = World::new(1);
     for _ in 0..180 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
@@ -210,10 +124,7 @@ mod garage_world {
         w.place_near_city(); assert_eq!(w.vehicle.spec.mass, 1230.0);
         w.place_in_city(); assert_eq!(w.vehicle.spec.mass, 1230.0);
         w.place_near_water(); assert_eq!(w.vehicle.spec.mass, 1230.0);
-        let m = mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]);
-        assert_eq!(World::for_mission_with(m.clone(), peugeot()).vehicle.spec.mass, 1230.0);
-        assert_eq!(World::for_mission(m).vehicle.spec.mass, 1500.0, "the plain constructors keep the off-roader");
-        assert_eq!(World::new(7).vehicle.spec.mass, 1500.0);
+        assert_eq!(World::new(7).vehicle.spec.mass, 1500.0, "the plain constructor keeps the off-roader");
     }
     #[test] fn the_garage_world_has_a_still_car_and_an_orbiting_camera() {
         let mut w = World::garage(peugeot());

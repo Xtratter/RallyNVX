@@ -18,7 +18,7 @@ fn run(s: &mut Synth, n: f32) -> Vec<f32> { let mut v = vec![0.0; secs(n)]; s.re
         for _ in 0..50 {
             s.set_params(&AudioParams { machine, rpm: r() * 1.4 - 0.2, load: r(), roll: r(), surface: if r() > 0.5 { Surface::Water } else { Surface::Ground }, slip: r(), wind: r(), active: true });
             if r() > 0.5 { s.push(Event::Crash); }
-            if r() > 0.5 { s.push(Event::Success); }
+            if r() > 0.5 { s.push(Event::Splash(r())); }
             for x in run(&mut s, 0.2) { assert!(x.is_finite() && x.abs() <= 1.0, "{machine:?}: {x}"); }
         }
     }
@@ -48,15 +48,15 @@ fn run(s: &mut Synth, n: f32) -> Vec<f32> { let mut v = vec![0.0; secs(n)]; s.re
 #[test] fn events_sound_then_decay_and_the_pool_is_capped() {
     let mut s = Synth::new(); s.set_params(&AudioParams { active: true, ..Default::default() });
     run(&mut s, 0.1);
-    s.push(Event::Checkpoint);
+    s.push(Event::Touchdown(1.0));
     let b = run(&mut s, 0.12);
-    assert!(power(&b, 660.0) > 20.0 * power(&b, 1500.0), "{} {}", power(&b, 660.0), power(&b, 1500.0));
+    assert!(b.iter().fold(0.0f32, |m, x| m.max(x.abs())) > 0.02, "a touchdown thump is audible");
     run(&mut s, 1.0);
     assert_eq!(s.voices(), 0);
     assert!(run(&mut s, 0.1).iter().all(|x| x.abs() < 1e-6));
     for _ in 0..20 { s.push(Event::Crash); assert!(s.voices() <= 8); }
     for x in run(&mut s, 0.5) { assert!(x.abs() <= 1.0); }
-    s.set_muted(true); s.push(Event::Fail); assert!(s.voices() <= 8);
+    s.set_muted(true); s.push(Event::Crash); assert!(s.voices() <= 8);
 }
 #[test] fn rendering_is_deterministic_and_i16_render_matches() {
     let go = || { let mut s = Synth::new(); s.set_params(&car(0.4)); s.push(Event::Touchdown(0.7)); let mut v = vec![0i16; 4000]; s.render(&mut v); v };
@@ -87,7 +87,7 @@ fn rms(v: &[f32]) -> f32 { (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f3
     assert!(power(&buf, 3.0 * f0) > 0.5 * power(&buf, f0), "the 3rd harmonic must carry weight for small speakers: {} vs {}", power(&buf, 3.0 * f0), power(&buf, f0));
 }
 #[test] fn silence_clears_voices_and_the_target() {
-    let mut s = Synth::new(); s.set_params(&car(0.7)); s.push(Event::Success); run(&mut s, 0.1);
+    let mut s = Synth::new(); s.set_params(&car(0.7)); s.push(Event::Crash); run(&mut s, 0.1);
     s.silence();
     assert_eq!(s.voices(), 0);
     run(&mut s, 0.2);

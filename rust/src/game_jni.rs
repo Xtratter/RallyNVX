@@ -33,7 +33,7 @@ mod android {
     use crate::game::{app::{Game, STAT_LEN}, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Restart, Abort, Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
+    enum GCmd { Input(Input), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -53,7 +53,7 @@ mod android {
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_dev_starinin_raytrace_Native_gameStart(mut env: JNIEnv, _c: JClass, surface: JObject, w: jint, h: jint, seed: jlong, profile: jni::objects::JString, mission: jint) {
+    pub extern "system" fn Java_dev_starinin_raytrace_Native_gameStart(mut env: JNIEnv, _c: JClass, surface: JObject, w: jint, h: jint, seed: jlong, profile: jni::objects::JString, garage: jboolean) {
         crate::init_logger();
         stop_engine();
         let win = unsafe { NativeWindow::from_surface(env.get_raw() as *mut _, surface.as_raw() as *mut _) };
@@ -68,11 +68,8 @@ mod android {
                 log::info!("game thread: creating renderer");
                 let raster = Raster::new(win, w, h);
                 let mut g = Game::new(raster, seed as u64, st);
-                if !profile_path.is_empty() {
-                    g.with_profile(std::path::PathBuf::from(&profile_path), seed as u64);
-                    if mission >= 0 { g.start_mission(mission as usize); }
-                }
-                if mission == -2 { g.start_garage_selected(); }   // the garage scene
+                if !profile_path.is_empty() { g.with_profile(std::path::PathBuf::from(&profile_path)); }
+                if garage != 0 { g.start_garage_selected(); }   // the garage scene
                 'run: loop {
                     loop {
                         match rx.try_recv() {
@@ -87,8 +84,6 @@ mod android {
                             Ok(GCmd::AutoFallback(b)) => g.set_auto_fallback(b),
                             Ok(GCmd::GarageCar(i)) => g.set_garage_car(i),
                             Ok(GCmd::InCity(m)) => { if m == 3 { g.place_near_water(); } else if m == 2 { g.place_in_city(); } else { g.place_near_city(); } }
-                            Ok(GCmd::Restart) => g.restart_mission(),
-                            Ok(GCmd::Abort) => g.abort_mission(),
                             Err(TryRecvError::Empty) => break,
                             Err(TryRecvError::Disconnected) => break 'run,
                         }
@@ -124,9 +119,9 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameAutoFallback(_e: JNIEnv, _c: JClass, on: jboolean) { send(GCmd::AutoFallback(on != 0)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameGarageCar(_e: JNIEnv, _c: JClass, i: jint) { send(GCmd::GarageCar(i)); }
     #[no_mangle]
-    pub extern "system" fn Java_dev_starinin_raytrace_Native_garageInfo(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, fresh: jlong) -> jfloatArray {
+    pub extern "system" fn Java_dev_starinin_raytrace_Native_garageInfo(mut env: JNIEnv, _c: JClass, path: jni::objects::JString) -> jfloatArray {
         let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
-        let v = crate::game::api::garage_info(std::path::Path::new(&p), fresh as u64);
+        let v = crate::game::api::garage_info(std::path::Path::new(&p));
         let arr = env.new_float_array(v.len() as i32).unwrap();
         env.set_float_array_region(&arr, 0, &v).unwrap();
         arr.into_raw()
@@ -147,16 +142,6 @@ mod android {
         crate::game::api::garage_buy_upgrade(std::path::Path::new(&p), i.max(0) as usize, up.max(0) as usize) as jboolean
     }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gamePause(_e: JNIEnv, _c: JClass, p: jboolean) { send(GCmd::Pause(p != 0)); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameRestart(_e: JNIEnv, _c: JClass) { send(GCmd::Restart); }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameAbort(_e: JNIEnv, _c: JClass) { send(GCmd::Abort); }
-    #[no_mangle]
-    pub extern "system" fn Java_dev_starinin_raytrace_Native_missionsInfo(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, fresh: jlong, refresh: jboolean) -> jfloatArray {
-        let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
-        let v = crate::game::api::menu_info(std::path::Path::new(&p), fresh as u64, refresh != 0);
-        let arr = env.new_float_array(v.len() as i32).unwrap();
-        env.set_float_array_region(&arr, 0, &v).unwrap();
-        arr.into_raw()
-    }
     /// Audio thread: fills `buf` (PCM16 mono, 44.1 kHz) with the next samples. Never panics.
     #[no_mangle]
     pub extern "system" fn Java_dev_starinin_raytrace_Native_audioRender(env: JNIEnv, _c: JClass, buf: jni::objects::JShortArray) {

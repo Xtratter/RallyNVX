@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.14.0 - free drive only
+
+- Removed: the delivery and race missions (the mission list, city routes, cargo, medals, timer, target arrow, result screen) and the Missions menu. The main menu is now Free drive, Scenes, Garage, Settings. A rally mode (special stages with times) will come back as an option, free drive stays
+- Changed: while nothing earns money, the garage is free (purchases show "Free" and leave the balance alone); the profile keeps the money and the garage, old files with mission results still load (the results are ignored)
+- Removed: the mission sounds (checkpoint, success, failure) and the mission HUD
+
 ## 2.13.0 - day and night, car lights
 
 - Added: a full day-night cycle (a day is 12 minutes): the sun and the moon travel a full circle; sunrise and sunset colour the sky, the night is dark but passable by moonlight; one light source switches from the sun to the moon with no shadow jumps; a level always starts by day

@@ -17,7 +17,7 @@ import io.github.xtratter.uikit.M3Widgets
 import java.io.File
 
 /**
- * The garage: the engine shows the chosen car on a turntable (garage scene, mission = -2); a panel on the right buys,
+ * The garage: the engine shows the chosen car on a turntable (garage scene); a panel on the right buys,
  * selects and upgrades cars. Every action goes through the profile file and the screen is rebuilt from `garageInfo`.
  */
 class GarageActivity : Activity(), SurfaceHolder.Callback {
@@ -53,7 +53,7 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
         setContentView(root)
     }
 
-    private fun info(): GarageMath.Info? = GarageMath.parse(Native.garageInfo(profile, System.nanoTime() and 0xFFFFFFL))
+    private fun info(): GarageMath.Info? = GarageMath.parse(Native.garageInfo(profile))
 
     /** Rebuilds the panel from the profile file. */
     private fun refresh() {
@@ -62,6 +62,7 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
         val dp = resources.displayMetrics.density
         fun px(v: Float) = (v * dp).toInt()
         money.text = t("Money: ", "Деньги: ") + GarageMath.price(inf.money)
+        money.visibility = if (inf.cars.all { it.price == 0 && it.upgradeCost == 0 }) View.GONE else View.VISIBLE   // everything is free for now
         panel.removeAllViews()
         val car = inf.cars[shown]
         panel.addView(TextView(this).apply { text = carName(shown); textSize = 22f; typeface = M3.medium; gravity = Gravity.CENTER; setTextColor(M3.TEXT) })
@@ -72,7 +73,7 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
         panel.addView(nav, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(8f) })
         // buy / select
         val action = when {
-            !car.owned -> M3Widgets.button(this, t("Buy", "Купить") + " — " + GarageMath.price(car.price), M3Widgets.ButtonKind.FILLED) {
+            !car.owned -> M3Widgets.button(this, if (car.price == 0) t("Get", "Получить") else t("Buy", "Купить") + " — " + GarageMath.price(car.price), M3Widgets.ButtonKind.FILLED) {
                 if (!Native.garageBuyCar(profile, shown)) toast(t("Not enough money", "Не хватает денег")); refresh()
             }.also { if (inf.money < car.price) it.alpha = 0.5f }
             shown == inf.selected -> M3Widgets.button(this, t("Selected ✓", "Выбрана ✓"), M3Widgets.ButtonKind.TONAL) {}.also { it.alpha = 0.7f }
@@ -89,7 +90,7 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
             val level = car.levels[u]
             row.addView(TextView(this).apply { text = upgradeNames[u] + "\n" + GarageMath.pips(level); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
             val price = GarageMath.upgradePrice(car.upgradeCost, level)
-            val label = if (!car.owned) "—" else price?.let { GarageMath.price(it) } ?: t("MAX", "МАКС")
+            val label = if (!car.owned) "—" else price?.let { if (it == 0) t("Free", "Бесплатно") else GarageMath.price(it) } ?: t("MAX", "МАКС")
             val btn = M3Widgets.button(this, label, M3Widgets.ButtonKind.TONAL) {
                 if (car.owned && price != null) { if (!Native.garageBuyUpgrade(profile, shown, u)) toast(t("Not enough money", "Не хватает денег")); refresh() }
             }
@@ -106,7 +107,7 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
     override fun surfaceCreated(h: SurfaceHolder) { running = false }
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) {
         if (running) { Native.gameResize(w, hh); return }
-        Native.gameStart(h.surface, w, hh, 7L, profile, -2)      // -2 = the garage scene with the selected car
+        Native.gameStart(h.surface, w, hh, 7L, profile, true)      // the garage scene with the selected car
         Native.gameQuality(Quality.index(this))
         Native.gameRenderMode(Controls.renderMode(this))
         running = true

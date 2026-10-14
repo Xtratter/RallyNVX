@@ -14,14 +14,14 @@ object Native {
     @JvmStatic external fun resetCamera()
     /** Parses a scene file (JSON) and switches to it; returns "" on success or a readable error. */
     @JvmStatic external fun loadScene(json: String): String
-    /** profile: path of profile.json ("" = none); mission: index in the profile's current list, -1 = free drive. */
-    @JvmStatic external fun gameStart(surface: Surface, w: Int, h: Int, seed: Long, profile: String, mission: Int)
+    /** profile: path of profile.json ("" = none: the default car); garage = the turntable garage scene instead of the free-drive world. */
+    @JvmStatic external fun gameStart(surface: Surface, w: Int, h: Int, seed: Long, profile: String, garage: Boolean)
     /** City draw distance by quality: 0 Low (300 m), 1 Medium (400 m), 2 High (450 m). */
     @JvmStatic external fun gameQuality(level: Int)
-    /** Garage: shows car [index] (vehicles file order) in the garage scene (start the engine with mission = -2). */
+    /** Garage: shows car [index] (vehicles file order) in the garage scene (start the engine with garage = true). */
     @JvmStatic external fun gameGarageCar(index: Int)
     /** `[money, selected_index, car_count]` then per car `[owned, price, upgrade_cost, engine, tyres, suspension, brakes]`. */
-    @JvmStatic external fun garageInfo(path: String, fresh: Long): FloatArray
+    @JvmStatic external fun garageInfo(path: String): FloatArray
     @JvmStatic external fun garageBuyCar(path: String, index: Int): Boolean
     @JvmStatic external fun garageSelect(path: String, index: Int): Boolean
     /** upgrade 0 engine, 1 tyres, 2 suspension, 3 brakes */
@@ -37,10 +37,6 @@ object Native {
     /** Debug/test: force the car lights (0 headlights, 1 + brake, 2 + reverse); negative = normal. */
     @JvmStatic external fun gameLightsDebug(mode: Int)
     @JvmStatic external fun gamePause(p: Boolean)
-    @JvmStatic external fun gameRestart()
-    @JvmStatic external fun gameAbort()
-    /** [money, round, profile_seed, golds] + 6 x [kind(0 cargo/1 race), seed, difficulty, length_m, time_limit, reward_base, best_medal, best_time, urban(0/1)]. */
-    @JvmStatic external fun missionsInfo(path: String, fresh: Long, refresh: Boolean): FloatArray
     @JvmStatic external fun gameStop()
     @JvmStatic external fun gameResize(w: Int, h: Int)
     @JvmStatic external fun gameInput(throttle: Float, steer: Float, brake: Boolean, handbrake: Boolean, brakeAmt: Float)

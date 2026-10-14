@@ -22,7 +22,7 @@ pub struct AudioParams { pub machine: Machine, pub rpm: f32, pub load: f32, pub 
 
 /// One-shot sounds. Strengths are 0..1.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Event { Touchdown(f32), Crash, Splash(f32), Checkpoint, Success, Fail }
+pub enum Event { Touchdown(f32), Crash, Splash(f32) }
 
 use std::sync::Mutex;
 

@@ -1,47 +1,34 @@
 use super::*;
-use crate::game::{math::v3, missions::{Mission, MissionKind}};
 fn tmp(name: &str) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("rt_meta_{}_{}", std::process::id(), name));
     let _ = std::fs::remove_dir_all(&d); std::fs::create_dir_all(&d).unwrap(); d.join("profile.json")
 }
-fn m(seed: u64, kind: MissionKind) -> Mission {
-    Mission { kind, seed, difficulty: 1, start: v3(0., 0., 0.), goal: v3(0., 0., 100.), checkpoints: vec![v3(0., 0., 100.)], length_m: 100.0, time_limit: 100.0, reward_base: 100.0, urban: false, start_yaw: None }
-}
-#[test] fn json_roundtrip_keeps_everything() {
-    let mut p = Profile::new(1234);
-    p.record(&m(5, MissionKind::Cargo), Medal::Silver, 42.5);
-    p.round = 3;
+#[test] fn json_roundtrip_keeps_money_and_the_garage() {
+    let mut p = Profile::new();
+    p.money = 1234;
+    p.garage.cars.push(("vulpes".to_string(), [1, 2, 3, 0]));
     let q = Profile::from_json(&p.to_json()).unwrap();
-    assert_eq!((q.money, q.round, q.profile_seed, q.version), (p.money, 3, 1234, PROFILE_VERSION));
-    assert_eq!(q.best_medal(5, MissionKind::Cargo), Medal::Silver);
-    assert_eq!(q.results[0].best_time, 42.5);
-}
-#[test] fn record_pays_by_improvement_and_keeps_best_time() {
-    let mut p = Profile::new(1);
-    assert_eq!(p.record(&m(9, MissionKind::Race), Medal::Bronze, 80.0), 100);
-    assert_eq!(p.record(&m(9, MissionKind::Race), Medal::Gold, 50.0), 120);
-    assert_eq!(p.record(&m(9, MissionKind::Race), Medal::Silver, 70.0), 75);
-    assert_eq!(p.money, 295);
-    assert_eq!((p.best_medal(9, MissionKind::Race), p.results[0].best_time), (Medal::Gold, 50.0));
-    assert_eq!(p.best_medal(9, MissionKind::Cargo), Medal::None);
-    assert_eq!(p.gold_count(), 1);
+    assert_eq!((q.money, q.version), (1234, PROFILE_VERSION));
+    assert_eq!(q.levels("vulpes"), [1, 2, 3, 0]);
 }
 #[test] fn save_is_atomic_and_load_reads_it_back() {
     let path = tmp("save");
-    let mut p = Profile::new(7); p.money = 99; p.save(&path).unwrap();
+    let mut p = Profile::new(); p.money = 99; p.save(&path).unwrap();
     assert!(!path.with_extension("json.tmp").exists());
-    assert_eq!(Profile::load_or_new(&path, 1).money, 99);
+    assert_eq!(Profile::load_or_new(&path).money, 99);
 }
-#[test] fn missing_file_creates_a_fresh_profile_with_the_given_seed() {
-    let p = Profile::load_or_new(&tmp("missing"), 0xABCDEF);
-    assert_eq!((p.money, p.profile_seed), (0, 0xABCDEF));
+#[test] fn missing_file_creates_a_fresh_profile() {
+    let path = tmp("missing");
+    let p = Profile::load_or_new(&path);
+    assert_eq!(p.money, 0);
+    assert!(path.exists());
 }
 #[test] fn corrupt_empty_truncated_and_newer_files_are_kept_as_bak() {
     for (name, content) in [("corrupt", "not json at all"), ("empty", ""), ("trunc", "{\"version\":1,\"money\":5,"), ("newer", "{\"version\":999,\"money\":5,\"profile_seed\":1,\"round\":0,\"results\":[]}"), ("wrongtype", "{\"version\":1,\"money\":\"lots\"}")] {
         let path = tmp(name);
         std::fs::write(&path, content).unwrap();
-        let p = Profile::load_or_new(&path, 321);
-        assert_eq!((p.money, p.profile_seed), (0, 321), "{name}");
+        let p = Profile::load_or_new(&path);
+        assert_eq!(p.money, 0, "{name}");
         let bak = path.with_extension("json.bak");
         assert_eq!(std::fs::read_to_string(&bak).unwrap(), content, "{name}: original must be kept");
     }
@@ -50,30 +37,22 @@ fn m(seed: u64, kind: MissionKind) -> Mission {
     assert!(Profile::from_json("{\"version\":1,\"money\":-5,\"profile_seed\":1,\"round\":0,\"results\":[]}").is_err());
     assert!(Profile::from_json("{\"version\":1,\"money\":1e30,\"profile_seed\":1,\"round\":0,\"results\":[]}").is_err());
 }
-#[test] fn old_profiles_with_kind_ids_0_and_1_still_load() {
-    let p = Profile::from_json("{\"version\":1,\"money\":10,\"profile_seed\":5,\"round\":2,\"results\":[{\"seed\":1,\"kind\":0,\"medal\":2,\"best_time\":30.0},{\"seed\":2,\"kind\":1,\"medal\":3,\"best_time\":20.0}]}").unwrap();
-    assert_eq!((p.best_medal(1, MissionKind::Cargo), p.best_medal(2, MissionKind::Race)), (Medal::Silver, Medal::Gold));
-}
-#[test] fn results_of_the_removed_air_missions_are_dropped_on_load() {
-    let p = Profile::from_json("{\"version\":1,\"money\":10,\"profile_seed\":5,\"round\":2,\"results\":[{\"seed\":1,\"kind\":2,\"medal\":3,\"best_time\":30.0},{\"seed\":2,\"kind\":0,\"medal\":2,\"best_time\":20.0},{\"seed\":3,\"kind\":5,\"medal\":1,\"best_time\":9.0}]}").unwrap();
-    assert_eq!(p.results.len(), 1);
-    assert_eq!(p.best_medal(2, MissionKind::Cargo), Medal::Silver);
-}
-#[test] fn unknown_kind_id_6_is_rejected() {
-    assert!(Profile::from_json("{\"version\":1,\"money\":1,\"profile_seed\":1,\"round\":0,\"results\":[{\"seed\":1,\"kind\":6,\"medal\":1,\"best_time\":1.0}]}").is_err());
+#[test] fn old_profiles_with_mission_results_still_load_and_the_results_are_ignored() {
+    let p = Profile::from_json("{\"version\":1,\"money\":10,\"profile_seed\":5,\"round\":2,\"results\":[{\"seed\":1,\"kind\":0,\"medal\":2,\"best_time\":30.0},{\"seed\":2,\"kind\":5,\"medal\":3,\"best_time\":20.0}]}").unwrap();
+    assert_eq!(p.money, 10);
 }
 mod garage_profile {
     use super::*;
     use crate::game::garage::Upgrade;
-    fn rich() -> Profile { let mut p = Profile::new(3); p.money = 20_000; p }
+    fn rich() -> Profile { let mut p = Profile::new(); p.money = 20_000; p }
     #[test] fn a_new_profile_owns_the_offroader_only_and_has_it_selected() {
-        let p = Profile::new(1);
+        let p = Profile::new();
         assert!(p.owns("offroader") && !p.owns("vulpes") && p.garage.selected == "offroader");
         assert_eq!(p.levels("offroader"), [0; 4]); assert_eq!(p.levels("vulpes"), [0; 4]);
         assert_eq!(p.selected_spec().price, 0);
     }
     #[test] fn buying_a_car_needs_money_and_charges_exactly_once() {
-        let mut p = Profile::new(1); p.money = 2999;
+        let mut p = Profile::new(); p.money = 2999;
         assert!(!p.buy_car("vulpes") && p.money == 2999 && !p.owns("vulpes"));
         p.money = 3500;
         assert!(p.buy_car("vulpes") && p.money == 500 && p.owns("vulpes"));
@@ -94,10 +73,10 @@ mod garage_profile {
         assert!(p.buy_upgrade("offroader", Upgrade::Engine) && p.buy_upgrade("offroader", Upgrade::Engine));
         assert_eq!((p.money, p.levels("offroader")), (20_000 - 300 - 600 - 1200, [3, 0, 0, 0]));
         let m = p.money; assert!(!p.buy_upgrade("offroader", Upgrade::Engine) && p.money == m, "capped at level 3");
-        let mut poor = Profile::new(1); poor.money = 299;
+        let mut poor = Profile::new(); poor.money = 299;
         assert!(!poor.buy_upgrade("offroader", Upgrade::Tyres) && poor.money == 299 && poor.levels("offroader") == [0; 4]);
         poor.money = 300; assert!(poor.buy_upgrade("offroader", Upgrade::Tyres) && poor.money == 0);
-        assert!(p.selected_spec().engine_force > Profile::new(1).selected_spec().engine_force);
+        assert!(p.selected_spec().engine_force > Profile::new().selected_spec().engine_force);
     }
     #[test] fn the_garage_survives_a_json_round_trip() {
         let mut p = rich(); p.buy_car("vulpes"); p.select("vulpes"); p.buy_upgrade("vulpes", Upgrade::Brakes); p.buy_upgrade("offroader", Upgrade::Suspension);
@@ -118,21 +97,16 @@ mod garage_profile {
     #[test] fn api_helpers_act_on_a_profile_file_by_car_index() {
         let dir = std::env::temp_dir().join(format!("rt_garage_{}", std::process::id())); let _ = std::fs::remove_dir_all(&dir); std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("p.json");
-        let mut p = Profile::new(4); p.money = 4000; p.save(&path).unwrap();
-        let info = crate::game::api::garage_info(&path, 1);
+        let mut p = Profile::new(); p.money = 4000; p.save(&path).unwrap();
+        let info = crate::game::api::garage_info(&path);
         assert_eq!(&info[..3], &[4000.0, 0.0, 2.0]);
-        assert_eq!(&info[3..10], &[1.0, 0.0, 300.0, 0.0, 0.0, 0.0, 0.0]);         // off-roader: owned, price 0, upgrade 300
-        assert_eq!(&info[10..13], &[0.0, 3000.0, 750.0]);                         // peugeot: not owned
+        assert_eq!(&info[3..10], &[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "off-roader: owned, free, upgrades free");
+        assert_eq!(&info[10..13], &[0.0, 0.0, 0.0], "the Vulpes is not owned yet but costs nothing while the garage is free");
         assert!(crate::game::api::garage_buy_car(&path, 1) && crate::game::api::garage_select(&path, 1));
-        assert!(crate::game::api::garage_buy_upgrade(&path, 1, 0), "engine level 1 costs 750 and money is 1000");
-        let info = crate::game::api::garage_info(&path, 1);
-        assert_eq!((info[0], info[1], info[10], info[13]), (250.0, 1.0, 1.0, 1.0));
+        assert!(crate::game::api::garage_buy_upgrade(&path, 1, 0), "upgrades cost nothing for now");
+        let info = crate::game::api::garage_info(&path);
+        assert_eq!((info[0], info[1], info[10], info[13]), (4000.0, 1.0, 1.0, 1.0), "the balance is untouched");
         assert!(!crate::game::api::garage_buy_car(&path, 9) && !crate::game::api::garage_select(&path, 9) && !crate::game::api::garage_buy_upgrade(&path, 9, 0) && !crate::game::api::garage_buy_upgrade(&path, 1, 9));
         let _ = std::fs::remove_dir_all(&dir);
     }
-}
-
-#[test] fn profiles_saved_with_the_old_car_id_keep_their_garage() {
-    let old = Profile::from_json("{\"version\":1,\"money\":10,\"profile_seed\":5,\"round\":0,\"results\":[],\"garage\":{\"selected\":\"peugeot206\",\"cars\":{\"offroader\":{},\"peugeot206\":{\"engine\":2}}}}").unwrap();
-    assert!(old.owns("vulpes") && old.garage.selected == "vulpes" && old.levels("vulpes") == [2, 0, 0, 0]);
 }
