@@ -21,7 +21,7 @@ pub fn tile_of(x: f32) -> i32 { (x / TILE_SIZE).floor() as i32 }
 
 /// A rally stage in progress: the runner, which stage it is (0 the special stage, 1 the city loop), the upside-down timer and
 /// the last event for the HUD (code 1 split, 2 reset, 3 off road, 4 skipped lines, 5 finish, 6 go; its value and a serial).
-pub struct RallyState { pub run: super::rally::Run, pub stage: u32, flip_t: f32, pub event: (u32, f32, u32) }
+pub struct RallyState { pub run: super::rally::Run, pub stage: u32, flip_t: f32, pub event: (u32, f32, u32), pub pace: super::pacenotes::Playback, pub note: (u32, String, String) }
 
 /// Laps of the city loop in a rally.
 pub const CITY_LAPS: usize = 2;
@@ -92,12 +92,24 @@ impl World {
     /// the road, and the countdown begins. Returns false when the level has no such stage.
     pub fn rally_start(&mut self, stage: u32) -> bool {
         use super::lines::{Line, LineKind};
+        let mut pace_path: Vec<V3> = Vec::new();
+        let mut junctions: Vec<(f32, bool)> = Vec::new();
         let (lines, at, yaw): (Vec<Line>, V3, f32) = if stage == 0 {
             let (Some(net), l) = (self.terrain.roads(), self.terrain.stage_lines()) else { return false };
             let Some(road) = net.roads.iter().find(|r| r.kind == super::roads::RoadKind::Stage) else { return false };
             if l.len() < 2 { return false; }
             let i = road.pts.iter().position(|p| p.s >= 8.0).unwrap_or(1).min(road.pts.len() - 2);
             let d = road.pts[i + 1].pos - road.pts[i].pos;
+            pace_path = road.pts.iter().map(|p| p.pos).collect();
+            // the side roads: where they leave the stage and to which side of the direction of travel
+            for side in net.roads.iter().filter(|r| r.kind == super::roads::RoadKind::Side && r.pts.len() > 4) {
+                let a = side.pts[0].pos;
+                let Some(j) = road.pts.iter().enumerate().min_by(|x, y| ((x.1.pos.x - a.x).hypot(x.1.pos.z - a.z)).partial_cmp(&((y.1.pos.x - a.x).hypot(y.1.pos.z - a.z))).unwrap()).map(|x| x.0) else { continue };
+                let (p, q) = (road.pts[j.saturating_sub(1)].pos, road.pts[(j + 1).min(road.pts.len() - 1)].pos);
+                let (tx, tz) = (q.x - p.x, q.z - p.z);
+                let v = side.pts[4].pos - a;
+                junctions.push((road.pts[j].s, v.x * tz - v.z * tx > 0.0));
+            }
             (l.to_vec(), road.pts[i].pos, d.x.atan2(d.z))
         } else {
             let Some(c) = self.terrain.city_loop() else { return false };
@@ -110,6 +122,9 @@ impl World {
                 seq.extend(checks.iter().cloned());
                 seq.push(Line { kind: if lap + 1 == CITY_LAPS { LineKind::Finish } else { LineKind::Check }, ..start });
             }
+            // the lead-in to the line, then the laps
+            pace_path = c.pts[n.saturating_sub(4)..].to_vec();
+            for _ in 0..CITY_LAPS { pace_path.extend(c.pts[1..].iter().cloned()); }
             let d = b - a;
             (seq, a, d.x.atan2(d.z))
         };
@@ -117,7 +132,9 @@ impl World {
         self.vehicle = Vehicle::new(self.car_spec, v3(at.x, at.y + 1.1, at.z), yaw);
         self.cam = FollowCam::new(&self.vehicle);
         if stage == 0 { self.loose = self.terrain.roads().map_or_else(LooseMap::empty, LooseMap::new); }
-        self.rally = Some(RallyState { run: super::rally::Run::new(lines), stage, flip_t: 0.0, event: (0, 0.0, 0) });
+        junctions.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        let notes = super::pacenotes::generate(&pace_path, &junctions);
+        self.rally = Some(RallyState { run: super::rally::Run::new(lines), stage, flip_t: 0.0, event: (0, 0.0, 0), pace: super::pacenotes::Playback::new(pace_path, notes), note: (0, String::new(), String::new()) });
         true
     }
     pub fn rally_stop(&mut self) { self.rally = None; }
@@ -157,6 +174,9 @@ impl World {
         if upside_down_too_long { self.rally_reset(); }
         let r = self.rally.as_mut().unwrap();
         r.run.update(self.vehicle.pos, dt, off);
+        if r.run.phase == super::rally::Phase::Running {
+            if let Some(k) = r.pace.update(self.vehicle.pos, self.vehicle.speed(), dt) { r.note = (r.note.0 + 1, r.pace.text(k, true), r.pace.text(k, false)); }
+        }
         for e in r.run.drain_events() {
             use super::rally::Event::*;
             let (code, value) = match e { Split { time, .. } => (1, time), Reset => (2, super::rally::RESET_PENALTY), OffRoad => (3, super::rally::OFFROAD_PENALTY), Missed { lines } => (4, lines as f32 * super::rally::MISSED_PENALTY), Finish { total } => (5, total), Go => (6, 0.0) };

@@ -40,6 +40,7 @@ object Native {
     @JvmStatic external fun gameDust(level: Int)
     @JvmStatic external fun gameAutopilot(style: Int)
     @JvmStatic external fun gameRally(stage: Int)
+    @JvmStatic external fun gameNoteText(ru: Boolean): String
     @JvmStatic external fun gameAutopilotTune(lat: Float, brake: Float, offset: Float, speed: Float, slide: Float, edge: Float)
     @JvmStatic external fun gameInCity(mode: Int)
     /** Debug/test: start every level at this time of day (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk); negative = off. */

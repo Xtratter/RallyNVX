@@ -240,3 +240,26 @@ mod rally_world {
         assert!(w.rally.is_none());
     }
 }
+
+mod pace_world {
+    use super::*;
+    use crate::game::input::Input;
+
+    #[test] fn the_co_driver_calls_notes_during_a_run_and_the_text_follows_the_language() {
+        for stage in [0u32, 1] {
+            let mut w = World::with_roads(21, crate::game::vehicle::VehicleSpec::offroader());
+            assert!(w.rally_start(stage));
+            assert!(w.rally.as_ref().unwrap().pace.notes.len() >= 3, "stage {stage}");
+            for _ in 0..(4.0 * 60.0) as usize { w.step(&Input::default(), 1.0 / 60.0); }
+            assert!(w.set_autopilot_style(1));
+            let mut seen = Vec::new();
+            for _ in 0..(60.0 * 60.0) as usize {
+                w.step(&Input::default(), 1.0 / 60.0);
+                let r = w.rally.as_ref().unwrap();
+                if seen.last().map_or(true, |s: &u32| *s != r.note.0) && r.note.0 > 0 { seen.push(r.note.0); assert!(!r.note.1.is_empty() && !r.note.2.is_empty()); }
+            }
+            assert!(seen.len() >= 3, "stage {stage}: only {} notes in a minute", seen.len());
+            assert!(seen.windows(2).all(|p| p[1] == p[0] + 1), "serials count up by one");
+        }
+    }
+}

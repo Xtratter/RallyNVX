@@ -102,3 +102,13 @@ fn corners(notes: &[Note]) -> Vec<Corner> { notes.iter().filter_map(|n| if let N
         for (k, ahead) in &called { assert!(*ahead <= (5.0 * speed).max(80.0) + 8.0 && *ahead >= -1.0, "speed {speed}: note {k} called {ahead} m ahead"); }
     }
 }
+#[test] #[ignore] fn dbg_notes() {
+    use crate::game::{roads::RoadKind, terrain::Terrain};
+    let t = Terrain::with_roads(21);
+    let n = t.roads().unwrap();
+    let stage = n.roads.iter().find(|r| r.kind == RoadKind::Stage).unwrap();
+    let pts: Vec<V3> = stage.pts.iter().map(|p| p.pos).collect();
+    let notes = generate(&pts, &[]);
+    println!("NOTES {} over {:.0} m", notes.len(), stage.length());
+    for (i, x) in notes.iter().enumerate().take(14) { println!("NOTE {:.0}: {}", x.s, x.text(notes.get(i + 1).map(|y| y.s - x.s), true)); }
+}
