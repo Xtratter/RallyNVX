@@ -27,6 +27,9 @@ object Controls {
     fun setRenderMode(c: Context, v: Int) = p(c).edit().putInt("render_mode", v.coerceIn(0, 1)).putInt("render_rev", renderRev(c) + 1).apply()
     fun renderRev(c: Context) = p(c).getInt("render_rev", 0)
     fun dust(c: Context): Int = p(c).getInt("dust", 1).coerceIn(0, 2)
+    /** Signs along the stage (corner warnings, chevrons, boards). */
+    fun signs(c: Context): Boolean = p(c).getBoolean("signs", true)
+    fun setSigns(c: Context, v: Boolean) = p(c).edit().putBoolean("signs", v).apply()
     /** The chosen studio voice per language ("ru" / "en"): an id of assets/voices, or "system" for the speech synthesizer. */
     fun voice(c: Context, lang: String): String = p(c).getString("voice_$lang", null) ?: "system"
     fun setVoice(c: Context, lang: String, id: String) = p(c).edit().putString("voice_$lang", id).apply()

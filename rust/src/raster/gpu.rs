@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
+use super::{sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::scatter::{self, Bush};
@@ -82,8 +82,10 @@ const SLOT_TREE: usize = 2;
 const SLOT_BUSH: usize = 6;
 const SLOT_ROCK: usize = 8;
 const SLOT_GRASS: usize = 11;
-const MODEL_SLOTS: usize = 12;
+const SLOT_SIGN: usize = 12;   // one slot per `SignKind`
+const MODEL_SLOTS: usize = SLOT_SIGN + 17;
 const MAX_MODEL_INST: usize = 6144;
+const SIGN_SCALE: f32 = 2.2;   // the signs are drawn bigger than real ones so they read from a moving car
 const NEAR_SHADOW: f32 = 90.0;   // plants within this distance of the car cast shadows
 const MODEL_ATTRS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4];
 const MINST_ATTRS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4];
@@ -319,8 +321,9 @@ impl Raster {
 
         let car = vm::build_car(&crate::game::vehicle::VehicleSpec::offroader());
         let nat = nature_models::build_all();
+        let signs_meshes = sign_models::build_all();
         let models: Vec<ModelBuf> = [&car.body, &car.wheel].into_iter()
-            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass]).map(|m| model_buf(&device, m)).collect();
+            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass]).chain(signs_meshes.iter()).map(|m| model_buf(&device, m)).collect();
         assert_eq!(models.len(), MODEL_SLOTS);
         let mbuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("model_inst"), size: (MAX_MODEL_INST * std::mem::size_of::<MInst>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
@@ -486,6 +489,11 @@ impl Raster {
                 PropKind::Tree => put(&mut ml, SLOT_TREE + nature_models::variant(0, p.pos), p.pos, MInst { m: mmat_s(yaw, p.pos, p.height), tint: [tint[0], tint[1], tint[2], 2.0] }),
             }
         }
+        // signs along the stage: a board model per kind, drawn within the draw radius
+        for s in wv.signs.iter() {
+            let q = Q::axis_angle(v3(0., 1., 0.), s.yaw);
+            put(&mut ml, SLOT_SIGN + s.kind.index(), s.pos, MInst { m: mmat_s(q, s.pos, SIGN_SCALE), tint: [1.0, 1.0, 1.0, 1.0] });
+        }
         let (bx, bz) = (tile_of(wv.cam_pos.x), tile_of(wv.cam_pos.z));
         for tz in bz - DRAW_TILES..=bz + DRAW_TILES { for tx in bx - DRAW_TILES..=bx + DRAW_TILES {
             let bushes = self.bush_cache.entry((tx, tz)).or_insert_with(|| scatter::tile_bushes(wv.terrain, tx, tz));
@@ -496,7 +504,7 @@ impl Raster {
         } }
         self.bush_cache.retain(|&(tx, tz), _| (tx - bx).abs() <= DRAW_TILES + 2 && (tz - bz).abs() <= DRAW_TILES + 2);
         let mut mnear = [0u32; MODEL_SLOTS];
-        for k in SLOT_TREE..SLOT_GRASS { mnear[k] = ml[k].len() as u32; let f = std::mem::take(&mut far[k]); ml[k].extend(f); }
+        for k in (SLOT_TREE..SLOT_GRASS).chain(SLOT_SIGN..MODEL_SLOTS) { mnear[k] = ml[k].len() as u32; let f = std::mem::take(&mut far[k]); ml[k].extend(f); }
         // grass tufts around the camera: recomputed only when the camera leaves its 8 m cell (or the quality changes)
         let grass_cap = if self.city_radius < 350.0 { 0 } else if self.city_radius < 420.0 { 1500 } else { 3000 };
         let high = wv.cam_pos.y - wv.terrain.height(wv.cam_pos.x, wv.cam_pos.z) > 45.0;   // no tufts seen from up there

@@ -94,6 +94,7 @@ mod game {
         pub fn set_dust(&mut self, level: i32) { self.dust_level = level.clamp(0, 2); self.world.dust.set_level(self.dust_level); }
         /// Rally: stage 0 the special stage, 1 the city loop, -1 leaves the rally mode.
         pub fn rally(&mut self, stage: i32) { if stage < 0 { self.world.rally_stop(); } else { self.world.rally_start(stage as u32); } }
+        pub fn set_signs(&mut self, on: bool) { self.world.signs_on = on; }
         pub fn set_autopilot(&mut self, style: i32) { self.world.set_autopilot_style(style); }
         pub fn place_on_road(&mut self, mode: i32) -> bool { self.world.place_on_road(mode) }
         pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }

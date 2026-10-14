@@ -33,7 +33,7 @@ mod android {
     use crate::game::{app::{Game, STAT_LEN}, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Rally(i32), Camera(f32, f32), CameraUp, Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
+    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Rally(i32), Signs(bool), Camera(f32, f32), CameraUp, Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -79,6 +79,7 @@ mod android {
                             Ok(GCmd::Dust(l)) => g.set_dust(l),
                             Ok(GCmd::Autopilot(style)) => g.set_autopilot(style),
                             Ok(GCmd::Rally(stage)) => g.rally(stage),
+                            Ok(GCmd::Signs(on)) => g.set_signs(on),
                             Ok(GCmd::Camera(y, p)) => g.camera_drag(y, p),
                             Ok(GCmd::CameraUp) => g.camera_release(),
                             Ok(GCmd::Reset) => g.input.reset = true,
@@ -131,6 +132,7 @@ mod android {
         let t = crate::game::app::NOTE_TEXT.lock().unwrap_or_else(|x| x.into_inner()).clone();
         e.new_string(t.3).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
     }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameSigns(_e: JNIEnv, _c: JClass, on: jboolean) { send(GCmd::Signs(on != 0)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameDust(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Dust(level)); }
     /// Debug/test: put the car on a road facing along it (1 liaison, 2 stage start, 3 stage middle, 4 stage end).
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameOnRoad(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::OnRoad(mode)); }

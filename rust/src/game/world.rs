@@ -47,6 +47,8 @@ pub struct World {
     pub autopilot: Option<super::autopilot::Autopilot>,
     /// The rally stage being driven against the clock (`None` in free drive).
     pub rally: Option<RallyState>,
+    /// Whether the signs along the stage are drawn (a setting).
+    pub signs_on: bool,
     props: HashMap<(i32, i32), Vec<Prop>>,
 }
 
@@ -75,7 +77,7 @@ impl World {
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
         let loose = terrain.roads().map_or_else(LooseMap::empty, LooseMap::new);
-        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, rally: None, props: HashMap::new() }
+        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, rally: None, signs_on: true, props: HashMap::new() }
     }
 
     /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
@@ -357,6 +359,7 @@ impl World {
 
 /// What a render backend may read; gameplay never touches the GPU.
 pub struct WorldView<'a> {
+    pub signs: &'a [super::signs::Sign],
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
     pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub lights: CarLights, pub lamps: Lamps, pub dust: Vec<Particle>, pub wind: V3, pub cloud_off: (f32, f32),
@@ -370,7 +373,7 @@ impl World {
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
         let dl = self.daylight();
-        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(), wind: self.wind(), cloud_off: self.cloud_off,
+        WorldView { signs: if self.signs_on { self.terrain.signs() } else { &[] }, terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(), wind: self.wind(), cloud_off: self.cloud_off,
             time: self.time, cities: &self.cities, tracks: &self.tracks }
     }
 }

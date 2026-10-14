@@ -40,6 +40,7 @@ object Native {
     @JvmStatic external fun gameDust(level: Int)
     @JvmStatic external fun gameAutopilot(style: Int)
     @JvmStatic external fun gameRally(stage: Int)
+    @JvmStatic external fun gameSigns(on: Boolean)
     @JvmStatic external fun gameNoteText(ru: Boolean): String
     /** The clip ids of the last pace note, comma separated (see tools/voices/clips.json). */
     @JvmStatic external fun gameNoteClips(): String

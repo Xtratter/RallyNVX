@@ -321,6 +321,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Native.gameStart(h.surface, w, hh, seed, profile, false)
         Native.gameQuality(Quality.index(this))
         Native.gameDust(Controls.dust(this))
+        Native.gameSigns(Controls.signs(this))
         running = true
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode

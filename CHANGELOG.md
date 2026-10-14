@@ -2,7 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
-## 2.24.0 - studio voices for the co-driver
+## 2.24.0 - studio voices, signs and the icon
+
+- Added: signs along the special stage that say what the co-driver says: warning triangles (curve, double curve, hairpin, bump), chevron boards, route arrows and no-entry discs at junctions, distance boards, finish boards, a stop and a start sign; Settings -> Signs on the stage
+- Added: the app icon (a rally car and the name on an orange background, adaptive and legacy)
 
 - Added: recorded co-driver voices: three free neural voices (Russian: Dmitri; English: Alba (UK), LibriTTS 1) as 42 clips each (corners 1-5 both ways, hairpins, tightens / opens / long, into, crest, jump, junctions, the finish, distances) stitched into the calls; Settings -> Co-driver voice lists them with a sample (a play button), the system synthesizer and "My voice" with a choice per language; the voices are licensed CC0 or CC BY 4.0 (credits in the README); the clips are rendered by `tools/voices/`
 - Added: record the co-driver in your own voice, phrase by phrase ("Record my voice...": the microphone, silence trimmed, loudness matched); a call uses your voice when all its phrases are recorded, otherwise the system voice speaks it

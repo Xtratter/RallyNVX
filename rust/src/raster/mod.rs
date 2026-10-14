@@ -6,6 +6,7 @@ pub mod meshes;
 pub mod models;
 pub mod nature_models;
 pub mod rally_model;
+pub mod sign_models;
 pub mod roadgen;
 pub mod rcar;
 pub mod texgen;
