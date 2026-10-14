@@ -461,3 +461,25 @@ struct RIn { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @loc
     }
     return vec4<f32>(lit(col, i.wp, up), alpha);
 }
+
+struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) c: vec4<f32>, @location(2) wp: vec3<f32> };
+@vertex fn vs_dust(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>) -> DOut {
+    var q = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0));
+    let right = normalize(vec3<f32>(u.vp[0].x, u.vp[1].x, u.vp[2].x));
+    let up = normalize(vec3<f32>(u.vp[0].y, u.vp[1].y, u.vp[2].y));
+    let corner = q[vi];
+    let wp = ps.xyz + (right * corner.x + up * corner.y) * ps.w;
+    var o: DOut;
+    o.pos = u.vp * vec4<f32>(wp, 1.0); o.uv = corner; o.c = c; o.wp = wp;
+    return o;
+}
+@fragment fn fs_dust(i: DOut) -> @location(0) vec4<f32> {
+    let r = length(i.uv);
+    let near = smoothstep(2.0, 9.0, length(i.wp - u.cam.xyz));   // puffs close to the camera thin out instead of blinding the view
+    let a = i.c.a * (1.0 - smoothstep(0.25, 1.0, r)) * near;
+    let sun = clamp(length(u.sun_col.rgb) / 2.6, 0.06, 1.0);
+    var col = i.c.rgb * (0.30 + 0.70 * sun);
+    let f = clamp(1.0 - exp(-length(i.wp - u.cam.xyz) * u.fog.x), 0.0, 1.0);
+    col = mix(col, u.sky_hor.rgb, f);
+    return vec4<f32>(finish(col), a);
+}

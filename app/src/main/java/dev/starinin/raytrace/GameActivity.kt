@@ -115,6 +115,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         intent.getFloatExtra("tod", -1f).let { if (it >= 0f) Native.gameTimeOfDay(it) }   // debug/test: time of day
         Native.gameStart(h.surface, w, hh, seed, profile, false)
         Native.gameQuality(Quality.index(this))
+        Native.gameDust(Controls.dust(this))
         running = true
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
@@ -123,6 +124,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         // debug/test: a camera orbit (radians) and a held throttle (after 1.5 s) without touching the screen
         val camYaw = intent.getFloatExtra("camyaw", 0f); val camPitch = intent.getFloatExtra("campitch", 0f)
         if (camYaw != 0f || camPitch != 0f) Native.gameCamera(camYaw, camPitch)
+        intent.getFloatExtra("steer", 0f).let { st -> if (st != 0f) handler.postDelayed({ carSteer = st; sendInput() }, 1500) }
         intent.getFloatExtra("throttle", 0f).let { th -> if (th != 0f) handler.postDelayed({ carThr = th; sendInput() }, 1500) }
         audio.start()
     }

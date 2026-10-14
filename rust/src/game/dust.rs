@@ -81,7 +81,7 @@ impl Dust {
             if !info.grounded || !info.speed.is_finite() || !info.slide.is_finite() || !info.lat_slip.is_finite() || !info.contact.is_finite() { self.acc[w] = 0.0; continue; }
             let d = table.dust(info.surface);
             let roll = if info.speed > 2.0 { d.roll * 14.0 * (info.speed / 20.0).min(1.5) } else { 0.0 };
-            let slide = d.slide * (60.0 * info.slide.min(1.5) + 25.0 * (info.lat_slip / 6.0).min(1.5));
+            let slide = d.slide * (40.0 * info.slide.min(1.5) + 18.0 * (info.lat_slip / 6.0).min(1.5));
             let rate = (roll + slide) * factor;
             self.acc[w] = (self.acc[w] + rate * dt).min(8.0);
             while self.acc[w] >= 1.0 {
@@ -100,7 +100,7 @@ impl Dust {
         self.parts.iter().map(|p| {
             let x = (p.age / p.life).clamp(0.0, 1.0);
             let fade_in = (x / 0.08).min(1.0);
-            Particle { pos: p.pos, size: p.size0 * (1.0 + 2.5 * x.powf(0.6)), color: p.color, alpha: 0.55 * fade_in * (1.0 - x).powf(1.5) }
+            Particle { pos: p.pos, size: p.size0 * (1.0 + 2.5 * x.powf(0.6)), color: p.color, alpha: 0.40 * fade_in * (1.0 - x).powf(1.5) }
         }).collect()
     }
 }

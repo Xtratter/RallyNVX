@@ -60,6 +60,10 @@ Every level has two roads, generated from the level seed (random, different ever
 
 Grip depends on the surface under each wheel (the HUD shows its name next to the fps): asphalt is the reference, gravel gives about 62 % of it while loose and 78 % once packed, dirt 70 %, grass 60 %, sand 50 %, rock 80 %, shallow water 55 %; the tyres' side stiffness drops on loose ground and the rolling resistance rises (sand about three times). On the special stage the wheels sweep the loose gravel into a packed line: the first pass over fresh gravel is the slipperiest, the line is grippier, and the edges stay loose. The map of the loose layer resets with a new level.
 
+## Dust
+
+The wheels throw up dust that depends on the surface under them: beige clouds on gravel and dirt, dense yellow clouds on sand, almost nothing on dry grass, a little tyre smoke on tarmac under a hard slide, spray on shallow water. Rolling raises a thin trail; sliding, wheelspin and hard turns raise thick clouds. The puffs rise, widen, slow down, drift with the wind and fade in two to four seconds; they are dark at night and thin out close to the camera. The setting `Dust` (Off / Normal / Lots, 0 / 400 / 800 particles) is in the settings screen. The numbers (colour, amount, size, life per surface, the particle caps, the wind) are in `rust/surfaces.json` (see docs/vehicles.md).
+
 ## Limits of this version
 
 No rally mode and no NPC orders yet, and only the raster and hybrid renderers. The ray-traced Scenes mode is unchanged.
@@ -125,6 +129,10 @@ No rally mode and no NPC orders yet, and only the raster and hybrid renderers. T
 В каждом уровне две дороги, они строятся из seed уровня (случайно, всякий раз по-новому, для одного seed одинаково): асфальтовая **связка** от старта до первого города (машина появляется на ней, в 44 м от её начала) и гравийный **спецучасток** примерно 6–10 км, который начинается у дальних ворот города, вьётся по рельефу через две-три случайные ветви и заканчивается в поле или у второго города, если он есть. Дороги не возвращаются назад, обходят озёра (насыпь там, где пересечения не избежать), имеют минимальный радиус поворота около 13 м, уклон не больше 14 % и ширину 5–9 м (спецучасток) или 8 м (связка). Земля вокруг срезана и подсыпана, деревья, камни и трава отодвинуты, следов шин на дороге нет. У асфальта краевые линии и пунктир по центру, у гравия более тёмные колеи и рыхлая бровка. Покрытие под машиной определяется как трава, грунт, песок, скала, гравий, асфальт или вода (основа для сцепления, пыли и звука). Отладка (Android): intent-параметр `road` 1..4 ставит на связку, старт, середину или конец спецучастка.
 
 Сцепление зависит от покрытия под каждым колесом (его название показано в HUD рядом с fps): асфальт — эталон, гравий даёт около 62 % от него, пока рыхлый, и 78 %, когда утрамбован, грунт 70 %, трава 60 %, песок 50 %, скала 80 %, мелкая вода 55 %; боковая жёсткость шин на рыхлой земле падает, а сопротивление качению растёт (на песке примерно втрое). На спецучастке колёса сметают рыхлый гравий в утрамбованную линию: первый проезд по свежему гравию самый скользкий, линия цепче, а края остаются рыхлыми. Карта рыхлого слоя сбрасывается с новым уровнем.
+
+## Пыль
+
+Колёса поднимают пыль, зависящую от покрытия под ними: бежевые облака на гравии и грунте, густые жёлтые на песке, почти ничего на сухой траве, лёгкий дым шин на асфальте в сильном заносе, брызги на мелкой воде. При качении тянется тонкий шлейф, при заносе, пробуксовке и резких поворотах поднимаются густые облака. Клубы поднимаются, расширяются, замедляются, сносятся ветром и рассеиваются за две-четыре секунды; ночью они тёмные, а возле камеры редеют. Настройка «Пыль» (Выкл / Обычная / Много, 0 / 400 / 800 частиц) есть на экране настроек. Числа (цвет, количество, размер и время жизни по покрытиям, лимиты частиц, ветер) лежат в `rust/surfaces.json` (см. docs/vehicles.md).
 
 ## Ограничения этой версии
 

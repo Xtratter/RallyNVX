@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.17.0 - tyre dust
+
+- Added: tyre dust and spray that depend on the surface (beige on gravel and dirt, thick yellow on sand, almost none on grass, smoke on tarmac in a hard slide, spray on water): rolling makes a thin trail, sliding and wheelspin make thick clouds; the puffs rise, widen, drift with the wind and fade; they are dark at night and thin out near the camera
+- Added: the `Dust` setting (Off / Normal / Lots: 0 / 400 / 800 particles); the dust numbers per surface, the particle caps and the wind are in `rust/surfaces.json`
+- Debug: the intent extra `steer` (held after 1.5 s, like `throttle`) for screenshots of a slide
+
 ## 2.16.0 - grip by surface
 
 - Added: the grip, the tyres' side stiffness and the rolling resistance depend on the surface under every wheel (asphalt, gravel, dirt, grass, sand, rock, shallow water); off the tarmac the car is noticeably slipperier, sand is slow
