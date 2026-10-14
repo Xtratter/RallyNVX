@@ -63,12 +63,6 @@ fn run(surface: Surface, throttle: f32, steer: f32, secs: f32) -> Dust {
     for i in 0..(7 * 60) { v.vel = v.vel * 0.0; v.step(&t, &[], &Input::default(), 1.0 / 60.0); d.update(&v, &t, 2.0 + i as f32 / 60.0, 1.0 / 60.0); }
     assert_eq!(d.len(), 0, "the cloud settles within a few seconds");
 }
-#[test] fn the_wind_is_deterministic_bounded_and_wanders() {
-    assert_eq!(wind_at(3, 10.0), wind_at(3, 10.0));
-    assert!(wind_at(3, 10.0) != wind_at(4, 10.0));
-    for k in 0..200 { let w = wind_at(9, k as f32 * 7.3); assert!(w.y == 0.0 && w.len() <= 2.5 + 1e-4 && w.len() >= 1.4, "{w:?}"); }
-    assert!((wind_at(9, 0.0) - wind_at(9, 400.0)).len() > 0.1, "the wind changes over minutes");
-}
 #[test] fn odd_inputs_never_poison_the_cloud() {
     let t = Terrain::flat();
     let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., 1.0, 0.), 0.0);

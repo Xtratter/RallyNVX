@@ -14,7 +14,7 @@ pub struct DustSpec { pub color: [f32; 3], pub roll: f32, pub slide: f32, pub si
 /// The numbers of `rust/surfaces.json`: one grip per surface (gravel's `mu` is the packed value), the loose gravel's
 /// own `mu` and how fast the wheels pack it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct GripTable { surfaces: [SurfaceGrip; 7], dust: [DustSpec; 7], pub gravel_loose_mu: f32, pub wear_per_metre: f32, pub dust_cap_normal: usize, pub dust_cap_lots: usize, pub wind_speed: f32 }
+pub struct GripTable { surfaces: [SurfaceGrip; 7], dust: [DustSpec; 7], pub gravel_loose_mu: f32, pub wear_per_metre: f32, pub dust_cap_normal: usize, pub dust_cap_lots: usize, pub wind_speed: f32, pub wind_gust: f32 }
 
 /// The embedded default file.
 pub const EMBEDDED: &str = include_str!("../../surfaces.json");
@@ -48,11 +48,12 @@ impl GripTable {
         };
         let dust_top = section("dust")?;
         let cap = |key: &str| -> Result<usize, String> { Ok(num(dust_top, "dust", key, 0.0, 4096.0)? as usize) };
+        let wind_top = section("wind")?;
         Ok(GripTable {
             surfaces: [plain("grass")?, plain("dirt")?, plain("sand")?, plain("rock")?, gravel_grip, plain("asphalt")?, plain("water")?],
             dust: [dust_of("grass")?, dust_of("dirt")?, dust_of("sand")?, dust_of("rock")?, dust_of("gravel")?, dust_of("asphalt")?, dust_of("water")?],
             gravel_loose_mu: loose, wear_per_metre: wear,
-            dust_cap_normal: cap("cap_normal")?, dust_cap_lots: cap("cap_lots")?, wind_speed: num(dust_top, "dust", "wind_speed", 0.0, 20.0)?,
+            dust_cap_normal: cap("cap_normal")?, dust_cap_lots: cap("cap_lots")?, wind_speed: num(wind_top, "wind", "speed", 0.0, 20.0)?, wind_gust: num(wind_top, "wind", "gust", 0.0, 1.0)?,
         })
     }
 

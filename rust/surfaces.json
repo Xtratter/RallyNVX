@@ -7,5 +7,6 @@
   "rock":    { "mu": 0.80, "lateral": 0.9,  "rolling": 1.0, "dust": { "color": [0.62, 0.60, 0.58], "roll": 0.30, "slide": 0.6, "size": 0.8, "life": 1.8 } },
   "water":   { "mu": 0.55, "lateral": 0.7,  "rolling": 1.0, "dust": { "color": [0.85, 0.90, 0.95], "roll": 0.60, "slide": 0.8, "size": 0.7, "life": 1.2 } },
   "loose_layer": { "wear_per_metre": 0.5 },
-  "dust": { "cap_normal": 400, "cap_lots": 800, "wind_speed": 2.5 }
+  "dust": { "cap_normal": 400, "cap_lots": 800 },
+  "wind": { "speed": 2.5, "gust": 0.35 }
 }

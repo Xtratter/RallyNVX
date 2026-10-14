@@ -98,7 +98,7 @@ fn stage(len: f32) -> RoadNet {
         assert!(d.color.iter().all(|c| (0.0..=1.0).contains(c)) && (0.0..=1.0).contains(&d.roll) && (0.0..=2.0).contains(&d.slide) && (0.2..=3.0).contains(&d.size) && (0.3..=6.0).contains(&d.life), "{k:?}");
     }
     assert_eq!((t.dust_cap_normal, t.dust_cap_lots), (400, 800));
-    assert!((t.wind_speed - 2.5).abs() < 1e-6);
+    assert!((t.wind_speed - 2.5).abs() < 1e-6 && (t.wind_gust - 0.35).abs() < 1e-6);
     let e = GripTable::from_json(&EMBEDDED.replace("\"life\": 2.6", "\"life\": 60.0")).unwrap_err(); assert!(e.contains("gravel") && e.contains("life"), "{e}");
     let e = GripTable::from_json(&EMBEDDED.replace("\"cap_normal\": 400,", "")).unwrap_err(); assert!(e.contains("cap_normal"), "{e}");
 }

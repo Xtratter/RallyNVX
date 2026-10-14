@@ -1,7 +1,8 @@
 //! Tyre dust and spray: a deterministic ring of particles emitted by the wheels (see the dust design).
 use super::grip;
 use super::math::{v3, V3};
-use super::terrain::{hash01, Terrain};
+use super::terrain::Terrain;
+use super::wind;
 use super::vehicle::Vehicle;
 
 /// What the renderer needs of a particle.
@@ -12,15 +13,6 @@ pub struct Particle { pub pos: V3, pub size: f32, pub color: [f32; 3], pub alpha
 struct P { pos: V3, vel: V3, age: f32, life: f32, size0: f32, color: [f32; 3] }
 
 pub struct Dust { seed: u64, rng: u32, parts: Vec<P>, head: usize, cap: usize, level: i32, acc: [f32; 4], wind: V3 }
-
-/// The wind: a direction from the seed that wanders slowly and a speed between 0.6 and 1.0 of the table's `wind_speed`.
-pub fn wind_at(seed: u64, time: f32) -> V3 {
-    let t = if time.is_finite() { time } else { 0.0 };
-    let a = hash01(seed ^ 0x71D, 1, 2) * std::f32::consts::TAU + 0.6 * (t * 0.011).sin() + 0.4 * (t * 0.0043 + 1.0).sin();
-    let k = 0.7 + 0.3 * (t * 0.037 + 2.0).sin();
-    let speed = grip::table().wind_speed * (0.6 + 0.4 * (0.5 + 0.5 * k)).min(1.0);
-    v3(a.cos() * speed, 0.0, a.sin() * speed)
-}
 
 fn caps(level: i32) -> (usize, f32) {
     let t = grip::table();
@@ -56,7 +48,7 @@ impl Dust {
     pub fn update(&mut self, v: &Vehicle, t: &Terrain, time: f32, dt: f32) {
         if !dt.is_finite() || dt <= 0.0 { return; }
         let dt = dt.min(0.1);
-        self.wind = wind_at(self.seed, time);
+        self.wind = wind::wind_now(self.seed, time);
         let table = grip::table();
         // motion and ageing
         let wind = self.wind;
