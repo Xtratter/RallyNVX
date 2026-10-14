@@ -3,7 +3,7 @@
 use super::math::V3;
 use super::roads::shape::radius;
 
-/// A corner call: direction, severity (0 hairpin, 1 tightest .. 5 gentlest), how it develops, and a second corner it runs into.
+/// A corner call: direction, severity (0 hairpin, 1 the tightest .. 6 an easy bend), how it develops, and a second corner it runs into.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Corner { pub left: bool, pub sev: u8, pub tightens: bool, pub opens: bool, pub long: bool, pub into: Option<(bool, u8)>, /** Length of the arc in metres. */ pub arc: f32 }
 
@@ -20,9 +20,10 @@ const MIN_ANGLE: f32 = 20.0 * std::f32::consts::PI / 180.0;
 const INTO_GAP: f32 = 40.0;
 const FINISH_BEFORE: f32 = 140.0;
 
-/// Severity of a corner by its smallest radius: 0 hairpin, 1..5, `None` for corners too fast to call.
+/// Severity of a corner by its smallest radius, the usual rally scale: 0 hairpin, 1 the tightest .. 6 an easy bend (6 is
+/// "simple", 1 is "sharp"); `None` for bends too gentle to call.
 pub fn severity(min_radius: f32) -> Option<u8> {
-    Some(match min_radius { r if r < 18.0 => 0, r if r < 30.0 => 1, r if r < 45.0 => 2, r if r < 65.0 => 3, r if r < 95.0 => 4, r if r < 140.0 => 5, _ => return None })
+    Some(match min_radius { r if r < 14.0 => 0, r if r < 24.0 => 1, r if r < 36.0 => 2, r if r < 52.0 => 3, r if r < 75.0 => 4, r if r < 110.0 => 5, r if r < 170.0 => 6, _ => return None })
 }
 
 /// The notes of a path (points about 4 m apart, `y` the height): `junctions` are (metres along the path, to the left).

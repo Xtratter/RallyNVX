@@ -82,7 +82,7 @@ pub fn stage_signs(t: &Terrain) -> Vec<Sign> {
                 let kind = if c.sev == 0 { if c.left { SignKind::HairpinL } else { SignKind::HairpinR } }
                     else if let Some((l2, _)) = c.into { let _ = l2; if c.left { SignKind::SCurveL } else { SignKind::SCurveR } }
                     else if c.left { SignKind::CurveL } else { SignKind::CurveR };
-                put(&mut out, stage, kind, n.s - 70.0, 1.0, 40.0);
+                if c.sev <= 5 { put(&mut out, stage, kind, n.s - 70.0, 1.0, 40.0); }   // an easy 6 needs no warning
                 if c.sev <= 3 {
                     let k = ((c.arc / 18.0).round() as i32).clamp(2, 4);
                     for i in 1..=k {

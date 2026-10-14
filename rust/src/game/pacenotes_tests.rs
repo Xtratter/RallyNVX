@@ -13,17 +13,17 @@ fn path(pieces: &[(f32, f32)]) -> Vec<V3> {
 }
 fn corners(notes: &[Note]) -> Vec<Corner> { notes.iter().filter_map(|n| if let NoteKind::Corner(c) = n.kind { Some(c) } else { None }).collect() }
 
-#[test] fn a_left_circle_of_40_m_is_left_2_and_the_mirror_right_2() {
+#[test] fn a_left_circle_of_40_m_is_left_3_and_the_mirror_right_3() {
     // heading +z, turning towards +x is the car's left; a radius of 40 m is an arc of length 40 * angle
     let left = generate(&path(&[(150.0, 0.0), (40.0 * 1.2, 68.75), (150.0, 0.0)]), &[]);
     let c = corners(&left);
     assert_eq!(c.len(), 1, "{left:?}");
-    assert!(c[0].left && c[0].sev == 2, "{:?}", c[0]);
+    assert!(c[0].left && c[0].sev == 3, "{:?}", c[0]);
     let right = generate(&path(&[(150.0, 0.0), (40.0 * 1.2, -68.75), (150.0, 0.0)]), &[]);
     let c = corners(&right);
-    assert!(!c[0].left && c[0].sev == 2, "{:?}", c[0]);
-    assert_eq!(left[0].text(Some(120.0), false), "Left 2, 100");
-    assert_eq!(left[0].text(Some(120.0), true), "Лево 2, 100");
+    assert!(!c[0].left && c[0].sev == 3, "{:?}", c[0]);
+    assert_eq!(left[0].text(Some(120.0), false), "Left 3, 100");
+    assert_eq!(left[0].text(Some(120.0), true), "Лево 3, 100");
 }
 #[test] fn a_tight_radius_is_a_hairpin_and_a_straight_has_only_the_finish() {
     let h = generate(&path(&[(100.0, 0.0), (12.0 * 3.14, 180.0), (100.0, 0.0)]), &[]);
@@ -113,10 +113,23 @@ fn corners(notes: &[Note]) -> Vec<Corner> { notes.iter().filter_map(|n| if let N
     assert_eq!(Note { s: 0.0, kind: NoteKind::Finish }.clips(Some(500.0)), vec!["finish"]);
     // every clip any note can ask for is in the list, in both languages
     let mut kinds = vec![NoteKind::Crest { big: false }, NoteKind::Crest { big: true }, NoteKind::Junction { left: true }, NoteKind::Junction { left: false }, NoteKind::Finish];
-    for left in [true, false] { for sev in 0..=5u8 { for (t, o, l) in [(false, false, false), (true, false, false), (false, true, false), (false, false, true)] {
+    for left in [true, false] { for sev in 0..=6u8 { for (t, o, l) in [(false, false, false), (true, false, false), (false, true, false), (false, false, true)] {
         kinds.push(NoteKind::Corner(Corner { left, sev, tightens: t, opens: o, long: l, into: Some((!left, sev)), arc: 50.0 }));
     } } }
     for k in kinds { for d in [None, Some(30.0), Some(75.0), Some(120.0), Some(260.0), Some(450.0), Some(5000.0)] {
         for id in (Note { s: 0.0, kind: k }).clips(d) { assert!(has("ru", &id) && has("en", &id), "clip {id} is missing from clips.json"); }
     } }
+}
+
+#[test] fn the_severity_scale_runs_from_hairpin_to_an_easy_6() {
+    let table = [(8.0, Some(0)), (13.9, Some(0)), (14.0, Some(1)), (20.0, Some(1)), (30.0, Some(2)), (45.0, Some(3)), (60.0, Some(4)), (90.0, Some(5)), (130.0, Some(6)), (169.0, Some(6)), (170.0, None), (400.0, None)];
+    for (r, want) in table { assert_eq!(severity(r), want, "radius {r}"); }
+    // a gentle bend of 100 m radius is called "6"
+    let notes = generate(&path(&[(150.0, 0.0), (100.0 * 0.9, 51.6), (150.0, 0.0)]), &[]);
+    let c = corners(&notes);
+    assert_eq!(c.len(), 1, "{notes:?}");
+    assert_eq!(c[0].sev, 5, "{:?}", c[0]);
+    assert!(notes[0].text(None, false).starts_with("Left 5"), "{}", notes[0].text(None, false));
+    let easy = generate(&path(&[(150.0, 0.0), (140.0 * 0.6, 34.4), (150.0, 0.0)]), &[]);
+    assert_eq!(corners(&easy)[0].sev, 6);
 }
