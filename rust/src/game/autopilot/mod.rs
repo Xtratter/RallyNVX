@@ -1,5 +1,6 @@
 //! The autopilot: joins the special stage and drives it to the finish (see docs/superpowers/specs/2026-10-14-autopilot-design.md).
 pub mod cfg;
+pub mod join;
 pub mod route;
 
 use self::cfg::{cfg, AutoCfg};
@@ -21,6 +22,8 @@ pub struct Autopilot {
     cfg: AutoCfg,
     idx: usize,
     stuck: f32,
+    /// The stage route and where to join it, while a field route is being driven.
+    next: Option<(Route, usize)>,
     /// How many times the recovery had to act (the tests want zero).
     pub recoveries: u32,
 }
@@ -41,7 +44,22 @@ impl Autopilot {
     /// An autopilot for a car that is already on (or next to) `route`.
     pub fn on_route(route: Route, car: VehicleSpec, v: &Vehicle) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg: cfg(), idx, stuck: 0.0, recoveries: 0 }
+        Autopilot { route, car, cfg: cfg(), idx, stuck: 0.0, next: None, recoveries: 0 }
+    }
+
+    /// Starts from wherever the car is: on the stage it joins at the nearest point, elsewhere it first drives a field
+    /// route to the nearest stage point. `None` when the level has no stage.
+    pub fn start(t: &super::terrain::Terrain, v: &Vehicle, car: VehicleSpec) -> Option<Autopilot> {
+        let stage = t.roads()?.roads.iter().find(|r| r.kind == super::roads::RoadKind::Stage)?;
+        let c = cfg();
+        let stage_route = route_for_road(stage, &car, &c);
+        let (k, d) = stage_route.nearest(v.pos.x, v.pos.z);
+        if d <= 15.0 { return Some(Autopilot::on_route(stage_route, car, v)); }
+        let to = stage_route.p[k];
+        let Some(field) = join::field_route(t, &car, (v.pos.x, v.pos.z), (to.x, to.z), &c) else { return Some(Autopilot::on_route(stage_route, car, v)) };
+        let mut ap = Autopilot::on_route(field, car, v);
+        ap.next = Some((stage_route, k));
+        Some(ap)
     }
 
     pub fn route(&self) -> &Route { &self.route }
@@ -54,6 +72,11 @@ impl Autopilot {
         if d > 15.0 { let all = self.route.nearest(v.pos.x, v.pos.z); i = all.0; d = all.1; }
         self.idx = i;
         let speed = v.speed();
+        if self.next.is_some() && self.route.length() - self.route.s[i] < 14.0 {
+            let (stage, k) = self.next.take().unwrap();
+            self.route = stage; self.idx = k; self.stuck = 0.0;
+            return self.drive(v, dt);
+        }
         let remaining = self.route.length() - self.route.s[i];
         if remaining < 12.0 && speed.abs() < 1.5 { cmd.done = true; cmd.input = Input { brake: true, ..Default::default() }; return cmd; }
 
