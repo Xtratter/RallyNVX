@@ -191,3 +191,74 @@ mod peugeot {
     while v.speed() < 100.0 / 3.6 && secs < 12.0 { v.step(&t, &[], &go, 1.0 / 120.0); secs += 1.0 / 120.0; best = best.max(v.speed()); }
     assert!(secs > 3.5 && secs < 4.4, "0-100 km/h took {secs} s (best speed {best})");
 }
+
+use crate::game::{grip::LooseMap, surface::Surface};
+
+fn braking_distance(surface: Surface, spec: VehicleSpec) -> f32 {
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(spec, v3(0., 1.0, 0.), 0.0);
+    v.force_surface = Some(surface);
+    for _ in 0..120 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+    v.vel = v.forward() * 20.0;
+    let z0 = v.pos.z;
+    for _ in 0..600 { v.step(&t, &[], &Input { brake: true, ..Default::default() }, 1.0 / 120.0); if v.speed() < 0.3 { break; } }
+    v.pos.z - z0
+}
+fn cornering_accel(surface: Surface, spec: VehicleSpec) -> f32 {
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(spec, v3(0., 1.0, 0.), 0.0);
+    v.force_surface = Some(surface);
+    for _ in 0..120 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+    v.vel = v.forward() * 20.0;
+    let mut best = 0.0f32;
+    for i in 0..240 {
+        v.step(&t, &[], &Input { steer: 0.35, throttle: 0.3, ..Default::default() }, 1.0 / 120.0);
+        if i > 120 { best = best.max(v.vel.len() * v.omega.y.abs()); }
+    }
+    best
+}
+
+#[test] fn braking_distance_orders_the_surfaces() {
+    for spec in [VehicleSpec::offroader(), VehicleSpec::by_id("vulpes").unwrap()] {
+        let d = |s| braking_distance(s, spec);
+        let (a, g, gr, sa) = (d(Surface::Asphalt), d(Surface::Gravel), d(Surface::Grass), d(Surface::Sand));
+        assert!(a < g && g < gr && gr < sa, "asphalt {a:.1} gravel {g:.1} grass {gr:.1} sand {sa:.1}");
+        assert!(sa > a * 1.6 && a > 10.0, "{a} {sa}");
+    }
+}
+#[test] fn cornering_grip_orders_the_surfaces() {
+    let spec = VehicleSpec::by_id("vulpes").unwrap();
+    let (a, g, s) = (cornering_accel(Surface::Asphalt, spec), cornering_accel(Surface::Gravel, spec), cornering_accel(Surface::Sand, spec));
+    assert!(a > g * 1.15 && g > s * 1.1, "asphalt {a:.1} gravel {g:.1} sand {s:.1}");
+}
+#[test] fn the_vulpes_spins_its_wheels_on_gravel() {
+    let spec = VehicleSpec::by_id("vulpes").unwrap();
+    let time_to = |surface: Surface| {
+        let t = Terrain::flat();
+        let mut v = Vehicle::new(spec, v3(0., 1.0, 0.), 0.0);
+        v.force_surface = Some(surface);
+        for _ in 0..120 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+        let go = Input { throttle: 1.0, ..Default::default() };
+        let mut secs = 0.0;
+        while v.speed() < 100.0 / 3.6 && secs < 15.0 { v.step(&t, &[], &go, 1.0 / 120.0); secs += 1.0 / 120.0; }
+        secs
+    };
+    let (a, g) = (time_to(Surface::Asphalt), time_to(Surface::Gravel));
+    assert!(a > 3.4 && a < 4.5, "asphalt {a}");
+    assert!(g > a * 1.2, "gravel {g} vs asphalt {a}");
+}
+#[test] fn the_car_reports_its_surface_and_the_road_wears_the_loose_layer() {
+    use crate::game::roads::{Road, RoadKind, RoadNet, RoadPt};
+    let net = RoadNet::new(vec![Road { kind: RoadKind::Stage, pts: (0..=250).map(|i| RoadPt { pos: v3(0.0, 0.0, i as f32 * 4.0), width: 8.0, s: i as f32 * 4.0 }).collect() }]);
+    let t = Terrain::flat().with_net(net);
+    let mut map = LooseMap::new(t.roads().unwrap());
+    let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0.0, 1.0, 10.0), 0.0);
+    for _ in 0..120 { v.step_with(&t, &[], &Input::default(), 1.0 / 60.0, &mut map); }
+    assert_eq!(v.surface, Surface::Gravel);
+    v.vel = v.forward() * 15.0;
+    for _ in 0..600 { v.step_with(&t, &[], &Input { throttle: 0.4, ..Default::default() }, 1.0 / 120.0, &mut map); }
+    let mid = v.pos.z - 20.0;
+    let on_line = (0..8).map(|i| map.loose_at(0, mid - i as f32, -v.spec.wheels[0].x)).fold(1.0f32, f32::min);
+    assert!(on_line < 0.6, "the wheel line is packed: {on_line}");
+    assert_eq!(map.loose_at(0, mid, 3.5), 1.0, "3.5 m to the side is untouched");
+}

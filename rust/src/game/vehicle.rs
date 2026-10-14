@@ -1,7 +1,9 @@
 //! Arcade off-road vehicle: rigid body, four spring/damper wheels over a heightfield, friction-circle tyres.
+use super::grip::{self, LooseMap};
 use super::input::Input;
 use super::math::{v3, Q, V3};
 use super::props::{Prop, PropKind};
+use super::surface::Surface;
 use super::terrain::Terrain;
 
 /// Which generated body the renderer builds for a car.
@@ -50,6 +52,8 @@ pub struct Vehicle {
     pub braking: bool, pub reversing: bool,
     /// The driver holds reverse (negative throttle), as opposed to merely rolling backwards.
     pub reverse_throttle: bool,
+    /// The surface under the first wheel in contact (the HUD shows it); tests can force one for every wheel.
+    pub surface: Surface, pub force_surface: Option<Surface>,
 }
 
 const SUB: usize = 4;
@@ -57,7 +61,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, braking: false, reversing: false, reverse_throttle: false }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, braking: false, reversing: false, reverse_throttle: false, surface: Surface::Asphalt, force_surface: None }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -76,6 +80,12 @@ impl Vehicle {
     }
 
     pub fn step(&mut self, t: &Terrain, props: &[Prop], inp: &Input, dt: f32) {
+        let mut none = LooseMap::empty();
+        self.step_with(t, props, inp, dt, &mut none);
+    }
+
+    /// One step; `loose` is the level's loose gravel map, which the wheels on a stage wear.
+    pub fn step_with(&mut self, t: &Terrain, props: &[Prop], inp: &Input, dt: f32, loose: &mut LooseMap) {
         let inp = inp.sanitized();
         self.braking = inp.brake || inp.handbrake;
         self.reverse_throttle = inp.throttle < -0.05;
@@ -84,7 +94,7 @@ impl Vehicle {
         let rate = self.spec.steer_rate * dt;
         self.steer += (inp.steer * max_a - self.steer).clamp(-rate, rate);
         let h = dt / SUB as f32;
-        for _ in 0..SUB { self.substep(t, &inp, h); }
+        for _ in 0..SUB { self.substep(t, &inp, h, loose); }
         self.collide_props(props);
         let g = t.height(self.pos.x, self.pos.z);
         if self.pos.y < g + 0.2 {
@@ -96,7 +106,7 @@ impl Vehicle {
         }
     }
 
-    fn substep(&mut self, t: &Terrain, inp: &Input, h: f32) {
+    fn substep(&mut self, t: &Terrain, inp: &Input, h: f32, loose: &mut LooseMap) {
         let s = self.spec;
         let (fwd, up, right) = (self.forward(), self.up(), self.right());
         let fspeed = self.vel.dot(fwd);
@@ -132,11 +142,18 @@ impl Vehicle {
             let fw = (base - n * base.dot(n)).norm();
             let rw = n.cross(fw);
             let (vl, vf) = (vc.dot(rw), vc.dot(fw));
-            let lat_mu = if !front && inp.handbrake { s.mu * s.handbrake_grip } else { s.mu };
-            let mut fl = -vl * wheel_mass * s.lateral_k;
+            // the ground under this wheel: grip, side stiffness and rolling resistance follow the surface; gravel wears
+            let contact = self.pos + r_c;
+            let (surf, looseness, cell) = match self.force_surface { Some(f) => (f, 1.0, None), None => grip::ground_at(t, loose, contact.x, contact.z) };
+            let sg = grip::grip(surf, looseness);
+            if self.contacts == 1 { self.surface = surf; }
+            if let Some((ri, s_along, side)) = cell { loose.wear(ri, s_along, side, vf.abs().max(vl.abs()), h); }
+            let (mu_s, lat_k, roll) = (s.mu * sg.mu, s.lateral_k * sg.lateral, s.rolling * sg.rolling);
+            let lat_mu = if !front && inp.handbrake { mu_s * s.handbrake_grip } else { mu_s };
+            let mut fl = -vl * wheel_mass * lat_k;
             let lim_speed = if inp.throttle >= 0.0 { s.max_speed } else { s.max_speed * s.reverse_factor };
             let taper = (1.0 - (fspeed * inp.throttle.signum()).max(0.0) / lim_speed).clamp(0.0, 1.0);
-            let mut fx = inp.throttle * s.engine_force / 4.0 * taper - vf * s.rolling;
+            let mut fx = inp.throttle * s.engine_force / 4.0 * taper - vf * roll;
             // brake pedal: scaled by how hard it is pressed (0 = legacy full force); the handbrake always bites the rear wheels fully
             let kb = if inp.brake_amt > 0.0 { inp.brake_amt.clamp(0.05, 1.0) } else { 1.0 };
             let k = if inp.handbrake && !front { 1.0 } else if inp.brake { kb } else { 0.0 };

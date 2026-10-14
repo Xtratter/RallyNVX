@@ -46,10 +46,10 @@ impl LooseMap {
         if k < cells.len() { Some(k) } else { None }
     }
     pub fn loose_at(&self, road: usize, s: f32, side: f32) -> f32 { self.index(road, s, side).map_or(1.0, |k| self.roads[road][k]) }
-    /// A wheel at (s, side) moving at `speed` m/s for `dt` s packs the cells under it (about 0.35 per metre travelled).
+    /// A wheel at (s, side) moving at `speed` m/s for `dt` s packs the cells under it (about 0.5 per metre travelled).
     pub fn wear(&mut self, road: usize, s: f32, side: f32, speed: f32, dt: f32) {
         if !speed.is_finite() || !dt.is_finite() { return; }
-        let amount = (0.35 * speed.abs() * dt).clamp(0.0, 1.0);
+        let amount = (0.5 * speed.abs() * dt).clamp(0.0, 1.0);
         for off in [-0.25f32, 0.25] {   // the tyre's width: two half-metre cells
             if let Some(k) = self.index(road, s, side + off) { let c = &mut self.roads[road][k]; *c = (*c - amount * 0.5).clamp(0.0, 1.0); }
         }

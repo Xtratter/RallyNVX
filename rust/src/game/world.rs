@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 
 use super::camera_follow::FollowCam;
+use super::grip::LooseMap;
 use super::carlights::{self, CarLights, Lamps};
 use super::city::City;
 use super::input::Input;
@@ -22,6 +23,8 @@ pub struct World {
     pub cam: FollowCam,
     pub time: f32,
     pub cities: Vec<City>,
+    /// The loose layer of the special stage (worn by the wheels, reset with the level).
+    pub loose: LooseMap,
     pub tracks: Tracks,
     /// The car this world is built for (a restart or a placement helper makes the same car again).
     pub car_spec: VehicleSpec,
@@ -54,7 +57,8 @@ impl World {
         let vehicle = Vehicle::new(car, v3(at.0, terrain.height(at.0, at.1) + 1.1, at.1), yaw);
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
-        World { terrain, vehicle, cam, time: 0.0, cities, tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }
+        let loose = terrain.roads().map_or_else(LooseMap::empty, LooseMap::new);
+        World { terrain, vehicle, cam, time: 0.0, cities, loose, tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }
     }
 
     /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
@@ -113,7 +117,7 @@ impl World {
         let (tx, tz) = (tile_of(self.vehicle.pos.x), tile_of(self.vehicle.pos.z));
         self.ensure_props(tx, tz, 1);
         let near = self.nearby_props();
-        self.vehicle.step(&self.terrain, &near, &inp, dt);
+        self.vehicle.step_with(&self.terrain, &near, &inp, dt, &mut self.loose);
         let v = &mut self.vehicle;
         v.pos.x = v.pos.x.clamp(-WORLD_LIMIT, WORLD_LIMIT);
         v.pos.z = v.pos.z.clamp(-WORLD_LIMIT, WORLD_LIMIT);
