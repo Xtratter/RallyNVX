@@ -87,3 +87,12 @@ fn net(seed: u64) -> (Terrain, RoadNet) { let t = Terrain::new(seed); let n = ge
         assert!(s.pts.iter().all(|p| p.pos.y >= t.water_level().map_or(f32::MIN, |l| l + 0.2)));
     }
 }
+#[test] #[ignore] fn print_crest_positions() {
+    let t = Terrain::with_roads(21);
+    let s = &t.roads().unwrap().roads[1];
+    let ys: Vec<f32> = s.pts.iter().map(|p| p.pos.y).collect();
+    let k = 15usize;
+    let ex = |i: usize| { let (a, b) = (i.saturating_sub(k), (i + k).min(ys.len() - 1)); ys[i] - ys[a..=b].iter().sum::<f32>() / (b - a + 1) as f32 };
+    let v: Vec<String> = (k..ys.len() - k).filter(|&i| ex(i) > 0.4 && ex(i) >= ex(i - 1) && ex(i) > ex(i + 1)).take(8).map(|i| format!("{:.0}(+{:.1})", s.pts[i].s, ex(i))).collect();
+    println!("CRESTS {} m: {}", s.length(), v.join(" "));
+}

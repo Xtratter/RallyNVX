@@ -71,10 +71,10 @@ fn straight(kind: crate::game::roads::RoadKind, y: f32) -> crate::game::roads::R
     let st = Terrain::flat().with_net(straight(RoadKind::Stage, 0.0));
     let li = Terrain::flat().with_net(straight(RoadKind::Liaison, 0.0));
     let cfg = crate::game::roads::cfg::cfg();
-    // the centre of the ditch: 4 m half width + 1.8 m offset
-    let (d_st, d_li) = (-st.height(0.0, 5.8), -li.height(0.0, 5.8));
-    assert!((d_st - cfg.ditch_stage.depth).abs() < 0.06, "{d_st}");
-    assert!((d_li - cfg.ditch_liaison.depth).abs() < 0.06, "{d_li}");
+    // the centre of the ditch: 4 m half width + the offset (the road blend still weighs it by ~0.9)
+    let (d_st, d_li) = (-st.height(0.0, 4.0 + cfg.ditch_stage.offset), -li.height(0.0, 4.0 + cfg.ditch_liaison.offset));
+    assert!((d_st - cfg.ditch_stage.depth).abs() < 0.12, "{d_st}");
+    assert!((d_li - cfg.ditch_liaison.depth).abs() < 0.12, "{d_li}");
     assert_eq!(st.height(0.0, 0.0), 0.0);
     assert!(st.height(0.0, 3.9).abs() < 1e-4, "no ditch under the road");
     assert!(st.height(0.0, 40.0).abs() < 1e-4, "none far away");
