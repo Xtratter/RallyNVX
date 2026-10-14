@@ -16,3 +16,5 @@ Tech debt (user, 2026-10-14): the wind's side force on the car (a light push at 
 Tech debt (user, 2026-10-14): weather conditions (rain, fog, snow, wet surfaces) and the seasons (summer, autumn, winter, spring: foliage, ground colour, snow, grip) are NOT done; planned later.
 
 Roads order (user, 2026-10-14): first A (stage relief: crests/jumps, ditches and banks, roadside props), then B (topology: junctions, side roads, city super-special loop), then the rally mode. Research on real rally stages first.
+
+Tech debt (user, 2026-10-14): the autopilot's further improvement: machine vision (the car sees the road through a camera/depth view instead of reading the route) and self-training (the car learns by itself how to drive faster and steadier: reinforcement learning or numeric tuning of the style numbers over many simulated runs). Not now; the current autopilot (`game/autopilot`, styles in `rust/autopilot.json`) stays as the baseline and the reference driver for tests.
