@@ -43,7 +43,7 @@ class PaceStrip(ctx: Context) : View(ctx) {
     /** `st` is the game's state array: four notes of 8 numbers from index 45 (see `Playback::upcoming`). */
     fun update(st: FloatArray) {
         val list = ArrayList<FloatArray>()
-        for (i in 0 until 4) { val b = 45 + i * 8; if (b + 8 <= st.size && st[b] > 0.5f) list.add(st.copyOfRange(b, b + 8)) }
+        for (i in 0 until 3) { val b = 45 + i * 8; if (b + 8 <= st.size && st[b] > 0.5f) list.add(st.copyOfRange(b, b + 8)) }
         if (list.size != notes.size || list.indices.any { !list[it].contentEquals(notes[it]) }) { notes = list; requestLayout(); invalidate() }
     }
 

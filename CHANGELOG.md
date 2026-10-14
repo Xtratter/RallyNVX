@@ -4,6 +4,9 @@
 
 ## 2.24.0 - studio voices, signs and the icon
 
+- Changed: corner severity is on the usual rally scale: 6 an easy bend ... 1 sharp, plus the hairpin (new calls "left six" / "right six")
+- Added: pictogram pace notes: a strip under the status island with a circle and an arrow per note (colour and bend by severity, the number, a caution mark for a corner that tightens, hump, junction and finish symbols, "into" arrows and distance bubbles)
+
 - Added: signs along the special stage that say what the co-driver says: warning triangles (curve, double curve, hairpin, bump), chevron boards, route arrows and no-entry discs at junctions, distance boards, finish boards, a stop and a start sign; Settings -> Signs on the stage
 - Added: the app icon (a rally car and the name on an orange background, adaptive and legacy)
 
