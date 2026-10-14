@@ -21,7 +21,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 - **Flight**: a helicopter and a drone for ring races, sling cargo and recon missions (see [docs/game.md](docs/game.md))
 - **City**: procedural cities with streets, parks and buildings 4-90 m; solid buildings, roof landings (see [docs/game.md](docs/game.md))
 - **Rescue**: helicopter missions that pick survivors up at 1-3 sites and bring them to a base pad (see [docs/game.md](docs/game.md))
-- **Garage**: a second car (Peugeot 206 WRC), four upgrades per car and a turntable preview (see [docs/game.md](docs/game.md))
+- **Garage**: a second car (Peugeot 206 WRC, a simplified model by vecarz, CC BY-NC-SA 4.0), four upgrades per car and a turntable preview (see [docs/game.md](docs/game.md))
 - **Render modes**: Raster or Hybrid (soft shadows, long hill shadows, ambient occlusion) with an optional automatic fallback (see [docs/game.md](docs/game.md))
 - **Controls**: an on-screen steering wheel (or tilt) with gas and brake pedals for the car, and a settings screen (see [docs/game.md](docs/game.md))
 - **Sound**: procedural engine, rotor, wind and event sounds, no audio files (see [docs/game.md](docs/game.md))

@@ -216,7 +216,9 @@ pub fn car_wheel_poses(v: &Vehicle, spin: f32) -> [(Q, V3); 4] {
     for w in 0..4 {
         let local = s.wheels[w] - v3(0.0, s.rest - v.comp[w], 0.0);
         let steer = if w < 2 { Q::axis_angle(v3(0., 1., 0.), -v.steer) } else { Q::IDENT };
-        out[w] = (v.rot.mul(steer).mul(Q::axis_angle(v3(1., 0., 0.), spin)), v.pos + v.rot.rotate(local));
+        // the rally wheel mesh has its rim face on the +x side: wheels on the -x side turn the mesh around (after the spin)
+        let flip = if s.style == crate::game::vehicle::CarStyle::Rally && s.wheels[w].x < 0.0 { Q::axis_angle(v3(0., 1., 0.), std::f32::consts::PI) } else { Q::IDENT };
+        out[w] = (v.rot.mul(steer).mul(Q::axis_angle(v3(1., 0., 0.), spin)).mul(flip), v.pos + v.rot.rotate(local));
     }
     out
 }

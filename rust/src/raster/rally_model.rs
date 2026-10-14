@@ -7,7 +7,25 @@ use crate::game::{math::{v3, Q}, vehicle::VehicleSpec};
 const BLACK: [f32; 3] = [0.05, 0.05, 0.065];
 const BLUE: [f32; 3] = [0.10, 0.22, 0.62];
 
+const ASSET: &[u8] = include_bytes!("../../assets/peugeot206.rcar");
+
+/// The rally car: the simplified Peugeot 206 WRC asset (see `assets/ASSET-LICENSE.md`), scaled to the spec size; the
+/// generated hatchback below is the fallback when the asset cannot be read.
 pub fn build_rally(spec: &VehicleSpec) -> CarModel {
+    match super::rcar::parse(ASSET) {
+        Ok((mut body, mut wheel)) => {
+            // the asset is modelled at 1.91 x 1.50 x 3.97 m with 0.326 m wheels: follow a changed spec size and radius
+            let (sx, sy, sz) = (spec.size.x / 1.91, spec.size.y / 1.50, spec.size.z / 3.97);
+            for v in &mut body.verts { v.pos = [v.pos[0] * sx, v.pos[1] * sy, v.pos[2] * sz]; }
+            let k = spec.radius / 0.326;
+            for v in &mut wheel.verts { v.pos = [v.pos[0] * spec.look.wheel_width / 0.226, v.pos[1] * k, v.pos[2] * k]; }
+            CarModel { body, wheel }
+        }
+        Err(e) => { log::error!("peugeot206.rcar unusable ({e}); using the generated hatchback"); build_generated(spec) }
+    }
+}
+
+fn build_generated(spec: &VehicleSpec) -> CarModel {
     let (sx, sy, sz) = (spec.size.x / 1.78, spec.size.y / 1.44, spec.size.z / 3.96);
     let l = spec.look;
     let p = |x: f32, y: f32, z: f32| v3(x * sx, y * sy, z * sz);          // a point in base-size metres

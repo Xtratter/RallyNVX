@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.11.1 - the real Peugeot 206 WRC model
+
+- Changed: the Peugeot 206 WRC now uses a simplified copy of the real model (body 20 000 triangles, wheels 2 500 each, livery baked into vertex colours) instead of the generated hatchback; `tools/carconv` converts the glb and `tools/rcar_preview.py` previews it. Measured on a POCO F3: the frame rate did not change between 9 000 and 42 000 triangles for the car, so the quality stays high
+- Credit: the model is by vecarz (Sketchfab), CC BY-NC-SA 4.0 (credit, non-commercial, share alike); see `rust/assets/ASSET-LICENSE.md`; the garage shows the credit
+
 ## 2.11.0 - garage
 
 - Added: a garage in the main menu: a turntable preview, buying and selecting cars, four upgrades per car (engine, tyres, suspension, brakes, three levels each)

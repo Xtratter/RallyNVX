@@ -79,6 +79,10 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
             else -> M3Widgets.button(this, t("Select", "Выбрать"), M3Widgets.ButtonKind.FILLED) { Native.garageSelect(profile, shown); refresh() }
         }
         panel.addView(action, LinearLayout.LayoutParams(px(300f), px(48f)).apply { topMargin = px(10f) })
+        if (shown == 1) panel.addView(TextView(this).apply {
+            text = t("Model: Peugeot 206 WRC by vecarz (Sketchfab), CC BY-NC-SA 4.0, simplified", "Модель: Peugeot 206 WRC от vecarz (Sketchfab), CC BY-NC-SA 4.0, упрощена")
+            textSize = 11f; setTextColor(M3.TEXT); alpha = 0.7f; gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
         // upgrades
         for (u in 0 until 4) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
