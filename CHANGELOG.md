@@ -2,11 +2,14 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
-## 2.14.0 - free drive only
+## 2.14.0 - free drive only, camera control
+
+- Added: look around by dragging a finger on free space (also while driving): swing the camera round the car and raise or lower it; it returns behind the car once the car drives forward faster than about 7 km/h. While reversing the camera swings in front of the car and looks back to show what is behind, and returns when you drive forward
 
 - Removed: the delivery and race missions (the mission list, city routes, cargo, medals, timer, target arrow, result screen) and the Missions menu. The main menu is now Free drive, Scenes, Garage, Settings. A rally mode (special stages with times) will come back as an option, free drive stays
 - Changed: while nothing earns money, the garage is free (purchases show "Free" and leave the balance alone); the profile keeps the money and the garage, old files with mission results still load (the results are ignored)
 - Removed: the mission sounds (checkpoint, success, failure) and the mission HUD
+- Debug: the intent extras `camyaw`, `campitch` (radians) and `throttle` (held after 1.5 s) for screenshots without touching the screen
 
 ## 2.13.0 - day and night, car lights
 

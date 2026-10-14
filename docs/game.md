@@ -14,6 +14,9 @@ Raytrace has a game mode next to the scene viewer: off-road free drive on a rand
 | Handbrake (drift) | "Handbrake" button (hold) | Left Shift |
 | Reset (flipped car) | "Reset" button | R |
 | New random level | "New level" button | N |
+| Look around | drag a finger on free space (also while driving) | - |
+
+The chase camera: drag a finger on free space to swing it round the car (left/right) and to raise or lower it (up/down: lowered to the horizon it shows the sky, the sun and the moon). When you drive forward faster than about 7 km/h and the finger is up, the camera swings back behind the car within half a second. When you reverse (hold reverse for a third of a second, or roll backwards) the camera swings round in front of the car and looks back, so you see what is behind; driving forward swings it back.
 
 ## Seeds
 
@@ -71,6 +74,9 @@ No rally mode and no NPC orders yet, and only the raster and hybrid renderers. T
 | Ручник (занос) | кнопка «Ручник» (удерживать) | Левый Shift |
 | Сброс (машина перевернулась) | кнопка «Сброс» | R |
 | Новый случайный уровень | кнопка «Новый уровень» | N |
+| Осмотреться | провести пальцем по свободному месту (и на ходу) | - |
+
+Камера погони: проведите пальцем по свободному месту, чтобы повернуть её вокруг машины (влево и вправо) и поднять или опустить (вверх и вниз: опущенная к горизонту, она показывает небо, солнце и луну). Когда вы едете вперёд быстрее примерно 7 км/ч и палец поднят, камера за полсекунды возвращается за машину. При движении назад (газ назад дольше трети секунды или машина катится назад) камера уходит вперёд машины и смотрит назад, чтобы было видно, что сзади; при движении вперёд она возвращается.
 
 ## Seed
 

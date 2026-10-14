@@ -61,6 +61,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         }
         root.addView(sv, FrameLayout.LayoutParams(-1, -1))
         drive = DriveControls(this).also { it.onChange = { thr, steer, brake, amt -> carThr = thr; carSteer = steer; carBrake = brake; carAmt = amt; sendInput() } }
+        drive?.onCamera = { dx, dy -> if (running) Native.gameCamera(dx * 0.006f, -dy * 0.004f) }   // drag right = the camera swings round, drag down = lower
+        drive?.onCameraUp = { if (running) Native.gameCameraUp() }
         root.addView(drive, FrameLayout.LayoutParams(-1, -1))
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
@@ -117,6 +119,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
         intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
+        // debug/test: a camera orbit (radians) and a held throttle (after 1.5 s) without touching the screen
+        val camYaw = intent.getFloatExtra("camyaw", 0f); val camPitch = intent.getFloatExtra("campitch", 0f)
+        if (camYaw != 0f || camPitch != 0f) Native.gameCamera(camYaw, camPitch)
+        intent.getFloatExtra("throttle", 0f).let { th -> if (th != 0f) handler.postDelayed({ carThr = th; sendInput() }, 1500) }
         audio.start()
     }
     override fun surfaceDestroyed(h: SurfaceHolder) { audio.stop(); Native.gameStop(); running = false }

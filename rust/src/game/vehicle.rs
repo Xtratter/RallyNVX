@@ -48,6 +48,8 @@ pub struct Vehicle {
     pub contacts: u8,
     /// Driver input of the last step, for the lights.
     pub braking: bool, pub reversing: bool,
+    /// The driver holds reverse (negative throttle), as opposed to merely rolling backwards.
+    pub reverse_throttle: bool,
 }
 
 const SUB: usize = 4;
@@ -55,7 +57,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, braking: false, reversing: false }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, braking: false, reversing: false, reverse_throttle: false }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -76,7 +78,8 @@ impl Vehicle {
     pub fn step(&mut self, t: &Terrain, props: &[Prop], inp: &Input, dt: f32) {
         let inp = inp.sanitized();
         self.braking = inp.brake || inp.handbrake;
-        self.reversing = inp.throttle < -0.05 || self.speed() < -0.5;
+        self.reverse_throttle = inp.throttle < -0.05;
+        self.reversing = self.reverse_throttle || self.speed() < -0.5;
         let max_a = self.spec.steer_max / (1.0 + self.vel.len() / self.spec.steer_speed_ref);
         let rate = self.spec.steer_rate * dt;
         self.steer += (inp.steer * max_a - self.steer).clamp(-rate, rate);

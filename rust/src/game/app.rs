@@ -66,6 +66,9 @@ mod game {
         pub fn set_city_radius(&mut self, r: f32) { self.raster.set_city_radius(r); }
         pub fn set_hybrid(&mut self, on: bool) { self.raster.set_hybrid(on); self.monitor.reset(); self.monitor.warm_up(6.0); self.fell_back = false; }
         pub fn set_auto_fallback(&mut self, on: bool) { self.auto_fallback = on; self.monitor.reset(); }
+        /// The player drags on the screen: orbit the chase camera (radians); `camera_release` when the finger goes up.
+        pub fn camera_drag(&mut self, dyaw: f32, dpitch: f32) { self.world.cam.drag(dyaw, dpitch); }
+        pub fn camera_release(&mut self) { self.world.cam.set_dragging(false); }
         pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }
         pub fn place_in_city(&mut self) -> bool { self.world.place_in_city() }
         pub fn place_near_water(&mut self) -> bool { self.world.place_near_water() }
