@@ -178,7 +178,7 @@ impl Dust {
             let fade_in = (x / 0.08).min(1.0);
             // turbulent diffusion spreads a puff like the square root of its age
             let size = p.size0 * (1.0 + if p.coarse { 0.8 } else { 1.7 } * (p.age.sqrt()) + 1.2 * x);
-            Particle { pos: p.pos, size, color: p.color, alpha: (if p.coarse { 0.5 } else { 0.4 }) * fade_in * (1.0 - x).powf(1.4), seed: p.seed, age: x, kind: if p.coarse { 1.0 } else { 0.0 } }
+            Particle { pos: p.pos, size, color: p.color, alpha: (if p.coarse { 0.6 } else { 0.55 }) * fade_in * (1.0 - x).powf(1.4), seed: p.seed, age: x, kind: if p.coarse { 1.0 } else { 0.0 } }
         }).collect()
     }
 }

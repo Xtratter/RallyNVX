@@ -496,12 +496,13 @@ struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @lo
 @fragment fn fs_dust(i: DOut) -> @location(0) vec4<f32> {
     let r = length(i.uv);
     // a ragged, noisy puff instead of a smooth disc: the edge radius wanders with a noise that is different for every puff
-    let n = vnoise2(i.uv * 2.3 + vec2<f32>(i.e.x * 31.0, i.e.x * 17.0)) * 0.6 + vnoise2(i.uv * 5.1 + vec2<f32>(i.e.x * 9.0, 3.0)) * 0.4;
+    let n = vnoise2(i.uv * 2.6 + vec2<f32>(i.e.x * 31.0, i.e.x * 17.0));
     let edge = mix(0.55, 1.05, n);
     let shape = 1.0 - smoothstep(0.1, edge, r);
     let wp = i.wp;
     let dcam = length(wp - u.cam.xyz);
     let near = smoothstep(2.0, 9.0, dcam);   // puffs close to the camera thin out instead of blinding the view
+    if (i.c.a * shape * near < 0.004) { discard; }   // most of a sprite is empty: skip the lighting there
     // soft against the ground: a puff that meets the terrain fades out instead of cutting a hard line
     let above = wp.y - terrain_h(wp.x, wp.z);
     let soft = mix(0.4, 1.0, smoothstep(0.0, 0.7, above));
@@ -511,8 +512,8 @@ struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @lo
     let view = normalize(wp - u.cam.xyz);
     let sun = clamp(length(u.sun_col.rgb) / 2.6, 0.06, 1.0);
     let fwd = pow(max(dot(view, sun_dir), 0.0), 5.0);
-    let amb = mix(u.sky_hor.rgb, u.sky_top.rgb, 0.5) * 0.45;
-    var col = i.c.rgb * (amb * 0.8 + vec3<f32>(sun) * (0.42 + 0.35 * shape + 1.1 * fwd * sun));
+    let amb = (u.sky_hor.rgb * 0.4 + vec3<f32>(0.45)) * 0.5 * mix(1.0, 0.2, u.disc.w);
+    var col = i.c.rgb * (amb + vec3<f32>(sun) * (0.55 + 0.3 * shape + 1.2 * fwd * sun));
     col = col * mix(0.82, 1.0, smoothstep(0.0, 0.8, r));   // the thick middle of a puff is shaded by the rest of it
     if (u.hl_pos.w > 0.0) {
         let dv = wp - u.hl_pos.xyz;
