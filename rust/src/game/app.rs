@@ -99,6 +99,8 @@ mod game {
             // the road relief numbers likewise (`roads.json`; used by the next level that is generated)
             crate::game::roads::cfg::reset_cfg();
             if let Some(dir) = path.parent() { crate::game::roads::cfg::load_override(&dir.join("roads.json")); }
+            crate::game::autopilot::cfg::reset_cfg();
+            if let Some(dir) = path.parent() { crate::game::autopilot::cfg::load_override(&dir.join("autopilot.json")); }
             self.car = p.selected_spec();
             self.world.swap_car(self.car);   // the free-drive world made in `new` used the default car
             self.profile = Some(p);

@@ -1,0 +1,11 @@
+{
+  "lat_factor": 0.75,
+  "brake_factor": 0.7,
+  "look_base": 6.0,
+  "look_gain": 0.45,
+  "offset_max": 0.55,
+  "crest_speed": 24.0,
+  "field_speed": 12.0,
+  "stuck_time": 4.0,
+  "finish_stop": 25.0
+}
