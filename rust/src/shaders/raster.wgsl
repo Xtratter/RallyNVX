@@ -1,10 +1,13 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
+    mode: vec4<f32>, cam_tile: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
 @group(0) @binding(2) var shadow_smp: sampler_comparison;
+@group(0) @binding(5) var atlas: texture_2d<f32>;
+@group(0) @binding(6) var atlas_smp: sampler;   // height atlas (R16Float, 8x8 tiles of 64x64 texels, 2 m per texel)
 @group(0) @binding(3) var mat_tex: texture_2d_array<f32>;
 @group(0) @binding(4) var mat_smp: sampler;
 
@@ -35,18 +38,82 @@ fn finish(c: vec3<f32>) -> vec3<f32> {
     return pow(t, vec3<f32>(1.0 / 2.2));
 }
 
+const POISSON = array<vec2<f32>, 16>(
+    vec2<f32>(-0.94201624, -0.39906216), vec2<f32>(0.94558609, -0.76890725), vec2<f32>(-0.09418410, -0.92938870), vec2<f32>(0.34495938, 0.29387760),
+    vec2<f32>(-0.91588581, 0.45771432), vec2<f32>(-0.81544232, -0.87912464), vec2<f32>(-0.38277543, 0.27676845), vec2<f32>(0.97484398, 0.75648379),
+    vec2<f32>(0.44323325, -0.97511554), vec2<f32>(0.53742981, -0.47373420), vec2<f32>(-0.26496911, -0.41893023), vec2<f32>(0.79197514, 0.19090188),
+    vec2<f32>(-0.24188840, 0.99706507), vec2<f32>(-0.81409955, 0.91437590), vec2<f32>(0.19984126, 0.78641367), vec2<f32>(0.14383161, -0.14100790));
+
+fn shadow_basic(wp: vec3<f32>, n: vec3<f32>) -> f32 {
+    let p = u.light_vp * vec4<f32>(wp + n * 0.2, 1.0);
+    let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+    let inside = select(0.0, 1.0, uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0 && p.z < 1.0);
+    var s = 0.0;
+    for (var j = -1; j <= 1; j++) {
+        for (var i = -1; i <= 1; i++) {
+            s += textureSampleCompareLevel(shadow_tex, shadow_smp, uv + vec2<f32>(f32(i), f32(j)) * (1.0 / 2048.0), p.z - 0.002);
+        }
+    }
+    return mix(1.0, s / 9.0, inside);
+}
+
 fn shadow_at(wp: vec3<f32>, n: vec3<f32>) -> f32 {
     let p = u.light_vp * vec4<f32>(wp + n * 0.2, 1.0);
     let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
     let inside = select(0.0, 1.0, uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0 && p.z < 1.0);
     let texel = 1.0 / 2048.0;
-    var s = 0.0;
-    for (var j = -1; j <= 1; j++) {
-        for (var i = -1; i <= 1; i++) {
-            s += textureSampleCompareLevel(shadow_tex, shadow_smp, uv + vec2<f32>(f32(i), f32(j)) * texel, p.z - 0.002);
+    if (u.mode.x < 0.5) {
+        var s = 0.0;
+        for (var j = -1; j <= 1; j++) {
+            for (var i = -1; i <= 1; i++) {
+                s += textureSampleCompareLevel(shadow_tex, shadow_smp, uv + vec2<f32>(f32(i), f32(j)) * texel, p.z - 0.002);
+            }
         }
+        return mix(1.0, s / 9.0, inside);
     }
-    return mix(1.0, s / 9.0, inside);
+    // hybrid: percentage-closer soft shadows (blocker search, penumbra from the blocker distance, 16-tap PCF)
+    if (inside < 0.5) { return 1.0; }
+    let zr = p.z - 0.002;
+    var bsum = 0.0; var bcnt = 0.0;
+    for (var i = 0; i < 8; i++) {
+        let q = uv + POISSON[i] * (6.0 * texel);
+        let d = textureLoad(shadow_tex, vec2<i32>(q * 2048.0), 0);
+        if (d < zr) { bsum += d; bcnt += 1.0; }
+    }
+    if (bcnt < 0.5) { return 1.0; }
+    let dist_m = (zr - bsum / bcnt) * 299.0;                 // ortho light, near 1 far 300
+    let pen_m = clamp(dist_m * 0.028, 0.04, 1.2);
+    let rad = pen_m / 0.0684 * texel;                        // shadow map texel = 140 / 2048 m
+    var s = 0.0;
+    for (var i = 0; i < 12; i++) { s += textureSampleCompareLevel(shadow_tex, shadow_smp, uv + POISSON[i] * rad, zr); }
+    return s / 12.0;
+}
+
+// terrain height from the atlas (metres); far below everything where no tile is loaded
+fn terrain_h(x: f32, z: f32) -> f32 {
+    let tx = floor(x / 128.0); let tz = floor(z / 128.0);
+    if (abs(tx - u.cam_tile.x) > 3.0 || abs(tz - u.cam_tile.y) > 3.0) { return -10000.0; }
+    return textureSampleLevel(atlas, atlas_smp, vec2<f32>(x + 1.0, z + 1.0) / 1024.0, 0.0).r;
+}
+
+// soft ray shadow of the terrain towards the sun (20 growing steps, penumbra widens with distance)
+fn terrain_shadow(wp: vec3<f32>, sun: vec3<f32>) -> f32 {
+    let l = length(sun.xz);
+    if (l < 1.0e-3) { return 1.0; }
+    let dir = sun.xz / l;
+    let slope = sun.y / l;
+    // a high sun or a far, hazy fragment: the hills cannot throw a visible shadow here
+    if (slope > 1.4 || distance(wp, u.cam.xyz) > 280.0) { return 1.0; }
+    var t = 2.0;
+    var vis = 1.0;
+    for (var i = 0; i < 14; i++) {
+        let ray_h = wp.y + 0.4 + slope * t;
+        if (ray_h > 160.0) { break; }
+        let th = terrain_h(wp.x + dir.x * t, wp.z + dir.y * t);
+        vis = min(vis, clamp((ray_h - th) / (0.06 * t + 0.5), 0.0, 1.0));
+        t = t * 1.34 + 1.5;
+    }
+    return vis;
 }
 
 fn lit(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
@@ -56,7 +123,18 @@ fn lit(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
 // spec: 0..1 sun glint strength, sharp: glint exponent scale (0 = none)
 fn shade(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: f32) -> vec3<f32> {
     let sun = normalize(u.sun.xyz);
-    let sh = shadow_at(wp, n);
+    var sh = shadow_at(wp, n);
+    if (u.mode.x > 0.5) { sh = min(sh, mix(1.0, terrain_shadow(wp, sun), smoothstep(0.0, 0.2, dot(n, sun)))); }
+    return shade_with(albedo, wp, n, spec, sharp, sh);
+}
+
+// cheap variant for foliage tufts (lots of overdraw): the plain 3x3 shadow filter in every mode
+fn shade_lite(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+    return shade_with(albedo, wp, n, 0.0, 0.0, shadow_basic(wp, n));
+}
+
+fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: f32, sh: f32) -> vec3<f32> {
+    let sun = normalize(u.sun.xyz);
     let diff = max(dot(n, sun), 0.0) * sh;
     let amb = mix(vec3<f32>(0.20, 0.22, 0.26), u.sky_top.rgb * 0.55, n.y * 0.5 + 0.5);
     var c = albedo * (u.sun_col.rgb * diff + amb);
@@ -142,7 +220,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     if (m == 5) { return vec4<f32>(finish(i.col * 2.2), 1.0); }       // lamps
     if (m == 1) { return vec4<f32>(shade(i.col, i.wp, n, 1.2, 90.0), 1.0); }   // glass
     if (m == 4) { return vec4<f32>(shade(i.col, i.wp, n, 0.9, 60.0), 1.0); }   // chrome
-    if (m == 6) { return vec4<f32>(shade(i.col, i.wp, n, 0.0, 0.0), 1.0); }   // foliage
+    if (m == 6) { return vec4<f32>(shade_lite(i.col, i.wp, n), 1.0); }   // foliage
     if (m == 0) { return vec4<f32>(shade(i.col, i.wp, n, 0.5, 40.0), 1.0); }   // paint
     if (m == 2) { return vec4<f32>(shade(i.col, i.wp, n, 0.04, 8.0), 1.0); }   // rubber
     return vec4<f32>(shade(i.col, i.wp, n, 0.15, 16.0), 1.0);                  // plastic

@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{citygen, watergen, meshes, models::{self, Part}, nature_models, texgen, vehicle_models as vm};
+use super::{citygen, heightatlas::{self, HeightAtlas}, watergen, meshes, models::{self, Part}, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::scatter::{self, Bush};
@@ -27,8 +27,9 @@ const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 struct Uni {
     vp: [f32; 16], light_vp: [f32; 16], inv_vp: [f32; 16],
     cam: [f32; 4], sun: [f32; 4], fog: [f32; 4], sky_top: [f32; 4], sky_hor: [f32; 4], sun_col: [f32; 4],
+    mode: [f32; 4], cam_tile: [f32; 4],
 }
-const _: () = assert!(std::mem::size_of::<Uni>() == 288);
+const _: () = assert!(std::mem::size_of::<Uni>() == 320);
 
 /// One instance: model matrix, per-axis scale (for normals), colour. Matches the instance vertex layout (96 bytes).
 #[repr(C)]
@@ -137,6 +138,9 @@ pub struct Raster {
     mbuf: wgpu::Buffer,
     pl_water: wgpu::RenderPipeline,
     cache_seed: u64,
+    atlas: HeightAtlas,
+    atlas_tex: wgpu::Texture,
+    hybrid: bool,
     water: HashMap<(i32, i32), Option<MeshBuf>>,
     bush_cache: HashMap<(i32, i32), Vec<Bush>>,
     grass_cache: Option<((i32, i32, usize), Vec<(V3, f32)>)>,
@@ -208,6 +212,21 @@ impl Raster {
         let mat_smp = device.create_sampler(&wgpu::SamplerDescriptor { label: Some("materials_smp"),
             address_mode_u: wgpu::AddressMode::Repeat, address_mode_v: wgpu::AddressMode::Repeat, address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear, min_filter: wgpu::FilterMode::Linear, mipmap_filter: wgpu::FilterMode::Linear, anisotropy_clamp: 4, ..Default::default() });
+        // height atlas for the hybrid terrain ray shadows: 512x512 R16Float, emptied (far below the terrain) until tiles arrive
+        let atlas_side = (heightatlas::ATLAS_TILES as u32) * heightatlas::TEXELS as u32;
+        let atlas_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("height_atlas"), size: wgpu::Extent3d { width: atlas_side, height: atlas_side, depth_or_array_layers: 1 },
+            mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::R16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, view_formats: &[] });
+        let empty = vec![heightatlas::f32_to_f16(heightatlas::EMPTY); (atlas_side * atlas_side) as usize];
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo { texture: &atlas_tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            bytemuck::cast_slice(&empty), wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(atlas_side * 2), rows_per_image: Some(atlas_side) },
+            wgpu::Extent3d { width: atlas_side, height: atlas_side, depth_or_array_layers: 1 });
+        let atlas_view = atlas_tex.create_view(&Default::default());
+        let atlas_smp = device.create_sampler(&wgpu::SamplerDescriptor { label: Some("atlas_smp"),
+            address_mode_u: wgpu::AddressMode::Repeat, address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear, min_filter: wgpu::FilterMode::Linear, ..Default::default() });
         let vf = wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT;
         let ubo = |vis| wgpu::BindGroupLayoutEntry { binding: 0, visibility: vis, count: None,
             ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None } };
@@ -221,6 +240,10 @@ impl Raster {
                 ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false } },
             wgpu::BindGroupLayoutEntry { binding: 4, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering) },
+            wgpu::BindGroupLayoutEntry { binding: 5, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
+                ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false } },
+            wgpu::BindGroupLayoutEntry { binding: 6, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering) },
         ] });
         let bgl_shadow = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("raster_shadow"), entries: &[ubo(wgpu::ShaderStages::VERTEX)] });
         let bg_main = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("raster_main"), layout: &bgl_main, entries: &[
@@ -229,6 +252,8 @@ impl Raster {
             wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&smp) },
             wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&mat_view) },
             wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&mat_smp) },
+            wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&atlas_view) },
+            wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(&atlas_smp) },
         ] });
         let bg_shadow = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("raster_shadow"), layout: &bgl_shadow,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() }] });
@@ -279,7 +304,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, cache_seed: u64::MAX, water: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, cache_seed: u64::MAX, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -288,6 +313,18 @@ impl Raster {
 
     /// How far from the camera city buildings and tiles are drawn (metres).
     pub fn set_city_radius(&mut self, r: f32) { self.city_radius = r.clamp(100.0, 2000.0); }
+
+    /// Hybrid mode: PCSS soft shadows and terrain ray shadows (and, with the post pipeline, ambient occlusion).
+    pub fn set_hybrid(&mut self, on: bool) { self.hybrid = on; }
+    pub fn is_hybrid(&self) -> bool { self.hybrid }
+
+    fn upload_slot(&self, w: &heightatlas::SlotWrite) {
+        let t = heightatlas::TEXELS as u32;
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo { texture: &self.atlas_tex, mip_level: 0, origin: wgpu::Origin3d { x: w.slot.0 * t, y: w.slot.1 * t, z: 0 }, aspect: wgpu::TextureAspect::All },
+            bytemuck::cast_slice(&w.data), wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(t * 2), rows_per_image: Some(t) },
+            wgpu::Extent3d { width: t, height: t, depth_or_array_layers: 1 });
+    }
 
     pub fn resize(&mut self, w: u32, h: u32) {
         let (w, h) = (w.max(1), h.max(1));
@@ -319,19 +356,23 @@ impl Raster {
             cam: [wv.cam_pos.x, wv.cam_pos.y, wv.cam_pos.z, 0.], sun: [wv.sun.x, wv.sun.y, wv.sun.z, 0.],
             fog: [1.0 / 330.0, wv.time, 0., 0.], sky_top: [wv.daylight.sky_top[0], wv.daylight.sky_top[1], wv.daylight.sky_top[2], 0.],
             sky_hor: [wv.daylight.sky_hor[0], wv.daylight.sky_hor[1], wv.daylight.sky_hor[2], 0.],
-            sun_col: [wv.daylight.sun_col[0], wv.daylight.sun_col[1], wv.daylight.sun_col[2], 0.] };
+            sun_col: [wv.daylight.sun_col[0], wv.daylight.sun_col[1], wv.daylight.sun_col[2], 0.],
+            mode: [self.hybrid as u8 as f32, 0., 0., 0.], cam_tile: [cx as f32, cz as f32, 0., 0.] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // a new level invalidates every cache keyed by tile coordinates
         if self.cache_seed != wv.terrain.seed {
             self.cache_seed = wv.terrain.seed;
             self.tiles.clear(); self.water.clear(); self.bush_cache.clear(); self.grass_cache = None;
+            for w in self.atlas.clear() { self.upload_slot(&w); }
         }
         // terrain tiles: nearest first, a few per frame; the old LOD stays drawn until its replacement exists
         let have: HashSet<(i32, i32, u32)> = self.tiles.keys().copied().collect();
         let (build, visible) = super::tile_plan(cx, cz, &have, DRAW_TILES);
         for &(tx, tz, lod) in build.iter().take(TILE_BUDGET) {
             let (mesh, w) = wv.terrain.tile_mesh_with_weights(tx, tz, lod);
+            let slot_write = self.atlas.put(tx, tz, &heightatlas::heights_from_mesh(&mesh.verts, lod));
+            self.upload_slot(&slot_write);
             let mut mb = mesh_buf(&self.device, &mesh);
             mb.wb = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("tile_w"), contents: bytemuck::cast_slice(&w), usage: wgpu::BufferUsages::VERTEX }));
             self.tiles.insert((tx, tz, lod), mb);
@@ -343,6 +384,8 @@ impl Raster {
         } else { (build, visible) };
         let keep: HashSet<_> = visible.iter().copied().collect();
         self.tiles.retain(|k, _| keep.contains(k));
+        let present: HashSet<(i32, i32)> = self.tiles.keys().map(|k| (k.0, k.1)).collect();
+        for w in self.atlas.evict_missing(&present) { self.upload_slot(&w); }
         self.water.retain(|&(tx, tz), _| (tx - cx).abs() <= DRAW_TILES + 1 && (tz - cz).abs() <= DRAW_TILES + 1);
 
         // instances: cube, cylinder, cone, sphere

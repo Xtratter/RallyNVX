@@ -94,6 +94,7 @@ mod game {
         /// Quality level 0/1/2 (Low/Medium/High) sets the city draw distance: 300 / 400 / 450 m.
         pub fn set_quality(&mut self, level: i32) { self.raster.set_city_radius([300.0, 400.0, 450.0][level.clamp(0, 2) as usize]); }
         pub fn set_city_radius(&mut self, r: f32) { self.raster.set_city_radius(r); }
+        pub fn set_hybrid(&mut self, on: bool) { self.raster.set_hybrid(on); }
         pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }
         pub fn place_in_city(&mut self) -> bool { self.world.place_in_city() }
         pub fn place_near_water(&mut self) -> bool { self.world.place_near_water() }

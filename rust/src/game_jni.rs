@@ -40,7 +40,7 @@ mod android {
     use crate::game::{app::{Game, STAT_LEN}, flight::FlightInput, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), Flight(FlightInput), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Restart, Abort, Quality(i32), InCity(i32), Stop }
+    enum GCmd { Input(Input), Flight(FlightInput), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Restart, Abort, Quality(i32), InCity(i32), RenderMode(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -90,6 +90,7 @@ mod android {
                             Ok(GCmd::Resize(w, h)) => g.resize(w, h),
                             Ok(GCmd::Pause(p)) => g.set_paused(p),
                             Ok(GCmd::Quality(q)) => g.set_quality(q),
+                            Ok(GCmd::RenderMode(m)) => g.set_hybrid(m == 1),
                             Ok(GCmd::InCity(m)) => { if m == 3 { g.place_near_water(); } else if m == 2 { g.place_in_city(); } else { g.place_near_city(); } }
                             Ok(GCmd::Restart) => g.restart_mission(),
                             Ok(GCmd::Abort) => g.abort_mission(),
@@ -119,6 +120,7 @@ mod android {
     }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameInCity(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::InCity(mode)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameQuality(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Quality(level)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameRenderMode(_e: JNIEnv, _c: JClass, m: jint) { send(GCmd::RenderMode(m)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gamePause(_e: JNIEnv, _c: JClass, p: jboolean) { send(GCmd::Pause(p != 0)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameRestart(_e: JNIEnv, _c: JClass) { send(GCmd::Restart); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameAbort(_e: JNIEnv, _c: JClass) { send(GCmd::Abort); }

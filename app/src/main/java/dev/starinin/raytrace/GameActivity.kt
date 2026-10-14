@@ -206,6 +206,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         if (running) { Native.gameResize(w, hh); return }
         Native.gameStart(h.surface, w, hh, seed, profile, mission)
         Native.gameQuality(Quality.index(this))
+        intent.getIntExtra("hybrid", -1).let { if (it >= 0) Native.gameRenderMode(it) }   // debug/test: force a render mode
         intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
         running = true
         audio.start()
