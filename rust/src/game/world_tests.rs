@@ -262,4 +262,3 @@ mod pace_world {
             assert!(seen.windows(2).all(|p| p[1] == p[0] + 1), "serials count up by one");
         }
     }
-}

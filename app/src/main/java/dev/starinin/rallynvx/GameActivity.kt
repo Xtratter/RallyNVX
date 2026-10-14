@@ -206,6 +206,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         if (note > 0 && note != lastNote && phase == 2 && Controls.paceMode(this) > 0) {
             lastNote = note
             val text = Native.gameNoteText(java.util.Locale.getDefault().language == "ru")
+            android.util.Log.i("rallynvx", "pace note $note: \"$text\" (voice ${if (ttsReady) "ready" else "not ready"})")
             if (text.isNotEmpty()) {
                 noteBar?.text = text; noteBar?.visibility = View.VISIBLE; noteUntil = System.currentTimeMillis() + 6000
                 if (ttsReady) tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "note$note")
