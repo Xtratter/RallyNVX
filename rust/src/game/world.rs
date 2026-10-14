@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 
 use super::camera_follow::FollowCam;
+use super::carlights::{self, CarLights, Lamps};
 use super::city::City;
 use super::input::Input;
 use super::missions::{Mission, MissionKind, GOAL_RADIUS};
@@ -213,7 +214,7 @@ impl World {
 pub struct WorldView<'a> {
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
-    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub markers: Vec<Marker>,
+    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub lights: CarLights, pub lamps: Lamps, pub markers: Vec<Marker>,
     pub time: f32, pub cities: &'a [City], pub tracks: &'a Tracks,
 }
 
@@ -223,7 +224,8 @@ impl World {
         let (cx, cz) = (tile_of(self.cam.pos.x), tile_of(self.cam.pos.z));
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
-        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: self.daylight(), markers: self.markers(),
+        let dl = self.daylight();
+        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), markers: self.markers(),
             time: self.time, cities: &self.cities, tracks: &self.tracks }
     }
 }

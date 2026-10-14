@@ -34,6 +34,8 @@ object Native {
     @JvmStatic external fun gameInCity(mode: Int)
     /** Debug/test: start every level at this time of day (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk); negative = off. */
     @JvmStatic external fun gameTimeOfDay(phase: Float)
+    /** Debug/test: force the car lights (0 headlights, 1 + brake, 2 + reverse); negative = normal. */
+    @JvmStatic external fun gameLightsDebug(mode: Int)
     @JvmStatic external fun gamePause(p: Boolean)
     @JvmStatic external fun gameRestart()
     @JvmStatic external fun gameAbort()

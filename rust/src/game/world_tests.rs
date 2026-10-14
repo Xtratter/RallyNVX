@@ -231,3 +231,11 @@ mod garage_world {
         for k in 0..8 { let r = w.cam.pos - p0; assert!((r.x.hypot(r.z) - 6.5).abs() < 0.05, "radius at {k}"); w.step_garage(0.7); }
     }
 }
+
+#[test] fn the_view_carries_the_car_lights_which_follow_the_night() {
+    let w = World::new(1);
+    let v = w.view(1);
+    assert!(!v.lights.head, "levels start by day");
+    assert!((v.lamps.head[0] - v.lamps.head[1]).len() > 0.3);
+    assert!(v.lamps.head[0].y > v.vehicle.pos.y - 1.0);
+}
