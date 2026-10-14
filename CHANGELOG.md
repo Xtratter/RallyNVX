@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.21.0 - the city super-special
+
+- Added: a closed super-special loop of 1.2-1.8 km through the streets of the first city (a rectangle of 5-8 blocks with detours, clockwise or counter-clockwise) with a checkered start/finish line and yellow check lines across the street every ~400 m; numbers in `rust/roads.json` (`city_loop`)
+- Added: the autopilot drives the loop (2 laps, `laps` in `rust/autopilot.json`) when the car is on it and stops on the finish line
+- Debug: the intent extra `road` 5 starts on the loop's start line
+
 ## 2.20.0 - side roads and junctions
 
 - Added: 4-7 junctions along the special stage with gravel side roads (150-450 m, 5 m wide, a flared mouth flush with the stage) that end in a dead end; they have the stage's loose layer, ditches and rocky edge; numbers in `rust/roads.json` (`side`)

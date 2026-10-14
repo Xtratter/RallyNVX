@@ -39,9 +39,14 @@ fn corners(site: &CitySite, a: V3, b: V3) -> Vec<(i32, i32)> {
 
 /// Points every ~4 m along the streets from `a` to `b` with the corners rounded by arcs of `CORNER` metres.
 pub fn city_path(site: &CitySite, a: V3, b: V3) -> Vec<V3> {
-    let y = site.centre.y;
     let pts: Vec<(f32, f32)> = corners(site, a, b).into_iter().map(|(i, j)| at(site, i, j)).collect();
-    if pts.len() < 2 { return vec![v3(a.x, y, a.z), v3(b.x, y, b.z)]; }
+    if pts.len() < 2 { return vec![v3(a.x, site.centre.y, a.z), v3(b.x, site.centre.y, b.z)]; }
+    round_path(&pts, site.centre.y)
+}
+
+/// A polyline of street corners (x, z) as points every ~4 m at height `y`: every inner corner is replaced by an arc of
+/// `CORNER` metres (the street is 12 m wide); the first and last points stay.
+pub fn round_path(pts: &[(f32, f32)], y: f32) -> Vec<V3> {
     let mut poly: Vec<(f32, f32)> = vec![pts[0]];
     for k in 1..pts.len() - 1 {
         let (p, c, n) = (pts[k - 1], pts[k], pts[k + 1]);

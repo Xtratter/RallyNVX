@@ -7,6 +7,7 @@
   "crest_speed": 30.0,
   "field_speed": 20.0,
   "stuck_time": 4.0,
+  "laps": 2,
   "speed_cap": 1.0,
   "edge_margin": 1.4,
   "slide": 0,

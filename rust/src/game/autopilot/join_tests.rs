@@ -50,3 +50,18 @@ fn world_terrain(seed: u64) -> Terrain {
     assert!(top(&capped) <= car.max_speed * 0.5 + 0.01 && top(&free) > top(&capped), "{} vs {}", top(&capped), top(&free));
     assert_eq!(capped.len(), free.len());
 }
+#[test] fn on_the_city_loop_the_autopilot_drives_its_laps_to_the_start_line() {
+    let car = VehicleSpec::offroader();
+    let base = Terrain::new(5);
+    let net = crate::game::roads::gen::generate_with(5, &base, crate::game::roads::gen::GenCfg::coarse());
+    let mut t = base.with_net(net);
+    t = t.with_loop_for_test(5);
+    let l = t.city_loop().unwrap().clone();
+    let at = l.pts[0];
+    let v = Vehicle::new(car, v3(at.x, at.y + 1.1, at.z), 0.0);
+    let ap = Autopilot::start(&t, &v, car, 1).expect("an autopilot");
+    let laps = crate::game::autopilot::cfg::cfg().laps as f32;
+    assert!((ap.route().length() - l.length * laps).abs() < l.length * 0.1, "route {} vs {} laps of {}", ap.route().length(), laps, l.length);
+    let end = *ap.route().p.last().unwrap();
+    assert!((end - at).len() < 6.0, "the drive ends on the start line");
+}

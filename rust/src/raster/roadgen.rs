@@ -34,6 +34,22 @@ pub fn road_mesh(t: &Terrain, tx: i32, tz: i32) -> Option<Mesh> {
             idx.extend_from_slice(&[base, base + 2, base + 1, base + 1, base + 2, base + 3]);
         }
     }
+    // the lines of the city loop: a checkered start/finish line (code 200) and plain check lines (300), 3 m deep, across the 12 m street
+    if let Some(l) = t.city_loop() {
+        for line in &l.lines {
+            let (p, d) = (line.pos, line.dir);
+            if p.x < x0 || p.x >= x0 + TILE_SIZE || p.z < z0 || p.z >= z0 + TILE_SIZE { continue; }
+            let (rx, rz) = (d.z, -d.x);
+            let code = if line.start { 200.0 } else { 300.0 };
+            let base = verts.len() as u32;
+            for (s, along) in [(0.0f32, -1.5f32), (3.0, 1.5)] {
+                for across in [1.0f32, -1.0] {
+                    verts.push([p.x + d.x * along + rx * 6.0 * across, p.y + LIFT - 0.02, p.z + d.z * along + rz * 6.0 * across, across, s, code + 12.0]);
+                }
+            }
+            idx.extend_from_slice(&[base, base + 2, base + 1, base + 1, base + 2, base + 3]);
+        }
+    }
     if idx.is_empty() { None } else { Some(Mesh { verts, idx }) }
 }
 

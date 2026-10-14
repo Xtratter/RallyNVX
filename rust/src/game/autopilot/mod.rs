@@ -72,6 +72,17 @@ pub fn chain_route(t: &super::terrain::Terrain, car: &VehicleSpec, c: &AutoCfg) 
     Some(Route::build_with(&centre, &width, &mu, lim, c))
 }
 
+/// The city loop from its point `k` through `laps` laps, ending on the start/finish line.
+pub fn loop_route(l: &super::superspecial::SuperSpecial, k: usize, car: &VehicleSpec, c: &AutoCfg) -> Route {
+    let mut centre: Vec<V3> = l.pts[k..].to_vec();
+    let full = c.laps.saturating_sub(1);   // from the line: the first lap is already in `centre`; from elsewhere: the rest of the lap, then the other laps
+    for _ in 0..full { centre.extend(l.pts[1..].iter().cloned()); }
+    if centre.len() < 7 { centre.extend(l.pts[1..8].iter().cloned()); }
+    let mu = vec![car.mu * grip(super::surface::Surface::Asphalt, 1.0).mu; centre.len()];
+    let lim = Limits { mu: 1.0, v_max: car.max_speed * c.speed_cap, accel: 0.5 * car.engine_force / car.mass, stop_at_end: true };
+    Route::build_with(&centre, &vec![12.0; centre.len()], &mu, lim, c)
+}
+
 impl Autopilot {
     /// An autopilot for a car that is already on (or next to) `route`.
     pub fn on_route(route: Route, car: VehicleSpec, v: &Vehicle) -> Autopilot { Autopilot::on_route_styled(route, car, v, 1) }
@@ -86,7 +97,14 @@ impl Autopilot {
     /// level has no stage.
     pub fn start(t: &super::terrain::Terrain, v: &Vehicle, car: VehicleSpec, style: i32) -> Option<Autopilot> {
         let c = cfg_style(style);
-        let chain = chain_route(t, &car, &c)?;
+        let chain = chain_route(t, &car, &c);
+        // on the city loop: its laps (the start/finish line is the end)
+        if let Some(l) = t.city_loop() {
+            let (k, dl) = l.pts.iter().enumerate().map(|(i, p)| (i, (p.x - v.pos.x).hypot(p.z - v.pos.z))).fold((0, f32::INFINITY), |a, b| if b.1 < a.1 { b } else { a });
+            let dc = chain.as_ref().map_or(f32::INFINITY, |r| r.nearest(v.pos.x, v.pos.z).1);
+            if dl <= 20.0 && dl <= dc { return Some(Autopilot::on_route_styled(loop_route(l, k, &car, &c), car, v, style)); }
+        }
+        let chain = chain?;
         let (k, d) = chain.nearest(v.pos.x, v.pos.z);
         if d <= 15.0 { return Some(Autopilot::on_route_styled(chain, car, v, style)); }
         let to = chain.p[k];

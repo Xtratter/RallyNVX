@@ -99,8 +99,16 @@ impl World {
 
     /// Debug/test: puts the car on a road facing along it: 1 liaison 60 m in, 2 stage 60 m in, 3 stage middle, 4 stage
     /// 150 m before its end. False without roads.
-    /// Debug/test: mode 1..4 = liaison start, stage start, middle, end; mode >= 10 = the stage at `mode * 10` m.
+    /// Debug/test: mode 1..4 = liaison start, stage start, middle, end, 5 = the city loop's start line; mode >= 10 = the stage at `mode * 10` m.
     pub fn place_on_road(&mut self, mode: i32) -> bool {
+        if mode == 5 {   // the start/finish line of the city loop, facing along it
+            let Some(l) = self.terrain.city_loop() else { return false };
+            let (a, b) = (l.pts[0], l.pts[2]);
+            let yaw = (b.x - a.x).atan2(b.z - a.z);
+            self.vehicle = Vehicle::new(self.car_spec, v3(a.x, a.y + 1.1, a.z), yaw);
+            self.cam = FollowCam::new(&self.vehicle);
+            return true;
+        }
         let Some(net) = self.terrain.roads() else { return false };
         let len1 = net.roads.get(1).map_or(0.0, |r| r.length());
         let (ri, s) = match mode { m if m >= 10 => (1, m as f32 * 10.0), 1 => (0, 60.0), 2 => (1, 60.0), 3 => (1, len1 * 0.5), _ => (1, (len1 - 150.0).max(0.0)) };

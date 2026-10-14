@@ -454,12 +454,18 @@ struct RIn { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @loc
 @fragment fn fs_road(i: RIn) -> @location(0) vec4<f32> {
     let nd = normalize(cross(dpdy(i.wp), dpdx(i.wp)));
     let up = select(-nd, nd, nd.y > 0.0);
-    let asphalt = i.a.z >= 100.0;
+    let kind = floor(i.a.z / 100.0);
+    let asphalt = kind >= 1.0;
     let across = i.a.x; let s = i.a.y; let ac = abs(across);
     let grain = 0.80 + 0.40 * vnoise2(i.wp.xz * 1.7) * (0.6 + 0.4 * vnoise2(i.wp.xz * 0.23 + vec2<f32>(3.0, 1.0)));
     var col: vec3<f32>;
     var alpha = 1.0;
-    if (asphalt) {
+    if (kind >= 2.0) {
+        // city loop lines: a checkered start/finish line (kind 2) and a plain check line (kind 3)
+        let chk = (floor((across * 0.5 + 0.5) * 6.0) + floor(s)) % 2.0;
+        col = select(vec3<f32>(0.92), vec3<f32>(0.06), chk < 0.5);
+        if (kind >= 3.0) { col = vec3<f32>(0.95, 0.78, 0.15); }
+    } else if (asphalt) {
         col = vec3<f32>(0.115, 0.115, 0.125) * grain;
         if (ac > 0.86 && ac < 0.92) { col = mix(col, vec3<f32>(0.62), 0.9); }
         if (ac < 0.025 && fract(s / 9.0) < 0.5) { col = mix(col, vec3<f32>(0.70, 0.66, 0.30), 0.9); }

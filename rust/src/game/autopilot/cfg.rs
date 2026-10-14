@@ -7,6 +7,8 @@ pub struct AutoCfg {
     pub slide: f32, pub flick_ratio: f32, pub flick_time: f32,
     /// Fraction of the car's top speed that may be used, and the margin kept to the road edge (m).
     pub speed_cap: f32, pub edge_margin: f32,
+    /// Laps of the city loop when the car starts on it.
+    pub laps: u32,
     pub lat_factor: f32, pub brake_factor: f32, pub look_base: f32, pub look_gain: f32, pub offset_max: f32,
     pub crest_speed: f32, pub field_speed: f32, pub stuck_time: f32,
 }
@@ -27,7 +29,7 @@ impl AutoCfg {
             Ok(x as f32)
         };
         Ok(AutoCfg {
-            speed_cap: num("speed_cap", 0.3, 1.0)?, edge_margin: num("edge_margin", 0.0, 4.0)?,
+            laps: num("laps", 1.0, 5.0)? as u32, speed_cap: num("speed_cap", 0.3, 1.0)?, edge_margin: num("edge_margin", 0.0, 4.0)?,
             slide: num("slide", 0.0, 1.0)?, flick_ratio: num("flick_ratio", 1.0, 3.0)?, flick_time: num("flick_time", 0.1, 1.0)?,
             lat_factor: num("lat_factor", 0.2, 3.0)?, brake_factor: num("brake_factor", 0.2, 1.5)?, look_base: num("look_base", 2.0, 40.0)?, look_gain: num("look_gain", 0.0, 2.0)?,
             offset_max: num("offset_max", 0.0, 0.9)?, crest_speed: num("crest_speed", 5.0, 60.0)?, field_speed: num("field_speed", 3.0, 40.0)?,

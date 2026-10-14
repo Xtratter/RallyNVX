@@ -20,6 +20,7 @@ pub mod params;
 pub mod meta;
 pub mod props;
 pub mod roads;
+pub mod superspecial;
 pub mod surface;
 pub mod terrain;
 pub mod tracks;

@@ -13,8 +13,11 @@ pub struct DitchCfg { pub depth: f32, pub width: f32, pub offset: f32 }
 pub struct SideCfg {
     pub count: (u32, u32), pub spacing: (f32, f32), pub keep_ends: f32, pub min_radius: f32, pub angle: (f32, f32), pub length: (f32, f32), pub width: f32, pub min_clear: f32,
 }
+/// The city super-special loop: its size in blocks, the number of detours and the spacing of the check lines (m).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RoadsCfg { pub side: SideCfg, pub crest: CrestCfg, pub ditch_stage: DitchCfg, pub ditch_liaison: DitchCfg, pub verge: f32, pub rock_band: (f32, f32), pub rock_candidates: u32 }
+pub struct CityLoopCfg { pub size: (u32, u32), pub jogs: (u32, u32), pub check_every: f32 }
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RoadsCfg { pub city_loop: CityLoopCfg, pub side: SideCfg, pub crest: CrestCfg, pub ditch_stage: DitchCfg, pub ditch_liaison: DitchCfg, pub verge: f32, pub rock_band: (f32, f32), pub rock_candidates: u32 }
 
 pub const EMBEDDED: &str = include_str!("../../../roads.json");
 
@@ -56,7 +59,10 @@ impl RoadsCfg {
             min_radius: num(&sd, "side", "min_radius", 20.0, 1000.0)?, angle: pair(&sd, "side", "angle", 30.0, 150.0)?, length: pair(&sd, "side", "length", 50.0, 2000.0)?,
             width: num(&sd, "side", "width", 3.0, 12.0)?, min_clear: num(&sd, "side", "min_clear", 8.0, 200.0)?,
         };
-        Ok(RoadsCfg { side, crest, ditch_stage: ditch("stage")?, ditch_liaison: ditch("liaison")?, verge, rock_band: pair(&r, "rocks", "band", 2.0, 30.0)?, rock_candidates: num(&r, "rocks", "candidates", 0.0, 200.0)? as u32 })
+        let cl = obj(&v, "city_loop")?;
+        let (size, jogs) = (pair(&cl, "city_loop", "size", 3.0, 9.0)?, pair(&cl, "city_loop", "jogs", 0.0, 4.0)?);
+        let city_loop = CityLoopCfg { size: (size.0 as u32, size.1 as u32), jogs: (jogs.0 as u32, jogs.1 as u32), check_every: num(&cl, "city_loop", "check_every", 100.0, 5000.0)? };
+        Ok(RoadsCfg { city_loop, side, crest, ditch_stage: ditch("stage")?, ditch_liaison: ditch("liaison")?, verge, rock_band: pair(&r, "rocks", "band", 2.0, 30.0)?, rock_candidates: num(&r, "rocks", "candidates", 0.0, 200.0)? as u32 })
     }
 }
 

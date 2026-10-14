@@ -82,3 +82,28 @@ fn check(r: &Report) {
         assert!(aggr.slide_pct > 0.5 && normal.slide_pct < 0.5, "seed {seed}: the aggressive style slides ({:.1}%), the normal one does not ({:.1}%)", aggr.slide_pct, normal.slide_pct);
     }
 }
+
+#[test] #[ignore] fn two_laps_of_the_city_loop() {
+    let hs: Vec<_> = [1u64, 2, 3, 5].iter().map(|&seed| std::thread::spawn(move || {
+        let mut w = World::with_roads(seed, VehicleSpec::offroader());
+        assert!(w.place_on_road(5), "seed {seed}");
+        let pts = w.terrain.city_loop().unwrap().pts.clone();
+        let len = w.terrain.city_loop().unwrap().length;
+        assert!(w.set_autopilot(true));
+        let (mut t, mut worst, mut flips, mut dist) = (0.0f32, 0.0f32, 0u32, 0.0f32);
+        let mut was = false;
+        while w.autopilot_on() && t < 400.0 {
+            let b = w.vehicle.pos;
+            w.step(&Input::default(), 1.0 / 60.0); t += 1.0 / 60.0; dist += (w.vehicle.pos - b).len();
+            let off = pts.iter().step_by(2).map(|p| (p.x - w.vehicle.pos.x).hypot(p.z - w.vehicle.pos.z)).fold(f32::INFINITY, f32::min);
+            worst = worst.max(off);
+            let f = w.vehicle.flipped(); if f && !was { flips += 1; } was = f;
+        }
+        (seed, !w.autopilot_on(), t, len, dist, worst, flips)
+    })).collect();
+    for h in hs {
+        let (seed, done, t, len, dist, worst, flips) = h.join().unwrap();
+        println!("loop seed {seed}: finished {done} t {t:.0}s loop {len:.0} m driven {dist:.0} m worst offset {worst:.1} m flips {flips}");
+        assert!(done && flips == 0 && worst < 6.5 && dist > len * 1.8 && dist < len * 2.4, "seed {seed}");
+    }
+}
