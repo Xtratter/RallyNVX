@@ -21,7 +21,7 @@ Car headlights, tail and reverse lights (cycle 2), roads (cycle 3), a clock in t
 
 `Daylight` gains: `light` (direction of the one light the world uses, `sun` today), `light_col`, `sun` (the sun disc direction), `moon` (direction), `night` (0 day .. 1 deep night), `sun_vis` stays implicit in `sun.y`.
 
-- Sun light fades with elevation: full at +6 deg, zero at -4 deg (smoothstep).
+- Sun light fades with elevation: full at +12 deg, zero at -4 deg (smoothstep).
 - Moon light: blue-white, colour value about 0.18 of the noon sun, fades in as the moon rises above 0 and out as it sets.
 - The light direction switches from sun to moon only where both intensities are near zero (between -4 and -9 deg of the sun) so shadows never jump; `light`/`light_col` are what the shaders and the hybrid shadows already read as `u.sun`/`u.sun_col`.
 - Ambient follows `night`: the shader's fixed ambient floor (0.20, 0.22, 0.26) is multiplied by `mix(1, 0.22, night)` and the sky term already follows `sky_top`.
