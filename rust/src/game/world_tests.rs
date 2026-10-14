@@ -182,3 +182,18 @@ use crate::game::vehicle::VehicleSpec as RoadCar;
     w.dust.set_level(0);
     assert!(w.view(1).dust.is_empty());
 }
+
+#[test] fn the_clouds_drift_downwind_and_the_view_carries_the_wind() {
+    let mut w = World::new(5);
+    assert_eq!(w.cloud_off, (0.0, 0.0));
+    for _ in 0..600 { w.step(&Input::default(), 1.0 / 60.0); }
+    let (ox, oz) = w.cloud_off;
+    let wd = w.wind();
+    assert!((ox * wd.x + oz * wd.z) > 0.0 && (ox.hypot(oz)) > 0.01 && ox.hypot(oz) < 0.5, "offset ({ox}, {oz}) wind {wd:?}");
+    let v = w.view(1);
+    assert_eq!((v.wind, v.cloud_off), (w.wind(), w.cloud_off));
+    let mut g = World::garage(crate::game::vehicle::VehicleSpec::offroader());
+    let before = g.cloud_off;
+    for _ in 0..120 { g.step_garage(1.0 / 60.0); }
+    assert!(g.cloud_off != before, "the sky moves in the garage too");
+}

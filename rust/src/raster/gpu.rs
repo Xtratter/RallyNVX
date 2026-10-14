@@ -27,9 +27,9 @@ const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 struct Uni {
     vp: [f32; 16], light_vp: [f32; 16], inv_vp: [f32; 16],
     cam: [f32; 4], sun: [f32; 4], fog: [f32; 4], sky_top: [f32; 4], sky_hor: [f32; 4], sun_col: [f32; 4],
-    mode: [f32; 4], cam_tile: [f32; 4], moon: [f32; 4], disc: [f32; 4], hl_pos: [f32; 4], hl_dir: [f32; 4], tl_pos: [f32; 4], tl_col: [f32; 4],
+    mode: [f32; 4], cam_tile: [f32; 4], moon: [f32; 4], disc: [f32; 4], hl_pos: [f32; 4], hl_dir: [f32; 4], tl_pos: [f32; 4], tl_col: [f32; 4], wind: [f32; 4],
 }
-const _: () = assert!(std::mem::size_of::<Uni>() == 416);
+const _: () = assert!(std::mem::size_of::<Uni>() == 432);
 
 /// One instance: model matrix, per-axis scale (for normals), colour. Matches the instance vertex layout (96 bytes).
 #[repr(C)]
@@ -399,7 +399,8 @@ impl Raster {
             hl_pos: [hc.x, hc.y, hc.z, if wv.lights.head { 1.0 } else { 0.0 }],
             hl_dir: [wv.lamps.head_dir.x, wv.lamps.head_dir.y, wv.lamps.head_dir.z, 0.927],
             tl_pos: [tc.x, tc.y, tc.z, 0.],
-            tl_col: tail_glow };
+            tl_col: tail_glow,
+            wind: [wv.wind.x, wv.wind.z, wv.cloud_off.0, wv.cloud_off.1] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // a new level invalidates every cache keyed by tile coordinates

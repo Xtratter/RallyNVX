@@ -1,7 +1,7 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
-    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>,
+    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
@@ -212,6 +212,21 @@ fn mat_sample(layer: i32, uv: vec2<f32>) -> vec3<f32> {
     return vec4<f32>(lit(a, i.wp, n), 1.0);
 }
 
+// foliage (material 6) bends downwind, more towards the top, with gust waves that travel with the wind and a small flutter
+fn sway(w: vec3<f32>, k_world: f32) -> vec3<f32> {
+    let wd = u.wind.xy;
+    let sp = length(wd);
+    let dir = wd / max(sp, 0.001);
+    let side = vec2<f32>(-dir.y, dir.x);
+    let strength = 0.4 + 0.3 * sp;
+    let ph = u.fog.y * 1.7 - dot(w.xz, dir) * 0.16;
+    let lean = strength * (0.04 * k_world + 0.004 * k_world * k_world);
+    let wave = (0.55 * sin(ph) + 0.30 * sin(ph * 2.3 + w.z * 0.2) + 0.15 * sin(ph * 4.1)) * 0.35;
+    let flutter = sin(ph * 1.9 + dot(w.xz, side) * 0.5) * 0.12;
+    let off = dir * (lean * (1.0 + wave)) + side * (lean * flutter);
+    return vec3<f32>(w.x + off.x, w.y, w.z + off.y);
+}
+
 struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32 };
 
 fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec4<f32>) -> vec3<f32> {
@@ -225,9 +240,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     var w = model_world(p, m0, m1, m2, m3);
     // foliage (material 6) sways in the wind, more towards the top of the model
     if (i32(c.a * 255.0 + 0.5) == 6) {
-        let k = max(p.y, 0.0);
-        w.x += sin(u.fog.y * 2.0 + w.x * 0.7 + w.z * 0.5) * 0.06 * k;
-        w.z += cos(u.fog.y * 1.7 + w.z * 0.6) * 0.04 * k;
+        w = sway(w, max(p.y, 0.0) * length(m1.xyz));
     }
     o.pos = u.vp * vec4<f32>(w, 1.0);
     o.wp = w;
@@ -245,9 +258,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     @location(7) tint: vec4<f32>) -> @builtin(position) vec4<f32> {
     var w = model_world(p, m0, m1, m2, m3);
     if (i32(c.a * 255.0 + 0.5) == 6) {   // same sway as vs_model
-        let k = max(p.y, 0.0);
-        w.x += sin(u.fog.y * 2.0 + w.x * 0.7 + w.z * 0.5) * 0.06 * k;
-        w.z += cos(u.fog.y * 1.7 + w.z * 0.6) * 0.04 * k;
+        w = sway(w, max(p.y, 0.0) * length(m1.xyz));
     }
     return u.light_vp * vec4<f32>(w, 1.0);
 }
@@ -362,7 +373,7 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     // clouds: noise on a plane above the viewer, drifting with the wind
     var cov = 0.0;
     if (dir.y > 0.02) {
-        let p = dir.xz / (dir.y + 0.12) * 0.35 + vec2<f32>(u.fog.y * 0.012, u.fog.y * 0.004);
+        let p = dir.xz / (dir.y + 0.12) * 0.35 - u.wind.zw;   // the pattern drifts downwind (the offset integrates the wind on the CPU)
         let n = fbm2(p);
         cov = smoothstep(0.50, 0.78, n) * smoothstep(0.02, 0.25, dir.y) * mix(1.0, 0.4, night);
         let lit_side = clamp(0.55 + 0.45 * (1.0 - n), 0.0, 1.0);

@@ -75,3 +75,18 @@ fn settled() -> World { let mut w = World::new(7); for _ in 0..120 { w.step(&Inp
     w.time += 0.016; w.vehicle.contacts = 4;
     assert!(matches!(d.update(&w, 0.0, true).1.as_slice(), [Event::Touchdown(_)]));
 }
+
+#[test] fn the_wind_you_hear_is_the_apparent_wind() {
+    let mut w = settled(); let mut d = Director::new();
+    let (p0, _) = d.update(&w, 0.0, true);
+    assert!(p0.wind > 0.01 && p0.wind < 0.1, "a parked car hears the level's wind: {}", p0.wind);
+    let wd = w.wind();
+    let along = if wd.len() > 0.1 { wd.norm() } else { v3(1.0, 0.0, 0.0) };
+    w.time += 1.0 / 60.0;
+    w.vehicle.vel = along * 25.0;
+    let tail = d.update(&w, 1.0, true).0.wind;
+    w.time += 1.0 / 60.0;
+    w.vehicle.vel = along * -25.0;
+    let head = d.update(&w, 1.0, true).0.wind;
+    assert!(head > tail * 1.15, "driving into the wind is noisier than with it: head {head} tail {tail}");
+}

@@ -62,7 +62,11 @@ Grip depends on the surface under each wheel (the HUD shows its name next to the
 
 ## Dust
 
-The wheels throw up dust that depends on the surface under them: beige clouds on gravel and dirt, dense yellow clouds on sand, almost nothing on dry grass, a little tyre smoke on tarmac under a hard slide, spray on shallow water. Rolling raises a thin trail; sliding, wheelspin and hard turns raise thick clouds. The puffs rise, widen, slow down, drift with the wind and fade in two to four seconds; they are dark at night and thin out close to the camera. The setting `Dust` (Off / Normal / Lots, 0 / 400 / 800 particles) is in the settings screen. The numbers (colour, amount, size, life per surface, the particle caps, the wind) are in `rust/surfaces.json` (see docs/vehicles.md).
+The wheels throw up dust that depends on the surface under them: beige clouds on gravel and dirt, dense yellow clouds on sand, almost nothing on dry grass, a little tyre smoke on tarmac under a hard slide, spray on shallow water. Rolling raises a thin trail; sliding, wheelspin and hard turns raise thick clouds. The puffs rise, widen, slow down, drift with the wind (see Wind) and fade in two to four seconds; they are dark at night and thin out close to the camera. The setting `Dust` (Off / Normal / Lots, 0 / 400 / 800 particles) is in the settings screen. The numbers (colour, amount, size, life per surface, the particle caps, the wind) are in `rust/surfaces.json` (see docs/vehicles.md).
+
+## Wind
+
+Every level has one wind: a direction and a speed (about 1.5-2.5 m/s) that drift slowly over minutes, with gusts every few seconds. The same wind carries the tyre dust, drifts the clouds, bends the trees, bushes and grass downwind (gust waves run through them) and sets how loud the wind sounds: it is the apparent wind, the level's wind minus the car's own velocity, so driving into the wind is noisier than with it. The wind does not push the car (a possible later step). Its numbers (`wind.speed`, `wind.gust`) are in `rust/surfaces.json`.
 
 ## Limits of this version
 
@@ -133,6 +137,10 @@ No rally mode and no NPC orders yet, and only the raster and hybrid renderers. T
 ## Пыль
 
 Колёса поднимают пыль, зависящую от покрытия под ними: бежевые облака на гравии и грунте, густые жёлтые на песке, почти ничего на сухой траве, лёгкий дым шин на асфальте в сильном заносе, брызги на мелкой воде. При качении тянется тонкий шлейф, при заносе, пробуксовке и резких поворотах поднимаются густые облака. Клубы поднимаются, расширяются, замедляются, сносятся ветром и рассеиваются за две-четыре секунды; ночью они тёмные, а возле камеры редеют. Настройка «Пыль» (Выкл / Обычная / Много, 0 / 400 / 800 частиц) есть на экране настроек. Числа (цвет, количество, размер и время жизни по покрытиям, лимиты частиц, ветер) лежат в `rust/surfaces.json` (см. docs/vehicles.md).
+
+## Ветер
+
+В каждом уровне один ветер: направление и скорость (примерно 1,5–2,5 м/с), которые медленно меняются за минуты, и порывы каждые несколько секунд. Этот же ветер сносит пыль от шин, гонит облака, гнёт деревья, кусты и траву по ветру (по ним бегут волны порывов) и задаёт громкость шума ветра: это кажущийся ветер, ветер уровня минус собственная скорость машины, поэтому ехать против ветра шумнее, чем по ветру. Ветер машину не толкает (возможный следующий шаг). Его числа (`wind.speed`, `wind.gust`) лежат в `rust/surfaces.json`.
 
 ## Ограничения этой версии
 

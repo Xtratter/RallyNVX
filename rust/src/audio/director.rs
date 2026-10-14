@@ -1,6 +1,6 @@
 //! Turns the game world into `AudioParams` and one-shot `Event`s by comparing each frame with the previous one.
 use super::{AudioParams, Event, Machine, Surface};
-use crate::game::world::World;
+use crate::game::{math::v3, world::World};
 
 pub struct Director {
     started: bool, time: f32, seed: u64,
@@ -36,7 +36,9 @@ impl Director {
         p.roll = if grounded { frac.sqrt() } else { 0.0 };
         p.surface = if wet { Surface::Water } else { Surface::Ground };
         p.slip = if grounded { ((v.vel.dot(v.right()).abs() - 2.0) / 6.0).clamp(0.0, 1.0) } else { 0.0 };
-        p.wind = (speed / 40.0).clamp(0.0, 1.0) * 0.4;
+        // the wind you hear is the apparent wind: the level's wind minus the car's own velocity (a tail wind is quieter)
+        let air = w.wind() - v3(v.vel.x, 0.0, v.vel.z);
+        p.wind = (air.len() / 34.0).clamp(0.0, 1.0) * 0.42;
         // a teleport (the Reset button zeroes the velocity and lifts the car) must not sound like a crash
         let teleport = hspeed == 0.0 && self.hspeed > 6.0;
         if teleport { self.quiet_until = w.time + 1.0; self.air_time = 0.0; }

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use super::camera_follow::FollowCam;
 use super::dust::{Dust, Particle};
+use super::wind;
 use super::grip::LooseMap;
 use super::carlights::{self, CarLights, Lamps};
 use super::city::City;
@@ -28,6 +29,8 @@ pub struct World {
     pub loose: LooseMap,
     /// Tyre dust and spray.
     pub dust: Dust,
+    /// How far the wind has carried the clouds (sky shader noise units).
+    pub cloud_off: (f32, f32),
     pub tracks: Tracks,
     /// The car this world is built for (a restart or a placement helper makes the same car again).
     pub car_spec: VehicleSpec,
@@ -61,10 +64,20 @@ impl World {
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
         let loose = terrain.roads().map_or_else(LooseMap::empty, LooseMap::new);
-        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }
+        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }
     }
 
     /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
+    /// The wind now (horizontal, m/s, gusts included).
+    pub fn wind(&self) -> V3 { wind::wind_now(self.terrain.seed, self.time) }
+
+    /// Time passes: the clouds drift downwind.
+    fn advance_sky(&mut self, dt: f32) {
+        let wd = self.wind();
+        self.cloud_off.0 += wd.x * wind::CLOUD_DRIFT * dt;
+        self.cloud_off.1 += wd.z * wind::CLOUD_DRIFT * dt;
+    }
+
     pub fn swap_car(&mut self, car: VehicleSpec) {
         let f = self.vehicle.forward();
         let (x, z) = (self.vehicle.pos.x, self.vehicle.pos.z);
@@ -110,7 +123,7 @@ impl World {
         let d = v3(-a.cos(), 0.0, -a.sin());
         let right = v3(-d.z, 0.0, d.x);
         self.cam.target = c + v3(0.0, 0.6, 0.0) + right * 1.8;
-        self.time += dt;
+        self.advance_sky(dt); self.time += dt;
     }
 
     /// One physics step of the car.
@@ -130,7 +143,7 @@ impl World {
         for c in &self.cities { c.resolve_hull(&mut self.vehicle.pos, &mut self.vehicle.vel, &mut self.vehicle.omega, self.vehicle.rot); }
         self.tracks.update(&self.vehicle, &self.terrain, dt);
         self.cam.update(&self.vehicle, &self.terrain, dt);
-        self.time += dt;
+        self.advance_sky(dt); self.time += dt;
     }
 
     /// Loads props of tiles within `r` of (cx, cz) and drops tiles farther than `r + 2`.
@@ -212,7 +225,7 @@ impl World {
 pub struct WorldView<'a> {
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
-    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub lights: CarLights, pub lamps: Lamps, pub dust: Vec<Particle>,
+    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub lights: CarLights, pub lamps: Lamps, pub dust: Vec<Particle>, pub wind: V3, pub cloud_off: (f32, f32),
     pub time: f32, pub cities: &'a [City], pub tracks: &'a Tracks,
 }
 
@@ -223,7 +236,7 @@ impl World {
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
         let dl = self.daylight();
-        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(),
+        WorldView { terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(), wind: self.wind(), cloud_off: self.cloud_off,
             time: self.time, cities: &self.cities, tracks: &self.tracks }
     }
 }
