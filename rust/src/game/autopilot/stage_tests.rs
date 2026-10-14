@@ -16,13 +16,17 @@ fn run(seed: u64, from_field: bool) -> Report {
     let length = w.terrain.roads().unwrap().roads[1].length();
     assert!(w.set_autopilot(true), "seed {seed}");
     let (mut t, mut dist, mut worst, mut flips) = (0.0f32, 0.0f32, f32::MIN, 0u32);
+    let first = if from_field { f32::MAX } else { 0.0 };   // set below once the stage is joined
+    let mut first = first;
     let mut was_flipped = false; let mut joined = false;   // the edge is only judged once the car has reached the road
     while w.autopilot_on() && t < 900.0 {
         let before = w.vehicle.pos;
         w.step(&Input::default(), 1.0 / 60.0);
         dist += (w.vehicle.pos - before).len(); t += 1.0 / 60.0;
+        let ap_progress = w.autopilot.as_ref().map_or(0.0, |a| a.progress());
         let on_stage_route = w.autopilot.as_ref().map_or(false, |a| a.route().length() > 3000.0);
-        if on_stage_route { if let Some(e) = w.terrain.road_edge_distance(w.vehicle.pos.x, w.vehicle.pos.z) { if e < 0.0 { joined = true; } if joined { worst = worst.max(e); } } }
+        if on_stage_route && first == f32::MAX { first = ap_progress; }
+        if on_stage_route { if let Some(e) = w.terrain.road_edge_distance(w.vehicle.pos.x, w.vehicle.pos.z) { if e < 0.0 && ap_progress >= first + 100.0 { joined = true; } if joined { worst = worst.max(e); if e > 0.3 && std::env::var("DBG").is_ok() { let ap = w.autopilot.as_ref().unwrap(); eprintln!("OFF {:.1} at t {:.0} s {:.0} v {:.1} want {:.1}", e, t, ap.progress(), w.vehicle.speed(), ap.route().speed[ap.route().nearest(w.vehicle.pos.x, w.vehicle.pos.z).0]); } } } }
         if std::env::var("DBG").is_ok() && ((t * 60.0) as u32) % 600 == 0 { let ap = w.autopilot.as_ref().unwrap(); eprintln!("t {:.0} s {:.0}/{:.0} v {:.1} want {:.1} rec {} surf {:?}", t, ap.progress(), ap.route().length(), w.vehicle.speed(), ap.route().speed[ap.route().nearest(w.vehicle.pos.x, w.vehicle.pos.z).0], ap.recoveries, w.vehicle.surface); }
         let f = w.vehicle.flipped(); if f && !was_flipped { flips += 1; } was_flipped = f;
     }

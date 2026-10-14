@@ -26,6 +26,8 @@ pub struct Autopilot {
     stuck: f32,
     /// The stage route and where to join it, while a field route is being driven.
     next: Option<(Route, usize)>,
+    /// Route progress (m) where the stage was joined from the field: the speed is kept tame for 80 m after it.
+    joined_at: Option<f32>,
     /// How many times the recovery had to act (the tests want zero).
     pub recoveries: u32,
 }
@@ -46,7 +48,7 @@ impl Autopilot {
     /// An autopilot for a car that is already on (or next to) `route`.
     pub fn on_route(route: Route, car: VehicleSpec, v: &Vehicle) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg: cfg(), idx, stuck: 0.0, next: None, recoveries: 0 }
+        Autopilot { route, car, cfg: cfg(), idx, stuck: 0.0, next: None, joined_at: None, recoveries: 0 }
     }
 
     /// Starts from wherever the car is: on the stage it joins at the nearest point, elsewhere it first drives a field
@@ -76,7 +78,7 @@ impl Autopilot {
         let speed = v.speed();
         if self.next.is_some() && self.route.length() - self.route.s[i] < 14.0 {
             let (stage, k) = self.next.take().unwrap();
-            self.route = stage; self.idx = k; self.stuck = 0.0;
+            self.route = stage; self.idx = k; self.stuck = 0.0; self.joined_at = Some(self.route.s[k]);
             return self.drive(v, dt);
         }
         let remaining = self.route.length() - self.route.s[i];
@@ -85,6 +87,8 @@ impl Autopilot {
         // recovery: flipped, stuck, or far from the route
         // the profile's target a few points ahead (a crawl is kept until the last 12 m so the car does not stall short of the finish)
         let want = self.route.speed[(i + 4).min(self.route.len() - 1)].max(if remaining > 12.0 { 3.5 } else { 0.0 });
+        let tame = self.joined_at.map_or(f32::MAX, |s0| if self.route.s[i] - s0 < 80.0 { self.cfg.field_speed * 1.25 } else { f32::MAX });
+        let want = want.min(tame);
         if v.flipped() { cmd.reset = true; self.recoveries += 1; self.stuck = 0.0; }
         self.stuck = if speed.abs() < 1.0 && want > 3.0 { self.stuck + dt } else { 0.0 };
         if remaining < 25.0 && self.stuck > 2.0 { cmd.done = true; return cmd; }   // stopped just short of the line

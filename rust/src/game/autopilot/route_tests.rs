@@ -32,7 +32,7 @@ fn max_kappa(r: &Route) -> f32 { r.kappa.iter().cloned().fold(0.0, f32::max) }
     let i0 = r.speed.iter().position(|v| *v == hp).unwrap();
     // 60 m before the hairpin's slowest point the speed is at most what braking allows
     let j = (0..i0).rev().find(|&j| r.s[i0] - r.s[j] >= 60.0).unwrap();
-    let a = 0.7 * 0.7 * 9.81;
+    let a = c.brake_factor * 0.7 * 9.81;
     assert!(r.speed[j] <= (hp * hp + 2.0 * a * 60.0).sqrt() + 0.5, "{} vs {}", r.speed[j], (hp * hp + 2.0 * a * 60.0).sqrt());
     assert!(r.speed[0] <= r.speed[40] + 1e-3, "it accelerates from the start");
 }
@@ -79,6 +79,6 @@ fn max_kappa(r: &Route) -> f32 { r.kappa.iter().cloned().fold(0.0, f32::max) }
     let c = cfg();
     let r = Route::build(&straight(200), &vec![8.0; 200], Limits { stop_at_end: true, ..lim() }, &c);
     assert_eq!(*r.speed.last().unwrap(), 0.0);
-    let a = 0.7 * 0.7 * 9.81;
+    let a = c.brake_factor * 0.7 * 9.81;
     for i in 0..199 { assert!(r.speed[i] * r.speed[i] <= 2.0 * a * (r.length() - r.s[i]) * 1.05 + 1.0, "point {i}"); }
 }
