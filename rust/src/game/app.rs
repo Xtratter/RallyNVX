@@ -79,6 +79,7 @@ mod game {
         profile: Option<Profile>, profile_path: Option<PathBuf>, missions: Vec<Mission>,
         current: Option<usize>, paused: bool, recorded: bool, payout: u32, run_id: u32,
         director: crate::audio::Director,
+        car: crate::game::vehicle::VehicleSpec, garage: bool,
         auto_fallback: bool, monitor: crate::game::rendermode::FallbackMonitor, fell_back: bool,
     }
 
@@ -87,7 +88,7 @@ mod game {
             let seed = super::level_seed(seed);
             Game { world: World::new(seed), raster, input: Input::default(), flight: FlightInput::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0, run_id: 0, director: crate::audio::Director::new(), auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false }
+                profile: None, profile_path: None, missions: Vec::new(), current: None, paused: false, recorded: false, payout: 0, run_id: 0, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::offroader(), garage: false, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
@@ -104,7 +105,7 @@ mod game {
         pub fn new_level(&mut self, seed: u64) {
             self.monitor.warm_up(6.0);
             let seed = super::level_seed(seed);
-            self.world = World::new(seed); self.seed = seed; self.input = Input::default(); self.acc = 0.0;
+            self.world = World::new_with(seed, self.car); self.seed = seed; self.input = Input::default(); self.acc = 0.0;
             self.current = None; self.recorded = false; self.payout = 0;
         }
 
@@ -112,6 +113,8 @@ mod game {
         pub fn with_profile(&mut self, path: PathBuf, fresh_seed: u64) {
             let p = Profile::load_or_new(&path, fresh_seed);
             self.missions = roll(p.profile_seed, p.round, p.gold_count());
+            self.car = p.selected_spec();
+            self.world = World::new_with(self.seed, self.car);   // the free-drive world made in `new` used the default car
             self.profile = Some(p);
             self.profile_path = Some(path);
         }
@@ -120,9 +123,22 @@ mod game {
             self.monitor.warm_up(6.0);
             let Some(m) = self.missions.get(index).cloned() else { return };
             self.seed = m.seed;
-            self.world = World::for_mission(m);
+            self.world = World::for_mission_with(m, self.car);
             self.input = Input::default(); self.flight = FlightInput::default();
             self.acc = 0.0; self.recorded = false; self.payout = 0; self.current = Some(index); self.paused = false; self.run_id = self.run_id.wrapping_add(1);
+        }
+        /// The garage scene (a standing car and an orbiting camera) with the profile's selected car.
+        pub fn start_garage_selected(&mut self) {
+            let cars = crate::game::vehicle::VehicleSpec::all();
+            let sel = self.profile.as_ref().and_then(|p| cars.iter().position(|(id, _)| *id == p.garage.selected)).unwrap_or(0);
+            self.set_garage_car(sel as i32);
+        }
+        /// Shows car `index` (file order) in the garage scene.
+        pub fn set_garage_car(&mut self, index: i32) {
+            let cars = crate::game::vehicle::VehicleSpec::all();
+            let Some((_, spec)) = cars.get(index.max(0) as usize).or_else(|| cars.first()) else { return };
+            self.garage = true; self.paused = false;
+            self.world = World::garage(*spec);
         }
         pub fn restart_mission(&mut self) { if let Some(i) = self.current { self.start_mission(i); } }
         pub fn abort_mission(&mut self) { self.world.abandon_mission(); }
@@ -148,7 +164,9 @@ mod game {
             let now = Instant::now();
             let dt = (now - self.last).as_secs_f32();
             self.last = now;
-            if !self.paused {
+            if self.garage {
+                self.world.step_garage(dt.clamp(0.0, 0.1));
+            } else if !self.paused {
                 for _ in 0..step_budget(&mut self.acc, dt, 6) {
                     self.world.step_with(&self.input, &self.flight, STEP);
                     self.input.reset = false;

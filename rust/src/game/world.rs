@@ -32,16 +32,42 @@ pub struct World {
     pub air: Option<AirRun>,
     pub cities: Vec<City>,
     pub tracks: Tracks,
+    /// The car this world is built for (a restart or a placement helper makes the same car again).
+    pub car_spec: VehicleSpec,
+    /// Garage scene: the camera orbit angle (radians); `None` in play.
+    orbit: Option<f32>,
     props: HashMap<(i32, i32), Vec<Prop>>,
 }
 
 impl World {
-    pub fn new(seed: u64) -> World {
+    pub fn new(seed: u64) -> World { World::new_with(seed, VehicleSpec::offroader()) }
+
+    pub fn new_with(seed: u64, car: VehicleSpec) -> World {
         let terrain = Terrain::new(seed);
-        let vehicle = Vehicle::new(VehicleSpec::offroader(), v3(0.0, terrain.height(0.0, 0.0) + 1.1, 0.0), 0.0);
+        let vehicle = Vehicle::new(car, v3(0.0, terrain.height(0.0, 0.0) + 1.1, 0.0), 0.0);
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
-        World { terrain, vehicle, cam, time: 0.0, mission: None, aircraft: None, sling: None, air: None, cities, tracks: Tracks::new(), props: HashMap::new() }
+        World { terrain, vehicle, cam, time: 0.0, mission: None, aircraft: None, sling: None, air: None, cities, tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }
+    }
+
+    /// The garage scene: the car settled on the flat spawn plateau, never driven; `step_garage` orbits the camera.
+    pub fn garage(car: VehicleSpec) -> World {
+        let mut w = World::new_with(7, car);
+        for _ in 0..180 { w.step(&Input::default(), 1.0 / 60.0); }
+        w.vehicle.vel = V3::ZERO; w.vehicle.omega = V3::ZERO;
+        w.orbit = Some(0.0);
+        w.step_garage(0.0);
+        w
+    }
+
+    /// Garage scene time step: the camera circles the standing car once per 20 s, 6.5 m away and 1.6 m up.
+    pub fn step_garage(&mut self, dt: f32) {
+        let a = (self.orbit.unwrap_or(0.0) + dt * std::f32::consts::TAU / 20.0) % std::f32::consts::TAU;
+        self.orbit = Some(a);
+        let c = self.vehicle.pos;
+        self.cam.pos = c + v3(a.cos() * 6.5, 1.6, a.sin() * 6.5);
+        self.cam.target = c + v3(0.0, 0.6, 0.0);
+        self.time += dt;
     }
 
     pub fn step(&mut self, inp: &Input, dt: f32) { self.step_with(inp, &FlightInput::default(), dt); }
@@ -104,8 +130,10 @@ pub struct RunInfo<'a> {
 }
 
 impl World {
-    pub fn for_mission(m: Mission) -> World {
-        let mut w = World::new(m.seed);
+    pub fn for_mission(m: Mission) -> World { World::for_mission_with(m, VehicleSpec::offroader()) }
+
+    pub fn for_mission_with(m: Mission, car: VehicleSpec) -> World {
+        let mut w = World::new_with(m.seed, car);
         if let Some(kind) = m.aircraft {
             let p0 = v3(m.start.x, w.terrain.height(m.start.x, m.start.z) + 3.0, m.start.z);
             let yaw = m.start_yaw.unwrap_or_else(|| m.checkpoints.first().map_or(0.0, |t| { let (dx, dz) = (t.x - p0.x, t.z - p0.z); if dx.hypot(dz) > 1.0 { dx.atan2(dz) } else { 0.0 } }));
@@ -120,7 +148,7 @@ impl World {
         // start at the mission start (the origin plateau, or a street in the city) facing the start heading or the first target
         let pos = v3(m.start.x, w.terrain.height(m.start.x, m.start.z) + 1.1, m.start.z);
         let yaw = m.start_yaw.unwrap_or_else(|| m.checkpoints.first().map_or(0.0, |t| { let (dx, dz) = (t.x - pos.x, t.z - pos.z); if dx.hypot(dz) > 1.0 { dx.atan2(dz) } else { 0.0 } }));
-        w.vehicle = Vehicle::new(VehicleSpec::offroader(), pos, yaw);
+        w.vehicle = Vehicle::new(w.car_spec, pos, yaw);
         w.cam = FollowCam::new(&w.vehicle);
         w.mission = Some(MissionRun::new(m));
         w
@@ -161,7 +189,7 @@ impl World {
         let (x, z) = (s.centre.x - 24.0, s.centre.z - 24.0);       // the intersection of the 5th street each way
         if let Some(a) = self.aircraft.as_mut() { *a = Aircraft::new(a.kind, v3(x, s.centre.y + 120.0, z), 0.0); }
         else {
-            self.vehicle = Vehicle::new(VehicleSpec::offroader(), v3(x, s.centre.y + 1.1, z), 0.0);
+            self.vehicle = Vehicle::new(self.car_spec, v3(x, s.centre.y + 1.1, z), 0.0);
             self.cam = FollowCam::new(&self.vehicle);
         }
         true
@@ -176,7 +204,7 @@ impl World {
         let g = self.terrain.height(x, z);
         if let Some(a) = self.aircraft.as_mut() { *a = Aircraft::new(a.kind, v3(x, g + 25.0, z), yaw); }
         else {
-            self.vehicle = Vehicle::new(VehicleSpec::offroader(), v3(x, g + 1.1, z), yaw);
+            self.vehicle = Vehicle::new(self.car_spec, v3(x, g + 1.1, z), yaw);
             self.cam = FollowCam::new(&self.vehicle);
         }
         true
@@ -197,7 +225,7 @@ impl World {
                 let yaw = (wx - x).atan2(wz - z);
                 let g = t.height(x, z);
                 if let Some(ac) = self.aircraft.as_mut() { *ac = Aircraft::new(ac.kind, v3(x, g + 25.0, z), yaw); }
-                else { self.vehicle = Vehicle::new(VehicleSpec::offroader(), v3(x, g + 1.1, z), yaw); self.cam = FollowCam::new(&self.vehicle); }
+                else { self.vehicle = Vehicle::new(self.car_spec, v3(x, g + 1.1, z), yaw); self.cam = FollowCam::new(&self.vehicle); }
                 return true;
             }
         }

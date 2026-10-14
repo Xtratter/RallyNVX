@@ -40,7 +40,7 @@ mod android {
     use crate::game::{app::{Game, STAT_LEN}, flight::FlightInput, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), Flight(FlightInput), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Restart, Abort, Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), Stop }
+    enum GCmd { Input(Input), Flight(FlightInput), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Restart, Abort, Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -79,6 +79,7 @@ mod android {
                     g.with_profile(std::path::PathBuf::from(&profile_path), seed as u64);
                     if mission >= 0 { g.start_mission(mission as usize); }
                 }
+                if mission == -2 { g.start_garage_selected(); }   // the garage scene
                 'run: loop {
                     loop {
                         match rx.try_recv() {
@@ -92,6 +93,7 @@ mod android {
                             Ok(GCmd::Quality(q)) => g.set_quality(q),
                             Ok(GCmd::RenderMode(m)) => g.set_hybrid(m == 1),
                             Ok(GCmd::AutoFallback(b)) => g.set_auto_fallback(b),
+                            Ok(GCmd::GarageCar(i)) => g.set_garage_car(i),
                             Ok(GCmd::InCity(m)) => { if m == 3 { g.place_near_water(); } else if m == 2 { g.place_in_city(); } else { g.place_near_city(); } }
                             Ok(GCmd::Restart) => g.restart_mission(),
                             Ok(GCmd::Abort) => g.abort_mission(),
@@ -123,6 +125,30 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameQuality(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Quality(level)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameRenderMode(_e: JNIEnv, _c: JClass, m: jint) { send(GCmd::RenderMode(m)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameAutoFallback(_e: JNIEnv, _c: JClass, on: jboolean) { send(GCmd::AutoFallback(on != 0)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameGarageCar(_e: JNIEnv, _c: JClass, i: jint) { send(GCmd::GarageCar(i)); }
+    #[no_mangle]
+    pub extern "system" fn Java_dev_starinin_raytrace_Native_garageInfo(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, fresh: jlong) -> jfloatArray {
+        let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
+        let v = crate::game::api::garage_info(std::path::Path::new(&p), fresh as u64);
+        let arr = env.new_float_array(v.len() as i32).unwrap();
+        env.set_float_array_region(&arr, 0, &v).unwrap();
+        arr.into_raw()
+    }
+    #[no_mangle]
+    pub extern "system" fn Java_dev_starinin_raytrace_Native_garageBuyCar(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, i: jint) -> jboolean {
+        let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
+        crate::game::api::garage_buy_car(std::path::Path::new(&p), i.max(0) as usize) as jboolean
+    }
+    #[no_mangle]
+    pub extern "system" fn Java_dev_starinin_raytrace_Native_garageSelect(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, i: jint) -> jboolean {
+        let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
+        crate::game::api::garage_select(std::path::Path::new(&p), i.max(0) as usize) as jboolean
+    }
+    #[no_mangle]
+    pub extern "system" fn Java_dev_starinin_raytrace_Native_garageBuyUpgrade(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, i: jint, up: jint) -> jboolean {
+        let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
+        crate::game::api::garage_buy_upgrade(std::path::Path::new(&p), i.max(0) as usize, up.max(0) as usize) as jboolean
+    }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gamePause(_e: JNIEnv, _c: JClass, p: jboolean) { send(GCmd::Pause(p != 0)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameRestart(_e: JNIEnv, _c: JClass) { send(GCmd::Restart); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameAbort(_e: JNIEnv, _c: JClass) { send(GCmd::Abort); }

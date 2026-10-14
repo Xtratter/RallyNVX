@@ -20,6 +20,14 @@ object Native {
     @JvmStatic external fun gameFlight(yaw: Float, lift: Float, pitch: Float, roll: Float)
     /** City draw distance by quality: 0 Low (300 m), 1 Medium (400 m), 2 High (450 m). */
     @JvmStatic external fun gameQuality(level: Int)
+    /** Garage: shows car [index] (vehicles file order) in the garage scene (start the engine with mission = -2). */
+    @JvmStatic external fun gameGarageCar(index: Int)
+    /** `[money, selected_index, car_count]` then per car `[owned, price, upgrade_cost, engine, tyres, suspension, brakes]`. */
+    @JvmStatic external fun garageInfo(path: String, fresh: Long): FloatArray
+    @JvmStatic external fun garageBuyCar(path: String, index: Int): Boolean
+    @JvmStatic external fun garageSelect(path: String, index: Int): Boolean
+    /** upgrade 0 engine, 1 tyres, 2 suspension, 3 brakes */
+    @JvmStatic external fun garageBuyUpgrade(path: String, index: Int, upgrade: Int): Boolean
     /** 0 raster, 1 hybrid (PCSS soft shadows, terrain ray shadows, ambient occlusion). */
     @JvmStatic external fun gameRenderMode(mode: Int)
     /** With it on, the game drops from hybrid to raster after four slow seconds (see game::rendermode). */

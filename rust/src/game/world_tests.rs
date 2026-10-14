@@ -402,3 +402,34 @@ mod rescue_fixes {
         assert_eq!(w.air.as_ref().unwrap().rescue_progress(), 0.0);
     }
 }
+
+mod garage_world {
+    use super::*;
+    use crate::game::vehicle::VehicleSpec;
+    fn peugeot() -> VehicleSpec { VehicleSpec::by_id("peugeot206").unwrap() }
+    #[test] fn worlds_use_the_given_car_and_the_placement_helpers_keep_it() {
+        let mut w = World::new_with(7, peugeot());
+        assert_eq!((w.vehicle.spec.mass, w.car_spec.mass), (1230.0, 1230.0));
+        w.place_near_city(); assert_eq!(w.vehicle.spec.mass, 1230.0);
+        w.place_in_city(); assert_eq!(w.vehicle.spec.mass, 1230.0);
+        w.place_near_water(); assert_eq!(w.vehicle.spec.mass, 1230.0);
+        let m = mk(MissionKind::Cargo, vec![v3(0., 0., 300.)]);
+        assert_eq!(World::for_mission_with(m.clone(), peugeot()).vehicle.spec.mass, 1230.0);
+        assert_eq!(World::for_mission(m).vehicle.spec.mass, 1500.0, "the plain constructors keep the off-roader");
+        assert_eq!(World::new(7).vehicle.spec.mass, 1500.0);
+    }
+    #[test] fn the_garage_world_has_a_still_car_and_an_orbiting_camera() {
+        let mut w = World::garage(peugeot());
+        let p0 = w.vehicle.pos; let cam0 = w.cam.pos;
+        let rel = cam0 - p0;
+        assert!((rel.x.hypot(rel.z) - 6.5).abs() < 0.05 && (rel.y - 1.6).abs() < 0.2, "{rel:?}");
+        for _ in 0..600 { w.step_garage(1.0 / 60.0); }
+        assert_eq!((w.vehicle.pos, w.vehicle.vel.len()), (p0, 0.0), "the car never moves");
+        let c10 = w.cam.pos;
+        assert!(((c10 - cam0).len() - 13.0).abs() < 0.6, "half a turn after 10 s: {}", (c10 - cam0).len());
+        for _ in 0..600 { w.step_garage(1.0 / 60.0); }
+        assert!((w.cam.pos - cam0).len() < 0.6, "a full turn after 20 s");
+        let t = w.cam.target - p0; assert!(t.x.abs() < 0.05 && t.z.abs() < 0.05 && (t.y - 0.6).abs() < 0.05, "looks at the car: {t:?}");
+        for k in 0..8 { let r = w.cam.pos - p0; assert!((r.x.hypot(r.z) - 6.5).abs() < 0.05, "radius at {k}"); w.step_garage(0.7); }
+    }
+}
