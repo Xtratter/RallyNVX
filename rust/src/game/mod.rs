@@ -12,6 +12,7 @@ pub mod city;
 pub mod desktop;
 pub mod garage;
 pub mod autopilot;
+pub mod fluid;
 pub mod grip;
 pub mod lines;
 pub mod input;
