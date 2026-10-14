@@ -8,9 +8,9 @@ Raytrace has a game mode next to the scene viewer: off-road free drive on a rand
 
 | | Android | Desktop (`raytrace-desktop --game`) |
 |---|---|---|
-| Throttle / reverse | left stick up / down | W S, arrows |
-| Steer | left stick left / right | A D, arrows |
-| Brake | right stick down | Space |
+| Throttle | gas pedal (right, taller; the lower you press, the more gas) | W, arrow up |
+| Brake / reverse | brake pedal (left of the gas): brakes while moving, reverses below 3 km/h | S, arrow down |
+| Steer | on-screen wheel (drag it around its centre) or tilt of the phone (Settings) | A D, arrows |
 | Handbrake (drift) | "Handbrake" button (hold) | Left Shift |
 | Reset (flipped car) | "Reset" button | R |
 | New random level | "New level" button | N |
@@ -54,6 +54,10 @@ Air missions use a helicopter or a drone (the card shows which). Sticks released
 - **Recon** (drone): hover for 2 s inside every zone (40 m), in any order.
 - Medals, rewards and the profile work as for ground missions. The drone is faster and tilts more; the helicopter is steadier.
 
+## Settings
+
+The main menu and the pause panel open **Settings**: graphics quality (applies at the next start), steering (wheel or tilt), sensitivity (low / normal / high), volume (0 / 25 / 50 / 75 / 100 %), the side of the pedals (the wheel goes to the other side), recalibrating the tilt centre (the pose at the start of a drive is the centre) and showing the hints again. The helicopter and the drone keep their two sticks. A short hint appears the first time you drive with each steering type.
+
 ## Rescue
 
 The sixth mission card rotates with each Refresh: sling, recon, **rescue**. In a rescue you fly the helicopter to 1-3 survivor sites (more on higher difficulty; 1-3 people each, at most 4 aboard), land inside the green circle and wait 3 seconds while they board, then land on the base pad and wait 2 seconds to unload. People waiting at a site are shown as orange-vested figures. A touchdown faster than 1.2 m/s hurts the passengers (integrity falls by 12 per m/s over 1.2; 3 m/s is already a crash); at 0 the mission fails. The medal uses time and integrity like the sling cargo; the reward adds 50 per person. The HUD shows sites done, people aboard and the boarding progress.
@@ -84,9 +88,9 @@ No garage, rescue missions or NPC orders yet, and only the raster renderer (mode
 
 | | Android | Десктоп (`raytrace-desktop --game`) |
 |---|---|---|
-| Газ / задний ход | левый стик вверх / вниз | W S, стрелки |
-| Руль | левый стик влево / вправо | A D, стрелки |
-| Тормоз | правый стик вниз | Пробел |
+| Газ | педаль газа (справа, выше; чем ниже нажать, тем больше газа) | W, стрелка вверх |
+| Тормоз / задний ход | педаль тормоза (слева от газа): тормозит на ходу, ниже 3 км/ч включает задний ход | S, стрелка вниз |
+| Руль | экранный руль (крутить пальцем вокруг центра) или наклон телефона (Настройки) | A D, стрелки |
 | Ручник (занос) | кнопка «Ручник» (удерживать) | Левый Shift |
 | Сброс (машина перевернулась) | кнопка «Сброс» | R |
 | Новый случайный уровень | кнопка «Новый уровень» | N |
@@ -129,6 +133,10 @@ No garage, rescue missions or NPC orders yet, and only the raster renderer (mode
 - **Подвес** (вертолёт): повисите ниже 4 м над грузом 1,5 с, чтобы зацепить, довезите до зелёной площадки и мягко опустите внутри круга; удары о землю и сильное раскачивание портят груз.
 - **Разведка** (дрон): повисите 2 с в каждой зоне (40 м), в любом порядке.
 - Медали, награды и профиль работают как в наземных миссиях. Дрон быстрее и сильнее наклоняется; вертолёт устойчивее.
+
+## Настройки
+
+Главное меню и панель паузы открывают **Настройки**: качество графики (применится при следующем запуске), руль (колесо или наклон), чувствительность (низкая / обычная / высокая), громкость (0 / 25 / 50 / 75 / 100 %), сторона педалей (руль уходит на другую), перекалибровка центра наклона (центр — поза в начале поездки) и повторный показ подсказок. Вертолёт и дрон по-прежнему управляются двумя стиками. При первой поездке с каждым видом руля появляется короткая подсказка.
 
 ## Спасение
 

@@ -2,6 +2,14 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.9.0 - car controls and settings
+
+- Added: an on-screen steering wheel and gas / brake pedals for the car instead of the two sticks; the brake pedal reverses below 3 km/h; pedals are analog (the lower the touch, the harder the press)
+- Added: tilt steering as an option, with calibration; sensitivity low / normal / high; pedals on the left or right
+- Added: a settings screen (quality, steering, sensitivity, volume, pedal side, tilt centre, hints) from the main menu and the pause panel; the main menu quality button moved into it
+- Added: a master volume setting; an analog brake (a lighter press brakes less); a one-time hint for each steering type
+- Unchanged: the helicopter and the drone still use the two sticks
+
 ## 2.8.0 - sound
 
 - Added: procedural sound without files: car engine (pitch follows speed and throttle), rolling noise on ground and in water, tyre squeal, helicopter rotor, drone buzz, wind
