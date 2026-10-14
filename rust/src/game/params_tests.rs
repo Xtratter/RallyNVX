@@ -84,7 +84,7 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     assert_eq!((g.style, g.price, g.upgrade_cost), (CarStyle::Rally, 3000, 750));
     assert_eq!((g.mass, g.size.x, g.size.y, g.size.z), (1230.0, 1.91, 1.50, 3.97));
     assert_eq!(g.wheels, [v3(-0.767, 0.10, 1.237), v3(0.767, 0.10, 1.237), v3(-0.767, 0.10, -1.210), v3(0.767, 0.10, -1.210)]);
-    assert_eq!((g.rest, g.radius, g.spring, g.damper, g.engine_force, g.brake_force, g.max_speed, g.mu), (0.32, 0.326, 32000.0, 3200.0, 14000.0, 14000.0, 42.0, 1.2));
+    assert_eq!((g.rest, g.radius, g.spring, g.damper, g.engine_force, g.brake_force, g.max_speed, g.mu), (0.32, 0.326, 32000.0, 3200.0, 12500.0, 14000.0, 52.0, 1.2));
 }
 #[test] fn bad_model_or_price_is_a_readable_error() {
     let bad = EMBEDDED.replacen("\"model\": \"rally\"", "\"model\": \"boat\"", 1);

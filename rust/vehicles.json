@@ -31,9 +31,9 @@
       "size": { "width": 1.91, "height": 1.50, "length": 3.97 },
       "wheels": [[-0.767, 0.10, 1.237], [0.767, 0.10, 1.237], [-0.767, 0.10, -1.210], [0.767, 0.10, -1.210]],
       "suspension": { "rest": 0.32, "radius": 0.326, "spring": 32000, "damper": 3200, "max_force_factor": 5.0 },
-      "engine_force": 14000,
+      "engine_force": 12500,
       "brake_force": 14000,
-      "max_speed": 42,
+      "max_speed": 52,
       "grip": 1.2,
       "water_drag": 1.4,
       "handling": {
