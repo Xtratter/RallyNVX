@@ -16,7 +16,7 @@ fn bad_values_are_named() {
     for (from, to, field) in [
         ("\"height\": [0.6, 2.0]", "\"height\": [3.0, 2.0]", "height"),
         ("\"length\": [30, 60]", "\"length\": [0, 60]", "length"),
-        ("\"depth\": 0.55", "\"depth\": -1", "depth"),
+        ("\"depth\": 0.7", "\"depth\": -1", "depth"),
         ("\"gravel_width\": 0.8", "\"gravel_width\": -0.1", "gravel_width"),
         ("\"asym\": 0.35", "\"asym\": \"x\"", "asym"),
     ] {
