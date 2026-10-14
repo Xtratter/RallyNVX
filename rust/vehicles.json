@@ -22,6 +22,32 @@
         "reverse_speed_factor": 0.4
       },
       "look": { "body_color": [0.75, 0.12, 0.08], "accent_color": [0.15, 0.15, 0.17], "glass_tint": [0.10, 0.16, 0.22], "wheel_width": 0.32 }
+    },
+    "peugeot206": {
+      "model": "rally",
+      "price": 3000,
+      "upgrade_cost": 750,
+      "mass": 1230,
+      "size": { "width": 1.78, "height": 1.44, "length": 3.96 },
+      "wheels": [[-0.76, 0.10, 1.225], [0.76, 0.10, 1.225], [-0.76, 0.10, -1.225], [0.76, 0.10, -1.225]],
+      "suspension": { "rest": 0.32, "radius": 0.32, "spring": 32000, "damper": 3200, "max_force_factor": 5.0 },
+      "engine_force": 14000,
+      "brake_force": 14000,
+      "max_speed": 42,
+      "grip": 1.2,
+      "water_drag": 1.4,
+      "handling": {
+        "steer_max": 0.5,
+        "steer_speed_ref": 18,
+        "steer_rate": 3.5,
+        "lateral_stiffness": 14,
+        "rolling_resistance": 35,
+        "aero_drag": 0.30,
+        "angular_damping": 0.9,
+        "handbrake_grip": 0.35,
+        "reverse_speed_factor": 0.4
+      },
+      "look": { "body_color": [0.93, 0.93, 0.95], "accent_color": [0.75, 0.10, 0.12], "glass_tint": [0.06, 0.09, 0.14], "wheel_width": 0.24 }
     }
   },
   "aircraft": {

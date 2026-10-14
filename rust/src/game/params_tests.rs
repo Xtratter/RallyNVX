@@ -76,3 +76,22 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     let bad = EMBEDDED.replacen("\"water_drag\": 1.4", "\"water_drag\": -1.0", 1);
     let e = Params::from_json(&bad).unwrap_err(); assert!(e.contains("water_drag"), "{e}");
 }
+#[test] fn cars_carry_model_price_and_upgrade_cost_with_defaults() {
+    let p = embedded();
+    let ids = p.car_ids(); assert_eq!(ids, vec!["offroader".to_string(), "peugeot206".to_string()]);
+    let o = p.car("offroader").unwrap(); assert_eq!((o.style, o.price, o.upgrade_cost), (CarStyle::Suv, 0, 300));
+    let g = p.car("peugeot206").unwrap();
+    assert_eq!((g.style, g.price, g.upgrade_cost), (CarStyle::Rally, 3000, 750));
+    assert_eq!((g.mass, g.size.x, g.size.y, g.size.z), (1230.0, 1.78, 1.44, 3.96));
+    assert_eq!(g.wheels, [v3(-0.76, 0.10, 1.225), v3(0.76, 0.10, 1.225), v3(-0.76, 0.10, -1.225), v3(0.76, 0.10, -1.225)]);
+    assert_eq!((g.rest, g.radius, g.spring, g.damper, g.engine_force, g.brake_force, g.max_speed, g.mu), (0.32, 0.32, 32000.0, 3200.0, 14000.0, 14000.0, 42.0, 1.2));
+}
+#[test] fn bad_model_or_price_is_a_readable_error() {
+    let bad = EMBEDDED.replacen("\"model\": \"rally\"", "\"model\": \"boat\"", 1);
+    let e = Params::from_json(&bad).unwrap_err(); assert!(e.contains("model"), "{e}");
+    let bad = EMBEDDED.replacen("\"price\": 3000", "\"price\": -5", 1);
+    let e = Params::from_json(&bad).unwrap_err(); assert!(e.contains("price"), "{e}");
+    let none = EMBEDDED.replacen("\"model\": \"rally\",", "", 1).replacen("\"price\": 3000,", "", 1).replacen("\"upgrade_cost\": 750,", "", 1);
+    let p = Params::from_json(&none).unwrap(); let g = p.car("peugeot206").unwrap();
+    assert_eq!((g.style, g.price, g.upgrade_cost), (CarStyle::Suv, 0, 300));
+}

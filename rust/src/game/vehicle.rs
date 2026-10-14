@@ -4,8 +4,14 @@ use super::math::{v3, Q, V3};
 use super::props::{Prop, PropKind};
 use super::terrain::Terrain;
 
+/// Which generated body the renderer builds for a car.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CarStyle { Suv, Rally }
+
 #[derive(Clone, Copy, Debug)]
 pub struct VehicleSpec {
+    /// Body style, price in the garage (0 = owned from the start) and the base price of one upgrade level.
+    pub style: CarStyle, pub price: u32, pub upgrade_cost: u32,
     pub mass: f32,
     /// Body box (width, height, length) in metres and the renderer's colours.
     pub size: V3, pub look: super::params::Look,
@@ -28,6 +34,8 @@ impl VehicleSpec {
     /// The off-roader, from `vehicles.json` (see docs/vehicles.md).
     pub fn offroader() -> VehicleSpec { Self::by_id("offroader").expect("vehicles.json must define cars.offroader") }
     pub fn by_id(id: &str) -> Option<VehicleSpec> { super::params::get().car(id) }
+    /// Every car of the vehicles file with its id, sorted by id.
+    pub fn all() -> Vec<(String, VehicleSpec)> { super::params::get().cars.clone() }
 }
 
 #[derive(Clone, Copy, Debug)]

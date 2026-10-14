@@ -20,6 +20,9 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 | `max_speed` | m/s, drive force fades to zero here |
 | `grip` | tyre friction coefficient |
 | `water_drag` | extra drag in water, 1/s with all four wheels wet (optional, default 0) |
+| `model` | generated body style: `suv` (default) or `rally` (optional) |
+| `price` | garage price in money, 0 = owned from the start (optional, default 0) |
+| `upgrade_cost` | base price of one upgrade level; levels cost 1x, 2x and 4x of it (optional, default 300) |
 | `handling.steer_max` | steering angle limit, rad |
 | `handling.steer_speed_ref` | m/s; the steering angle shrinks as `1 / (1 + speed / ref)` |
 | `handling.steer_rate` | how fast the wheels turn, rad/s |
@@ -66,6 +69,9 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 | `max_speed` | м/с, на этой скорости тяга сходит на нуль |
 | `grip` | коэффициент трения шин |
 | `water_drag` | дополнительное сопротивление в воде, 1/с при четырёх мокрых колёсах (необязательно, по умолчанию 0) |
+| `model` | стиль генерируемого кузова: `suv` (по умолчанию) или `rally` (необязательно) |
+| `price` | цена в гараже, 0 = есть с самого начала (необязательно, по умолчанию 0) |
+| `upgrade_cost` | базовая цена одного уровня улучшения; уровни стоят 1x, 2x и 4x от неё (необязательно, по умолчанию 300) |
 | `handling.steer_max` | предел угла руля, рад |
 | `handling.steer_speed_ref` | м/с; угол руля уменьшается как `1 / (1 + скорость / ref)` |
 | `handling.steer_rate` | скорость поворота колёс, рад/с |

@@ -1,7 +1,7 @@
 //! Vehicle parameters in one data file (`rust/vehicles.json`, embedded): cars, aircraft, flight rules, the sling rope.
 use super::flight::{AircraftKind, AircraftSpec};
 use super::sling::SlingSpec;
-use super::vehicle::VehicleSpec;
+use super::vehicle::{CarStyle, VehicleSpec};
 
 /// The embedded default file.
 pub const EMBEDDED: &str = include_str!("../../vehicles.json");
@@ -68,7 +68,11 @@ fn parse_car(id: &str, v: &Value) -> Result<VehicleSpec, String> {
     let sus = section(v, "suspension", ctx)?;
     let hnd = section(v, "handling", ctx)?;
     let look = parse_look(v, ctx, Look { body: [0.75, 0.12, 0.08], accent: [0.15, 0.15, 0.17], glass: [0.10, 0.16, 0.22], wheel_width: 0.32 })?;
+    let style = match v.get("model") { None => CarStyle::Suv, Some(m) => match m.as_str() { Some("suv") => CarStyle::Suv, Some("rally") => CarStyle::Rally, _ => return Err(format!("{ctx}: \"model\" must be \"suv\" or \"rally\"")) } };
+    let whole = |key: &str, default: u32| -> Result<u32, String> { match v.get(key) { None => Ok(default), Some(x) => x.as_u64().filter(|n| *n <= 1_000_000).map(|n| n as u32).ok_or_else(|| format!("{ctx}: \"{key}\" must be a whole number from 0 to 1000000")) } };
+    let (price, upgrade_cost) = (whole("price", 0)?, whole("upgrade_cost", 300)?);
     Ok(VehicleSpec {
+        style, price, upgrade_cost,
         mass, size: v3(w, h, l), look,
         inertia: v3(mass / 12.0 * (h * h + l * l), mass / 12.0 * (w * w + l * l), mass / 12.0 * (w * w + h * h)),
         wheels,
@@ -117,6 +121,7 @@ impl Params {
         let sling = SlingSpec { rope: above(sl, "rope", "sling", 0.0)?, k: above(sl, "k", "sling", 0.0)?, c: between(sl, "c", "sling", 0.0, 1e6)?, drag: between(sl, "drag", "sling", 0.0, 100.0)? };
         Ok(Params { cars, heli, drone, sling })
     }
+    pub fn car_ids(&self) -> Vec<String> { self.cars.iter().map(|(i, _)| i.clone()).collect() }
     pub fn car(&self, id: &str) -> Option<VehicleSpec> { self.cars.iter().find(|(i, _)| i == id).map(|(_, c)| *c) }
     pub fn aircraft(&self, kind: AircraftKind) -> AircraftSpec { match kind { AircraftKind::Heli => self.heli, AircraftKind::Drone => self.drone } }
 }
