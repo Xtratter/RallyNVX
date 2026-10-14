@@ -107,7 +107,7 @@ impl Note {
                 if c.long { t += if ru { " длинный" } else { " long" }; }
                 if c.tightens { t += if ru { " затягивается" } else { " tightens" }; }
                 if c.opens { t += if ru { " открывается" } else { " opens" }; }
-                if let Some((l2, s2)) = c.into { t += &format!("{}{}", if ru { " в " } else { " into " }, corner(l2, s2)); }
+                if let Some((l2, s2)) = c.into { t += &format!("{}{}", if ru { " дальше " } else { " into " }, corner(l2, s2)); }
                 t
             }
             NoteKind::Crest { big } => (if big { if ru { "Прыжок" } else { "Jump" } } else if ru { "Гребень" } else { "Crest" }).to_string(),
@@ -117,6 +117,31 @@ impl Note {
         let mut t = body;
         if let Some(c) = t.chars().next() { t = c.to_uppercase().collect::<String>() + &t[c.len_utf8()..]; }
         match dist { Some(d) if d > 60.0 => format!("{t}, {}", round_dist(d)), _ => t }
+    }
+}
+
+/// The id of the clip of a distance (the spoken number).
+fn dist_clip(d: f32) -> String { format!("d{}", round_dist(d).clamp(10, 1000)) }
+
+impl Note {
+    /// The call as a sequence of recorded clips (ids in `tools/voices/clips.json`), the same words as `text`.
+    pub fn clips(&self, dist: Option<f32>) -> Vec<String> {
+        let corner = |left: bool, sev: u8| if sev == 0 { (if left { "HL" } else { "HR" }).to_string() } else { format!("{}{}", if left { "L" } else { "R" }, sev) };
+        let mut out: Vec<String> = match self.kind {
+            NoteKind::Corner(c) => {
+                let mut v = vec![corner(c.left, c.sev)];
+                if c.long { v.push("long".into()); }
+                if c.tightens { v.push("tightens".into()); }
+                if c.opens { v.push("opens".into()); }
+                if let Some((l2, s2)) = c.into { v.push("into".into()); v.push(corner(l2, s2)); }
+                v
+            }
+            NoteKind::Crest { big } => vec![(if big { "jump" } else { "crest" }).to_string()],
+            NoteKind::Junction { left } => vec![(if left { "junc_l" } else { "junc_r" }).to_string()],
+            NoteKind::Finish => return vec!["finish".into()],
+        };
+        if let Some(d) = dist { if d > 60.0 { out.push(dist_clip(d)); } }
+        out
     }
 }
 
@@ -165,6 +190,9 @@ impl Playback {
         }
         None
     }
+
+    /// The clips of note `k` with the distance to the following note.
+    pub fn clips(&self, k: usize) -> Vec<String> { self.notes[k].clips(self.notes.get(k + 1).map(|n| n.s - self.notes[k].s)) }
 
     /// The text of note `k` with the distance to the following note.
     pub fn text(&self, k: usize, ru: bool) -> String {
