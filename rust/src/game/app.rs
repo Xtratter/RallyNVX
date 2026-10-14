@@ -90,6 +90,9 @@ mod game {
         /// Loads (or creates) the profile at `path`; the selected car (with its upgrades) drives in the free-drive world.
         pub fn with_profile(&mut self, path: PathBuf) {
             let p = Profile::load_or_new(&path);
+            // the grip numbers: the embedded surfaces.json unless `surfaces.json` lies next to the profile (tune without a rebuild)
+            crate::game::grip::reset_table();
+            if let Some(dir) = path.parent() { crate::game::grip::load_override(&dir.join("surfaces.json")); }
             self.car = p.selected_spec();
             self.world.swap_car(self.car);   // the free-drive world made in `new` used the default car
             self.profile = Some(p);

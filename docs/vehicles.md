@@ -37,6 +37,10 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 
 The `vulpes` car follows the data of the real rally car it is modelled on: mass 1230 kg, track 1.534 m, wheelbase about 2.45 m, length about 4 m, 300 hp / about 550 N·m with full-time four-wheel drive. `engine_force` (18000 N at standstill, fading to zero at `max_speed`) is tuned to a 0-100 km/h time of about 3.9 s and `max_speed` (52 m/s, 187 km/h) matches the gravel gearing.
 
+## Surfaces (`rust/surfaces.json`)
+
+The grip of every surface and the loose gravel layer live in a second file, `rust/surfaces.json`, embedded at build time. Per surface (`asphalt`, `dirt`, `grass`, `sand`, `rock`, `water`): `mu` (multiplies the car's `grip`), `lateral` (multiplies `handling.lateral_stiffness`), `rolling` (multiplies `handling.rolling_resistance`); `gravel` has `mu_loose` (untouched loose gravel) and `mu_packed` (the swept line) instead of `mu`; `loose_layer.wear_per_metre` is how fast a wheel packs the loose gravel (0.5 = half a cell's looseness per metre travelled). The car values are the tarmac values, so asphalt is 1.0 everywhere. Without a rebuild: on Android put your own `surfaces.json` next to `profile.json` (`/data/data/dev.starinin.raytrace/files/`, copy it with root); it is read at the start of a drive; on desktop point `RAYTRACE_SURFACES=/path/to/surfaces.json` at it. A file that does not parse or is out of range is ignored (the log says why) and the embedded numbers stay.
+
 ---
 
 # Параметры техники
@@ -75,3 +79,7 @@ The `vulpes` car follows the data of the real rally car it is modelled on: mass 
 `look` (необязательно, у каждой машины): `body_color`, `accent`, `glass` (RGB 0..1, линейные) и `wheel_width` (м). Меняют только сгенерированную модель, не управляемость.
 
 Машина `vulpes` следует данным настоящего раллийного автомобиля, по которому сделана модель: масса 1230 кг, колея 1,534 м, колёсная база около 2,45 м, длина около 4 м, 300 л.с. / около 550 Н·м, постоянный полный привод. `engine_force` (18000 Н с места, спадает до нуля к `max_speed`) подобрана под разгон до 100 км/ч за 3,9 с, а `max_speed` (52 м/с, 187 км/ч) соответствует гравийной передаточной паре.
+
+## Покрытия (`rust/surfaces.json`)
+
+Сцепление каждого покрытия и рыхлый слой гравия лежат во втором файле, `rust/surfaces.json`, он встраивается при сборке. Для каждого покрытия (`asphalt`, `dirt`, `grass`, `sand`, `rock`, `water`): `mu` (умножает `grip` машины), `lateral` (умножает `handling.lateral_stiffness`), `rolling` (умножает `handling.rolling_resistance`); у `gravel` вместо `mu` есть `mu_loose` (нетронутый рыхлый гравий) и `mu_packed` (утрамбованная линия); `loose_layer.wear_per_metre` — как быстро колесо утрамбовывает рыхлый гравий (0,5 = половина рыхлости ячейки на метр пути). Значения машин — это значения для асфальта, поэтому у асфальта везде 1,0. Без пересборки: на Android положите свой `surfaces.json` рядом с `profile.json` (`/data/data/dev.starinin.raytrace/files/`, копируйте с root), он читается в начале поездки; на десктопе укажите на него `RAYTRACE_SURFACES=/путь/к/surfaces.json`. Файл, который не разбирается или выходит за допустимые пределы, игнорируется (причина в логе), остаются встроенные числа.

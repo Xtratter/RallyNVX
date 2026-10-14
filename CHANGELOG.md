@@ -7,6 +7,7 @@
 - Added: the grip, the tyres' side stiffness and the rolling resistance depend on the surface under every wheel (asphalt, gravel, dirt, grass, sand, rock, shallow water); off the tarmac the car is noticeably slipperier, sand is slow
 - Added: a loose gravel layer on the special stage: the wheels sweep it into a packed, grippier line while the sides stay loose; the map resets with a new level
 - Added: the HUD shows the name of the surface under the car
+- Added: the grip numbers live in `rust/surfaces.json` (embedded); a `surfaces.json` next to the profile (Android) or `RAYTRACE_SURFACES` (desktop) overrides them without a rebuild
 
 ## 2.15.0 - roads
 

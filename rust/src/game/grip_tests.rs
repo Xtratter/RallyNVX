@@ -56,3 +56,34 @@ fn stage(len: f32) -> RoadNet {
     let (s2, l2, r2) = ground_at(&t, &m, 300.0, 100.0);
     assert!(s2 == Surface::Asphalt && l2 == 1.0 && r2.is_none(), "the flat test terrain far from the road is neutral asphalt");
 }
+
+#[test] fn the_embedded_file_holds_the_documented_numbers() {
+    let t = GripTable::from_json(EMBEDDED).expect("parses");
+    let g = |s, l| t.grip(s, l);
+    assert_eq!((g(Surface::Asphalt, 1.0).mu, g(Surface::Asphalt, 1.0).lateral, g(Surface::Asphalt, 1.0).rolling), (1.0, 1.0, 1.0));
+    assert_eq!((g(Surface::Gravel, 0.0).mu, g(Surface::Gravel, 1.0).mu, g(Surface::Gravel, 1.0).lateral, g(Surface::Gravel, 1.0).rolling), (0.78, 0.62, 0.75, 1.3));
+    assert_eq!((g(Surface::Dirt, 1.0).mu, g(Surface::Grass, 1.0).mu, g(Surface::Sand, 1.0).mu, g(Surface::Rock, 1.0).mu, g(Surface::Water, 1.0).mu), (0.70, 0.60, 0.50, 0.80, 0.55));
+    assert_eq!(g(Surface::Sand, 1.0).rolling, 3.0);
+    assert_eq!(t.wear_per_metre, 0.5);
+    assert_eq!(table(), t, "the active table is the embedded one unless an override was loaded");
+}
+#[test] fn editing_the_json_changes_the_table_and_bad_files_say_what_is_wrong() {
+    let edited = EMBEDDED.replace("\"mu\": 0.60", "\"mu\": 0.45");
+    assert_ne!(edited, EMBEDDED);
+    assert_eq!(GripTable::from_json(&edited).unwrap().grip(Surface::Grass, 1.0).mu, 0.45);
+    let e = GripTable::from_json("not json").unwrap_err(); assert!(e.contains("JSON"), "{e}");
+    let e = GripTable::from_json("{}").unwrap_err(); assert!(e.contains("asphalt") || e.contains("gravel") || e.contains("grass"), "{e}");
+    let e = GripTable::from_json(&EMBEDDED.replace("\"mu\": 0.50", "\"mu\": 9.0")).unwrap_err(); assert!(e.contains("sand") && e.contains("mu"), "{e}");
+    let e = GripTable::from_json(&EMBEDDED.replace("\"wear_per_metre\": 0.5", "\"wear_per_metre\": \"fast\"")).unwrap_err(); assert!(e.contains("wear_per_metre"), "{e}");
+    let e = GripTable::from_json(&EMBEDDED.replace("\"mu_loose\": 0.62,", "")).unwrap_err(); assert!(e.contains("mu_loose"), "{e}");
+}
+#[test] fn an_override_file_is_loaded_but_a_missing_or_broken_one_changes_nothing() {
+    let dir = std::env::temp_dir().join(format!("rt_surf_{}", std::process::id())); let _ = std::fs::remove_dir_all(&dir); std::fs::create_dir_all(&dir).unwrap();
+    let before = table();
+    load_override(&dir.join("nope.json"));
+    std::fs::write(dir.join("bad.json"), "{ nonsense").unwrap(); load_override(&dir.join("bad.json"));
+    assert_eq!(table(), before);
+    std::fs::write(dir.join("same.json"), EMBEDDED).unwrap(); load_override(&dir.join("same.json"));   // the same numbers: other tests stay valid
+    assert_eq!(table(), before);
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -1,0 +1,10 @@
+{
+  "asphalt": { "mu": 1.00, "lateral": 1.0,  "rolling": 1.0 },
+  "gravel":  { "mu_loose": 0.62, "mu_packed": 0.78, "lateral": 0.75, "rolling": 1.3 },
+  "dirt":    { "mu": 0.70, "lateral": 0.8,  "rolling": 1.2 },
+  "grass":   { "mu": 0.60, "lateral": 0.7,  "rolling": 1.5 },
+  "sand":    { "mu": 0.50, "lateral": 0.6,  "rolling": 3.0 },
+  "rock":    { "mu": 0.80, "lateral": 0.9,  "rolling": 1.0 },
+  "water":   { "mu": 0.55, "lateral": 0.7,  "rolling": 1.0 },
+  "loose_layer": { "wear_per_metre": 0.5 }
+}
