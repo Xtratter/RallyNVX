@@ -5,6 +5,7 @@ pub mod rendermode;
 pub mod scatter;
 pub mod api;
 pub mod camera_follow;
+pub mod carlights;
 pub mod city;
 #[cfg(feature = "desktop")]
 pub mod desktop;
