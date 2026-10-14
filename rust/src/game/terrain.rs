@@ -1,6 +1,9 @@
 //! Seeded procedural terrain: hash-based value noise, fBm heights, normals.
+use std::sync::Arc;
+
 use super::city::{city_sites, CitySite};
 use super::math::{v3, V3};
+use super::roads::{self, RoadHit, RoadNet, SHOULDER};
 
 pub const TILE_CELLS: usize = 64;
 pub const CELL: f32 = 2.0;
@@ -39,13 +42,13 @@ fn fbm(seed: u64, x: f32, z: f32, octaves: u32) -> f32 {
     sum / norm
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Terrain { pub seed: u64, scale: f32, sites: [Option<CitySite>; 2], water: Option<f32> }
+#[derive(Clone, Debug)]
+pub struct Terrain { pub seed: u64, scale: f32, sites: [Option<CitySite>; 2], water: Option<f32>, roads: Option<Arc<RoadNet>> }
 
 impl Terrain {
     pub fn new(seed: u64) -> Terrain {
-        let raw = Terrain { seed, scale: 1.0, sites: [None; 2], water: None };
-        let with_sites = Terrain { sites: city_sites(seed, &raw), ..raw };
+        let raw = Terrain { seed, scale: 1.0, sites: [None; 2], water: None, roads: None };
+        let with_sites = Terrain { sites: city_sites(seed, &raw), ..raw.clone() };
         Terrain { water: with_sites.pick_water_level(), ..with_sites }
     }
 
@@ -68,7 +71,7 @@ impl Terrain {
     /// Flat terrain under water up to `level` (tests).
     pub fn flooded(level: f32) -> Terrain { Terrain { water: Some(level), ..Terrain::flat() } }
     /// Height 0 everywhere (tests, vehicle tuning).
-    pub fn flat() -> Terrain { Terrain { seed: 0, scale: 0.0, sites: [None; 2], water: None } }
+    pub fn flat() -> Terrain { Terrain { seed: 0, scale: 0.0, sites: [None; 2], water: None, roads: None } }
 
     /// The heightfield without city plateaus.
     pub fn raw_height(&self, x: f32, z: f32) -> f32 {
@@ -90,8 +93,28 @@ impl Terrain {
         }
         // lakes are shallow: the lake bed never lies more than LAKE_DEPTH below the surface
         if let Some(l) = self.water { h = h.max(l - LAKE_DEPTH); }
+        // roads: the ground equals the road profile inside half-width + 1 m and eases back to nature over the shoulder
+        if let Some(hit) = self.road_hit(x, z) {
+            let w = 1.0 - smoothstep(hit.half + 1.0, hit.half + SHOULDER, hit.dist);
+            if w > 0.0 { h += (hit.y - h) * w; }
+        }
         h
     }
+
+    /// The level with its road network (the game); `Terrain::new` has none and is cheap (tests, planning).
+    pub fn with_roads(seed: u64) -> Terrain {
+        let base = Terrain::new(seed);
+        let net = roads::gen::generate(seed, &base);
+        Terrain { roads: Some(Arc::new(net)), ..base }
+    }
+    /// Tests: this terrain with the given road network.
+    #[cfg(test)]
+    pub fn with_net(self, net: RoadNet) -> Terrain { Terrain { roads: Some(Arc::new(net)), ..self } }
+    pub fn roads(&self) -> Option<&RoadNet> { self.roads.as_deref() }
+    pub fn road_hit(&self, x: f32, z: f32) -> Option<RoadHit> { self.roads.as_ref()?.nearest(x, z) }
+    /// Distance from (x, z) to the edge of the nearest road (negative on the road); `None` when no road is within reach.
+    pub fn road_edge_distance(&self, x: f32, z: f32) -> Option<f32> { self.road_hit(x, z).map(|h| h.dist - h.half) }
+    pub fn near_road(&self, x: f32, z: f32, margin: f32) -> bool { self.road_edge_distance(x, z).map_or(false, |d| d < margin) }
 
     pub fn sites(&self) -> Vec<CitySite> { self.sites.iter().flatten().copied().collect() }
 
@@ -153,3 +176,7 @@ impl Terrain {
 #[cfg(test)]
 #[path = "terrain_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "terrain_roads_tests.rs"]
+mod road_tests;

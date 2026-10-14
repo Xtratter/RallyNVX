@@ -54,7 +54,7 @@ mod game {
     impl Game {
         pub fn new(raster: Raster, seed: u64, stats: Arc<Mutex<[f32; STAT_LEN]>>) -> Game {
             let seed = super::level_seed(seed);
-            Game { world: World::new(seed), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
+            Game { world: World::with_roads(seed, crate::game::vehicle::VehicleSpec::offroader()), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
                 profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::offroader(), garage: false, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false }
         }
@@ -69,6 +69,7 @@ mod game {
         /// The player drags on the screen: orbit the chase camera (radians); `camera_release` when the finger goes up.
         pub fn camera_drag(&mut self, dyaw: f32, dpitch: f32) { self.world.cam.drag(dyaw, dpitch); }
         pub fn camera_release(&mut self) { self.world.cam.set_dragging(false); }
+        pub fn place_on_road(&mut self, mode: i32) -> bool { self.world.place_on_road(mode) }
         pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }
         pub fn place_in_city(&mut self) -> bool { self.world.place_in_city() }
         pub fn place_near_water(&mut self) -> bool { self.world.place_near_water() }
@@ -76,14 +77,14 @@ mod game {
         pub fn new_level(&mut self, seed: u64) {
             self.monitor.warm_up(6.0);
             let seed = super::level_seed(seed);
-            self.world = World::new_with(seed, self.car); self.seed = seed; self.input = Input::default(); self.acc = 0.0;
+            self.world = World::with_roads(seed, self.car); self.seed = seed; self.input = Input::default(); self.acc = 0.0;
         }
 
         /// Loads (or creates) the profile at `path`; the selected car (with its upgrades) drives in the free-drive world.
         pub fn with_profile(&mut self, path: PathBuf) {
             let p = Profile::load_or_new(&path);
             self.car = p.selected_spec();
-            self.world = World::new_with(self.seed, self.car);   // the free-drive world made in `new` used the default car
+            self.world.swap_car(self.car);   // the free-drive world made in `new` used the default car
             self.profile = Some(p);
             self.profile_path = Some(path);
         }

@@ -70,7 +70,7 @@ use super::*;
 }
 #[test] fn flat_terrain_has_no_cities_and_terrain_stays_copy() {
     assert!(Terrain::flat().sites().is_empty());
-    let t = Terrain::new(3); let u = t; assert_eq!(t.height(10.0, 10.0), u.height(10.0, 10.0));
+    let t = Terrain::new(3); let u = t.clone(); assert_eq!(t.height(10.0, 10.0), u.height(10.0, 10.0));
     assert_eq!(Terrain::flat().height(500.0, 500.0), 0.0);
 }
 #[test] fn the_spawn_plateau_is_still_flat_with_cities() {

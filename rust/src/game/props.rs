@@ -22,6 +22,7 @@ pub fn tile_props(t: &Terrain, tx: i32, tz: i32) -> Vec<Prop> {
         if x.hypot(z) < MIN_PROP_DIST { continue; }
         if t.in_city(x, z, 100.0) || t.is_water(x, z, 1.0) { continue; }
         if t.normal(x, z).y < 0.85 { continue; }
+        if t.near_road(x, z, 4.0) { continue; }
         let pos = v3(x, t.height(x, z), z);
         if c < 0.45 {
             let radius = 0.6 + (c / 0.45) * 1.4;

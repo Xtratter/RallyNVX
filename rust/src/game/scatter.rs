@@ -10,6 +10,7 @@ const BUSHES_PER_TILE: i32 = 6;
 const GRASS_CELL: f32 = 1.2;
 
 fn gentle(t: &Terrain, x: f32, z: f32, min_y: f32) -> Option<V3> {
+    if t.near_road(x, z, 3.0) { return None; }
     if t.in_city(x, z, 0.0) || t.is_water(x, z, 0.5) { return None; }
     let n = t.normal(x, z);
     if n.y < min_y { return None; }
@@ -43,7 +44,7 @@ pub fn grass_spots(t: &Terrain, centre: V3, radius: f32, cap: usize) -> Vec<(V3,
         let d = (x - centre.x).hypot(z - centre.z);
         if d > radius { continue; }
         // cheap checks first: one height sample, a forward-difference slope (2 more samples)
-        if t.in_city(x, z, 0.0) { continue; }
+        if t.in_city(x, z, 0.0) || t.near_road(x, z, 0.3) { continue; }
         let h = t.height(x, z);
         if t.water_level().map_or(false, |l| h < l + 0.3) { continue; }
         let nm = v3(h - t.height(x + 1.0, z), 1.0, h - t.height(x, z + 1.0)).norm();

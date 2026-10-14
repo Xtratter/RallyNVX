@@ -33,12 +33,50 @@ pub struct World {
 impl World {
     pub fn new(seed: u64) -> World { World::new_with(seed, VehicleSpec::offroader()) }
 
-    pub fn new_with(seed: u64, car: VehicleSpec) -> World {
-        let terrain = Terrain::new(seed);
-        let vehicle = Vehicle::new(car, v3(0.0, terrain.height(0.0, 0.0) + 1.1, 0.0), 0.0);
+    pub fn new_with(seed: u64, car: VehicleSpec) -> World { World::from_terrain(Terrain::new(seed), car, 0.0) }
+
+    /// The game's world: roads generated for the level; the car spawns at the origin facing along the liaison.
+    pub fn with_roads(seed: u64, car: VehicleSpec) -> World {
+        let t0 = std::time::Instant::now();
+        let terrain = Terrain::with_roads(seed);
+        log::info!("roads generated in {} ms", t0.elapsed().as_millis());
+        let yaw = terrain.roads().and_then(|n| n.roads.first()).filter(|r| r.pts.len() > 1)
+            .map_or(0.0, |r| { let d = r.pts[1].pos - r.pts[0].pos; d.x.atan2(d.z) });
+        World::from_terrain(terrain, car, yaw)
+    }
+
+    fn from_terrain(terrain: Terrain, car: VehicleSpec, yaw: f32) -> World {
+        let seed = terrain.seed;
+        let vehicle = Vehicle::new(car, v3(0.0, terrain.height(0.0, 0.0) + 1.1, 0.0), yaw);
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
         World { terrain, vehicle, cam, time: 0.0, cities, tracks: Tracks::new(), car_spec: car, orbit: None, props: HashMap::new() }
+    }
+
+    /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
+    pub fn swap_car(&mut self, car: VehicleSpec) {
+        let f = self.vehicle.forward();
+        let (x, z) = (self.vehicle.pos.x, self.vehicle.pos.z);
+        self.car_spec = car;
+        self.vehicle = Vehicle::new(car, v3(x, self.terrain.height(x, z) + 1.1, z), f.x.atan2(f.z));
+        self.cam = FollowCam::new(&self.vehicle);
+    }
+
+    /// Debug/test: puts the car on a road facing along it: 1 liaison 60 m in, 2 stage 60 m in, 3 stage middle, 4 stage
+    /// 150 m before its end. False without roads.
+    pub fn place_on_road(&mut self, mode: i32) -> bool {
+        let Some(net) = self.terrain.roads() else { return false };
+        let len1 = net.roads.get(1).map_or(0.0, |r| r.length());
+        let (ri, s) = match mode { 1 => (0, 60.0), 2 => (1, 60.0), 3 => (1, len1 * 0.5), _ => (1, (len1 - 150.0).max(0.0)) };
+        let Some(r) = net.roads.get(ri) else { return false };
+        if r.pts.len() < 2 { return false; }
+        let i = r.pts.iter().position(|p| p.s >= s).unwrap_or(r.pts.len() - 1).min(r.pts.len() - 2);
+        let (a, b) = (r.pts[i].pos, r.pts[i + 1].pos);
+        let yaw = (b.x - a.x).atan2(b.z - a.z);
+        let g = self.terrain.height(a.x, a.z);
+        self.vehicle = Vehicle::new(self.car_spec, v3(a.x, g + 1.1, a.z), yaw);
+        self.cam = FollowCam::new(&self.vehicle);
+        true
     }
 
     /// The garage scene: the car settled on the flat spawn plateau, never driven; `step_garage` orbits the camera.
@@ -134,7 +172,7 @@ impl World {
 
     /// Debug/test: puts the car on dry ground 20 m from the nearest lake, facing it. False without a lake.
     pub fn place_near_water(&mut self) -> bool {
-        let t = self.terrain;
+        let t = &self.terrain;
         let Some(level) = t.water_level() else { return false };
         for ring in 1..=80 {
             let r = ring as f32 * 25.0;

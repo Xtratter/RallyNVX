@@ -150,3 +150,22 @@ mod garage_world {
     assert!((v.lamps.head[0] - v.lamps.head[1]).len() > 0.3);
     assert!(v.lamps.head[0].y > v.vehicle.pos.y - 1.0);
 }
+
+use crate::game::vehicle::VehicleSpec as RoadCar;
+#[test] fn a_world_with_roads_spawns_on_the_liaison_facing_along_it() {
+    let w = World::with_roads(4, RoadCar::offroader());
+    let r = &w.terrain.roads().expect("roads").roads[0];
+    let t0 = (r.pts[1].pos - r.pts[0].pos).norm();
+    let f = w.vehicle.forward();
+    assert!(f.x * t0.x + f.z * t0.z > 0.99, "{f:?} vs {t0:?}");
+    assert!(w.terrain.near_road(w.vehicle.pos.x, w.vehicle.pos.z, 0.0), "the car spawns on the road");
+    assert!(World::new(4).terrain.roads().is_none(), "the plain constructor stays roadless");
+}
+#[test] fn place_on_road_puts_the_car_on_each_road_facing_along_it() {
+    let mut w = World::with_roads(4, RoadCar::offroader());
+    for mode in 1..=4 {
+        assert!(w.place_on_road(mode), "mode {mode}");
+        assert!(w.terrain.near_road(w.vehicle.pos.x, w.vehicle.pos.z, 0.0), "mode {mode}");
+    }
+    assert!(!World::new(4).place_on_road(1));
+}
