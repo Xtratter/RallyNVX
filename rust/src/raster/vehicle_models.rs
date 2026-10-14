@@ -111,17 +111,44 @@ pub(crate) fn loft(stations: &[(f32, f32, f32, f32)], ring: usize, exp: f32, col
     m
 }
 
-fn scaled(st: &[(f32, f32, f32, f32)], sx: f32, sy: f32, sz: f32) -> Vec<(f32, f32, f32, f32)> { st.iter().map(|&(z, w, a, b)| (z * sz, (w * sx).max(0.06), a * sy, b * sy)).collect() }
+pub(crate) fn scaled(st: &[(f32, f32, f32, f32)], sx: f32, sy: f32, sz: f32) -> Vec<(f32, f32, f32, f32)> { st.iter().map(|&(z, w, a, b)| (z * sz, (w * sx).max(0.06), a * sy, b * sy)).collect() }
 
 pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3 }
 pub struct HeliModel { pub body: Mesh3, pub rotor: Mesh3, pub tail_rotor: Mesh3 }
 pub struct DroneModel { pub body: Mesh3, pub prop: Mesh3 }
 pub struct HeliPoses { pub body: (Q, V3), pub rotor: (Q, V3), pub tail: (Q, V3) }
 
-const CHROME: [f32; 3] = [0.75, 0.77, 0.80];
-const RUBBER: [f32; 3] = [0.04, 0.04, 0.045];
+pub(crate) const CHROME: [f32; 3] = [0.75, 0.77, 0.80];
+pub(crate) const RUBBER: [f32; 3] = [0.04, 0.04, 0.045];
 
+/// The generated body for the car's style (the wheel is shared in shape, the rally one has a lighter rim).
 pub fn build_car(spec: &VehicleSpec) -> CarModel {
+    match spec.style {
+        crate::game::vehicle::CarStyle::Suv => build_suv(spec),
+        crate::game::vehicle::CarStyle::Rally => super::rally_model::build_rally(spec),
+    }
+}
+
+/// A tyre with a rim: `rim` is the rim colour, `bolts` the number of rim bolts.
+pub(crate) fn build_wheel(spec: &VehicleSpec, rim: [f32; 3], bolts: usize) -> Mesh3 {
+    let r = spec.radius; let w = spec.look.wheel_width;
+    let mut wheel = Mesh3::default();
+    add_cylinder(&mut wheel, V3::ZERO, Axis::X, r - 0.03, w, 20, RUBBER, MAT_RUBBER);
+    for k in 0..20 {
+        let a = std::f32::consts::TAU * k as f32 / 20.0;
+        let rot = Q::axis_angle(v3(1., 0., 0.), a);
+        add_box(&mut wheel, rot.rotate(v3(0.0, 0.0, r - 0.03)), v3(w * 0.5, 0.03, r * 0.07), rot, RUBBER, MAT_RUBBER);
+    }
+    add_cylinder(&mut wheel, V3::ZERO, Axis::X, r * 0.62, w * 1.02, 20, rim, MAT_CHROME);
+    for k in 0..bolts {
+        let a = std::f32::consts::TAU * k as f32 / bolts as f32;
+        let rot = Q::axis_angle(v3(1., 0., 0.), a);
+        add_box(&mut wheel, rot.rotate(v3(w * 0.52, 0.0, r * 0.3)), v3(0.015, 0.025, 0.025), rot, [0.3, 0.3, 0.32], MAT_CHROME);
+    }
+    wheel
+}
+
+fn build_suv(spec: &VehicleSpec) -> CarModel {
     let (sx, sy, sz) = (spec.size.x / 2.0, spec.size.y / 1.4, spec.size.z / 4.2);
     let l = spec.look;
     let mut body = Mesh3::default();
@@ -139,20 +166,7 @@ pub fn build_car(spec: &VehicleSpec) -> CarModel {
     add_cylinder(&mut body, v3(0.0, 0.85 * sy, -2.1 * sz), Axis::Z, 0.34 * sy, 0.2 * sz, 16, RUBBER, MAT_RUBBER);
     add_cylinder(&mut body, v3(0.0, 0.85 * sy, -2.21 * sz), Axis::Z, 0.17 * sy, 0.03 * sz, 12, CHROME, MAT_CHROME);
 
-    let r = spec.radius; let w = l.wheel_width;
-    let mut wheel = Mesh3::default();
-    add_cylinder(&mut wheel, V3::ZERO, Axis::X, r - 0.03, w, 20, RUBBER, MAT_RUBBER);
-    for k in 0..20 {
-        let a = std::f32::consts::TAU * k as f32 / 20.0;
-        let rot = Q::axis_angle(v3(1., 0., 0.), a);
-        add_box(&mut wheel, rot.rotate(v3(0.0, 0.0, r - 0.03)), v3(w * 0.5, 0.03, r * 0.07), rot, RUBBER, MAT_RUBBER);
-    }
-    add_cylinder(&mut wheel, V3::ZERO, Axis::X, r * 0.62, w * 1.02, 20, CHROME, MAT_CHROME);
-    for k in 0..5 {
-        let a = std::f32::consts::TAU * k as f32 / 5.0;
-        let rot = Q::axis_angle(v3(1., 0., 0.), a);
-        add_box(&mut wheel, rot.rotate(v3(w * 0.52, 0.0, r * 0.3)), v3(0.015, 0.025, 0.025), rot, [0.3, 0.3, 0.32], MAT_CHROME);
-    }
+    let wheel = build_wheel(spec, CHROME, 5);
     CarModel { body, wheel }
 }
 
@@ -223,6 +237,12 @@ pub fn heli_poses(a: &Aircraft, t: f32) -> HeliPoses {
 /// The body mesh is drawn 0.75 body-heights below the suspension attachment height (its own frame starts at y = 0.30)
 /// so the sills clear the ground by about half a metre; the attachment height itself sits above the centre of mass.
 pub fn car_body_pose(v: &Vehicle) -> (Q, V3) {
+    if v.spec.style == crate::game::vehicle::CarStyle::Rally {
+        // the rally body frame starts at the ground: the mounts' height minus the ride height at rest (spring static compression)
+        let s = &v.spec;
+        let c0 = (s.mass * 9.81 / 4.0 / s.spring).min(s.rest);
+        return (v.rot, v.pos + v.rot.rotate(v3(0.0, s.wheels[0].y - (s.rest + s.radius - c0), 0.0)));
+    }
     let sy = v.spec.size.y / 1.4;
     (v.rot, v.pos + v.rot.rotate(v3(0.0, v.spec.wheels[0].y - 0.75 * sy, 0.0)))
 }

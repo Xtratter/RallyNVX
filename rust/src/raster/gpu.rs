@@ -105,6 +105,12 @@ fn mesh_buf(dev: &wgpu::Device, m: &Mesh) -> MeshBuf {
 const MESH_ATTRS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
 const INST_ATTRS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4];
 
+/// Everything the car meshes depend on; the renderer rebuilds them when it changes (another car, size or paint).
+fn car_key(s: &crate::game::vehicle::VehicleSpec) -> [u32; 12] {
+    let b = |f: f32| f.to_bits();
+    [s.style as u32, b(s.size.x), b(s.size.y), b(s.size.z), b(s.radius), b(s.look.wheel_width), b(s.look.body[0]), b(s.look.body[1]), b(s.look.body[2]), b(s.look.accent[0]), b(s.look.accent[1]), b(s.look.accent[2])]
+}
+
 fn depth_tex(dev: &wgpu::Device, w: u32, h: u32, sampled: bool) -> (wgpu::Texture, wgpu::TextureView) {
     let tex = dev.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth"), size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
@@ -138,6 +144,7 @@ pub struct Raster {
     mbuf: wgpu::Buffer,
     pl_water: wgpu::RenderPipeline,
     cache_seed: u64,
+    car_key: [u32; 12],
     atlas: HeightAtlas,
     atlas_tex: wgpu::Texture,
     hybrid: bool,
@@ -304,7 +311,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, cache_seed: u64::MAX, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -326,6 +333,16 @@ impl Raster {
             wgpu::Extent3d { width: t, height: t, depth_or_array_layers: 1 });
     }
 
+    /// Rebuilds the car body and wheel meshes when the car in the world is another one (garage, a bought car).
+    fn ensure_car_model(&mut self, spec: &crate::game::vehicle::VehicleSpec) {
+        let key = car_key(spec);
+        if key == self.car_key { return; }
+        let car = vm::build_car(spec);
+        self.models[0] = model_buf(&self.device, &car.body);
+        self.models[1] = model_buf(&self.device, &car.wheel);
+        self.car_key = key;
+    }
+
     pub fn resize(&mut self, w: u32, h: u32) {
         let (w, h) = (w.max(1), h.max(1));
         if w == self.config.width && h == self.config.height { return; }
@@ -345,6 +362,7 @@ impl Raster {
         let (cx, cz) = (tile_of(world.cam.pos.x), tile_of(world.cam.pos.z));
         world.ensure_props(cx, cz, DRAW_TILES);
         let wv = world.view(DRAW_TILES);
+        self.ensure_car_model(&wv.vehicle.spec);
 
         // camera and light matrices
         let aspect = self.config.width as f32 / self.config.height as f32;

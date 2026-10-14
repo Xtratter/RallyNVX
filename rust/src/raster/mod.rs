@@ -4,6 +4,7 @@ pub mod heightatlas;
 pub mod meshes;
 pub mod models;
 pub mod nature_models;
+pub mod rally_model;
 pub mod texgen;
 pub mod vehicle_models;
 pub mod watergen;
