@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.11.0 - garage
+
+- Added: a garage in the main menu: a turntable preview, buying and selecting cars, four upgrades per car (engine, tyres, suspension, brakes, three levels each)
+- Added: a second car, the Peugeot 206 WRC (3000): a generated rally hatchback (flared arches, roof scoop, rear wing, spot lamps), light and quick; the selected car with its upgrades is used in free drive and in ground missions
+- Added: `model`, `price` and `upgrade_cost` keys for cars in `vehicles.json`; the profile keeps the garage (old profiles load with only the off-roader)
+
 ## 2.10.0 - hybrid render mode
 
 - Added: a Hybrid render mode next to Raster (Settings, default on only with High quality): soft sun shadows (PCSS), long terrain shadows by ray marching a height map, and ambient occlusion (terrain hollows, plant and rock bases, building feet)

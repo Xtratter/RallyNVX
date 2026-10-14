@@ -66,7 +66,10 @@ impl World {
         self.orbit = Some(a);
         let c = self.vehicle.pos;
         self.cam.pos = c + v3(a.cos() * 6.5, 1.6, a.sin() * 6.5);
-        self.cam.target = c + v3(0.0, 0.6, 0.0);
+        // look a little to the right of the car so it sits left of centre (the garage panel covers the right of the screen)
+        let d = v3(-a.cos(), 0.0, -a.sin());
+        let right = v3(-d.z, 0.0, d.x);
+        self.cam.target = c + v3(0.0, 0.6, 0.0) + right * 1.8;
         self.time += dt;
     }
 

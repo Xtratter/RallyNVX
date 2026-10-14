@@ -54,6 +54,10 @@ Air missions use a helicopter or a drone (the card shows which). Sticks released
 - **Recon** (drone): hover for 2 s inside every zone (40 m), in any order.
 - Medals, rewards and the profile work as for ground missions. The drone is faster and tilts more; the helicopter is steadier.
 
+## Garage
+
+The main menu has a **Garage**: a turntable view of the car, arrows to switch between cars and a panel with the money, the **Buy / Select** button and four upgrades per car: Engine (+8 / +16 / +25 % thrust, a little more top speed), Tyres (+5 / +10 / +15 % grip), Suspension (+10 / +20 / +30 % stiffness and damping) and Brakes (+20 / +40 / +60 %). A level costs 1x, 2x and 4x the car's upgrade price (300 for the off-roader, 750 for the Peugeot). Two cars: the off-roader (yours from the start) and the **Peugeot 206 WRC** (3000): a light rally hatchback with a wide stance, a roof scoop, a big rear wing and spot lamps, quicker and grippier but stiffer over bumps. The car you select, with its upgrades, is used in free drive and in every ground mission; the helicopter and the drone are unchanged. Cars and prices live in `vehicles.json` (see docs/vehicles.md).
+
 ## Render modes
 
 Settings has **Render mode**: *Raster* (the fast classic look) or *Hybrid*. Hybrid adds soft sun shadows (sharp at the foot of a tree, softer further away), long shadows of hills from a height map (dawn and dusk shadows reach far across the land) and ambient occlusion (hollows, tree and rock bases and building feet are darker). Hybrid is on by default only with High graphics quality and costs roughly 15-20 % of the frame rate (about 80 fps against 100 in a forest on a POCO F3). **Auto fallback to Raster** (off by default) drops to Raster for the rest of the drive when the frame rate stays below 50 for four seconds, and the HUD says so; it comes back when you restart the game or pick Hybrid again. Hybrid shadows are slightly softer than Raster ones everywhere, and the first six seconds of a drive never count towards the fallback.
@@ -137,6 +141,10 @@ No garage or NPC orders yet, and only the raster and hybrid renderers. The ray-t
 - **Подвес** (вертолёт): повисите ниже 4 м над грузом 1,5 с, чтобы зацепить, довезите до зелёной площадки и мягко опустите внутри круга; удары о землю и сильное раскачивание портят груз.
 - **Разведка** (дрон): повисите 2 с в каждой зоне (40 м), в любом порядке.
 - Медали, награды и профиль работают как в наземных миссиях. Дрон быстрее и сильнее наклоняется; вертолёт устойчивее.
+
+## Гараж
+
+В главном меню есть **Гараж**: вид машины на поворотном круге, стрелки выбора машины и панель с деньгами, кнопкой **Купить / Выбрать** и четырьмя улучшениями для каждой машины: двигатель (+8 / +16 / +25 % тяги, чуть больше максимальной скорости), шины (+5 / +10 / +15 % сцепления), подвеска (+10 / +20 / +30 % жёсткости и демпфирования) и тормоза (+20 / +40 / +60 %). Уровень стоит 1x, 2x и 4x от цены улучшения машины (300 у внедорожника, 750 у Peugeot). Две машины: внедорожник (твой с самого начала) и **Peugeot 206 WRC** (3000): лёгкий раллийный хэтчбек с широкой стойкой, воздухозаборником на крыше, большим задним антикрылом и дополнительными фарами, быстрее и цепче, но жёстче на кочках. Выбранная машина с её улучшениями используется в свободной езде и во всех наземных миссиях; вертолёт и дрон не менялись. Машины и цены лежат в `vehicles.json` (см. docs/vehicles.md).
 
 ## Режимы рендера
 

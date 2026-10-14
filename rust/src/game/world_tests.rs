@@ -429,7 +429,8 @@ mod garage_world {
         assert!(((c10 - cam0).len() - 13.0).abs() < 0.6, "half a turn after 10 s: {}", (c10 - cam0).len());
         for _ in 0..600 { w.step_garage(1.0 / 60.0); }
         assert!((w.cam.pos - cam0).len() < 0.6, "a full turn after 20 s");
-        let t = w.cam.target - p0; assert!(t.x.abs() < 0.05 && t.z.abs() < 0.05 && (t.y - 0.6).abs() < 0.05, "looks at the car: {t:?}");
+        let t = w.cam.target - p0; assert!((t.y - 0.6).abs() < 0.05 && ((t.x.hypot(t.z)) - 1.8).abs() < 0.05, "looks 1.8 m beside the car so it sits left of centre: {t:?}");
+        let to_car = p0 - w.cam.pos; let side = (t.x * to_car.z - t.z * to_car.x) / to_car.x.hypot(to_car.z); assert!(side.abs() > 1.7, "the offset is across the view direction: {side}");
         for k in 0..8 { let r = w.cam.pos - p0; assert!((r.x.hypot(r.z) - 6.5).abs() < 0.05, "radius at {k}"); w.step_garage(0.7); }
     }
 }

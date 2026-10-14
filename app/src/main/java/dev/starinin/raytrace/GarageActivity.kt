@@ -58,7 +58,7 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
     /** Rebuilds the panel from the profile file. */
     private fun refresh() {
         val inf = info() ?: return
-        if (shown < 0 || shown >= inf.cars.size) shown = inf.selected
+        if (shown < 0 || shown >= inf.cars.size) shown = intent.getIntExtra("car", -1).let { if (it in inf.cars.indices) it else inf.selected }   // "car": debug extra to open on a given car
         val dp = resources.displayMetrics.density
         fun px(v: Float) = (v * dp).toInt()
         money.text = t("Money: ", "Деньги: ") + GarageMath.price(inf.money)
@@ -116,7 +116,13 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
     override fun onWindowFocusChanged(f: Boolean) {
         super.onWindowFocusChanged(f)
         if (!f) return
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.hide(android.view.WindowInsets.Type.systemBars())
+            window.insetsController?.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        }
     }
 }
