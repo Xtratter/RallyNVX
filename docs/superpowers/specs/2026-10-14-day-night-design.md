@@ -12,7 +12,7 @@ Car headlights, tail and reverse lights (cycle 2), roads (cycle 3), a clock in t
 
 ## Time model (`game/daylight.rs`)
 
-- `DAY_SECONDS` stays 720 s; the phase runs 0..1 (0 = sunrise-ish dawn side of the cycle as today is replaced by: phase 0.5 = noon, phase 0 = midnight).
+- `DAY_SECONDS` stays 720 s; the phase runs 0..1 with phase 0 = midnight and phase 0.5 = noon (today phase 0 is dawn and the sun never sets).
 - Sun elevation `e(phase) = MID - AMP * cos(2 pi phase)` with `MID = 12 deg`, `AMP = 55 deg`: midnight -43 deg, noon +67 deg; above the horizon about 56 % of the cycle, below -12 deg (deep night) about 30 %.
 - The level start phase comes from the seed but only inside the day band (sun elevation between +8 and +50 deg, rising or falling): a level never starts at night; night arrives while driving. `daylight(seed, t)` keeps its signature.
 - The sun azimuth drifts as today. The moon sits opposite the sun, turned around the vertical axis by a per-level offset in [-70, +70] deg so that its phase differs between levels.
