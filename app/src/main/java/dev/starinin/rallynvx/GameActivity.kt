@@ -36,6 +36,18 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var seed = 0L
     private lateinit var audio: AudioEngine
     private var profile = ""
+    private var rallyIdx = 0   // 1-based rally of the Rally mode, 0 in free drive
+    private var rallyStage = 0
+    private val stageTotals = FloatArray(RallyData.STAGE_COUNT)
+    private var stageAssisted = false
+    private var rallyTimer: TextView? = null
+    private var rallyCount: TextView? = null
+    private var rallyToast: TextView? = null
+    private var lastEvent = 0
+    private var toastUntil = 0L
+    private var finishedShown = false
+    private var resultsPanel: FrameLayout? = null
+    private var newLevelBtn: View? = null
 
     private val tick = object : Runnable {
         override fun run() {
@@ -43,6 +55,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             hud.text = (if (s[27] > 0.5f) t("Raster (auto) · ", "Растр (авто) · ") else "") + "${s[1].toInt()} km/h" + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}" + (if (s[26] > 0.5f) " · " + t("hybrid", "гибрид") else "") + " · " + arrayOf(t("grass", "трава"), t("dirt", "грунт"), t("sand", "песок"), t("rock", "скала"), t("gravel", "гравий"), t("asphalt", "асфальт"), t("water", "вода")).getOrElse(s[28].toInt()) { "" }
             if ((s[29] > 0.5f) != autopilotOn) { autopilotOn = s[29] > 0.5f; showAutopilot() }   // it switches itself off at the finish
             if (autopilotOn && s[29].toInt() - 1 != autopilotStyle) { autopilotStyle = (s[29].toInt() - 1).coerceIn(0, 3); showAutopilot() }
+            if (rallyIdx > 0) updateRally(s)
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
         }
@@ -54,6 +67,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         seed = intent.getLongExtra("seed", System.nanoTime()) and 0xFFFFFFL   // 24-bit: the HUD shows it exactly
         profile = intent.getStringExtra("profile") ?: ""
+        rallyIdx = intent.getIntExtra("rally", 0)
         val dp = resources.displayMetrics.density
         fun px(v: Float) = (v * dp).toInt()
         root = FrameLayout(this)
@@ -76,7 +90,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                 root.addView(it, FrameLayout.LayoutParams(px(w), px(48f), gravity).apply { setMargins(0, px(top), px(end), 0) })
             }
         button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { autopilotOn = false; showAutopilot(); Native.gameReset() }
-        button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { autopilotOn = false; showAutopilot(); seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
+        newLevelBtn = button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { autopilotOn = false; showAutopilot(); seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
         autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, 284f, 168f) { setAutopilot(!autopilotOn) }
         autopilotBtn?.setOnLongClickListener { showAutopilotPanel(); true }   // long press: the autopilot settings
         button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
@@ -89,6 +103,16 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                 }
                 true
             }
+        }
+        if (rallyIdx > 0) {
+            newLevelBtn?.visibility = View.GONE   // a rally has its fixed level
+            fun overlay(size: Float, bold: Boolean) = TextView(this).apply { textSize = size; gravity = Gravity.CENTER; setTextColor(M3.TEXT); if (bold) typeface = M3.medium; visibility = View.GONE }
+            rallyTimer = overlay(18f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)); fontFeatureSettings = "tnum"; visibility = View.VISIBLE }
+            root.addView(rallyTimer, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = px(24f) })
+            rallyCount = overlay(96f, true).apply { setShadowLayer(8f, 0f, 2f, 0xAA000000.toInt()) }
+            root.addView(rallyCount, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+            rallyToast = overlay(18f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)) }
+            root.addView(rallyToast, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = px(84f) })
         }
         // sound on/off (kept in SharedPreferences)
         audio = AudioEngine(this)
@@ -122,6 +146,82 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         fun step(key: String, list: FloatArray) = list[Controls.apStep(this, key, list.size)]
         Native.gameAutopilotTune(step("ap_lat", Controls.AP_LAT), step("ap_brake", Controls.AP_BRAKE), step("ap_cut", Controls.AP_CUT), step("ap_speed", Controls.AP_SPEED), Controls.apStep(this, "ap_slide", 2).toFloat(), step("ap_edge", Controls.AP_EDGE))
     }
+    /** Starts (or restarts) a rally stage: 0 the special stage, 1 the city super-special. */
+    private fun startRallyStage(stage: Int) {
+        rallyStage = stage; finishedShown = false; lastEvent = 0
+        resultsPanel?.visibility = View.GONE
+        autopilotOn = false; showAutopilot()
+        Native.gameRally(stage)
+    }
+
+    /** Called from the 10 Hz tick with the state array: the timer, the countdown, the event toast and the results. */
+    private fun updateRally(s: FloatArray) {
+        val phase = s[30].toInt()
+        if (phase == 0) return
+        val stageText = t("Stage", "Этап") + " ${rallyStage + 1}/${RallyData.STAGE_COUNT}"
+        rallyTimer?.text = when (phase) {
+            1 -> "$stageText · " + t("get ready", "приготовьтесь")
+            else -> "$stageText · ${RallyData.time(s[31])}" + (if (s[32] > 0f) "  +${s[32].toInt()} " + t("s", "с") else "")
+        }
+        val digit = s[33].toInt()
+        rallyCount?.apply {
+            when {
+                phase == 1 && digit > 0 -> { text = digit.toString(); visibility = View.VISIBLE }
+                (phase == 1 && digit == 0) || (phase == 2 && s[31] < 0.8f) -> { text = t("GO!", "СТАРТ!"); visibility = View.VISIBLE }
+                else -> visibility = View.GONE
+            }
+        }
+        val serial = s[38].toInt()
+        if (serial != lastEvent) {
+            lastEvent = serial
+            val v = s[39]
+            val msg = when (s[37].toInt()) {
+                1 -> t("Split ", "Сплит ") + RallyData.time(v)
+                2 -> t("Reset  +", "Сброс  +") + "${v.toInt()} " + t("s", "с")
+                3 -> t("Off the road  +", "Выезд с дороги  +") + "${v.toInt()} " + t("s", "с")
+                4 -> t("Skipped line  +", "Пропущена линия  +") + "${v.toInt()} " + t("s", "с")
+                else -> ""
+            }
+            if (msg.isNotEmpty()) { rallyToast?.text = msg; rallyToast?.visibility = View.VISIBLE; toastUntil = System.currentTimeMillis() + 2500 }
+        }
+        if (rallyToast?.visibility == View.VISIBLE && System.currentTimeMillis() > toastUntil) rallyToast?.visibility = View.GONE
+        if (phase == 3 && !finishedShown) { finishedShown = true; showRallyResults(s[31], s[32], s[41], s[40] > 0.5f) }
+    }
+
+    /** The results of a finished stage (and of the rally after the last one) with the records. */
+    private fun showRallyResults(time: Float, penalty: Float, total: Float, assisted: Boolean) {
+        val dp = resources.displayMetrics.density
+        fun px(v: Float) = (v * dp).toInt()
+        val rally = rallyIdx - 1
+        val record = if (assisted) false else RallyData.saveIfBetter(this, rally, rallyStage, total)
+        if (rallyStage == 0) stageAssisted = assisted else stageAssisted = stageAssisted || assisted
+        stageTotals[rallyStage] = total
+        val last = rallyStage == RallyData.STAGE_COUNT - 1
+        val sum = stageTotals.sum()
+        val rallyRecord = last && !stageAssisted && stageTotals.all { it > 0f } && RallyData.saveIfBetter(this, rally, -1, sum)
+        val stageBest = RallyData.record(this, rally, rallyStage)
+        resultsPanel?.let { root.removeView(it) }
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        content.addView(label(RallyData.stageName(rallyStage) + " — " + t("finished", "завершён"), 22f))
+        fun line(text: String) = content.addView(label(text, 16f), LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(6f) })
+        line(t("Time ", "Время ") + RallyData.time(time) + (if (penalty > 0f) "  + " + t("penalties ", "штрафы ") + "${penalty.toInt()} " + t("s", "с") else ""))
+        line(t("Total ", "Итого ") + RallyData.time(total))
+        if (assisted) line(t("Autopilot: not recorded", "Автопилот: не записывается"))
+        else if (record) line(t("New record!", "Новый рекорд!"))
+        else if (stageBest > 0f) line(t("Record ", "Рекорд ") + RallyData.time(stageBest))
+        if (last) {
+            line(t("Rally total ", "Итог ралли ") + RallyData.time(sum) + (if (rallyRecord) "  " + t("New record!", "Новый рекорд!") else ""))
+        }
+        fun add(text: String, kind: M3Widgets.ButtonKind, onClick: () -> Unit) = content.addView(M3Widgets.button(this, text, kind, onClick), LinearLayout.LayoutParams(px(260f), px(48f)).apply { topMargin = px(10f) })
+        if (!last) add(t("Next stage", "Следующий этап"), M3Widgets.ButtonKind.FILLED) { startRallyStage(rallyStage + 1) }
+        add(t("Retry stage", "Повторить этап"), if (last) M3Widgets.ButtonKind.FILLED else M3Widgets.ButtonKind.TONAL) { startRallyStage(rallyStage) }
+        if (last) add(t("Restart the rally", "Ралли заново"), M3Widgets.ButtonKind.TONAL) { startRallyStage(0) }
+        add(t("Exit", "Выход"), M3Widgets.ButtonKind.TONAL) { finish() }
+        val p = panel(content)
+        p.visibility = View.VISIBLE
+        resultsPanel = p
+    }
+
     private var autopilotPanel: FrameLayout? = null
     /** Long press on the button: the autopilot settings (style and the own style's numbers), applied at once. */
     private fun showAutopilotPanel() {
@@ -183,8 +283,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
         intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
         if (intent.getIntExtra("autopilotpanel", 0) > 0) handler.postDelayed({ showAutopilotPanel() }, 1500)   // debug/test: the autopilot settings
+        if (rallyIdx > 0) startRallyStage(intent.getIntExtra("rallystage", 0))   // the Rally mode (debug: `rallystage` 0/1)
         intent.getIntExtra("road", 0).let { if (it > 0) Native.gameOnRoad(it) }   // debug/test: start on a road
-        intent.getIntExtra("autopilot", 0).let { if (it > 0) handler.postDelayed({ Controls.setAutopilotStyle(this, it - 1); setAutopilot(true) }, 1500) }   // debug/test: the autopilot drives (1 calm, 2 normal, 3 aggressive)
+        intent.getIntExtra("autopilot", 0).let { if (it > 0) handler.postDelayed({ Controls.setAutopilotStyle(this, it - 1); setAutopilot(true) }, if (rallyIdx > 0) 5500L else 1500L) }   // debug/test: the autopilot drives (1 calm, 2 normal, 3 aggressive)
         // debug/test: a camera orbit (radians) and a held throttle (after 1.5 s) without touching the screen
         val camYaw = intent.getFloatExtra("camyaw", 0f); val camPitch = intent.getFloatExtra("campitch", 0f)
         if (camYaw != 0f || camPitch != 0f) Native.gameCamera(camYaw, camPitch)

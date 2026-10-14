@@ -3,7 +3,6 @@
 pub enum Surface { Grass, Dirt, Sand, Rock, Gravel, Asphalt, Water }
 
 use super::materials::terrain_weights;
-use super::roads::RoadKind;
 use super::terrain::Terrain;
 
 /// The ground at (x, z): the road kind on a road, dirt on its 2 m shoulder, asphalt in a city, water in a lake, else the

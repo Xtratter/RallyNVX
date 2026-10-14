@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.22.0 - the Rally mode
+
+- Added: the Rally mode (the "Rally" button on the start screen): four rallies with fixed levels, each with the special stage and the city super-special (2 laps) against the clock: a 3-2-1-GO countdown, check lines, splits, penalties (reset +10 s, leaving the road for 3 s +5 s, a skipped check line +30 s), results after every stage and personal records per stage and per rally; free drive is unchanged
+- Added: start, check and finish lines on the special stage (checkered start and finish, yellow checks every kilometre)
+- Debug: the intent extras `rally` N (1-based) and `rallystage` 0/1
+
 ## 2.21.0 - the city super-special
 
 - Added: a closed super-special loop of 1.2-1.8 km through the streets of the first city (a rectangle of 5-8 blocks with detours, clockwise or counter-clockwise) with a checkered start/finish line and yellow check lines across the street every ~400 m; numbers in `rust/roads.json` (`city_loop`)
