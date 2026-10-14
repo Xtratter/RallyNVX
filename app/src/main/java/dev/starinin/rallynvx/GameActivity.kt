@@ -99,7 +99,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             }
         button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { autopilotOn = false; showAutopilot(); Native.gameReset() }
         newLevelBtn = button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { autopilotOn = false; showAutopilot(); seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
-        autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, 284f, 168f) { setAutopilot(!autopilotOn) }
+        autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, if (rallyIdx > 0) 150f else 284f, 168f) { setAutopilot(!autopilotOn) }
         autopilotBtn?.setOnLongClickListener { showAutopilotPanel(); true }   // long press: the autopilot settings
         button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
             handbrakeBtn = this
@@ -121,7 +121,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             root.addView(rallyCount, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
             rallyToast = overlay(18f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)) }
             paceStrip = PaceStrip(this).apply { visibility = View.GONE }
-            root.addView(paceStrip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = px(70f); leftMargin = px(12f) })
+            root.addView(paceStrip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = px(21f) })
             val lang = if (java.util.Locale.getDefault().language == "ru") "ru" else "en"
             voiceLang = lang
             studioVoice = Controls.voice(this, lang)

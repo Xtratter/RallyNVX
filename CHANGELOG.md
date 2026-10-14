@@ -4,6 +4,7 @@
 
 ## 2.24.1 - icons only
 
+- Changed: the pictograms are at the top, in the centre (in a rally the Autopilot button moves right, next to Reset)
 - Changed: the co-driver's words are no longer shown while driving; only the pictograms are, and only just before the corner, crest or junction they describe (about 110 m ahead, more at speed), as in DiRT Rally 2.0; Settings, "Co-driver": Off / Icons / Icons and voice
 
 ## 2.24.0 - studio voices, signs and the icon
