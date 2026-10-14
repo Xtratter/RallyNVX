@@ -5,7 +5,7 @@ use super::roads::shape::radius;
 
 /// A corner call: direction, severity (0 hairpin, 1 tightest .. 5 gentlest), how it develops, and a second corner it runs into.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Corner { pub left: bool, pub sev: u8, pub tightens: bool, pub opens: bool, pub long: bool, pub into: Option<(bool, u8)> }
+pub struct Corner { pub left: bool, pub sev: u8, pub tightens: bool, pub opens: bool, pub long: bool, pub into: Option<(bool, u8)>, /** Length of the arc in metres. */ pub arc: f32 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NoteKind { Corner(Corner), Crest { big: bool }, Junction { left: bool }, Finish }
@@ -60,7 +60,7 @@ pub fn generate(path: &[V3], junctions: &[(f32, bool)]) -> Vec<Note> {
         while k < raws.len() {
             let c = &raws[k];
             if let Some(sev) = severity(c.min_r) {
-                let mut corner = Corner { left: c.left, sev, tightens: c.last < 0.75 * c.first, opens: c.last > 1.35 * c.first, long: c.arc > 80.0, into: None };
+                let mut corner = Corner { left: c.left, sev, tightens: c.last < 0.75 * c.first, opens: c.last > 1.35 * c.first, long: c.arc > 80.0, into: None, arc: c.arc };
                 if let Some(nx) = raws.get(k + 1) {
                     if nx.start - c.end < INTO_GAP { if let Some(s2) = severity(nx.min_r) { corner.into = Some((nx.left, s2)); k += 1; } }
                 }

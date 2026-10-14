@@ -106,7 +106,7 @@ fn corners(notes: &[Note]) -> Vec<Corner> { notes.iter().filter_map(|n| if let N
 #[test] fn clips_match_the_text_and_exist_in_the_clip_list() {
     let list: serde_json::Value = serde_json::from_str(include_str!("../../../tools/voices/clips.json")).unwrap();
     let has = |lang: &str, id: &str| list[lang][id].is_string();
-    let c = Corner { left: true, sev: 3, tightens: true, opens: false, long: true, into: Some((false, 0)) };
+    let c = Corner { left: true, sev: 3, tightens: true, opens: false, long: true, into: Some((false, 0)), arc: 50.0 };
     let n = Note { s: 0.0, kind: NoteKind::Corner(c) };
     assert_eq!(n.clips(Some(150.0)), vec!["L3", "long", "tightens", "into", "HR", "d150"]);
     assert_eq!(n.clips(Some(40.0)), vec!["L3", "long", "tightens", "into", "HR"]);
@@ -114,7 +114,7 @@ fn corners(notes: &[Note]) -> Vec<Corner> { notes.iter().filter_map(|n| if let N
     // every clip any note can ask for is in the list, in both languages
     let mut kinds = vec![NoteKind::Crest { big: false }, NoteKind::Crest { big: true }, NoteKind::Junction { left: true }, NoteKind::Junction { left: false }, NoteKind::Finish];
     for left in [true, false] { for sev in 0..=5u8 { for (t, o, l) in [(false, false, false), (true, false, false), (false, true, false), (false, false, true)] {
-        kinds.push(NoteKind::Corner(Corner { left, sev, tightens: t, opens: o, long: l, into: Some((!left, sev)) }));
+        kinds.push(NoteKind::Corner(Corner { left, sev, tightens: t, opens: o, long: l, into: Some((!left, sev)), arc: 50.0 }));
     } } }
     for k in kinds { for d in [None, Some(30.0), Some(75.0), Some(120.0), Some(260.0), Some(450.0), Some(5000.0)] {
         for id in (Note { s: 0.0, kind: k }).clips(d) { assert!(has("ru", &id) && has("en", &id), "clip {id} is missing from clips.json"); }

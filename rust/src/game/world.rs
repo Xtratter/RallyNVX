@@ -100,16 +100,9 @@ impl World {
             if l.len() < 2 { return false; }
             let i = road.pts.iter().position(|p| p.s >= 8.0).unwrap_or(1).min(road.pts.len() - 2);
             let d = road.pts[i + 1].pos - road.pts[i].pos;
+            let sides: Vec<&super::roads::Road> = net.roads.iter().filter(|r| r.kind == super::roads::RoadKind::Side).collect();
             pace_path = road.pts.iter().map(|p| p.pos).collect();
-            // the side roads: where they leave the stage and to which side of the direction of travel
-            for side in net.roads.iter().filter(|r| r.kind == super::roads::RoadKind::Side && r.pts.len() > 4) {
-                let a = side.pts[0].pos;
-                let Some(j) = road.pts.iter().enumerate().min_by(|x, y| ((x.1.pos.x - a.x).hypot(x.1.pos.z - a.z)).partial_cmp(&((y.1.pos.x - a.x).hypot(y.1.pos.z - a.z))).unwrap()).map(|x| x.0) else { continue };
-                let (p, q) = (road.pts[j.saturating_sub(1)].pos, road.pts[(j + 1).min(road.pts.len() - 1)].pos);
-                let (tx, tz) = (q.x - p.x, q.z - p.z);
-                let v = side.pts[4].pos - a;
-                junctions.push((road.pts[j].s, v.x * tz - v.z * tx > 0.0));
-            }
+            junctions = super::signs::stage_junctions(road, &sides).iter().map(|j| (j.0, j.1)).collect();
             (l.to_vec(), road.pts[i].pos, d.x.atan2(d.z))
         } else {
             let Some(c) = self.terrain.city_loop() else { return false };

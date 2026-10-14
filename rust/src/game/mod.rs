@@ -23,6 +23,7 @@ pub mod props;
 pub mod pacenotes;
 pub mod rally;
 pub mod roads;
+pub mod signs;
 pub mod superspecial;
 pub mod surface;
 pub mod terrain;
