@@ -62,6 +62,8 @@ object DriveMath {
         private var zero = 0f
         private var smooth = 0f
         fun calibrate(rollDeg: Float) { if (rollDeg.isFinite()) { zero = rollDeg; smooth = 0f } }
+        /** Forgets the centre and the smoothing (the sensor was switched off). */
+        fun reset() { zero = 0f; smooth = 0f }
         fun update(rollDeg: Float, dt: Float, sens: Int): Float {
             if (!rollDeg.isFinite() || !dt.isFinite() || dt < 0f) return 0f
             val a = 1f - exp(-dt / 0.08f)

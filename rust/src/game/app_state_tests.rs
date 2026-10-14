@@ -82,3 +82,12 @@ fn air_mission(kind: MissionKind, ac: AircraftKind, pts: Vec<crate::game::math::
     fill_state(&mut s, &w, 0, 0, 0.0, 0.0, 42, 0);
     assert_eq!(s[21], 1.0, "taut rope");
 }
+#[test] fn signed_forward_speed_is_reported_for_the_brake_pedal() {
+    let mut w = World::new(7); let mut s = [0.0f32; STAT_LEN];
+    for _ in 0..120 { w.step(&gas(), 1.0 / 60.0); }
+    fill_state(&mut s, &w, 0, 0, 60.0, 4.0, 7, 0);
+    assert!(s[25] > 5.0 && (s[25] - s[1]).abs() < 1.0, "forward {} total {}", s[25], s[1]);
+    w.vehicle.vel = w.vehicle.forward() * -6.0;
+    fill_state(&mut s, &w, 0, 0, 60.0, 4.0, 7, 0);
+    assert!(s[25] < -20.0, "backwards must be negative: {}", s[25]);
+}

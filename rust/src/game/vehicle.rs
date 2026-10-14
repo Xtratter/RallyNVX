@@ -122,9 +122,10 @@ impl Vehicle {
             let lim_speed = if inp.throttle >= 0.0 { s.max_speed } else { s.max_speed * s.reverse_factor };
             let taper = (1.0 - (fspeed * inp.throttle.signum()).max(0.0) / lim_speed).clamp(0.0, 1.0);
             let mut fx = inp.throttle * s.engine_force / 4.0 * taper - vf * s.rolling;
-            let kb = if inp.brake && inp.brake_amt > 0.0 { inp.brake_amt.clamp(0.05, 1.0) } else { 1.0 };
-            if inp.brake { fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0 * kb; }
-            if inp.handbrake && !front { fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0 * if inp.brake { 0.0 } else { 1.0 }; }
+            // brake pedal: scaled by how hard it is pressed (0 = legacy full force); the handbrake always bites the rear wheels fully
+            let kb = if inp.brake_amt > 0.0 { inp.brake_amt.clamp(0.05, 1.0) } else { 1.0 };
+            let k = if inp.handbrake && !front { 1.0 } else if inp.brake { kb } else { 0.0 };
+            if k > 0.0 { fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0 * k; }
             let lim = lat_mu * fs;
             let mag = fl.hypot(fx);
             if mag > lim && mag > 1e-6 { let k = lim / mag; fl *= k; fx *= k; }

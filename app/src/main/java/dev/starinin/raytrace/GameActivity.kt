@@ -27,6 +27,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var hintView: TextView? = null
     private var sensors: android.hardware.SensorManager? = null
     private var tiltListener: android.hardware.SensorEventListener? = null
+    private var needTiltCal = true   // the pose at the start of a drive is the centre (and after "Recalibrate" in the settings)
     private lateinit var hud: Hud
     private lateinit var root: FrameLayout
     private val handler = Handler(Looper.getMainLooper())
@@ -54,7 +55,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             val s = Native.gameStats()
             hud.text = (if (s[20] > 0f) "${s[1].toInt()} km/h · ${s[19].toInt()} m" else "${s[1].toInt()} km/h") + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}"
             if (mission >= 0) updateMission(s)
-            drive?.speedKmh = s[1]
+            drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (mission >= 0 || drive != null) 100 else 250)
         }
     }
@@ -223,10 +224,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun applyControls() {
+        Native.audioVolume(Controls.volume(this))
         val d = drive ?: return
         d.configure(Controls.mode(this), Controls.sens(this), Controls.pedalsLeft(this))
         applyControlLayout()
-        Native.audioVolume(Controls.volume(this))
         // tilt steering: the pose at resume (or after "Calibrate" in the settings) is the centre
         stopTilt()
         if (Controls.mode(this) == Controls.MODE_TILT) startTilt(d)
@@ -236,7 +237,6 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun startTilt(d: DriveControls) {
         val sm = getSystemService(SENSOR_SERVICE) as android.hardware.SensorManager
         val sensor = sm.getDefaultSensor(android.hardware.Sensor.TYPE_GRAVITY) ?: sm.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER) ?: return
-        var calibrated = false
         val l = object : android.hardware.SensorEventListener {
             override fun onSensorChanged(e: android.hardware.SensorEvent) {
                 val x = e.values[0]; val y = e.values[1]
@@ -248,7 +248,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                     else -> Math.atan2(-x.toDouble(), y.toDouble())
                 }).toFloat()
                 d.tiltRoll = phi
-                if (!calibrated || Controls.wantsCalibration(this@GameActivity)) { d.calibrate(); calibrated = true; Controls.setWantsCalibration(this@GameActivity, false) }
+                if (needTiltCal || Controls.wantsCalibration(this@GameActivity)) { d.calibrate(); needTiltCal = false; Controls.setWantsCalibration(this@GameActivity, false) }
+                d.tiltLive = true
             }
             override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
         }
@@ -256,16 +257,17 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         sensors = sm; tiltListener = l
     }
 
-    private fun stopTilt() { tiltListener?.let { sensors?.unregisterListener(it) }; tiltListener = null; drive?.tiltRoll = 0f }
+    private fun stopTilt() { tiltListener?.let { sensors?.unregisterListener(it) }; tiltListener = null; drive?.tiltLive = false }
 
     private fun showHintOnce() {
         val mode = Controls.mode(this)
         if (drive == null || Controls.hintSeen(this, mode)) return
         Controls.setHintSeen(this, mode, true)
         val dp = resources.displayMetrics.density
+        val side = Controls.pedalsLeft(this)
         val msg = if (mode == Controls.MODE_TILT)
-            t("Tilt the phone like a wheel to steer. Right: gas and brake / reverse.", "Наклоняй телефон как руль. Справа: газ и тормоз / задний ход.")
-        else t("Drag the wheel to steer. Right: gas (top pedal) and brake / reverse.", "Крути руль пальцем. Справа: газ и тормоз / задний ход.")
+            t("Tilt the phone like a wheel to steer. Pedals on the ${if (side) "left" else "right"}: gas and brake / reverse.", "Наклоняй телефон как руль. Педали ${if (side) "слева" else "справа"}: газ и тормоз / задний ход.")
+        else t("Drag the wheel to steer. Pedals on the ${if (side) "left" else "right"}: gas (the taller one) and brake / reverse.", "Крути руль пальцем. Педали ${if (side) "слева" else "справа"}: газ (высокая) и тормоз / задний ход.")
         hintView?.let { root.removeView(it) }
         val tv = TextView(this).apply {
             text = msg; textSize = 15f; setTextColor(M3.TEXT); gravity = Gravity.CENTER
@@ -277,9 +279,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         tv.postDelayed({ root.removeView(tv); if (hintView === tv) hintView = null }, 6000)
     }
 
-    override fun onResume() { super.onResume(); handler.post(tick); if (running) audio.start(); applyControls() }
+    override fun onResume() { super.onResume(); handler.post(tick); if (running) audio.start(); drive?.paused = false; applyControls() }
     override fun onPause() {
-        audio.stop(); handler.removeCallbacks(tick); sticks?.release(); drive?.release(); stopTilt(); handbrake = false; sendInput()
+        audio.stop(); handler.removeCallbacks(tick); sticks?.release(); drive?.paused = true; stopTilt(); handbrake = false; sendInput()
         if (mission >= 0 && !resultShown) showPause()
         super.onPause()
     }

@@ -133,3 +133,16 @@ fn never_rolls(throttle_pre: f32, secs_pre: f32, steer: f32, thr: f32) -> (bool,
     assert!((full - one).abs() < 0.01 * before, "full {full} vs amt 1.0 {one}");
     assert!(soft > full + 1.0 && soft < before, "soft {soft} full {full} before {before}");
 }
+#[test] fn a_light_brake_press_never_weakens_the_handbrake() {
+    let speed_after = |inp: Input| {
+        let (mut v, t) = flat_car(1.1);
+        run(&mut v, &t, Input { throttle: 1.0, ..Default::default() }, 3.0);
+        let before = v.speed();
+        run(&mut v, &t, inp, 0.5);
+        (before, v.speed())
+    };
+    let (before, hand) = speed_after(Input { handbrake: true, ..Default::default() });
+    let (_, both) = speed_after(Input { handbrake: true, brake: true, brake_amt: 0.15, ..Default::default() });
+    assert!(hand < before - 1.0, "the handbrake must brake: {before} -> {hand}");
+    assert!(both <= hand + 0.05, "handbrake alone {hand}, with a light brake press {both}");
+}

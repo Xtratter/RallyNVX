@@ -16,6 +16,12 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     var speedKmh = 0f
     /** Roll angle of the phone in degrees (tilt mode), fed by the activity. */
     var tiltRoll = 0f
+    /** True while the tilt sensor delivers values (before the first value and after the sensor stops, tilt steers nothing). */
+    var tiltLive = false
+        set(v) { field = v; if (!v) tilt.reset() }
+    /** True while the activity is paused: the loop idles and nothing is sent. */
+    var paused = false
+        set(v) { field = v; if (v) { release() } else lastNs = 0L }
 
     private val dp = ctx.resources.displayMetrics.density
     private val wheel = DriveMath.Wheel()
@@ -65,6 +71,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     }
 
     private fun frame() {
+        if (paused) return
         val now = System.nanoTime()
         val dt = if (lastNs == 0L) 0.016f else ((now - lastNs) / 1e9f).coerceIn(0f, 0.1f)
         lastNs = now
@@ -74,7 +81,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     }
 
     private fun report(dt: Float = 0f) {
-        val steer = if (tiltMode) tilt.update(tiltRoll, dt, sens) else wheel.steer(sens)
+        val steer = if (tiltMode) (if (tiltLive) tilt.update(tiltRoll, dt, sens) else 0f) else wheel.steer(sens)
         if (tiltMode) wheelView.angle = steer * DriveMath.WHEEL_MAX
         val cmd = DriveMath.brakeMap(brakeView.pressure, speedKmh)
         val throttle = (gasView.pressure + cmd.throttle).coerceIn(-1f, 1f)
@@ -91,6 +98,8 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
         val r = wheelView.width / 2f * 1.1f
         return hypot(x - (wheelView.left + wheelView.width / 2f), y - (wheelView.top + wheelView.height / 2f)) <= r
     }
+    /** Within this radius of the hub the angle is too jumpy to follow (a finger passing the centre must not snap the wheel). */
+    private fun nearHub(x: Float, y: Float) = hypot(x - (wheelView.left + wheelView.width / 2f), y - (wheelView.top + wheelView.height / 2f)) < 28f * dp
     private fun touchAngle(x: Float, y: Float) = DriveMath.wheelAngleDeg(x, y, wheelView.left + wheelView.width / 2f, wheelView.top + wheelView.height / 2f)
     private fun pedalAt(v: PedalView, y: Float) = DriveMath.pedal((y - v.top).coerceIn(0f, v.height.toFloat()), v.height.toFloat())
 
@@ -101,7 +110,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val k = e.actionIndex; val pid = e.getPointerId(k); val x = e.getX(k); val y = e.getY(k)
                 when {
-                    wheelId < 0 && !tiltMode && onWheel(x, y) -> { wheelId = pid; wheel.down(touchAngle(x, y)) }
+                    wheelId < 0 && !tiltMode && onWheel(x, y) -> { wheelId = pid; if (!nearHub(x, y)) wheel.down(touchAngle(x, y)) else wheel.down(90f) }
                     gasId < 0 && inView(gasView, x, y) -> { gasId = pid; gasView.pressure = pedalAt(gasView, y) }
                     brakeId < 0 && inView(brakeView, x, y) -> { brakeId = pid; brakeView.pressure = pedalAt(brakeView, y) }
                     else -> if (e.actionMasked == MotionEvent.ACTION_DOWN && !any) return false
@@ -112,7 +121,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
                 for (i in 0 until e.pointerCount) {
                     val pid = e.getPointerId(i)
                     when (pid) {
-                        wheelId -> { wheel.move(touchAngle(e.getX(i), e.getY(i))); wheelView.angle = wheel.angle }
+                        wheelId -> { if (!nearHub(e.getX(i), e.getY(i))) wheel.move(touchAngle(e.getX(i), e.getY(i))); wheelView.angle = wheel.angle }
                         gasId -> gasView.pressure = pedalAt(gasView, e.getY(i))
                         brakeId -> brakeView.pressure = pedalAt(brakeView, e.getY(i))
                     }

@@ -103,3 +103,18 @@ class DriveMathTest {
         assertEquals(0f, DriveMath.VOLUME.first(), 0f); assertEquals(1f, DriveMath.VOLUME.last(), 0f)
     }
 }
+
+class DriveMathReviewTest {
+    @Test fun reversingContinuesWhenTheSignedSpeedIsNegative() {
+        val c = DriveMath.brakeMap(0.8f, -12f)        // rolling backwards fast: the pedal keeps reversing, it never brakes
+        assertFalse(c.brake); assertEquals(-0.8f, c.throttle, 1e-3f)
+    }
+    @Test fun tiltResetForgetsTheCentreAndTheSmoothing() {
+        val t = DriveMath.Tilt()
+        t.calibrate(25f); repeat(120) { t.update(60f, 1f / 60f, 1) }
+        t.reset()
+        assertEquals(0f, t.update(0f, 1f / 60f, 1), 0f)
+        repeat(120) { t.update(0f, 1f / 60f, 1) }
+        assertEquals(0f, t.update(0f, 1f / 60f, 1), 0f)     // the old centre is gone: 0 degrees is the centre again
+    }
+}
