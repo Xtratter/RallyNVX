@@ -2,7 +2,7 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
-## 2.13.0 - day and night, car lights (unreleased)
+## 2.13.0 - day and night, car lights
 
 - Added: a full day-night cycle (a day is 12 minutes): the sun and the moon travel a full circle; sunrise and sunset colour the sky, the night is dark but passable by moonlight; one light source switches from the sun to the moon with no shadow jumps; a level always starts by day
 - Added: a visible sun disc with a glow, a moon with phases (its lit side faces the sun) and stars; clouds darken at night; windows of the city buildings and the street lamps glow at night
