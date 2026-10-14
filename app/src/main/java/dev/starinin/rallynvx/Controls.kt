@@ -27,6 +27,9 @@ object Controls {
     fun setRenderMode(c: Context, v: Int) = p(c).edit().putInt("render_mode", v.coerceIn(0, 1)).putInt("render_rev", renderRev(c) + 1).apply()
     fun renderRev(c: Context) = p(c).getInt("render_rev", 0)
     fun dust(c: Context): Int = p(c).getInt("dust", 1).coerceIn(0, 2)
+    /** The co-driver in rallies: 0 off, 1 text, 2 text and voice (the default). */
+    fun paceMode(c: Context): Int = p(c).getInt("pace_mode", 2).coerceIn(0, 2)
+    fun setPaceMode(c: Context, v: Int) = p(c).edit().putInt("pace_mode", v.coerceIn(0, 2)).apply()
     /** Autopilot style: 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers. */
     const val AP_STYLES = 4
     fun autopilotStyle(c: Context): Int = p(c).getInt("autopilot_style", 1).coerceIn(0, AP_STYLES - 1)

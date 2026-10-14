@@ -36,6 +36,7 @@ class SettingsActivity : Activity() {
         row(t("Render mode", "Режим рендера"), { if (Controls.renderMode(this) == 1) t("Hybrid", "Гибрид") else t("Raster", "Растр") }) { Controls.setRenderMode(this, 1 - Controls.renderMode(this)) }
         row(t("Auto fallback to Raster", "Откат на Растр"), { if (Controls.autoFallback(this)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.setAutoFallback(this, !Controls.autoFallback(this)) }
         row(t("Dust", "Пыль"), { arrayOf(t("Off", "Выкл"), t("Normal", "Обычная"), t("Lots", "Много"))[Controls.dust(this)] }) { Controls.setDust(this, DriveMath.cycle(Controls.dust(this), 3)) }
+        row(t("Co-driver", "Штурман"), { arrayOf(t("Off", "Выкл"), t("Text", "Текст"), t("Text and voice", "Текст и голос"))[Controls.paceMode(this)] }) { Controls.setPaceMode(this, DriveMath.cycle(Controls.paceMode(this), 3)) }
         row(t("Steering", "Руль"), { arrayOf(t("Buttons", "Кнопки"), t("Wheel", "Колесо"), t("Tilt", "Наклон"))[Controls.mode(this)] }) { Controls.setMode(this, DriveMath.cycle(Controls.mode(this), Controls.MODES)) }
         row(t("Sensitivity", "Чувствительность"), { arrayOf(t("Low", "Низкая"), t("Normal", "Обычная"), t("High", "Высокая"))[Controls.sens(this)] }) { Controls.setSens(this, DriveMath.cycle(Controls.sens(this), 3)) }
         row(t("Volume", "Громкость"), { "${(DriveMath.VOLUME[Controls.volumeStep(this)] * 100).toInt()} %" }) {

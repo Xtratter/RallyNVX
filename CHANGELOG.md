@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.23.0 - the co-driver
+
+- Added: pace notes in rallies, made from the shape of the stage: corners (direction, severity 1-5 or a hairpin, tightens / opens / long, "into" the next corner), crests and jumps, junctions with side roads and the finish, called 80-140 m ahead; shown as text and spoken by the system speech synthesizer (Russian or English by the device language); Settings, "Co-driver": Off / Text / Text and voice
+
 ## 2.22.0 - the Rally mode
 
 - Added: the Rally mode (the "Rally" button on the start screen): four rallies with fixed levels, each with the special stage and the city super-special (2 laps) against the clock: a 3-2-1-GO countdown, check lines, splits, penalties (reset +10 s, leaving the road for 3 s +5 s, a skipped check line +30 s), results after every stage and personal records per stage and per rally; free drive is unchanged

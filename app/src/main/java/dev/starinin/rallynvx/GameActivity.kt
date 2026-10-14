@@ -48,6 +48,11 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var finishedShown = false
     private var resultsPanel: FrameLayout? = null
     private var newLevelBtn: View? = null
+    private var noteBar: TextView? = null
+    private var noteUntil = 0L
+    private var lastNote = 0
+    private var tts: android.speech.tts.TextToSpeech? = null
+    private var ttsReady = false
 
     private val tick = object : Runnable {
         override fun run() {
@@ -112,6 +117,17 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             rallyCount = overlay(96f, true).apply { setTextColor(0xFFFFFFFF.toInt()); setShadowLayer(10f, 0f, 3f, 0xDD000000.toInt()) }
             root.addView(rallyCount, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
             rallyToast = overlay(18f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)) }
+            noteBar = overlay(20f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)) }
+            root.addView(noteBar, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { topMargin = px(70f); leftMargin = px(16f) })
+            if (Controls.paceMode(this) == 2) {   // the co-driver's voice: the system speech synthesizer in the device's language
+                val ru = java.util.Locale.getDefault().language == "ru"
+                tts = android.speech.tts.TextToSpeech(this) { st ->
+                    if (st == android.speech.tts.TextToSpeech.SUCCESS) {
+                        val r = tts?.setLanguage(if (ru) java.util.Locale("ru") else java.util.Locale.US)
+                        ttsReady = r != null && r >= android.speech.tts.TextToSpeech.LANG_AVAILABLE
+                    }
+                }
+            }
             root.addView(rallyToast, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = px(72f) })
         }
         // sound on/off (kept in SharedPreferences)
@@ -148,7 +164,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     }
     /** Starts (or restarts) a rally stage: 0 the special stage, 1 the city super-special. */
     private fun startRallyStage(stage: Int) {
-        rallyStage = stage; finishedShown = false; lastEvent = 0
+        rallyStage = stage; finishedShown = false; lastEvent = 0; lastNote = 0
+        tts?.stop(); noteBar?.visibility = View.GONE
         resultsPanel?.visibility = View.GONE
         autopilotOn = false; showAutopilot()
         Native.gameRally(stage)
@@ -185,6 +202,16 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             if (msg.isNotEmpty()) { rallyToast?.text = msg; rallyToast?.visibility = View.VISIBLE; toastUntil = System.currentTimeMillis() + 2500 }
         }
         if (rallyToast?.visibility == View.VISIBLE && System.currentTimeMillis() > toastUntil) rallyToast?.visibility = View.GONE
+        val note = s[42].toInt()
+        if (note > 0 && note != lastNote && phase == 2 && Controls.paceMode(this) > 0) {
+            lastNote = note
+            val text = Native.gameNoteText(java.util.Locale.getDefault().language == "ru")
+            if (text.isNotEmpty()) {
+                noteBar?.text = text; noteBar?.visibility = View.VISIBLE; noteUntil = System.currentTimeMillis() + 6000
+                if (ttsReady) tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "note$note")
+            }
+        }
+        if (noteBar?.visibility == View.VISIBLE && (System.currentTimeMillis() > noteUntil || phase == 3)) noteBar?.visibility = View.GONE
         if (phase == 3 && !finishedShown) { finishedShown = true; showRallyResults(s[31], s[32], s[41], s[40] > 0.5f) }
     }
 
@@ -294,6 +321,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         intent.getFloatExtra("throttle", 0f).let { th -> if (th != 0f) handler.postDelayed({ carThr = th; sendInput() }, 1500) }
         audio.start()
     }
+    override fun onDestroy() { tts?.shutdown(); super.onDestroy() }
     override fun surfaceDestroyed(h: SurfaceHolder) { audio.stop(); Native.gameStop(); running = false }
 
     /** Puts the handbrake button above the pedals (on the pedal side set in the settings). */
