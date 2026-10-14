@@ -240,7 +240,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let n = normalize(i.n);
     let occl = mix(1.0, i.ao, u.mode.x);
     let m = i32(i.mat + 0.5);
-    if (m == 5) { return vec4<f32>(finish(i.col * 2.2), 1.0); }       // lamps
+    if (m == 5) { return vec4<f32>(finish(i.col * (2.2 + 2.0 * u.disc.w)), 1.0); }       // lamps
     if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0), 1.0); }   // glass
     if (m == 4) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.9, 60.0), 1.0); }   // chrome
     if (m == 6) { return vec4<f32>(shade_lite(i.col * occl, i.wp, n), 1.0); }   // foliage
@@ -309,7 +309,18 @@ fn inst_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec
             albedo = mix(albedo, vec3<f32>(0.50, 0.68, 0.80) * 0.8 + sky_gradient(reflect(-v, n)) * (0.1 + 0.5 * fr), win * 0.85);
         }
         if (u.mode.x > 0.5) { albedo = albedo * mix(0.62, 1.0, smoothstep(0.0, 5.0, i.wp.y - (i.ctr.y - i.size.y * 0.5))); }   // hybrid: darker at the base
-        return vec4<f32>(lit(albedo, i.wp, n), 1.0);
+        var col = lit(albedo, i.wp, n);
+        if (abs(n.y) < 0.5 && u.disc.w > 0.05) {
+            // night: about 45 % of the windows are lit (a warm glow that fades with the fog)
+            let t2 = normalize(vec2<f32>(-n.z, n.x));
+            let wc = vec2<f32>(dot(i.wp.xz, t2) / 3.0, i.wp.y / 3.5);
+            let f2 = fract(wc);
+            let win2 = step(0.25, f2.x) * step(f2.x, 0.75) * step(0.3, f2.y) * step(f2.y, 0.75);
+            let on = step(0.55, hash2(floor(wc) + i.ctr.xz * 0.173));
+            let fogk = clamp(1.0 - exp(-length(i.wp - u.cam.xyz) * u.fog.x), 0.0, 1.0);
+            col = col + vec3<f32>(1.0, 0.78, 0.45) * 0.75 * win2 * on * smoothstep(0.1, 0.7, u.disc.w) * (1.0 - fogk);
+        }
+        return vec4<f32>(col, 1.0);
     }
     // colour alpha > 1.5 marks glowing mission markers: unlit and not hidden by fog
     if (i.emi > 1.5) { return vec4<f32>(finish(i.col * 1.6), 1.0); }
