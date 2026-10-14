@@ -40,6 +40,11 @@ impl VehicleSpec {
     pub fn all() -> Vec<(String, VehicleSpec)> { super::params::get().cars.clone() }
 }
 
+/// What one wheel did in the last sub-step: for the dust (and later sound/tracks).
+#[derive(Clone, Copy, Debug)]
+pub struct WheelInfo { pub grounded: bool, pub surface: Surface, pub contact: V3, pub speed: f32, pub lat_slip: f32, pub slide: f32 }
+impl WheelInfo { pub const NONE: WheelInfo = WheelInfo { grounded: false, surface: Surface::Asphalt, contact: V3::ZERO, speed: 0.0, lat_slip: 0.0, slide: 0.0 }; }
+
 #[derive(Clone, Copy, Debug)]
 pub struct Vehicle {
     pub spec: VehicleSpec,
@@ -54,6 +59,7 @@ pub struct Vehicle {
     pub reverse_throttle: bool,
     /// The surface under the first wheel in contact (the HUD shows it); tests can force one for every wheel.
     pub surface: Surface, pub force_surface: Option<Surface>,
+    pub wheels: [WheelInfo; 4],
 }
 
 const SUB: usize = 4;
@@ -61,7 +67,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, braking: false, reversing: false, reverse_throttle: false, surface: Surface::Asphalt, force_surface: None }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, braking: false, reversing: false, reverse_throttle: false, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -113,6 +119,7 @@ impl Vehicle {
         let mut force = v3(0., -G * s.mass, 0.);
         let mut torque = V3::ZERO;
         self.contacts = 0;
+        self.wheels = [WheelInfo::NONE; 4];
         let wheel_mass = s.mass / 4.0;
         let max_susp = s.max_susp_factor * G * wheel_mass;
         let level = t.water_level();
@@ -160,6 +167,8 @@ impl Vehicle {
             if k > 0.0 { fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0 * k; }
             let lim = lat_mu * fs;
             let mag = fl.hypot(fx);
+            let excess = if lim > 1e-3 { ((mag / lim) - 1.0).clamp(0.0, 1.5) } else { 0.0 };
+            self.wheels[w] = WheelInfo { grounded: true, surface: surf, contact, speed: vc.len(), lat_slip: vl.abs(), slide: excess };
             if mag > lim && mag > 1e-6 { let k = lim / mag; fl *= k; fx *= k; }
             let tire = rw * fl + fw * fx;
             force = force + tire; torque = torque + r_c.cross(tire);

@@ -262,3 +262,26 @@ fn cornering_accel(surface: Surface, spec: VehicleSpec) -> f32 {
     assert!(on_line < 0.6, "the wheel line is packed: {on_line}");
     assert_eq!(map.loose_at(0, mid, 3.5), 1.0, "3.5 m to the side is untouched");
 }
+
+#[test] fn wheel_info_reports_sliding_but_not_rolling() {
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0., 1.0, 0.), 0.0);
+    v.force_surface = Some(Surface::Gravel);
+    for _ in 0..120 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+    assert!(v.wheels.iter().all(|w| w.grounded && w.slide == 0.0 && w.speed < 0.2), "standing");
+    for _ in 0..30 { v.step(&t, &[], &Input { throttle: 1.0, ..Default::default() }, 1.0 / 120.0); }
+    assert!(v.wheels.iter().any(|w| w.slide > 0.1), "flooring it on loose gravel spins the wheels: {:?}", v.wheels.iter().map(|w| w.slide).collect::<Vec<_>>());
+    for _ in 0..360 { v.step(&t, &[], &Input { throttle: 0.2, ..Default::default() }, 1.0 / 120.0); }
+    let cruise: f32 = v.wheels.iter().map(|w| w.slide).sum();
+    assert!(cruise < 0.2 && v.wheels[0].speed > 3.0, "cruising does not slide: {cruise}, speed {}", v.wheels[0].speed);
+    v.vel = v.forward() * 22.0;
+    for _ in 0..90 { v.step(&t, &[], &Input { steer: 0.5, throttle: 0.3, ..Default::default() }, 1.0 / 120.0); }
+    assert!(v.wheels.iter().any(|w| w.lat_slip > 2.0 || w.slide > 0.1), "a hard turn at 22 m/s slides");
+    assert!(v.wheels.iter().all(|w| w.slide <= 1.5 && w.contact.is_finite() && w.speed.is_finite()));
+}
+#[test] fn an_airborne_wheel_is_not_grounded() {
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., 6.0, 0.), 0.0);
+    v.step(&t, &[], &Input::default(), 1.0 / 60.0);
+    assert!(v.wheels.iter().all(|w| !w.grounded));
+}
