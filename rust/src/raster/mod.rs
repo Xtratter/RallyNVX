@@ -1,5 +1,6 @@
 //! Raster renderer (render mode C): tiled terrain, instanced props and vehicle, sky, sun shadow map.
 pub mod citygen;
+pub mod heightatlas;
 pub mod meshes;
 pub mod models;
 pub mod nature_models;
