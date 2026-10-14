@@ -21,7 +21,7 @@ pub fn tile_of(x: f32) -> i32 { (x / TILE_SIZE).floor() as i32 }
 
 /// A rally stage in progress: the runner, which stage it is (0 the special stage, 1 the city loop), the upside-down timer and
 /// the last event for the HUD (code 1 split, 2 reset, 3 off road, 4 skipped lines, 5 finish, 6 go; its value and a serial).
-pub struct RallyState { pub run: super::rally::Run, pub stage: u32, flip_t: f32, pub event: (u32, f32, u32), pub pace: super::pacenotes::Playback, pub note: (u32, String, String) }
+pub struct RallyState { pub run: super::rally::Run, pub stage: u32, flip_t: f32, pub event: (u32, f32, u32), pub pace: super::pacenotes::Playback, pub note: (u32, String, String), pub note_clips: String }
 
 /// Laps of the city loop in a rally.
 pub const CITY_LAPS: usize = 2;
@@ -134,7 +134,7 @@ impl World {
         if stage == 0 { self.loose = self.terrain.roads().map_or_else(LooseMap::empty, LooseMap::new); }
         junctions.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         let notes = super::pacenotes::generate(&pace_path, &junctions);
-        self.rally = Some(RallyState { run: super::rally::Run::new(lines), stage, flip_t: 0.0, event: (0, 0.0, 0), pace: super::pacenotes::Playback::new(pace_path, notes), note: (0, String::new(), String::new()) });
+        self.rally = Some(RallyState { run: super::rally::Run::new(lines), stage, flip_t: 0.0, event: (0, 0.0, 0), pace: super::pacenotes::Playback::new(pace_path, notes), note: (0, String::new(), String::new()), note_clips: String::new() });
         true
     }
     pub fn rally_stop(&mut self) { self.rally = None; }
@@ -175,7 +175,7 @@ impl World {
         let r = self.rally.as_mut().unwrap();
         r.run.update(self.vehicle.pos, dt, off);
         if r.run.phase == super::rally::Phase::Running {
-            if let Some(k) = r.pace.update(self.vehicle.pos, self.vehicle.speed(), dt) { r.note = (r.note.0 + 1, r.pace.text(k, true), r.pace.text(k, false)); }
+            if let Some(k) = r.pace.update(self.vehicle.pos, self.vehicle.speed(), dt) { r.note = (r.note.0 + 1, r.pace.text(k, true), r.pace.text(k, false)); r.note_clips = r.pace.clips(k).join(","); }
         }
         for e in r.run.drain_events() {
             use super::rally::Event::*;

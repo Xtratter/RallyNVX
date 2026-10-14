@@ -1,0 +1,109 @@
+{
+ "voices": [
+  {
+   "id": "ru_denis",
+   "lang": "ru",
+   "name": "Denis",
+   "license": "CC0 data (the model is fine-tuned from the lessac voice)",
+   "source": "Piper, OHF voice datasets"
+  },
+  {
+   "id": "ru_dmitri",
+   "lang": "ru",
+   "name": "Dmitri",
+   "license": "CC0 data (the model is fine-tuned from the lessac voice)",
+   "source": "Piper, OHF voice datasets"
+  },
+  {
+   "id": "en_ljspeech",
+   "lang": "en",
+   "name": "LJSpeech",
+   "license": "public domain",
+   "source": "Piper, LJ Speech dataset"
+  },
+  {
+   "id": "en_kathleen",
+   "lang": "en",
+   "name": "Kathleen",
+   "license": "CC0",
+   "source": "Piper"
+  },
+  {
+   "id": "en_cori",
+   "lang": "en",
+   "name": "Cori (UK)",
+   "license": "public domain",
+   "source": "Piper, LibriVox"
+  },
+  {
+   "id": "en_alba",
+   "lang": "en",
+   "name": "Alba (UK)",
+   "license": "CC BY 4.0",
+   "source": "Piper, University of Edinburgh"
+  },
+  {
+   "id": "en_libri_1",
+   "lang": "en",
+   "name": "LibriTTS 1",
+   "license": "CC BY 4.0",
+   "source": "Piper, LibriTTS-R"
+  },
+  {
+   "id": "en_libri_2",
+   "lang": "en",
+   "name": "LibriTTS 2",
+   "license": "CC BY 4.0",
+   "source": "Piper, LibriTTS-R"
+  },
+  {
+   "id": "en_libri_3",
+   "lang": "en",
+   "name": "LibriTTS 3",
+   "license": "CC BY 4.0",
+   "source": "Piper, LibriTTS-R"
+  },
+  {
+   "id": "en_libri_4",
+   "lang": "en",
+   "name": "LibriTTS 4",
+   "license": "CC BY 4.0",
+   "source": "Piper, LibriTTS-R"
+  },
+  {
+   "id": "en_vctk_1",
+   "lang": "en",
+   "name": "VCTK 1 (UK)",
+   "license": "CC BY 4.0",
+   "source": "Piper, VCTK"
+  },
+  {
+   "id": "en_vctk_2",
+   "lang": "en",
+   "name": "VCTK 2 (UK)",
+   "license": "CC BY 4.0",
+   "source": "Piper, VCTK"
+  },
+  {
+   "id": "en_vctk_3",
+   "lang": "en",
+   "name": "VCTK 3 (UK)",
+   "license": "CC BY 4.0",
+   "source": "Piper, VCTK"
+  },
+  {
+   "id": "en_aru_1",
+   "lang": "en",
+   "name": "ARU 1 (UK)",
+   "license": "CC BY 4.0",
+   "source": "Piper, ARU"
+  },
+  {
+   "id": "en_aru_2",
+   "lang": "en",
+   "name": "ARU 2 (UK)",
+   "license": "CC BY 4.0",
+   "source": "Piper, ARU"
+  }
+ ]
+}

@@ -127,6 +127,10 @@ mod android {
         let t = crate::game::app::NOTE_TEXT.lock().unwrap_or_else(|x| x.into_inner()).clone();
         e.new_string(if ru != 0 { t.1 } else { t.2 }).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
     }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameNoteClips<'a>(mut e: JNIEnv<'a>, _c: JClass) -> jni::sys::jstring {
+        let t = crate::game::app::NOTE_TEXT.lock().unwrap_or_else(|x| x.into_inner()).clone();
+        e.new_string(t.3).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+    }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameDust(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Dust(level)); }
     /// Debug/test: put the car on a road facing along it (1 liaison, 2 stage start, 3 stage middle, 4 stage end).
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameOnRoad(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::OnRoad(mode)); }

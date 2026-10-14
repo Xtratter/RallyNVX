@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.24.0 - studio voices for the co-driver
+
+- Added: recorded co-driver voices: 15 free neural voices (Russian: Denis, Dmitri; English: LJSpeech, Kathleen, Cori, Alba, 4 LibriTTS, 3 VCTK, 2 ARU) as 42 clips each (corners 1-5 both ways, hairpins, tightens / opens / long, into, crest, jump, junctions, the finish, distances) stitched into the calls; Settings -> Co-driver voice lists them with a sample (a play button) and a choice per language, or the system synthesizer; the voices are licensed CC0, public domain or CC BY 4.0 (credits in the README); the clips are rendered by `tools/voices/`
+- Changed: Russian calls say "дальше" for "into"
+
 ## 2.23.0 - the co-driver
 
 - Added: pace notes in rallies, made from the shape of the stage: corners (direction, severity 1-5 or a hairpin, tightens / opens / long, "into" the next corner), crests and jumps, junctions with side roads and the finish, called 80-140 m ahead; shown as text and spoken by the system speech synthesizer (Russian or English by the device language); Settings, "Co-driver": Off / Text / Text and voice
