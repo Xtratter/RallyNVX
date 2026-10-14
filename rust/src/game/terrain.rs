@@ -96,11 +96,25 @@ impl Terrain {
         // roads: the ground equals the road profile inside half-width + 1 m and eases back to nature over the shoulder
         if let Some(hit) = self.road_hit(x, z) {
             let w = 1.0 - smoothstep(hit.half + 1.0, hit.half + SHOULDER, hit.dist);
-            if w > 0.0 { h += (hit.y - h) * w; }
+            if w > 0.0 {
+                h += (hit.y - h) * w;
+                // a ditch runs along the road edge (none on a causeway)
+                let d = self.ditch(&hit);
+                if d > 0.0 { h -= d * w; }
+            }
         }
         h
     }
 
+    /// How deep the roadside ditch is at this road hit (0 on a causeway or far from the edge).
+    fn ditch(&self, hit: &RoadHit) -> f32 {
+        let Some(net) = self.roads.as_ref() else { return 0.0 };
+        let cfg = roads::cfg::cfg();
+        let d = if net.roads[hit.road].kind == roads::RoadKind::Stage { cfg.ditch_stage } else { cfg.ditch_liaison };
+        if let Some(l) = self.water { if hit.y - l < cfg.crest.causeway_clear { return 0.0; } }
+        let t = ((hit.dist - hit.half - d.offset).abs() / d.width).min(1.0);
+        d.depth * (1.0 - smooth(t))
+    }
     /// The level with its road network (the game); `Terrain::new` has none and is cheap (tests, planning).
     pub fn with_roads(seed: u64) -> Terrain {
         let base = Terrain::new(seed);

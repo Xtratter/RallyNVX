@@ -3,6 +3,7 @@
 pub enum Surface { Grass, Dirt, Sand, Rock, Gravel, Asphalt, Water }
 
 use super::materials::terrain_weights;
+use super::roads::RoadKind;
 use super::terrain::Terrain;
 
 /// The ground at (x, z): the road kind on a road, dirt on its 2 m shoulder, asphalt in a city, water in a lake, else the
@@ -10,6 +11,7 @@ use super::terrain::Terrain;
 pub fn surface_at(t: &Terrain, x: f32, z: f32) -> Surface {
     if let (Some(h), Some(net)) = (t.road_hit(x, z), t.roads()) {
         if h.dist <= h.half { return net.roads[h.road].kind.surface(); }
+        if net.roads[h.road].kind == RoadKind::Stage && h.dist <= h.half + crate::game::roads::cfg::cfg().verge { return Surface::Gravel; }
         if h.dist <= h.half + 2.0 { return Surface::Dirt; }
     }
     if t.in_city(x, z, 0.0) { return Surface::Asphalt; }

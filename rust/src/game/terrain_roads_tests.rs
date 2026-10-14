@@ -60,3 +60,35 @@ fn with_roads_coarse(seed: u64) -> Terrain {
         assert!(n.y > 0.9, "normal.y {} at point {i}", n.y);
     }
 }
+
+fn straight(kind: crate::game::roads::RoadKind, y: f32) -> crate::game::roads::RoadNet {
+    use crate::game::roads::{Road, RoadNet, RoadPt};
+    let pts = (0..=200).map(|i| RoadPt { pos: v3(-400.0 + i as f32 * 4.0, y, 0.0), width: 8.0, s: i as f32 * 4.0 }).collect();
+    RoadNet::new(vec![Road { kind, pts }])
+}
+#[test] fn the_stage_ditch_is_deep_the_liaison_ditch_shallow_and_the_road_unchanged() {
+    use crate::game::roads::RoadKind;
+    let st = Terrain::flat().with_net(straight(RoadKind::Stage, 0.0));
+    let li = Terrain::flat().with_net(straight(RoadKind::Liaison, 0.0));
+    let cfg = crate::game::roads::cfg::cfg();
+    // the centre of the ditch: 4 m half width + 1.8 m offset
+    let (d_st, d_li) = (-st.height(0.0, 5.8), -li.height(0.0, 5.8));
+    assert!((d_st - cfg.ditch_stage.depth).abs() < 0.06, "{d_st}");
+    assert!((d_li - cfg.ditch_liaison.depth).abs() < 0.06, "{d_li}");
+    assert_eq!(st.height(0.0, 0.0), 0.0);
+    assert!(st.height(0.0, 3.9).abs() < 1e-4, "no ditch under the road");
+    assert!(st.height(0.0, 40.0).abs() < 1e-4, "none far away");
+}
+#[test] fn no_ditch_on_a_causeway() {
+    use crate::game::roads::RoadKind;
+    let t = Terrain { water: Some(0.0), ..Terrain::flat() }.with_net(straight(RoadKind::Stage, 0.5));
+    assert!((t.height(0.0, 5.8) - 0.5 * (1.0 - smoothstep(5.0, 12.0, 5.8))).abs() < 1e-3, "{}", t.height(0.0, 5.8));
+}
+#[test] fn the_stage_verge_is_gravel_and_the_liaison_verge_dirt() {
+    use crate::game::roads::RoadKind;
+    let st = Terrain::flat().with_net(straight(RoadKind::Stage, 0.0));
+    let li = Terrain::flat().with_net(straight(RoadKind::Liaison, 0.0));
+    assert_eq!(surface_at(&st, 0.0, 4.5), Surface::Gravel);
+    assert_eq!(surface_at(&st, 0.0, 5.5), Surface::Dirt);
+    assert_eq!(surface_at(&li, 0.0, 4.5), Surface::Dirt);
+}
