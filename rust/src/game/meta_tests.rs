@@ -72,3 +72,73 @@ fn m(seed: u64, kind: MissionKind) -> Mission {
     let q = Profile::from_json(&p.to_json()).unwrap();
     assert_eq!(q.best_medal(11, MissionKind::Rescue), Medal::Gold);
 }
+
+mod garage_profile {
+    use super::*;
+    use crate::game::garage::Upgrade;
+    fn rich() -> Profile { let mut p = Profile::new(3); p.money = 20_000; p }
+    #[test] fn a_new_profile_owns_the_offroader_only_and_has_it_selected() {
+        let p = Profile::new(1);
+        assert!(p.owns("offroader") && !p.owns("peugeot206") && p.garage.selected == "offroader");
+        assert_eq!(p.levels("offroader"), [0; 4]); assert_eq!(p.levels("peugeot206"), [0; 4]);
+        assert_eq!(p.selected_spec().price, 0);
+    }
+    #[test] fn buying_a_car_needs_money_and_charges_exactly_once() {
+        let mut p = Profile::new(1); p.money = 2999;
+        assert!(!p.buy_car("peugeot206") && p.money == 2999 && !p.owns("peugeot206"));
+        p.money = 3500;
+        assert!(p.buy_car("peugeot206") && p.money == 500 && p.owns("peugeot206"));
+        assert!(!p.buy_car("peugeot206") && p.money == 500, "buying again changes nothing");
+        assert!(!p.buy_car("nope") && !p.buy_car("offroader"));
+    }
+    #[test] fn selecting_needs_ownership_and_changes_the_spec_used() {
+        let mut p = rich();
+        assert!(!p.select("peugeot206") && p.garage.selected == "offroader");
+        assert!(p.buy_car("peugeot206") && p.select("peugeot206"));
+        assert_eq!(p.selected_spec().style, crate::game::vehicle::CarStyle::Rally);
+        assert!(!p.select("nope"));
+    }
+    #[test] fn upgrades_are_atomic_capped_and_need_ownership() {
+        let mut p = rich();
+        assert!(!p.buy_upgrade("peugeot206", Upgrade::Engine), "not owned");
+        assert!(p.buy_upgrade("offroader", Upgrade::Engine) && p.money == 19_700 && p.levels("offroader") == [1, 0, 0, 0]);
+        assert!(p.buy_upgrade("offroader", Upgrade::Engine) && p.buy_upgrade("offroader", Upgrade::Engine));
+        assert_eq!((p.money, p.levels("offroader")), (20_000 - 300 - 600 - 1200, [3, 0, 0, 0]));
+        let m = p.money; assert!(!p.buy_upgrade("offroader", Upgrade::Engine) && p.money == m, "capped at level 3");
+        let mut poor = Profile::new(1); poor.money = 299;
+        assert!(!poor.buy_upgrade("offroader", Upgrade::Tyres) && poor.money == 299 && poor.levels("offroader") == [0; 4]);
+        poor.money = 300; assert!(poor.buy_upgrade("offroader", Upgrade::Tyres) && poor.money == 0);
+        assert!(p.selected_spec().engine_force > Profile::new(1).selected_spec().engine_force);
+    }
+    #[test] fn the_garage_survives_a_json_round_trip() {
+        let mut p = rich(); p.buy_car("peugeot206"); p.select("peugeot206"); p.buy_upgrade("peugeot206", Upgrade::Brakes); p.buy_upgrade("offroader", Upgrade::Suspension);
+        let q = Profile::from_json(&p.to_json()).unwrap();
+        assert_eq!((q.garage.selected.as_str(), q.levels("peugeot206"), q.levels("offroader"), q.money), ("peugeot206", [0, 0, 0, 1], [0, 0, 1, 0], p.money));
+        assert!(q.owns("peugeot206"));
+    }
+    #[test] fn old_files_unknown_ids_and_unowned_selection_are_handled() {
+        let old = Profile::from_json("{\"version\":1,\"money\":10,\"profile_seed\":5,\"round\":0,\"results\":[]}").unwrap();
+        assert!(old.owns("offroader") && !old.owns("peugeot206") && old.garage.selected == "offroader");
+        let odd = Profile::from_json("{\"version\":1,\"money\":10,\"profile_seed\":5,\"round\":0,\"results\":[],\"garage\":{\"selected\":\"peugeot206\",\"cars\":{\"offroader\":{\"engine\":9,\"tyres\":1},\"ghost\":{\"engine\":2}}}}").unwrap();
+        assert_eq!(odd.garage.selected, "offroader", "not owned: falls back");
+        assert_eq!(odd.levels("offroader"), [3, 1, 0, 0], "levels clamp to the cap, missing ones are 0");
+        assert!(!odd.owns("ghost"));
+        let mut text: serde_json::Value = serde_json::from_str(&odd.to_json()).unwrap();
+        assert!(text["garage"]["cars"].get("ghost").is_none()); text["version"] = serde_json::json!(1);
+    }
+    #[test] fn api_helpers_act_on_a_profile_file_by_car_index() {
+        let dir = std::env::temp_dir().join(format!("rt_garage_{}", std::process::id())); let _ = std::fs::remove_dir_all(&dir); std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("p.json");
+        let mut p = Profile::new(4); p.money = 4000; p.save(&path).unwrap();
+        let info = crate::game::api::garage_info(&path, 1);
+        assert_eq!(&info[..3], &[4000.0, 0.0, 2.0]);
+        assert_eq!(&info[3..10], &[1.0, 0.0, 300.0, 0.0, 0.0, 0.0, 0.0]);         // off-roader: owned, price 0, upgrade 300
+        assert_eq!(&info[10..13], &[0.0, 3000.0, 750.0]);                         // peugeot: not owned
+        assert!(crate::game::api::garage_buy_car(&path, 1) && crate::game::api::garage_select(&path, 1));
+        assert!(crate::game::api::garage_buy_upgrade(&path, 1, 0), "engine level 1 costs 750 and money is 1000");
+        let info = crate::game::api::garage_info(&path, 1);
+        assert_eq!((info[0], info[1], info[10], info[13]), (250.0, 1.0, 1.0, 1.0));
+        assert!(!crate::game::api::garage_buy_car(&path, 9) && !crate::game::api::garage_select(&path, 9) && !crate::game::api::garage_buy_upgrade(&path, 9, 0) && !crate::game::api::garage_buy_upgrade(&path, 1, 9));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

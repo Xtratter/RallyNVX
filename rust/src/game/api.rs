@@ -3,7 +3,9 @@ use std::path::Path;
 
 use super::flight::AircraftKind;
 use super::meta::{kind_id, Profile};
+use super::garage::Upgrade;
 use super::missions::roll;
+use super::vehicle::VehicleSpec;
 
 /// `[money, round, profile_seed, gold_count]` followed by 6 missions x
 /// `[kind(0 cargo/1 race/2 rings/3 sling/4 recon/5 rescue), seed, difficulty, length_m, time_limit, reward_base, best_medal, best_time, aircraft(0 none/1 heli/2 drone), urban(0/1)]`.
@@ -19,6 +21,34 @@ pub fn menu_info(path: &Path, fresh_seed: u64, refresh: bool) -> Vec<f32> {
             if m.urban { 1.0 } else { 0.0 }]);
     }
     out
+}
+
+/// `[money, selected_index, car_count]` then per car (file order, sorted by id) `[owned(0/1), price, upgrade_cost, engine, tyres, suspension, brakes]`.
+pub fn garage_info(path: &Path, fresh_seed: u64) -> Vec<f32> {
+    let p = Profile::load_or_new(path, fresh_seed);
+    let cars = VehicleSpec::all();
+    let sel = cars.iter().position(|(id, _)| *id == p.garage.selected).unwrap_or(0);
+    let mut out = vec![p.money as f32, sel as f32, cars.len() as f32];
+    for (id, s) in &cars {
+        let l = p.levels(id);
+        out.extend_from_slice(&[p.owns(id) as u8 as f32, s.price as f32, s.upgrade_cost as f32, l[0] as f32, l[1] as f32, l[2] as f32, l[3] as f32]);
+    }
+    out
+}
+
+/// Loads the profile, applies `f` and saves when it succeeded; false for a bad car index or a refused action.
+fn garage_act(path: &Path, index: usize, f: impl FnOnce(&mut Profile, &str) -> bool) -> bool {
+    let cars = VehicleSpec::all();
+    let Some((id, _)) = cars.get(index) else { return false };
+    let mut p = Profile::load_or_new(path, 1);
+    if !f(&mut p, id) { return false; }
+    p.save(path).is_ok()
+}
+pub fn garage_buy_car(path: &Path, index: usize) -> bool { garage_act(path, index, |p, id| p.buy_car(id)) }
+pub fn garage_select(path: &Path, index: usize) -> bool { garage_act(path, index, |p, id| p.select(id)) }
+pub fn garage_buy_upgrade(path: &Path, index: usize, upgrade: usize) -> bool {
+    let Some(up) = Upgrade::from_index(upgrade) else { return false };
+    garage_act(path, index, |p, id| p.buy_upgrade(id, up))
 }
 
 #[cfg(test)]

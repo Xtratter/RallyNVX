@@ -3,7 +3,9 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
+use super::garage::{Garage, Upgrade, MAX_LEVEL};
 use super::medals::{payout, Medal};
+use super::vehicle::VehicleSpec;
 use super::missions::{Mission, MissionKind};
 
 pub const PROFILE_VERSION: u32 = 1;
@@ -12,16 +14,19 @@ pub const PROFILE_VERSION: u32 = 1;
 pub struct MissionResult { pub seed: u64, pub kind: MissionKind, pub medal: Medal, pub best_time: f32 }
 
 #[derive(Clone, Debug)]
-pub struct Profile { pub version: u32, pub money: u32, pub profile_seed: u64, pub round: u32, pub results: Vec<MissionResult> }
+pub struct Profile { pub version: u32, pub money: u32, pub profile_seed: u64, pub round: u32, pub results: Vec<MissionResult>, pub garage: Garage }
 
 pub(super) fn kind_id(k: MissionKind) -> u64 { match k { MissionKind::Cargo => 0, MissionKind::Race => 1, MissionKind::Rings => 2, MissionKind::Sling => 3, MissionKind::Recon => 4, MissionKind::Rescue => 5 } }
 
 impl Profile {
-    pub fn new(seed: u64) -> Profile { Profile { version: PROFILE_VERSION, money: 0, profile_seed: seed, round: 0, results: Vec::new() } }
+    pub fn new(seed: u64) -> Profile { Profile { version: PROFILE_VERSION, money: 0, profile_seed: seed, round: 0, results: Vec::new(), garage: Garage::new() } }
 
     pub fn to_json(&self) -> String {
         let results: Vec<Value> = self.results.iter().map(|r| json!({ "seed": r.seed, "kind": kind_id(r.kind), "medal": r.medal as u8, "best_time": r.best_time })).collect();
-        serde_json::to_string_pretty(&json!({ "version": self.version, "money": self.money, "profile_seed": self.profile_seed, "round": self.round, "results": results })).unwrap()
+        let cars: serde_json::Map<String, Value> = self.garage.cars.iter()
+            .map(|(id, l)| (id.clone(), json!({ "engine": l[0], "tyres": l[1], "suspension": l[2], "brakes": l[3] }))).collect();
+        serde_json::to_string_pretty(&json!({ "version": self.version, "money": self.money, "profile_seed": self.profile_seed, "round": self.round, "results": results,
+            "garage": { "selected": self.garage.selected, "cars": cars } })).unwrap()
     }
 
     pub fn from_json(s: &str) -> Result<Profile, String> {
@@ -40,7 +45,56 @@ impl Profile {
             let best_time = r.get("best_time").and_then(Value::as_f64).unwrap_or(0.0) as f32;
             results.push(MissionResult { seed, kind, medal, best_time });
         }
-        Ok(Profile { version: PROFILE_VERSION, money, profile_seed, round, results })
+        // the garage is optional: unknown cars are dropped, levels are clamped, free cars are always owned, a bad selection falls back
+        let mut garage = Garage::new();
+        if let Some(g) = v.get("garage") {
+            if let Some(cars) = g.get("cars").and_then(Value::as_object) {
+                for (id, l) in cars {
+                    if VehicleSpec::by_id(id).is_none() { continue; }
+                    let lv = |k: &str| l.get(k).and_then(Value::as_u64).unwrap_or(0).min(MAX_LEVEL as u64) as u8;
+                    let levels = [lv("engine"), lv("tyres"), lv("suspension"), lv("brakes")];
+                    match garage.cars.iter_mut().find(|(i, _)| i == id) { Some(c) => c.1 = levels, None => garage.cars.push((id.clone(), levels)) }
+                }
+            }
+            if let Some(sel) = g.get("selected").and_then(Value::as_str) { if garage.owns(sel) { garage.selected = sel.to_string(); } }
+        }
+        Ok(Profile { version: PROFILE_VERSION, money, profile_seed, round, results, garage })
+    }
+
+    pub fn owns(&self, id: &str) -> bool { self.garage.owns(id) }
+    pub fn levels(&self, id: &str) -> [u8; 4] { self.garage.levels(id) }
+
+    /// Buys a car from the garage list for its price; false (nothing changes) when unknown, owned or too expensive.
+    pub fn buy_car(&mut self, id: &str) -> bool {
+        let Some(spec) = VehicleSpec::by_id(id) else { return false };
+        if self.owns(id) || spec.price == 0 || self.money < spec.price { return false; }
+        self.money -= spec.price;
+        self.garage.cars.push((id.to_string(), [0; 4]));
+        true
+    }
+
+    pub fn select(&mut self, id: &str) -> bool {
+        if !self.owns(id) { return false; }
+        self.garage.selected = id.to_string();
+        true
+    }
+
+    /// Buys the next level of an upgrade; atomic: money and level change together or not at all.
+    pub fn buy_upgrade(&mut self, id: &str, up: Upgrade) -> bool {
+        let Some(spec) = VehicleSpec::by_id(id) else { return false };
+        let Some(entry) = self.garage.cars.iter_mut().find(|(i, _)| i == id) else { return false };
+        let Some(price) = super::garage::upgrade_price(&spec, entry.1[up.index()]) else { return false };
+        if self.money < price { return false; }
+        self.money -= price;
+        entry.1[up.index()] += 1;
+        true
+    }
+
+    /// The selected car with its upgrades applied (the off-roader if the selection is somehow missing).
+    pub fn selected_spec(&self) -> VehicleSpec {
+        let id = &self.garage.selected;
+        let spec = VehicleSpec::by_id(id).unwrap_or_else(VehicleSpec::offroader);
+        super::garage::apply(&spec, self.levels(id))
     }
 
     pub fn best_medal(&self, seed: u64, kind: MissionKind) -> Medal {
