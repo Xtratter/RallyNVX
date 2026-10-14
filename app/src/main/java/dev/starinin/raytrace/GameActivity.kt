@@ -147,6 +147,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val soundPause = M3Widgets.button(this, soundLabel(), M3Widgets.ButtonKind.TONAL) {}
         soundPause.setOnClickListener { audio.muted = !audio.muted; (soundPause as? TextView)?.text = soundLabel() }
         pc.addView(soundPause, LinearLayout.LayoutParams(px(220f), px(48f)).apply { topMargin = px(10f) })
+        pbtn(t("Settings", "Настройки")) { startActivity(android.content.Intent(this, SettingsActivity::class.java)) }
         pbtn(t("Restart", "Заново")) { ignoreRun = Native.gameStats()[18]; Native.gameRestart(); resultShown = false; hidePause() }
         pbtn(t("Abandon", "Бросить")) { Native.gameAbort(); finish() }
         pausePanel = panel(pc)

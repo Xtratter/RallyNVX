@@ -13,7 +13,6 @@ import java.io.File
 
 /** Main menu: missions, free drive, scene viewer, quality. */
 class StartActivity : Activity() {
-    private lateinit var quality: TextView
     private lateinit var money: TextView
     private val profile get() = File(filesDir, "profile.json").path
 
@@ -42,11 +41,9 @@ class StartActivity : Activity() {
         add(M3Widgets.button(this, t("Scenes", "Сцены"), M3Widgets.ButtonKind.TONAL) {
             startActivity(Intent(this, MainActivity::class.java))
         })
-        quality = M3Widgets.button(this, "", M3Widgets.ButtonKind.TONAL) {
-            val i = (Quality.index(this) + 1) % Quality.NAMES.size
-            Quality.save(this, i); refresh()
-        }
-        add(quality)
+        add(M3Widgets.button(this, t("Settings", "Настройки"), M3Widgets.ButtonKind.TONAL) {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        })
         col.setBackgroundColor(M3.base)
         setContentView(android.widget.ScrollView(this).apply { isFillViewport = true; setBackgroundColor(M3.base); addView(col, android.widget.FrameLayout.LayoutParams(-1, -1)) })
         refresh()
@@ -55,7 +52,6 @@ class StartActivity : Activity() {
     override fun onResume() { super.onResume(); refresh() }
 
     private fun refresh() {
-        quality.text = t("Quality: ", "Качество: ") + Quality.label(Quality.index(this))
         val info = Native.missionsInfo(profile, System.nanoTime() and 0xFFFFFFL, false)
         money.text = t("Money: ", "Деньги: ") + info[0].toInt()
     }
