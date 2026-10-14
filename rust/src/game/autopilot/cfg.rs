@@ -4,7 +4,7 @@ use std::sync::RwLock;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AutoCfg {
     pub lat_factor: f32, pub brake_factor: f32, pub look_base: f32, pub look_gain: f32, pub offset_max: f32,
-    pub crest_speed: f32, pub field_speed: f32, pub stuck_time: f32, pub finish_stop: f32,
+    pub crest_speed: f32, pub field_speed: f32, pub stuck_time: f32,
 }
 
 pub const EMBEDDED: &str = include_str!("../../../autopilot.json");
@@ -20,7 +20,7 @@ impl AutoCfg {
         Ok(AutoCfg {
             lat_factor: num("lat_factor", 0.2, 1.2)?, brake_factor: num("brake_factor", 0.2, 1.2)?, look_base: num("look_base", 2.0, 40.0)?, look_gain: num("look_gain", 0.0, 2.0)?,
             offset_max: num("offset_max", 0.0, 0.9)?, crest_speed: num("crest_speed", 5.0, 60.0)?, field_speed: num("field_speed", 3.0, 40.0)?,
-            stuck_time: num("stuck_time", 1.0, 30.0)?, finish_stop: num("finish_stop", 5.0, 200.0)?,
+            stuck_time: num("stuck_time", 1.0, 30.0)?,
         })
     }
 }
