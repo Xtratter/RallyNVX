@@ -32,6 +32,8 @@ object Native {
     @JvmStatic external fun gameAutoFallback(on: Boolean)
     /** Debug placement: 1 = next to the first city, 2 = at its centre. */
     @JvmStatic external fun gameInCity(mode: Int)
+    /** Debug/test: start every level at this time of day (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk); negative = off. */
+    @JvmStatic external fun gameTimeOfDay(phase: Float)
     @JvmStatic external fun gamePause(p: Boolean)
     @JvmStatic external fun gameRestart()
     @JvmStatic external fun gameAbort()

@@ -110,6 +110,10 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameInput(_e: JNIEnv, _c: JClass, throttle: jfloat, steer: jfloat, brake: jboolean, handbrake: jboolean, brake_amt: jfloat) {
         send(GCmd::Input(merge_input(throttle, steer, brake != 0, handbrake != 0, brake_amt)));
     }
+    /// Debug/test: every level starts at this time of day (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk); negative clears it.
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameTimeOfDay(_e: JNIEnv, _c: JClass, phase: jfloat) {
+        crate::game::daylight::set_debug_phase(if phase >= 0.0 { Some(phase) } else { None });
+    }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameInCity(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::InCity(mode)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameQuality(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Quality(level)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_gameRenderMode(_e: JNIEnv, _c: JClass, m: jint) { send(GCmd::RenderMode(m)); }
