@@ -8,3 +8,5 @@ Order agreed with the user on 2026-10-14. Each item is brainstormed (spec, plan)
 4. **Roads** - asphalt roads in the open terrain (join the start and the cities), with markings, higher grip; also gives the "asphalt" surface.
 5. **Tyre dust** - physically plausible dust and spray from the wheels per surface (grass, sand, dirt, mud, asphalt, water): amount and colour from the surface, wheel slip, speed and sun/night light; needs a surface lookup (`game/materials.rs` weights, roads, mud near water).
 6. **Realistic car physics** (tyres, suspension, transmission, drift), then flight, sling cargo and water (aircraft are removed from the game for now).
+
+Update 2026-10-14 (late): the old delivery/race missions were removed (v2.14.0, free drive only, garage free). The rally mode (special stages with times) is a planned OPTION beside free drive; the stage runner, markers, HUD and results will be built for rally when item 4 and the roads exist.
