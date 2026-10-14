@@ -2,6 +2,7 @@
 pub mod cfg;
 pub mod join;
 pub mod route;
+pub mod streets;
 #[cfg(test)]
 mod stage_tests;
 
@@ -34,7 +35,7 @@ pub struct Autopilot {
 
 /// The speed limits for a car on a road of the given kind (loose gravel is the worst case on the stage).
 pub fn limits_for(car: &VehicleSpec, surface: super::surface::Surface, v_max: f32, stop_at_end: bool) -> Limits {
-    Limits { mu: car.mu * grip(surface, 1.0).mu, v_max: v_max.min(car.max_speed * 0.95), accel: 0.5 * car.engine_force / car.mass, stop_at_end }
+    Limits { mu: car.mu * grip(surface, 1.0).mu, v_max: v_max.min(car.max_speed), accel: 0.5 * car.engine_force / car.mass, stop_at_end }
 }
 
 /// The route along a road (its centre pulled to the least-curvature line), ending in a standstill.
@@ -44,6 +45,30 @@ pub fn route_for_road(road: &Road, car: &VehicleSpec, c: &AutoCfg) -> Route {
     Route::build(&centre, &width, limits_for(car, road.kind.surface(), f32::MAX, true), c)
 }
 
+/// The whole drive: the liaison, the city streets between its end and the stage start, then the stage, as one route with
+/// the grip of each part, ending in a standstill. `None` when the level has no stage.
+pub fn chain_route(t: &super::terrain::Terrain, car: &VehicleSpec, c: &AutoCfg) -> Option<Route> {
+    use super::roads::RoadKind;
+    let net = t.roads()?;
+    let stage = net.roads.iter().find(|r| r.kind == RoadKind::Stage)?;
+    let mu_of = |s: super::surface::Surface| car.mu * grip(s, 1.0).mu;
+    let (mut centre, mut width, mut mu): (Vec<V3>, Vec<f32>, Vec<f32>) = (Vec::new(), Vec::new(), Vec::new());
+    let mut push = |p: V3, w: f32, m: f32| {
+        if centre.last().map_or(true, |q| (*q - p).len() > 1.5) { centre.push(p); width.push(w); mu.push(m); }
+    };
+    if let Some(l) = net.roads.iter().find(|r| r.kind == RoadKind::Liaison) {
+        for p in &l.pts { push(p.pos, p.width, mu_of(l.kind.surface())); }
+        let (a, b) = (l.pts.last()?.pos, stage.pts.first()?.pos);
+        if let Some(site) = t.sites().into_iter().min_by(|x, y| ((x.centre - a).len()).partial_cmp(&(y.centre - a).len()).unwrap_or(std::cmp::Ordering::Equal)) {
+            for p in streets::city_path(&site, a, b) { push(p, 12.0, mu_of(super::surface::Surface::Asphalt)); }
+        }
+    }
+    for p in &stage.pts { push(p.pos, p.width, mu_of(stage.kind.surface())); }
+    if centre.len() < 7 { return None; }
+    let lim = Limits { mu: 1.0, v_max: car.max_speed, accel: 0.5 * car.engine_force / car.mass, stop_at_end: true };
+    Some(Route::build_with(&centre, &width, &mu, lim, c))
+}
+
 impl Autopilot {
     /// An autopilot for a car that is already on (or next to) `route`.
     pub fn on_route(route: Route, car: VehicleSpec, v: &Vehicle) -> Autopilot {
@@ -51,18 +76,18 @@ impl Autopilot {
         Autopilot { route, car, cfg: cfg(), idx, stuck: 0.0, next: None, joined_at: None, recoveries: 0 }
     }
 
-    /// Starts from wherever the car is: on the stage it joins at the nearest point, elsewhere it first drives a field
-    /// route to the nearest stage point. `None` when the level has no stage.
+    /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
+    /// the city streets, the stage), elsewhere it first drives a field route to the nearest road point. `None` when the
+    /// level has no stage.
     pub fn start(t: &super::terrain::Terrain, v: &Vehicle, car: VehicleSpec) -> Option<Autopilot> {
-        let stage = t.roads()?.roads.iter().find(|r| r.kind == super::roads::RoadKind::Stage)?;
         let c = cfg();
-        let stage_route = route_for_road(stage, &car, &c);
-        let (k, d) = stage_route.nearest(v.pos.x, v.pos.z);
-        if d <= 15.0 { return Some(Autopilot::on_route(stage_route, car, v)); }
-        let to = stage_route.p[k];
-        let Some(field) = join::field_route(t, &car, (v.pos.x, v.pos.z), (to.x, to.z), &c) else { return Some(Autopilot::on_route(stage_route, car, v)) };
+        let chain = chain_route(t, &car, &c)?;
+        let (k, d) = chain.nearest(v.pos.x, v.pos.z);
+        if d <= 15.0 { return Some(Autopilot::on_route(chain, car, v)); }
+        let to = chain.p[k];
+        let Some(field) = join::field_route(t, &car, (v.pos.x, v.pos.z), (to.x, to.z), &c) else { return Some(Autopilot::on_route(chain, car, v)) };
         let mut ap = Autopilot::on_route(field, car, v);
-        ap.next = Some((stage_route, k));
+        ap.next = Some((chain, k));
         Some(ap)
     }
 

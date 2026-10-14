@@ -19,16 +19,20 @@ fn xz(a: V3) -> (f32, f32) { (a.x, a.z) }
 impl Route {
     /// `centre` and `width` are the road's points (about 4 m apart) and their widths.
     pub fn build(centre: &[V3], width: &[f32], lim: Limits, cfg: &AutoCfg) -> Route {
+        Route::build_with(centre, width, &vec![lim.mu; centre.len()], lim, cfg)
+    }
+
+    /// As `build`, with the grip `mu` of the ground at every point (asphalt, city streets, gravel on one route).
+    pub fn build_with(centre: &[V3], width: &[f32], mu: &[f32], lim: Limits, cfg: &AutoCfg) -> Route {
         let n = centre.len();
-        assert!(n >= 3 && width.len() == n, "a route needs at least three points");
+        assert!(n >= 3 && width.len() == n && mu.len() == n, "a route needs at least three points");
         let p = taut(centre, width, cfg.offset_max);
         let mut s = vec![0.0f32; n];
         for i in 1..n { s[i] = s[i - 1] + ((p[i].x - p[i - 1].x).hypot(p[i].z - p[i - 1].z)).max(1e-3); }
         // curvature, widened to the worst of +-3 points so the car brakes before the bend
         let raw: Vec<f32> = (0..n).map(|i| if i == 0 || i == n - 1 { 0.0 } else { let r = radius(xz(p[i - 1]), xz(p[i]), xz(p[i + 1])); if r.is_finite() { 1.0 / r } else { 0.0 } }).collect();
         let kappa: Vec<f32> = (0..n).map(|i| raw[i.saturating_sub(3)..=(i + 3).min(n - 1)].iter().cloned().fold(0.0, f32::max)).collect();
-        let a_lat = cfg.lat_factor * lim.mu * G;
-        let mut speed: Vec<f32> = kappa.iter().map(|k| if *k > 1e-5 { (a_lat / k).sqrt().min(lim.v_max) } else { lim.v_max }).collect();
+        let mut speed: Vec<f32> = (0..n).map(|i| if kappa[i] > 1e-5 { (cfg.lat_factor * mu[i] * G / kappa[i]).sqrt().min(lim.v_max) } else { lim.v_max }).collect();
         // crests: where the profile is convex the car must stay planted (or at least land tamely)
         for i in 2..n - 2 {
             let (ds0, ds1) = (s[i] - s[i - 1], s[i + 1] - s[i]);
@@ -38,10 +42,9 @@ impl Route {
         }
         if lim.stop_at_end { speed[n - 1] = 0.0; }
         // the braking distance (backward) and the engine (forward), with the slope
-        let a_brake = cfg.brake_factor * lim.mu * G;
         for i in (0..n - 1).rev() {
             let ds = s[i + 1] - s[i]; let dy = p[i + 1].y - p[i].y;
-            let a = (a_brake + G * dy / ds).max(0.5);
+            let a = (cfg.brake_factor * mu[i].min(mu[i + 1]) * G + G * dy / ds).max(0.5);
             speed[i] = speed[i].min((speed[i + 1] * speed[i + 1] + 2.0 * a * ds).sqrt());
         }
         for i in 0..n - 1 {
