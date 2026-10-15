@@ -8,6 +8,7 @@ struct U {
 @group(0) @binding(2) var shadow_smp: sampler_comparison;
 @group(0) @binding(5) var atlas: texture_2d<f32>;
 @group(0) @binding(6) var atlas_smp: sampler;   // height atlas (R16Float, 8x8 tiles of 64x64 texels, 2 m per texel)
+@group(0) @binding(7) var dep_tex: texture_2d<f32>;   // the settled dust layer of the ground window (R = amount), 64 x 64 cells of 1 m
 @group(0) @binding(3) var mat_tex: texture_2d_array<f32>;
 @group(0) @binding(4) var mat_smp: sampler;
 
@@ -192,6 +193,25 @@ fn mat_sample(layer: i32, uv: vec2<f32>) -> vec3<f32> {
     return textureSample(mat_tex, mat_smp, uv, layer).rgb;
 }
 
+// how much dust has settled at a ground position: bilinear over the window's cells (the window's first cell is in mode.yz; 0 when the option is off)
+fn dust_layer(wp: vec3<f32>) -> f32 {
+    if (u.mode.w < 0.5) { return 0.0; }
+    let g = wp.xz - vec2<f32>(0.5);
+    let i = floor(g);
+    let f = g - i;
+    let b = u.mode.yz;
+    var s = 0.0;
+    for (var k = 0; k < 4; k++) {
+        let o = vec2<f32>(f32(k & 1), f32(k >> 1));
+        let c = i + o;
+        if (any(c < b) || any(c >= b + vec2<f32>(64.0))) { continue; }
+        let ci = vec2<i32>(c);
+        let t = textureLoad(dep_tex, vec2<i32>(((ci.x % 64) + 64) % 64, ((ci.y % 64) + 64) % 64), 0).x;
+        s = s + t * select(1.0 - f.x, f.x, (k & 1) == 1) * select(1.0 - f.y, f.y, (k >> 1) == 1);
+    }
+    return s;
+}
+
 @fragment fn fs_terrain(i: TOut) -> @location(0) vec4<f32> {
     let n = normalize(i.n);
     let uv = i.wp.xz * 0.25;
@@ -209,6 +229,7 @@ fn mat_sample(layer: i32, uv: vec2<f32>) -> vec3<f32> {
         let hn = (terrain_h(i.wp.x + 3.0, i.wp.z) + terrain_h(i.wp.x - 3.0, i.wp.z) + terrain_h(i.wp.x, i.wp.z + 3.0) + terrain_h(i.wp.x, i.wp.z - 3.0)) * 0.25;
         a = a * (1.0 - clamp((hn - i.wp.y) * 0.22, 0.0, 0.45) * conc_fade);
     }
+    a = mix(a, vec3<f32>(0.72, 0.58, 0.42), 0.5 * dust_layer(i.wp));   // settled dust
     return vec4<f32>(lit(a, i.wp, n), 1.0);
 }
 
@@ -485,6 +506,7 @@ struct RIn { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @loc
         col = col * (1.0 + 0.10 * (1.0 - smoothstep(0.0, 0.10, ac)) + 0.10 * smoothstep(0.72, 0.9, ac));
         alpha = 1.0 - smoothstep(0.86, 1.0, ac);
     }
+    col = mix(col, vec3<f32>(0.72, 0.58, 0.42), 0.5 * dust_layer(i.wp));   // settled dust
     return vec4<f32>(lit(col, i.wp, up), alpha);
 }
 

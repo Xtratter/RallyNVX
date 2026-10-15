@@ -157,6 +157,8 @@ pub struct Raster {
     car_key: [u32; 12],
     /// The signed distance field of the car's body mesh (for the dust's exact-shape option), rebuilt with the model; `sdf_serial` tells the dust a new one is there.
     car_sdf: Option<crate::game::sdf::Sdf>, sdf_serial: u32,
+    /// The settled dust layer the dust compute writes (R = amount) and the terrain and road shaders tint the ground by.
+    dep_tex: wgpu::Texture,
     atlas: HeightAtlas,
     atlas_tex: wgpu::Texture,
     hybrid: bool,
@@ -265,7 +267,12 @@ impl Raster {
                 ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false } },
             wgpu::BindGroupLayoutEntry { binding: 6, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering) },
+            wgpu::BindGroupLayoutEntry { binding: 7, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
+                ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false } },
         ] });
+        let dep_tex = device.create_texture(&wgpu::TextureDescriptor { label: Some("dust_layer"), size: wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1,
+            dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8Unorm, usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING, view_formats: &[] });
+        let dep_view = dep_tex.create_view(&Default::default());
         let bgl_shadow = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("raster_shadow"), entries: &[ubo(wgpu::ShaderStages::VERTEX)] });
         let bg_main = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("raster_main"), layout: &bgl_main, entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() },
@@ -275,6 +282,7 @@ impl Raster {
             wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&mat_smp) },
             wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&atlas_view) },
             wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(&atlas_smp) },
+            wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(&dep_view) },
         ] });
         let bg_shadow = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("raster_shadow"), layout: &bgl_shadow,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() }] });
@@ -355,7 +363,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_sdf: None, sdf_serial: 0, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -426,7 +434,7 @@ impl Raster {
             fog: [1.0 / 330.0, wv.time, 0., 0.], sky_top: [wv.daylight.sky_top[0], wv.daylight.sky_top[1], wv.daylight.sky_top[2], 0.],
             sky_hor: [wv.daylight.sky_hor[0], wv.daylight.sky_hor[1], wv.daylight.sky_hor[2], 0.],
             sun_col: [wv.daylight.sun_col[0], wv.daylight.sun_col[1], wv.daylight.sun_col[2], 0.],
-            mode: [self.hybrid as u8 as f32, 0., 0., 0.], cam_tile: [cx as f32, cz as f32, 0., 0.],
+            mode: { let b = crate::game::dust_ref::window_base([wv.vehicle.pos.x.floor() as i32, wv.vehicle.pos.z.floor() as i32]); [self.hybrid as u8 as f32, b[0] as f32, b[1] as f32, if wv.dust_gpu.as_ref().map_or(false, |f| f.opts & crate::game::dust::OPT_DEPOSIT != 0) { 1.0 } else { 0.0 }] }, cam_tile: [cx as f32, cz as f32, 0., 0.],
             moon: [wv.daylight.moon.x, wv.daylight.moon.y, wv.daylight.moon.z, 0.],
             disc: [wv.daylight.sun_disc.x, wv.daylight.sun_disc.y, wv.daylight.sun_disc.z, wv.daylight.night],
             hl_pos: [hc.x, hc.y, hc.z, if wv.lights.head { 1.0 } else { 0.0 }],
@@ -567,7 +575,7 @@ impl Raster {
             self.airflow = airflow_gpu::AirflowGpu::new(&self.adapter, &self.device, self.config.format);
         }
         if wv.dust_gpu.is_some() && self.dust_gpu.is_none() {
-            self.dust_gpu = Some(dust_gpu::DustGpu::new(&self.device));
+            self.dust_gpu = Some(dust_gpu::DustGpu::new(&self.device, &self.dep_tex));
             self.dust_render = Some(dust_gpu::DustRender::new(&self.device, &self.bgl_main_keep, &self.module_keep, self.config.format));
         }
         let dust_low = wv.dust_gpu.is_some() && self.dust_render.is_some();

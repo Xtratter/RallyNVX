@@ -26,6 +26,7 @@ struct U {
     bax2: vec4<f32>,
     sdf_o: vec4<f32>,   // the signed distance field of the body: its corner in the mesh frame, its voxel
     sdf_n: vec4<f32>,   // its size in voxels, 1 when there is one
+    rs: vec4<u32>,      // the reserved ring of lifted particles: its start (= the main ring's size), its size, the frame number, 0
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read_write> state: array<S>;
@@ -33,6 +34,9 @@ struct U {
 @group(0) @binding(4) var<storage, read> emits: array<S>;   // this frame's new particles from the wheels
 @group(0) @binding(7) var<storage, read> colliders: array<vec4<f32>>;   // per collider two vec4: (a, r) and (b, 0): trunk capsules and rock spheres
 @group(0) @binding(8) var<storage, read> ccells: array<vec4<u32>>;     // per cell of the ground window up to four collider indices + 1
+@group(0) @binding(9) var<storage, read_write> dep: array<atomic<u32>>;       // the settled layer per cell of the ground window (fixed point, 256 = one unit); the last element is the reserved ring's head
+@group(0) @binding(10) var<storage, read_write> dep_cell: array<vec2<i32>>;   // the world cell each slot holds now
+@group(0) @binding(11) var dep_img: texture_storage_2d<rgba8unorm, write>;      // the layer as a texture for the terrain and road shaders
 @group(0) @binding(3) var ground_tex: texture_2d<f32>;   // terrain heights of the window, toroidal (cell mod 64)
 @group(1) @binding(0) var grid_vel: texture_3d<f32>;     // the airflow's velocity relative to the car, in the car's frame
 @group(1) @binding(1) var grid_solid: texture_3d<f32>;
@@ -237,6 +241,61 @@ fn push_from(g: vec3<f32>, w: f32) -> vec3<f32> {
     return right_axis() * a.x + vec3<f32>(0.0, a.y, 0.0) + fwd_axis() * a.z;
 }
 
+// ---- the settled layer
+fn dep_slot(c: vec2<i32>) -> i32 { return ((c.y % WINDOW + WINDOW) % WINDOW) * WINDOW + ((c.x % WINDOW + WINDOW) % WINDOW); }
+fn add_deposit(p: vec3<f32>, amount: u32) {
+    let c = vec2<i32>(floor(p.xz));
+    let b = u.gw.xy;
+    if (any(c < b) || any(c >= b + vec2<i32>(WINDOW))) { return; }
+    atomicAdd(&dep[dep_slot(c)], amount);
+}
+fn hash_u(k: u32) -> f32 { return f32(pcg(k)) / 4294967295.0; }
+
+// per cell of the ground window: new cells start empty, the layer decays slowly, the car's wake lifts what lies in its way back into the air (new particles in the
+// reserved ring), and the result goes to the texture the ground is tinted by
+@compute @workgroup_size(64)
+fn dust_deposit(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let id = i32(gid.x);
+    if (id >= WINDOW * WINDOW) { return; }
+    let sl = vec2<i32>(id % WINDOW, id / WINDOW);
+    let b = u.gw.xy;
+    let cell = b + (((sl - b) % WINDOW) + WINDOW) % WINDOW;
+    if (any(dep_cell[id] != cell)) { dep_cell[id] = cell; atomicStore(&dep[id], 0u); }
+    var v = atomicLoad(&dep[id]);
+    if (v > 0u) {
+        atomicSub(&dep[id], v / 4096u);
+        v = atomicLoad(&dep[id]);
+        // the wake of the car: behind it, within its width and a little more
+        let q = vec2<f32>(cell) + vec2<f32>(0.5) - u.car.xz;
+        let f = fwd_axis(); let r = right_axis();
+        let along = q.x * f.x + q.y * f.z;
+        let lat = q.x * r.x + q.y * r.z;
+        let hw = u.body.x; let hl = u.body.y;
+        let w = smoothstep(-hl - 9.0, -hl - 1.0, along) * (1.0 - smoothstep(hl, hl + 1.0, along)) * (1.0 - smoothstep(hw + 0.5, hw + 1.5, abs(lat)));
+        let sp = clamp(u.ph2.y / 25.0, 0.0, 1.0);
+        let take = f32(v) * 0.16 * sp * sp * w;
+        var n = u32(take / 64.0 + hash_u(u32(id) * 977u + u.rs.z * 31u));
+        n = min(n, 3u);
+        if (n > 0u) {
+            atomicSub(&dep[id], min(v, n * 64u));
+            for (var k = 0u; k < n; k++) {
+                let kk = u32(id) * 131u + u.rs.z * 7919u + k * 17u;
+                let slot = u.rs.x + (atomicAdd(&dep[WINDOW * WINDOW], 1u) % u.rs.y);
+                let px = vec3<f32>(f32(cell.x) + hash_u(kk + 1u), ground(f32(cell.x) + 0.5, f32(cell.y) + 0.5) + 0.06, f32(cell.y) + hash_u(kk + 2u));
+                let vel = vec3<f32>(u.car_vel.x * 0.2 * hash_u(kk + 3u), 0.4 + 1.4 * hash_u(kk + 4u), u.car_vel.z * 0.2 * hash_u(kk + 5u));
+                var ns: S;
+                ns.a = vec4<f32>(px, 0.1);
+                ns.b = vec4<f32>(vel, 0.0);
+                ns.c = vec4<f32>(0.78, 0.62, 0.45, 3.5);
+                ns.d = vec4<f32>(0.0, hash_u(kk + 6u), 1.0, 0.0);
+                state[slot] = ns;
+            }
+            v = atomicLoad(&dep[id]);
+        }
+    }
+    textureStore(dep_img, sl, vec4<f32>(clamp(f32(v) / 1024.0, 0.0, 1.0), 0.0, 0.0, 1.0));
+}
+
 @compute @workgroup_size(64)
 fn dust_clear(@builtin(global_invocation_id) gid: vec3<u32>) {
     let n = box_cells();
@@ -248,7 +307,7 @@ fn dust_clear(@builtin(global_invocation_id) gid: vec3<u32>) {
 @compute @workgroup_size(64)
 fn dust_splat(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
-    if (i >= u.n.z || u.bx.w <= 0.0) { return; }
+    if (i >= u.n.z + u.rs.y || u.bx.w <= 0.0) { return; }
     if (i % 3u != 0u) { return; }   // one particle in three stands for all (the field is statistics): a third of the atomics, three times the mass
     let s = state[i];
     if (s.d.z < 0.5) { return; }
@@ -409,14 +468,14 @@ fn air_at(p: vec3<f32>, age: f32) -> vec3<f32> {
 @compute @workgroup_size(64)
 fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
-    if (i >= u.n.z) { return; }
+    if (i >= u.n.z + u.rs.y) { return; }
     var s = state[i];
     var dead = DI(vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0));
     if (s.d.z < 0.5) { render[i] = dead; return; }
     let dt = u.g.x;
     var pos = s.a.xyz; var vel = s.b.xyz; var age = s.b.w + dt;
     let life = s.c.w;
-    if (age >= life) { s.d.z = 0.0; state[i] = s; render[i] = dead; return; }
+    if (age >= life) { if ((u.n.w & 8u) != 0u && s.d.x < 1.5) { add_deposit(pos, 64u); } s.d.z = 0.0; state[i] = s; render[i] = dead; return; }
     let coarse = s.d.x > 0.5;
     if (s.d.x > 1.5) {   // a speck of grit: ballistic (gravity, a little drag), bounces and slides on the ground, never part of the dust field
         var sv = vel;
@@ -478,7 +537,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (world_on) { world_collide(&pos, &vel); }
     let g = ground(pos.x, pos.z) + 0.04;
     if (pos.y < g) {
-        if (coarse) { s.d.z = 0.0; state[i] = s; render[i] = dead; return; }
+        if (coarse) { if ((u.n.w & 8u) != 0u) { add_deposit(pos, 128u); } s.d.z = 0.0; state[i] = s; render[i] = dead; return; }
         pos.y = g;
         let sl = 1.0 - min(2.5 * dt, 1.0);
         if (world_on) {
