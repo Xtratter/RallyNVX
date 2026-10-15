@@ -146,19 +146,40 @@ fn shade_lite(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return shade_with(albedo, wp, n, 0.0, 0.0, shadow_basic(wp, n));
 }
 
+fn beam_one(lamp: vec3<f32>, fwd: vec3<f32>, right: vec3<f32>, p: vec3<f32>) -> f32 {
+    let d = p - lamp;
+    let dist = length(d);
+    if (dist < 0.05) { return 0.0; }
+    let l = d / dist;
+    let z = dot(l, fwd);
+    if (z <= 0.05) { return 0.0; }
+    let h = atan(dot(l, right) / z);
+    let v = atan(dot(l, cross(fwd, right)) / z);
+    let cut = 0.07 * smoothstep(0.0, 0.25, h);
+    let gv = 1.0 - smoothstep(cut, cut + 0.02, v);
+    let gh = 1.0 - smoothstep(0.35, 0.65, abs(h));
+    let hot = 0.6 + 0.4 * exp(-(h / 0.2) * (h / 0.2));
+    let att = 1.0 / (1.0 + (dist / 18.0) * (dist / 18.0));
+    return gv * gh * hot * att * clamp(1.0 - dist / 90.0, 0.0, 1.0);
+}
+// the low beam of both headlights at a world point (0..1), mirrored in `carlights::beam`; the lamps sit `lamps.w` either side of `hl_pos` across the axis
+fn headbeam(wp: vec3<f32>) -> f32 {
+    if (u.hl_pos.w <= 0.0) { return 0.0; }
+    let f = normalize(u.hl_dir.xyz);
+    let r = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), f));
+    let s = r * u.lamps.w;
+    return 0.5 * (beam_one(u.hl_pos.xyz - s, f, r, wp) + beam_one(u.hl_pos.xyz + s, f, r, wp));
+}
+
 fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: f32, sh: f32) -> vec3<f32> {
     let sun = normalize(u.sun.xyz);
     let diff = max(dot(n, sun), 0.0) * sh;
     let amb = mix(vec3<f32>(0.20, 0.22, 0.26) * mix(1.0, 0.12, u.disc.w), u.sky_top.rgb * 0.55, n.y * 0.5 + 0.5);
     var c = albedo * (u.sun_col.rgb * diff + amb);
     if (u.hl_pos.w > 0.0) {
-        let dv = wp - u.hl_pos.xyz;
-        let dist = length(dv);
-        let l = dv / max(dist, 0.001);
-        let cone = smoothstep(u.hl_dir.w, u.hl_dir.w + 0.06, dot(l, normalize(u.hl_dir.xyz)));
-        let fall = clamp(1.0 - dist / 55.0, 0.0, 1.0);
+        let l = normalize(wp - u.hl_pos.xyz);
         // a beam on a grazing surface (the ground far ahead) is weak by n.l alone: keep a floor so the beam reaches far
-        c = c + albedo * vec3<f32>(1.0, 0.93, 0.80) * (9.0 * cone * fall * (0.25 + 0.75 * max(dot(n, -l), 0.0)));
+        c = c + albedo * vec3<f32>(1.0, 0.93, 0.80) * (14.0 * headbeam(wp) * (0.25 + 0.75 * max(dot(n, -l), 0.0)));
     }
     if (u.tl_col.w > 0.0) {
         let dv = wp - u.tl_pos.xyz;
@@ -582,13 +603,7 @@ fn dust_vertex(vi: u32, ps: vec4<f32>, c: vec4<f32>, e: vec4<f32>, size: f32) ->
     let amb = (u.sky_hor.rgb * 0.4 + vec3<f32>(0.45)) * 0.5 * mix(1.0, 0.2, u.disc.w);
     var col = i.c.rgb * (amb + vec3<f32>(sun) * (0.55 + 0.3 * shape + 1.2 * fwd * sun));
     col = col * mix(0.82, 1.0, smoothstep(0.0, 0.8, r));   // the thick middle of a puff is shaded by the rest of it
-    if (u.hl_pos.w > 0.0) {
-        let dv = wp - u.hl_pos.xyz;
-        let dist = length(dv);
-        let l = dv / max(dist, 0.001);
-        let cone = smoothstep(u.hl_dir.w, u.hl_dir.w + 0.06, dot(l, normalize(u.hl_dir.xyz)));
-        col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (1.6 * cone * clamp(1.0 - dist / 55.0, 0.0, 1.0));
-    }
+    col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (2.6 * headbeam(wp));
     let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0);
     col = mix(col, u.sky_hor.rgb, f);
     return vec4<f32>(finish(col), a);
@@ -625,12 +640,7 @@ fn dust_pt(i: DOut) -> vec4<f32> {
     let ld = vec3<f32>(dot(sun_dir, vr), dot(sun_dir, vu), dot(sun_dir, vb));
     let sh = clamp(dot(n3, ld) * 0.5 + 0.5, 0.0, 1.0);
     col = col * (0.34 + 1.2 * sh);
-    if (u.hl_pos.w > 0.0) {
-        let dv = wp - u.hl_pos.xyz;
-        let dist = length(dv);
-        let cone = smoothstep(u.hl_dir.w, u.hl_dir.w + 0.06, dot(dv / max(dist, 0.001), normalize(u.hl_dir.xyz)));
-        col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (1.6 * cone * clamp(1.0 - dist / 55.0, 0.0, 1.0));
-    }
+    col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (2.6 * headbeam(wp));
     let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0) * 0.6;
     col = mix(col, u.sky_hor.rgb, f);
     return vec4<f32>(finish(col), a);
