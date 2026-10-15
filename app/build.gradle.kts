@@ -11,8 +11,8 @@ android {
         applicationId = "dev.starinin.rallynvx"
         minSdk = 28
         targetSdk = 34
-        versionCode = 39
-        versionName = "2.25.0"
+        versionCode = 40
+        versionName = "2.26.0"
         ndk { abiFilters += "arm64-v8a" }
     }
     buildTypes {

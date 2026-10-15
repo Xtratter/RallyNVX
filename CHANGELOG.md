@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.26.0 - physical dust
+
+- Changed: dust particles obey physics: air drag with relaxation time, fine and coarse classes (fine hangs and drifts, coarse falls), a wake behind the car, turbulence, wind that grows with height, wheel throw and settling; a nicer soft sprite lit by the sun and the headlights (numbers in `surfaces.json`, `dust_physics`)
+- Added: Settings, Dust: "Fluid (experimental)": the dust is a real fluid on the GPU (advection, pressure projection, the car as a solid) rendered as a volume; heavier, off by default
+
 ## 2.25.0 - aerodynamics
 
 - Added: car aerodynamics as physics: drag and downforce grow with the square of speed, downforce presses each axle separately, ground effect depends on the real ride height (suspension compression), sideslip adds drag, side force and loses downforce; numbers in `aero.json`
