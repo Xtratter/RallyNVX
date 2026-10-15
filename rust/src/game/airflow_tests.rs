@@ -58,3 +58,35 @@ fn huge_dt_does_not_blow_up() {
     for _ in 0..10 { a.step(0.5, 20, 0.5); }
     assert!(a.vel.iter().all(|v| v.iter().all(|x| x.is_finite())));
 }
+
+fn count(af: &Airflow) -> usize { af.solid.iter().filter(|s| s.is_some()).count() }
+fn vulpes() -> VehicleSpec { VehicleSpec::by_id("vulpes").expect("vulpes") }
+#[test]
+fn body_fills_cells_and_each_part_adds_some() {
+    let mut a = Airflow::new([48, 24, 96], 0.25); voxelize(&mut a, &vulpes(), 12.0);
+    let n0 = count(&a);
+    assert!(n0 > 100, "{n0}");
+    for part in 0..3 {
+        let mut s = vulpes();
+        match part { 0 => s.kit.splitter = 3, 1 => s.kit.wing = 3, _ => s.kit.underbody = 3 }
+        let mut b = Airflow::new([48, 24, 96], 0.25); voxelize(&mut b, &s, 12.0);
+        assert!(count(&b) > n0, "part {part}");
+    }
+}
+#[test]
+fn body_stays_inside_the_box_with_all_parts() {
+    for id in ["offroader", "vulpes"] {
+        let mut s = VehicleSpec::by_id(id).unwrap(); s.kit = crate::game::aero::AeroKit { splitter: 3, wing: 3, underbody: 3, wing_angle: 2 };
+        for (lo, hi) in body_boxes(&s, 0.15, 12.0) { assert!(lo[0] >= -6.0 && hi[0] <= 6.0 && lo[1] >= 0.0 && hi[1] <= 6.0 && lo[2] >= 0.0 && hi[2] <= 24.0, "{id}: {lo:?} {hi:?}"); }
+    }
+}
+#[test]
+fn the_car_in_the_wind_makes_a_wake() {
+    let mut a = Airflow::new([48, 24, 96], 0.25);
+    a.set_inflow([0.0, 0.0, -30.0]);
+    voxelize(&mut a, &vulpes(), 12.0);
+    for _ in 0..12 { a.step(1.0 / 60.0, 12, 0.3); }
+    assert!(a.vel.iter().all(|v| v.iter().all(|x| x.is_finite())));
+    let behind = a.speed_at([24, 5, 36]);   // ~1 m behind the tail, at mid height
+    assert!(behind < 20.0, "{behind}");
+}

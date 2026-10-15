@@ -1,5 +1,6 @@
 //! The airflow around the car (aero step 2, see docs/superpowers/specs/2026-10-15-airflow-design.md): the CPU reference solver in the car's
 //! frame (x lateral, y up, z forward) that the compute shaders mirror, and the voxel body.
+use super::vehicle::VehicleSpec;
 
 /// The numbers of `surfaces.json` -> `airflow`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -201,6 +202,32 @@ impl Airflow {
         m
     }
     pub fn speed_at(&self, c: [i32; 3]) -> f32 { let v = self.vel[self.idx(c)]; (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt() }
+}
+
+/// The car as boxes `(min, max)` in metres in the box's frame: x centred on the car, y up from the road, z forward with the car's centre at `car_z`.
+/// The body, plus what the garage parts add (see game/aero.rs): the splitter under the nose, the wing over the tail, the diffuser behind the underbody.
+pub fn body_boxes(spec: &VehicleSpec, ground_clear: f32, car_z: f32) -> Vec<([f32; 3], [f32; 3])> {
+    let (w, h, l) = (spec.size.x, spec.size.y, spec.size.z);
+    let (front, back) = (car_z + l * 0.5, car_z - l * 0.5);
+    let k = spec.kit;
+    let mut v = vec![([-w * 0.5, ground_clear, back], [w * 0.5, ground_clear + h, front])];
+    if k.splitter > 0 { v.push(([-w * 0.5, ground_clear * 0.6, front], [w * 0.5, ground_clear * 0.6 + 0.05, front + 0.1 + 0.08 * k.splitter as f32])); }
+    if k.wing > 0 { let y = ground_clear + h + 0.25; v.push(([-w * 0.5, y, back], [w * 0.5, y + 0.06 + 0.05 * k.wing_angle as f32, back + 0.9])); }
+    if k.underbody > 0 { v.push(([-w * 0.45, ground_clear * 0.5, back - 0.15 * k.underbody as f32], [w * 0.45, ground_clear + 0.15, back])); }
+    v
+}
+
+/// Marks the cells of the car's boxes solid (every box at least one cell thick, so the thin plates of the parts are not lost).
+pub fn voxelize(af: &mut Airflow, spec: &VehicleSpec, car_z: f32) {
+    let dx = af.dx;
+    let half_x = af.n[0] as f32 * dx * 0.5;
+    for (lo, hi) in body_boxes(spec, 0.15, car_z) {
+        let (mut lo, mut hi) = ([lo[0] + half_x, lo[1], lo[2]], [hi[0] + half_x, hi[1], hi[2]]);
+        for a in 0..3 { if hi[a] - lo[a] < dx { let m = (hi[a] + lo[a]) * 0.5; lo[a] = m - dx * 0.5; hi[a] = m + dx * 0.5; } }
+        // a cell belongs to the box when its centre is inside
+        let cell = |v: f32| (v / dx - 0.5).ceil() as i32;
+        af.set_solid_box([cell(lo[0]), cell(lo[1]), cell(lo[2])], [cell(hi[0]), cell(hi[1]), cell(hi[2])]);
+    }
 }
 
 #[cfg(test)]
