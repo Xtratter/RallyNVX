@@ -103,20 +103,20 @@ pub const MAX_EMITS: usize = 4096;
 
 /// How a surface's dust looks and lives on the GPU: how warm and light the loose-soil dust is (`tint` 0..1: asphalt has none), how long fine dust stays (seconds: real
 /// clouds behind a vehicle take half a minute to a minute to clear in still air, Goossens et al.; the fine fraction hardly settles), and whether it is tyre smoke or
-/// spray rather than dust (asphalt, water).
+/// spray rather than dust (asphalt, water), and what share of the emits are kept (grass: a turf holds the soil, little dust rises; Cowherd/EPA, Arizona DEQ).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct GpuLook { pub tint: f32, pub life: f32, pub smoke: bool }
+pub struct GpuLook { pub tint: f32, pub life: f32, pub smoke: bool, pub amount: f32 }
 
 pub fn gpu_look(s: super::surface::Surface) -> GpuLook {
     use super::surface::Surface::*;
     match s {
-        Gravel => GpuLook { tint: 1.0, life: 16.0, smoke: false },
-        Dirt => GpuLook { tint: 1.0, life: 14.0, smoke: false },
-        Sand => GpuLook { tint: 1.0, life: 20.0, smoke: false },
-        Grass => GpuLook { tint: 0.6, life: 6.0, smoke: false },
-        Rock => GpuLook { tint: 0.5, life: 8.0, smoke: false },
-        Asphalt => GpuLook { tint: 0.0, life: 4.0, smoke: true },
-        Water => GpuLook { tint: 0.0, life: 3.0, smoke: true },
+        Gravel => GpuLook { tint: 1.0, life: 16.0, smoke: false, amount: 1.0 },
+        Dirt => GpuLook { tint: 1.0, life: 14.0, smoke: false, amount: 1.0 },
+        Sand => GpuLook { tint: 1.0, life: 20.0, smoke: false, amount: 1.0 },
+        Grass => GpuLook { tint: 0.6, life: 5.0, smoke: false, amount: 0.25 },
+        Rock => GpuLook { tint: 0.5, life: 8.0, smoke: false, amount: 1.0 },
+        Asphalt => GpuLook { tint: 0.0, life: 4.0, smoke: true, amount: 1.0 },
+        Water => GpuLook { tint: 0.0, life: 3.0, smoke: true, amount: 1.0 },
     }
 }
 
@@ -245,7 +245,7 @@ impl Dust {
                 let vel = v3(-vh.x * ph.throw * kick + spray.x + (c - 0.5) * 1.5, (1.0 + 3.0 * info.slide.min(1.5) + e * 1.2) * if coarse { 1.1 } else { 0.9 }, -vh.z * ph.throw * kick + spray.z + (f - 0.5) * 1.5) + out_push;
                 let shade = 0.9 + 0.2 * g2;
                 let tone = if coarse { 0.82 } else { 1.0 };
-                self.push(P { pos, vel, age: 0.0, life: d.life * (0.75 + 0.5 * a) * if coarse { 0.4 } else { 1.0 }, size0: d.size * if coarse { 0.55 } else { 1.0 },
+                self.push(P { pos, vel, age: 0.0, life: d.life * (0.75 + 0.5 * a) * if coarse { 0.4 } else { 1.0 }, size0: d.size * if coarse { 0.8 } else { 1.0 },
                     color: [d.color[0] * shade * tone, d.color[1] * shade * tone, d.color[2] * shade * tone], coarse, seed: g2, speck: false, smoke: false });
             }
         }
@@ -308,16 +308,17 @@ impl Dust {
         let tone = if coarse { 0.82 } else { 1.0 };
         let pos = puff.centre + r;
         let look = gpu_look(info.surface);
+        if look.amount < 1.0 && self.rand() > look.amount { return; }   // turf holds the soil: little dust rises
         let base = gpu_colour(d.color, look);
         if look.smoke {
             // tyre smoke or spray: fine and pale, it hangs and rises a little, and is gone in seconds
             self.push(P { pos, vel: vel * 0.8, age: 0.0, life: look.life * (0.6 + 0.8 * a), size0: d.size * 1.3, color: [base[0] * shade, base[1] * shade, base[2] * shade], coarse: false, seed: g2, speck: false, smoke: true });
             return;
         }
-        self.push(P { pos, vel, age: 0.0, life: look.life * (0.7 + 0.6 * a) * if coarse { 0.2 } else { 1.0 }, size0: d.size * if coarse { 0.55 } else { 1.0 },
+        self.push(P { pos, vel, age: 0.0, life: look.life * (0.7 + 0.6 * a) * if coarse { 0.2 } else { 1.0 }, size0: d.size * if coarse { 0.8 } else { 1.0 },
             color: [base[0] * shade * tone, base[1] * shade * tone, base[2] * shade * tone], coarse, seed: g2, speck: false, smoke: false });
         // grit flung by the tyre: tiny dark flecks that fly in arcs and bounce
-        if look.tint > 0.5 && self.rand() < t.dust_gpu_specks * (0.4 + slide) {
+        if info.surface == super::surface::Surface::Gravel && self.rand() < t.dust_gpu_specks * (0.4 + slide) {
             let (sa, sb, sc, sd) = (self.rand(), self.rand(), self.rand(), self.rand());
             let sp = puff.vel * (0.7 + 0.6 * sa) + v3(sb - 0.5, 0.0, sc - 0.5) * 5.0 + v3(0.0, 1.0 + 3.0 * sd * (0.5 + slide), 0.0);
             let bright = 0.5 + 0.9 * self.rand();
