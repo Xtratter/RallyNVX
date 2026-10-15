@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-use super::garage::{default_levels, Garage, Upgrade, MAX_LEVEL, MAX_WING_ANGLE, NLEVELS};
+use super::garage::{default_levels, Garage, Upgrade, MAX_LEVEL, MAX_WHEEL_SET, MAX_WING_ANGLE, NLEVELS};
 use super::vehicle::VehicleSpec;
 
 pub const PROFILE_VERSION: u32 = 1;
@@ -19,7 +19,7 @@ impl Profile {
 
     pub fn to_json(&self) -> String {
         let cars: serde_json::Map<String, Value> = self.garage.cars.iter()
-            .map(|(id, l)| (id.clone(), json!({ "engine": l[0], "tyres": l[1], "suspension": l[2], "brakes": l[3], "splitter": l[4], "wing": l[5], "underbody": l[6], "wing_angle": l[7] }))).collect();
+            .map(|(id, l)| (id.clone(), json!({ "engine": l[0], "tyres": l[1], "suspension": l[2], "brakes": l[3], "splitter": l[4], "wing": l[5], "underbody": l[6], "wing_angle": l[7], "wheel_set": l[8] }))).collect();
         serde_json::to_string_pretty(&json!({ "version": self.version, "money": self.money,
             "garage": { "selected": self.garage.selected, "cars": cars } })).unwrap()
     }
@@ -39,7 +39,8 @@ impl Profile {
                     if VehicleSpec::by_id(id).is_none() { continue; }
                     let lv = |k: &str| l.get(k).and_then(Value::as_u64).unwrap_or(0).min(MAX_LEVEL as u64) as u8;
                     let angle = l.get("wing_angle").and_then(Value::as_u64).map_or(default_levels()[7], |a| a.min(MAX_WING_ANGLE as u64) as u8);
-                    let levels: [u8; NLEVELS] = [lv("engine"), lv("tyres"), lv("suspension"), lv("brakes"), lv("splitter"), lv("wing"), lv("underbody"), angle];
+                    let set = l.get("wheel_set").and_then(Value::as_u64).map_or(default_levels()[8], |a| a.min(MAX_WHEEL_SET as u64) as u8);
+                    let levels: [u8; NLEVELS] = [lv("engine"), lv("tyres"), lv("suspension"), lv("brakes"), lv("splitter"), lv("wing"), lv("underbody"), angle, set];
                     match garage.cars.iter_mut().find(|(i, _)| i == id) { Some(c) => c.1 = levels, None => garage.cars.push((id.to_string(), levels)) }
                 }
             }
@@ -82,6 +83,14 @@ impl Profile {
         if angle > MAX_WING_ANGLE { return false; }
         let Some(entry) = self.garage.cars.iter_mut().find(|(i, _)| i == id) else { return false };
         entry.1[7] = angle;
+        true
+    }
+
+    /// Sets the wheel set of an owned car: 0 tarmac, 1 gravel, 2 snow.
+    pub fn set_wheel_set(&mut self, id: &str, set: u8) -> bool {
+        if set > MAX_WHEEL_SET { return false; }
+        let Some(entry) = self.garage.cars.iter_mut().find(|(i, _)| i == id) else { return false };
+        entry.1[8] = set;
         true
     }
 

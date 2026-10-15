@@ -115,6 +115,15 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
         if (!car.owned || car.levels[5] == 0) angleBtn.alpha = 0.5f
         angleRow.addView(angleBtn, LinearLayout.LayoutParams(px(120f), px(44f)))
         panel.addView(angleRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(8f) })
+        // the wheel set: tarmac, gravel, snow (free; the preview shows it at once)
+        val setRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        setRow.addView(TextView(this).apply { text = t("Wheel set", "Комплект колёс"); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+        val setBtn = M3Widgets.button(this, GarageMath.wheelSetLabel(car.wheelSet, t("en", "ru") == "en"), M3Widgets.ButtonKind.TONAL) {
+            if (car.owned) { Native.garageWheelSet(profile, shown, (car.wheelSet + 1) % 3); if (running) Native.gameGarageCar(shown); refresh() }
+        }
+        if (!car.owned) setBtn.alpha = 0.5f
+        setRow.addView(setBtn, LinearLayout.LayoutParams(px(120f), px(44f)))
+        panel.addView(setRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(8f) })
     }
 
     private fun toast(s: String) = android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show()

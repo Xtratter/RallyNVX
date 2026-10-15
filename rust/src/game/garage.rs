@@ -3,11 +3,12 @@
 use super::vehicle::VehicleSpec;
 
 pub const MAX_LEVEL: u8 = 3;
-/// Levels of a car: the seven upgrades and, last, the wing angle (0 low drag, 1 mid, 2 high downforce).
-pub const NLEVELS: usize = 8;
+/// Levels of a car: the seven upgrades, then the wing angle (0 low drag, 1 mid, 2 high downforce) and, last, the wheel set (0 tarmac, 1 gravel, 2 snow).
+pub const NLEVELS: usize = 9;
 pub const MAX_WING_ANGLE: u8 = 2;
-/// A new car: no upgrades, the wing angle in the middle.
-pub fn default_levels() -> [u8; NLEVELS] { [0, 0, 0, 0, 0, 0, 0, 1] }
+pub const MAX_WHEEL_SET: u8 = 2;
+/// A new car: no upgrades, the wing angle in the middle, the tarmac wheels.
+pub fn default_levels() -> [u8; NLEVELS] { [0, 0, 0, 0, 0, 0, 0, 1, 0] }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Upgrade { Engine, Tyres, Suspension, Brakes, Splitter, Wing, Underbody }
@@ -35,6 +36,7 @@ pub fn apply(spec: &VehicleSpec, levels: [u8; NLEVELS]) -> VehicleSpec {
     s.damper *= SUSPENSION[l(2)];
     s.brake_force *= BRAKES[l(3)];
     s.kit = super::aero::AeroKit { splitter: l(4) as u8, wing: l(5) as u8, underbody: l(6) as u8, wing_angle: levels[7].min(MAX_WING_ANGLE) };
+    s.wheel_set = levels[8].min(MAX_WHEEL_SET);   // the look only for now: the renderer picks the wheel mesh by it
     s
 }
 
