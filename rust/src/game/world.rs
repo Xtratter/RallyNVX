@@ -361,6 +361,8 @@ impl World {
 pub struct WorldView<'a> {
     /// The fluid dust's car and wheel data when that dust level is on.
     pub fluid: Option<super::fluid::Packed>,
+    /// The airflow debug view's input when it is on.
+    pub airflow: Option<super::airflow::FlowIn>,
     pub signs: &'a [super::signs::Sign],
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
@@ -375,7 +377,7 @@ impl World {
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
         let dl = self.daylight();
-        WorldView { fluid: if self.dust.level() == 3 { Some(super::fluid::pack(&self.vehicle, &super::fluid::cfg(), &super::grip::table())) } else { None }, signs: if self.signs_on { self.terrain.signs() } else { &[] }, terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(), wind: self.wind(), cloud_off: self.cloud_off,
+        WorldView { airflow: if super::airflow::debug_on() { Some(super::airflow::flow_in(&self.vehicle, self.wind(), &super::airflow::cfg())) } else { None }, fluid: if self.dust.level() == 3 { Some(super::fluid::pack(&self.vehicle, &super::fluid::cfg(), &super::grip::table())) } else { None }, signs: if self.signs_on { self.terrain.signs() } else { &[] }, terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(), wind: self.wind(), cloud_off: self.cloud_off,
             time: self.time, cities: &self.cities, tracks: &self.tracks }
     }
 }

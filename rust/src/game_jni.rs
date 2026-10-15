@@ -116,6 +116,10 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameLightsDebug(_e: JNIEnv, _c: JClass, mode: jint) {
         crate::game::carlights::set_debug(if mode >= 0 { Some(mode as u8) } else { None });
     }
+    /// Debug/test: the airflow view (0 off, 1 on).
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAirflowDebug(_e: JNIEnv, _c: JClass, on: jint) {
+        crate::game::airflow::set_debug(on > 0);
+    }
     /// Debug/test: every level starts at this time of day (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk); negative clears it.
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameTimeOfDay(_e: JNIEnv, _c: JClass, phase: jfloat) {
         crate::game::daylight::set_debug_phase(if phase >= 0.0 { Some(phase) } else { None });

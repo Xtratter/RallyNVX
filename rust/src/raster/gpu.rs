@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{fluid_gpu, sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
+use super::{airflow_gpu, fluid_gpu, sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::scatter::{self, Bush};
@@ -143,6 +143,8 @@ pub struct Raster {
     pl_road: wgpu::RenderPipeline,
     pl_dust: wgpu::RenderPipeline,
     fluid: Option<fluid_gpu::FluidGpu>,
+    /// The airflow debug view: made on first use (`airflow_tried`), so nothing is allocated while it is off.
+    airflow: Option<airflow_gpu::AirflowGpu>, airflow_tried: bool, adapter: wgpu::Adapter,
     dust_buf: wgpu::Buffer,
     cache_seed: u64,
     car_key: [u32; 12],
@@ -331,7 +333,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, fluid, dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -532,6 +534,10 @@ impl Raster {
         if !mall.is_empty() { self.queue.write_buffer(&self.mbuf, 0, bytemuck::cast_slice(&mall)); }
         let dinst = dustgen::instances(&wv.dust, wv.cam_pos);
         if !dinst.is_empty() { self.queue.write_buffer(&self.dust_buf, 0, bytemuck::cast_slice(&dinst)); }
+        if wv.airflow.is_some() && self.airflow.is_none() && !self.airflow_tried {
+            self.airflow_tried = true;
+            self.airflow = airflow_gpu::AirflowGpu::new(&self.adapter, &self.device, self.config.format);
+        }
         let fluid_on = wv.fluid.is_some() && self.fluid.is_some();
         let dust_n = if fluid_on { 0 } else { dinst.len() as u32 };
         let mut all: Vec<Inst> = Vec::new();
@@ -555,6 +561,9 @@ impl Raster {
         let mut enc = self.device.create_command_encoder(&Default::default());
         if let (true, Some(fl), Some(pk)) = (fluid_on, self.fluid.as_mut(), wv.fluid.as_ref()) {
             fl.update(&self.device, &self.queue, &mut enc, wv.terrain, [wv.vehicle.pos.x, wv.vehicle.pos.y, wv.vehicle.pos.z], [wv.wind.x, wv.wind.y, wv.wind.z], pk, wv.time);
+        }
+        if let (Some(af), Some(fi)) = (self.airflow.as_mut(), wv.airflow.as_ref()) {
+            af.update(&self.device, &self.queue, &mut enc, fi.inflow, &fi.boxes, wv.time);
         }
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -649,6 +658,9 @@ impl Raster {
         }
         if let (true, Some(fl)) = (fluid_on, self.fluid.as_mut()) {
             fl.draw(&self.device, &self.queue, &mut enc, &view, &self.depth.1, &self.bg_main, (self.config.width, self.config.height));
+        }
+        if let (Some(af), Some(_)) = (self.airflow.as_ref(), wv.airflow.as_ref()) {
+            af.draw(&self.device, &mut enc, &view, (self.config.width, self.config.height));
         }
         self.queue.submit([enc.finish()]);
         frame.present();

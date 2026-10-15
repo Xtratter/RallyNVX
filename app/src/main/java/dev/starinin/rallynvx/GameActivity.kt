@@ -315,6 +315,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) {
         if (running) { Native.gameResize(w, hh); return }
         intent.getIntExtra("lights", -1).let { if (it >= 0) Native.gameLightsDebug(it) }   // debug/test: car lights
+        intent.getIntExtra("airflow", 0).let { if (it > 0) Native.gameAirflowDebug(it) }   // debug/test: the airflow slice
         intent.getFloatExtra("tod", -1f).let { if (it >= 0f) Native.gameTimeOfDay(it) }   // debug/test: time of day
         Native.gameStart(h.surface, w, hh, seed, profile, false)
         Native.gameQuality(Quality.index(this))

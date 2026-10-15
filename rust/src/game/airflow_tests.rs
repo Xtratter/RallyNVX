@@ -90,3 +90,14 @@ fn the_car_in_the_wind_makes_a_wake() {
     let behind = a.speed_at([24, 5, 36]);   // ~1 m behind the tail, at mid height
     assert!(behind < 20.0, "{behind}");
 }
+
+#[test]
+fn inflow_is_against_the_cars_motion() {
+    use crate::game::math::v3;
+    let mut v = Vehicle::new(vulpes(), v3(0.0, 1.0, 0.0), 0.0);
+    v.vel = v.forward() * 30.0;
+    let f = flow_in(&v, v3(0.0, 0.0, 0.0), &cfg());
+    assert!((f.inflow[2] + 30.0).abs() < 1e-3 && f.inflow[0].abs() < 1e-3 && f.inflow[1].abs() < 1e-3, "{:?}", f.inflow);
+    let tail = flow_in(&v, v.forward() * 10.0, &cfg());   // a tailwind of 10 m/s
+    assert!((tail.inflow[2] + 20.0).abs() < 1e-3, "{:?}", tail.inflow);
+}

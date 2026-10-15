@@ -1,6 +1,8 @@
 //! The airflow around the car (aero step 2, see docs/superpowers/specs/2026-10-15-airflow-design.md): the CPU reference solver in the car's
 //! frame (x lateral, y up, z forward) that the compute shaders mirror, and the voxel body.
-use super::vehicle::VehicleSpec;
+use super::vehicle::{Vehicle, VehicleSpec};
+use super::math::V3;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The numbers of `surfaces.json` -> `airflow`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -25,6 +27,15 @@ impl AirflowCfg {
 pub const WAKE_LEN: f32 = 6.0;
 pub const WAKE_RATE: f32 = 10.0;
 pub const WAKE_FLOOR: f32 = 0.2;
+
+static DEBUG: AtomicBool = AtomicBool::new(false);
+/// Debug/test: switches the airflow view on without editing `surfaces.json`.
+pub fn set_debug(on: bool) { DEBUG.store(on, Ordering::Relaxed); }
+/// Whether the airflow is computed and drawn (the debug switch or `airflow.debug` in `surfaces.json`).
+pub fn debug_on() -> bool {
+    static FROM_FILE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    DEBUG.load(Ordering::Relaxed) || *FROM_FILE.get_or_init(|| cfg().debug)
+}
 
 pub fn cfg() -> AirflowCfg { AirflowCfg::from_json(super::grip::EMBEDDED).expect("the embedded surfaces.json has a bad airflow block") }
 
@@ -236,6 +247,17 @@ pub fn voxelize(af: &mut Airflow, spec: &VehicleSpec, car_z: f32) {
     for (lo, hi) in thick_boxes(spec, dx, car_z) {
         af.set_solid_box([cell(lo[0] + half_x), cell(lo[1]), cell(lo[2])], [cell(hi[0] + half_x), cell(hi[1]), cell(hi[2])]);
     }
+}
+
+/// What the GPU solver needs of a frame: the air's velocity relative to the car in the car's frame, and the car's boxes in the grid.
+pub struct FlowIn { pub inflow: [f32; 3], pub boxes: Vec<([f32; 3], [f32; 3])> }
+
+pub fn flow_in(v: &Vehicle, wind: V3, cfg: &AirflowCfg) -> FlowIn {
+    let rel = v.vel - wind;
+    let (fwd, right) = (v.forward(), v.right());
+    // the air moves against the car's motion; the vertical part is the world's, so pitch and roll do not tilt the wind
+    let inflow = [-rel.dot(right), -rel.y, -rel.dot(fwd)];
+    FlowIn { inflow, boxes: thick_boxes(&v.spec, cfg.cell, cfg.n[2] as f32 * cfg.cell * 0.5) }
 }
 
 #[cfg(test)]
