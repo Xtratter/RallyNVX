@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.28.1 - dust fixes
+
+- Fixed: a dark rectangle in the dust cloud around the car (the airflow box's edge showed through the lighting); the dust no longer takes a light or shade term from the box
+- Fixed: grainy haze on grass, dirt and other loose surfaces: flatter sprite noise, less brightness variation between puffs, larger fine puffs
+
 ## 2.28.0 - realistic dust, camera views, real lamps
 
 - Changed: the dust (Settings, Aerodynamics On, levels Normal and Lots) is tens of thousands of separate soft particles on the GPU that follow the simulated air: curl-noise turbulence (divergence-free, three scales), the car's trailing vortices and vortex street, the recirculation behind the rear face, the wake that scours the road behind the car (the garage's aero parts strengthen it), plumes that rise, particles that push each other apart and drag the air (a density field in the airflow grid), self-shadowing by the sun through the dust, warm tan colour; it never passes through the body (pushed out with a margin) and starts under the wheel arches; drawn at 1/6 resolution (soft against the ground and the car) so it fits the 30 fps target (39-48 fps measured on the POCO F3); numbers in `surfaces.json` (`dust`, `dust_physics`, `dust_air`, `airflow`)
