@@ -1,7 +1,7 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
-    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>,
+    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>, susp: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
@@ -317,7 +317,13 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     @location(3) m0: vec4<f32>, @location(4) m1: vec4<f32>, @location(5) m2: vec4<f32>, @location(6) m3: vec4<f32>,
     @location(7) tint: vec4<f32>, @location(8) uv: vec2<f32>) -> MOut {
     var o: MOut;
-    var w = model_world(p, m0, m1, m2, m3);
+    var pm = p;
+    // a suspension part (material 14): lifted with its hub, by the corner's offset times the vertex's weight (red = weight, green = corner)
+    if (i32(c.a * 255.0 + 0.5) == 14) {
+        let corner = clamp(i32(c.g * 255.0 + 0.5), 0, 3);
+        pm.y = pm.y + u.susp[corner] * c.r;
+    }
+    var w = model_world(pm, m0, m1, m2, m3);
     // foliage (material 6) sways in the wind, more towards the top of the model
     if (i32(c.a * 255.0 + 0.5) == 6) {
         w = sway(w, max(p.y, 0.0) * length(m1.xyz));
@@ -382,6 +388,10 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
         else { on = max(select(0.0, 0.35, u.lamps.x > 0.5), max(select(0.0, 1.0, u.lamps.y > 0.5), select(0.0, 0.6, u.lamps.z > 0.5))); }
         let tint = select(vec3<f32>(1.0, 0.45, 0.35), vec3<f32>(1.0, 0.95, 0.85), m == 11);
         return vec4<f32>(shade(albedo * occl, i.wp, n, 0.9, 60.0) + finish(albedo * tint * on * 1.8), 1.0);
+    }
+    if (m == 14) {   // a suspension part: its texture only (the vertex colour carries the weight and the corner)
+        let sc = select(vec3<f32>(0.22), lv.rgb, has_uv);
+        return vec4<f32>(shade(sc * occl, i.wp, n, 0.5, 30.0), 1.0);
     }
     if (m == 13) {   // a brake disc: textured metal that glows orange-red when hot (stronger in the dark)
         let hot = i.heat * i.heat;

@@ -19,6 +19,8 @@ pub const MAT_CARINT_FRONT: u8 = 11;
 pub const MAT_CARINT_REAR: u8 = 12;
 /// A brake disc of a car model: textured metal that glows when hot (see `Vehicle::brake_heat`).
 pub const MAT_CARDISC: u8 = 13;
+/// A suspension part of a car model: textured; the vertex colour carries its weight (red: 1 at the hub, 0 at the far end) and its corner (green: 0 front-left (+x), 1 front-right, 2 rear-left, 3 rear-right); the shader lifts it by the hub's offset times the weight.
+pub const MAT_CARSUSP: u8 = 14;
 
 /// One vertex: position, normal, colour (rgb) with the material id in the alpha byte. 28 bytes.
 #[repr(C)]
@@ -196,6 +198,20 @@ pub fn car_wheel_poses(v: &Vehicle, spin: f32) -> [(Q, V3); 4] {
         // the rally wheel mesh has its rim face on the +x side: wheels on the -x side turn the mesh around (after the spin)
         let flip = if s.style == crate::game::vehicle::CarStyle::Rally && s.wheels[w].x < 0.0 { Q::axis_angle(v3(0., 1., 0.), std::f32::consts::PI) } else { Q::IDENT };
         out[w] = (v.rot.mul(steer).mul(Q::axis_angle(v3(1., 0., 0.), spin)).mul(flip), v.pos + v.rot.rotate(local));
+    }
+    out
+}
+
+/// How far each hub has moved up from its static place, in the body mesh's corner order (0 front-left (+x), 1 front-right, 2 rear-left, 3 rear-right), metres, clamped to +-0.25:
+/// the wheel's compression minus the static compression the body mesh sits at. The shader moves the suspension parts of a corner by it (`MAT_CARSUSP`).
+pub fn susp_offsets(v: &Vehicle) -> [f32; 4] {
+    let s = &v.spec;
+    let c0 = (s.mass * 9.81 / 4.0 / s.spring).min(s.rest);
+    let mut out = [0.0f32; 4];
+    for w in 0..4 {
+        let corner = (if s.wheels[w].z > 0.0 { 0 } else { 2 }) + (if s.wheels[w].x > 0.0 { 0 } else { 1 });
+        let d = v.comp[w] - c0;
+        out[corner] = if d.is_finite() { d.clamp(-0.25, 0.25) } else { 0.0 };
     }
     out
 }

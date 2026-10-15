@@ -48,3 +48,23 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
     for w in 0..4 { assert!((cal[w].0.rotate(v3(0., 1., 0.)) - spun[w].0.rotate(v3(0., 1., 0.))).len() < 1e-5, "the caliper's orientation is the wheel's with no spin"); }
     assert!((wheel[0].0.rotate(v3(0., 0., 1.)) - cal[0].0.rotate(v3(0., 0., 1.))).len() > 0.1, "the wheel itself has turned");
 }
+
+#[test] fn the_suspension_offsets_are_zero_at_rest_map_to_the_right_corner_and_stay_bounded() {
+    use crate::game::{math::v3, vehicle::{Vehicle, VehicleSpec}};
+    let spec = VehicleSpec::by_id("vulpes").unwrap();
+    let mut v = Vehicle::new(spec, v3(0.0, 1.0, 0.0), 0.0);
+    let c0 = (spec.mass * 9.81 / 4.0 / spec.spring).min(spec.rest);
+    v.comp = [c0; 4];
+    assert!(susp_offsets(&v).iter().all(|o| o.abs() < 1e-6), "the static compression is no offset");
+    for w in 0..4 {
+        let mut c = [c0; 4]; c[w] = c0 + 0.1; v.comp = c;
+        let o = susp_offsets(&v);
+        let corner = (if spec.wheels[w].z > 0.0 { 0 } else { 2 }) + (if spec.wheels[w].x > 0.0 { 0 } else { 1 });
+        assert!((o[corner] - 0.1).abs() < 1e-6 && o.iter().enumerate().all(|(k, x)| k == corner || x.abs() < 1e-6), "wheel {w} -> corner {corner}: {o:?}");
+    }
+    let mut all = std::collections::HashSet::new();
+    for w in 0..4 { all.insert((if spec.wheels[w].z > 0.0 { 0 } else { 2 }) + (if spec.wheels[w].x > 0.0 { 0 } else { 1 })); }
+    assert_eq!(all.len(), 4, "every wheel has its own corner");
+    v.comp = [9.0, -9.0, f32::NAN, 0.0];
+    assert!(susp_offsets(&v).iter().all(|o| o.is_finite() && o.abs() <= 0.25), "clamped and finite");
+}

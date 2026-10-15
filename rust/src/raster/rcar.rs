@@ -110,7 +110,7 @@ mod tests {
         assert!(b.tris() > 3000 && w.tris() > 200, "{} / {} triangles", b.tris(), w.tris());
         for m in [&b, &w] {
             assert!(m.idx.iter().all(|&i| (i as usize) < m.verts.len()));
-            for v in &m.verts { let l = (v.nrm[0].powi(2) + v.nrm[1].powi(2) + v.nrm[2].powi(2)).sqrt(); assert!((l - 1.0).abs() < 0.02, "normal {l}"); assert!(v.col[3] <= 5 || v.col[3] == 11 || v.col[3] == 12, "material id {}", v.col[3]); }
+            for v in &m.verts { let l = (v.nrm[0].powi(2) + v.nrm[1].powi(2) + v.nrm[2].powi(2)).sqrt(); assert!((l - 1.0).abs() < 0.02, "normal {l}"); assert!(v.col[3] <= 5 || (11..=14).contains(&v.col[3]), "material id {}", v.col[3]); }
         }
         let (lo, hi) = b.bounds();
         assert!(lo.y > -0.02 && hi.y < 1.6 && hi.z - lo.z > 3.8 && hi.z - lo.z < 4.2 && hi.x > 0.8 && lo.x < -0.8, "{lo:?} {hi:?}");
@@ -231,6 +231,21 @@ mod tests {
             assert!(((hi.y - lo.y) / 2.0 - 0.326).abs() < 0.01 && (lo.y + hi.y).abs() < 0.02 && (lo.z + hi.z).abs() < 0.02, "set {i}: {lo:?} {hi:?}");
         }
         assert!(p.wheel.verts[0].pos != p.alt_wheels[0].as_ref().unwrap().verts[0].pos && p.alt_wheels[0].as_ref().unwrap().verts[0].pos != p.alt_wheels[1].as_ref().unwrap().verts[0].pos, "the sets differ");
+    }
+    #[test] fn the_embedded_peugeot_carries_the_suspension_of_all_four_corners() {
+        let (b, _) = parse(PEUGEOT).unwrap();
+        let susp: Vec<_> = b.verts.iter().filter(|v| v.col[3] == 14).collect();
+        assert!(susp.len() > 1500, "{} suspension vertices", susp.len());
+        for corner in 0..4u8 {
+            let c: Vec<_> = susp.iter().filter(|v| v.col[1] == corner).collect();
+            assert!(c.len() > 300, "corner {corner}: {} vertices", c.len());
+            assert!(c.iter().any(|v| v.col[0] > 200) && c.iter().any(|v| v.col[0] < 60), "weights run from the hub (255) to the far end (0)");
+            // the corner is where its name says: +x on the left (corners 0 and 2), the front at +z (corners 0 and 1)
+            let (mx, mz) = (c.iter().map(|v| v.pos[0]).sum::<f32>() / c.len() as f32, c.iter().map(|v| v.pos[2]).sum::<f32>() / c.len() as f32);
+            assert!((mx > 0.0) == (corner % 2 == 0) && (mz > 0.0) == (corner < 2), "corner {corner} sits at x {mx:.2}, z {mz:.2}");
+        }
+        let textured = susp.iter().filter(|v| v.uv != NO_UV).count();
+        assert!(textured * 10 > susp.len() * 9, "{textured} of {} suspension vertices have a UV", susp.len());
     }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());
