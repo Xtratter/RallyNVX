@@ -92,6 +92,19 @@ pub fn beam(l: &Lamps, right: V3, p: V3) -> f32 { 0.5 * (beam_gain(l.head[0], l.
 /// How much of a lamp's glow shows from the camera: full along the lamp's axis, faint from the side, nothing from behind.
 pub fn glow_factor(axis: V3, to_cam: V3) -> f32 { let c = axis.dot(to_cam); if c <= 0.0 { 0.0 } else { c.powf(2.5) } }
 
+/// The glows to draw: for every lit lamp its position, colour and strength (0..1, the viewing angle's `glow_factor`). Front lamps shine along `fwd`, rear lamps along `-fwd`.
+pub fn glows(l: &CarLights, lamps: &Lamps, cam: V3, fwd: V3) -> Vec<(V3, [f32; 3], f32)> {
+    let mut out = Vec::new();
+    let mut add = |p: V3, col: [f32; 3], axis: V3, k: f32| out.push((p, col, k * glow_factor(axis, (cam - p).norm())));
+    if l.head {
+        for p in lamps.head { add(p, [1.0, 0.95, 0.8], fwd, 1.0); }
+        for p in lamps.pos { add(p, [1.0, 0.95, 0.8], fwd, 0.45); }
+    }
+    if l.brake || l.head { for p in lamps.tail { add(p, [1.0, 0.05, 0.03], -fwd, if l.brake { 1.0 } else { 0.3 }); } }
+    if l.reverse { for p in lamps.rev { add(p, [1.0, 1.0, 0.95], -fwd, 0.8); } }
+    out
+}
+
 #[cfg(test)]
 #[path = "carlights_tests.rs"]
 mod tests;

@@ -115,3 +115,18 @@ fn vulpes() -> VehicleSpec { VehicleSpec::by_id("vulpes").expect("vulpes") }
     for p in l.pos { assert!((p - v.pos).dot(v.forward()) > v.spec.size.z * 0.35); }
     assert!(((l.pos[0] - v.pos).dot(v.right()) + (l.pos[1] - v.pos).dot(v.right())).abs() < 1e-3);
 }
+
+#[test] fn lit_lamps_glow_only_towards_the_viewer() {
+    let v = settled(vulpes()); let lm = lamps(&v);
+    let on = CarLights { head: true, brake: true, reverse: false };
+    let front_cam = v.pos + v.forward() * 20.0 + v3(0.0, 1.0, 0.0);
+    let g = glows(&on, &lm, front_cam, v.forward());
+    let front: Vec<_> = g.iter().filter(|g| (g.0 - v.pos).dot(v.forward()) > 0.0).collect();
+    let rear: Vec<_> = g.iter().filter(|g| (g.0 - v.pos).dot(v.forward()) < 0.0).collect();
+    assert!(front.len() == 4 && front.iter().all(|g| g.2 > 0.3), "two headlights and two position lamps");
+    assert!(rear.iter().all(|g| g.2 == 0.0), "tail glow is not seen from the front");
+    let rear_cam = v.pos - v.forward() * 20.0 + v3(0.0, 1.0, 0.0);
+    let g = glows(&on, &lm, rear_cam, v.forward());
+    assert!(g.iter().filter(|g| (g.0 - v.pos).dot(v.forward()) < 0.0).all(|g| g.2 > 0.5 && g.1[0] > g.1[2]), "red brake lights from behind");
+    assert!(glows(&CarLights::default(), &lm, front_cam, v.forward()).is_empty(), "lamps off: no glow");
+}

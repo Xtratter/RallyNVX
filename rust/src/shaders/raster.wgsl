@@ -562,6 +562,16 @@ fn dust_vertex(vi: u32, ps: vec4<f32>, c: vec4<f32>, e: vec4<f32>, size: f32) ->
     if (e.z > 1.5) { o.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0); }   // the specks are drawn by their own pass at full resolution
     return o;
 }
+// the glow around a lit lamp: a billboard with a bright small core and a wide soft falloff, added to the picture
+@vertex fn vs_halo(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>, @location(2) e: vec4<f32>) -> DOut {
+    return dust_vertex(vi, ps, c, e, ps.w);
+}
+@fragment fn fs_halo(i: DOut) -> @location(0) vec4<f32> {
+    let r = length(i.uv);
+    let edge = 1.0 - smoothstep(0.7, 1.0, r);
+    let g = (0.75 * exp(-r * r * 14.0) + 0.25 * exp(-r * 3.0)) * edge;   // the core, then a long soft tail
+    return vec4<f32>(i.c.rgb * (i.c.a * g), 0.0);
+}
 // the flying specks of grit: tiny, so never smaller than a pixel or two on the screen
 @vertex fn vs_dust_specks(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>, @location(2) e: vec4<f32>) -> DOut {
     let size = max(ps.w, 0.0013 * length(ps.xyz - u.cam.xyz));
