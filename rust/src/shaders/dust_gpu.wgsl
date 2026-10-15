@@ -627,7 +627,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
             let f = fld_at(b);
             push = push_from(f.xyz, w);
             light = mix(1.0, f.w, w);
-            shade = mix(1.0, 0.9, smoothstep(0.2, 2.0, mass_at(b)) * w);
+            shade = mix(1.0, 0.96, smoothstep(0.2, 2.0, mass_at(b)) * w);
         }
     }
     let target_v = vec3<f32>(air.x, air.y - settle, air.z);
@@ -697,5 +697,5 @@ fn dust_field_light(@builtin(global_invocation_id) gid: vec3<u32>) {
     let step_v = sb / max(max(abs(sb.x), abs(sb.y)), max(abs(sb.z), 0.0001));
     var acc = 0.0;
     for (var j = 1; j <= 6; j++) { acc = acc + mass_cell(vec3<i32>(floor(vec3<f32>(c) + vec3<f32>(0.5) + step_v * f32(j)))); }
-    fld[id] = vec4<f32>(g, mix(0.5, 1.0, exp(-u.sun.w * acc * 0.4)));
+    fld[id] = vec4<f32>(g, mix(0.82, 1.0, exp(-u.sun.w * acc * 0.4)));
 }

@@ -11,6 +11,6 @@
   "wind": { "speed": 2.5, "gust": 0.35 },
   "fluid": { "cell": 1.0, "nx": 96, "ny": 16, "nz": 96, "iterations": 8, "settle": 0.35, "decay": 0.12, "inject": 5.0, "absorb": 1.5, "drag": 0.6, "steps": 32 },
   "dust_physics": { "tau_fine": 0.25, "tau_coarse": 0.8, "settle_fine": 0.06, "settle_coarse": 1.1, "coarse_share": 0.22, "wake_gain": 0.9, "wake_len": 9.0, "turbulence": 0.55, "throw": 0.5, "vortex": 0.35, "street": 0.16, "plume_lift": 0.12, "plume_height": 1.7 },
-  "dust_air": { "push": 12.0, "drag": 0.35, "drag_max": 0.5, "mass_fine": 0.05, "mass_coarse": 0.15, "shadow_k": 0.5, "pbd_h": 0.45, "pbd_spacing": 0.35, "pbd_visc": 0.05, "pbd_iters": 2 },
+  "dust_air": { "push": 12.0, "drag": 0.35, "drag_max": 0.5, "mass_fine": 0.05, "mass_coarse": 0.15, "shadow_k": 0.3, "pbd_h": 0.45, "pbd_spacing": 0.35, "pbd_visc": 0.05, "pbd_iters": 2 },
   "airflow": { "cell": 0.3, "nx": 40, "ny": 20, "nz": 80, "iterations": 12, "substeps": 1, "confinement": 0.4, "debug": 0 }
 }
