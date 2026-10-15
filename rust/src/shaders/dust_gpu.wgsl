@@ -12,11 +12,17 @@ struct U {
     g: vec4<f32>,       // dt, time, ground y, 0
     wind: vec4<f32>,
     ph: vec4<f32>,      // tau fine, tau coarse, settle fine, settle coarse
+    ph2: vec4<f32>,     // turbulence, the horizontal speed of the car, 0, 0
+    car: vec4<f32>,     // car position, yaw
+    car_vel: vec4<f32>,
+    bx: vec4<f32>,      // the airflow box in metres (x, y, z) and its cell; cell 0 = no airflow
     emits: array<S, 64>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read_write> state: array<S>;
 @group(0) @binding(2) var<storage, read_write> render: array<DI>;
+@group(1) @binding(0) var grid_vel: texture_3d<f32>;     // the airflow's velocity relative to the car, in the car's frame
+@group(1) @binding(1) var grid_solid: texture_3d<f32>;
 
 @compute @workgroup_size(64)
 fn emit(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -25,10 +31,70 @@ fn emit(@builtin(global_invocation_id) gid: vec3<u32>) {
     state[(u.n.y + i) % u.n.z] = u.emits[i];
 }
 
-// the wind: weaker near the ground (the CPU path's `air_velocity` without the wake and the turbulence)
-fn air_at(p: vec3<f32>) -> vec3<f32> {
+// the wind: weaker near the ground (the CPU path's `air_velocity` without the wake)
+fn wind_at(p: vec3<f32>) -> vec3<f32> {
     let h = max(p.y - u.g.z, 0.0);
     return u.wind.xyz * (0.35 + 0.65 * min(h / 4.0, 1.0));
+}
+// the small-scale turbulence the grid cannot carry
+fn turbulence(p: vec3<f32>) -> vec3<f32> {
+    let t = u.g.y;
+    let amp = u.ph2.x * (0.35 + 0.05 * u.ph2.y);
+    let n = vec3<f32>(sin(p.y * 0.9 + t * 1.7 + p.z * 0.35) + 0.5 * sin(p.z * 1.9 - t * 2.3),
+        0.6 * sin(p.x * 0.8 + t * 1.1 + p.z * 0.5),
+        sin(p.y * 1.1 - t * 1.5 + p.x * 0.4) + 0.5 * sin(p.x * 2.1 + t * 2.9));
+    return n * amp;
+}
+// the car's axes on the ground plane: forward (sin yaw, 0, cos yaw), right (-cos yaw, 0, sin yaw)
+fn fwd_axis() -> vec3<f32> { return vec3<f32>(sin(u.car.w), 0.0, cos(u.car.w)); }
+fn right_axis() -> vec3<f32> { let f = fwd_axis(); return vec3<f32>(-f.z, 0.0, f.x); }
+// a world position in the box's coordinates (metres from its corner), as game/dust_ref.rs::to_box
+fn to_box(p: vec3<f32>) -> vec3<f32> {
+    let q = p - u.car.xyz;
+    return vec3<f32>(dot(q, right_axis()) + u.bx.x * 0.5, p.y - u.g.z, dot(q, fwd_axis()) + u.bx.z * 0.5);
+}
+fn box_weight(c: vec3<f32>) -> f32 {
+    if (c.y < 0.0) { return 0.0; }
+    let d = min(min(min(c.x, u.bx.x - c.x), u.bx.y - c.y), min(c.z, u.bx.z - c.z));
+    return smoothstep(0.0, 1.5, d);
+}
+fn grid_load(c: vec3<i32>) -> vec3<f32> {
+    let n = vec3<i32>(textureDimensions(grid_vel));
+    return textureLoad(grid_vel, clamp(c, vec3<i32>(0), n - vec3<i32>(1)), 0).xyz;
+}
+fn grid_sample(b: vec3<f32>) -> vec3<f32> {
+    let g = b / u.bx.w - vec3<f32>(0.5);
+    let i = floor(g);
+    let f = g - i;
+    let c = vec3<i32>(i);
+    let x00 = mix(grid_load(c), grid_load(c + vec3<i32>(1, 0, 0)), f.x);
+    let x10 = mix(grid_load(c + vec3<i32>(0, 1, 0)), grid_load(c + vec3<i32>(1, 1, 0)), f.x);
+    let x01 = mix(grid_load(c + vec3<i32>(0, 0, 1)), grid_load(c + vec3<i32>(1, 0, 1)), f.x);
+    let x11 = mix(grid_load(c + vec3<i32>(0, 1, 1)), grid_load(c + vec3<i32>(1, 1, 1)), f.x);
+    return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
+}
+fn in_solid(p: vec3<f32>) -> bool {
+    if (u.bx.w <= 0.0) { return false; }
+    let b = to_box(p) / u.bx.w;
+    let n = vec3<i32>(textureDimensions(grid_solid));
+    let c = vec3<i32>(floor(b));
+    if (any(c < vec3<i32>(0)) || any(c >= n)) { return false; }
+    return textureLoad(grid_solid, c, 0).x > 0.5;
+}
+// the world air velocity: the box's air inside (relative to the car, in the car's frame), the wind outside, blended at the faces
+fn air_at(p: vec3<f32>) -> vec3<f32> {
+    let outside = wind_at(p);
+    var air = outside;
+    if (u.bx.w > 0.0) {
+        let b = to_box(p);
+        let w = box_weight(b);
+        if (w > 0.0) {
+            let gv = grid_sample(b);
+            let inside = u.car_vel.xyz + right_axis() * gv.x + vec3<f32>(0.0, gv.y, 0.0) + fwd_axis() * gv.z;
+            air = outside + (inside - outside) * w;
+        }
+    }
+    return air + turbulence(p);
 }
 
 @compute @workgroup_size(64)
@@ -50,7 +116,9 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let target_v = vec3<f32>(air.x, air.y - settle, air.z);
     let k = 1.0 - exp(-dt / tau);
     vel = vel + (target_v - vel) * k;
+    let before = pos;
     pos = pos + vel * dt;
+    if (in_solid(pos)) { pos = before; vel = vel * -0.2; }   // the car's body: it does not go through
     let g = u.g.z + 0.04;
     if (pos.y < g) {
         if (coarse) { s.d.z = 0.0; state[i] = s; render[i] = dead; return; }

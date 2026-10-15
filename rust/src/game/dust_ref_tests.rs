@@ -51,3 +51,49 @@ fn render_fades_in_and_out() {
     assert!(mid > 0.3 && end < 0.01, "{mid} {end}");
     assert!(render(&p).size > p.size0);
 }
+
+const SIZE: [f32; 3] = [12.0, 6.0, 24.0];
+
+#[test]
+fn box_coordinates_follow_the_car() {
+    for yaw in [0.0f32, 0.7, 2.0, -1.3, 3.0] {
+        let car = v3(10.0, 3.0, -4.0);
+        let c = to_box(car, car, yaw, 2.0, SIZE);
+        assert!((c[0] - 6.0).abs() < 1e-4 && (c[2] - 12.0).abs() < 1e-4 && (c[1] - 1.0).abs() < 1e-4, "{c:?}");   // the car's centre is the box's middle
+        let ahead = car + v3(yaw.sin(), 0.0, yaw.cos()) * 5.0;
+        assert!((to_box(ahead, car, yaw, 2.0, SIZE)[2] - 17.0).abs() < 1e-4, "5 m ahead is 5 m further along z");
+        // a box vector along z is the car's forward in the world
+        let d = from_box_dir(v3(0.0, 0.0, 1.0), yaw);
+        assert!((d.x - yaw.sin()).abs() < 1e-5 && (d.z - yaw.cos()).abs() < 1e-5);
+    }
+}
+#[test]
+fn the_box_weight_is_one_inside_zero_outside_and_continuous() {
+    assert!((box_weight([6.0, 3.0, 12.0], SIZE) - 1.0).abs() < 1e-6);
+    assert_eq!(box_weight([-0.5, 3.0, 12.0], SIZE), 0.0);
+    assert_eq!(box_weight([6.0, -0.2, 12.0], SIZE), 0.0);   // below the road
+    assert_eq!(box_weight([6.0, 3.0, 30.0], SIZE), 0.0);
+    let mut last = box_weight([0.0, 3.0, 12.0], SIZE);
+    for i in 1..=200 { let w = box_weight([i as f32 * 0.02, 3.0, 12.0], SIZE); assert!((w - last).abs() < 0.03, "jump at {i}: {last} -> {w}"); last = w; }
+    assert!(box_weight([0.75, 3.0, 12.0], SIZE) > 0.3 && box_weight([0.75, 3.0, 12.0], SIZE) < 0.7);
+}
+#[test]
+fn air_in_still_air_is_the_wind_for_a_yawed_moving_car() {
+    // the grid holds the air relative to the car: against its motion, plus the wind
+    let (yaw, wind) = (0.9f32, v3(2.0, 0.0, -1.0));
+    let car_vel = v3(yaw.sin(), 0.0, yaw.cos()) * 20.0;
+    let rel = car_vel - wind;
+    let (f, r) = (v3(yaw.sin(), 0.0, yaw.cos()), v3(-yaw.cos(), 0.0, yaw.sin()));
+    let grid = v3(-rel.dot(r), 0.0, -rel.dot(f));
+    let car = v3(0.0, 1.0, 0.0);
+    let a = air_in_box(car, car, car_vel, yaw, 0.0, grid, v3(9.0, 9.0, 9.0), SIZE);
+    assert!((a - wind).len() < 1e-3, "{a:?}");
+    let far = air_in_box(v3(100.0, 1.0, 0.0), car, car_vel, yaw, 0.0, grid, v3(9.0, 9.0, 9.0), SIZE);
+    assert!((far - v3(9.0, 9.0, 9.0)).len() < 1e-4, "{far:?}");
+}
+#[test]
+fn turbulence_is_finite_and_grows_with_speed() {
+    let ph = phys();
+    let (a, b) = (turbulence(v3(1.0, 2.0, 3.0), 4.0, 0.0, &ph), turbulence(v3(1.0, 2.0, 3.0), 4.0, 30.0, &ph));
+    assert!(a.is_finite() && b.is_finite() && b.len() > a.len());
+}

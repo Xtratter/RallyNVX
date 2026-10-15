@@ -565,9 +565,12 @@ impl Raster {
         if let (true, Some(fl), Some(pk)) = (fluid_on, self.fluid.as_mut(), wv.fluid.as_ref()) {
             fl.update(&self.device, &self.queue, &mut enc, wv.terrain, [wv.vehicle.pos.x, wv.vehicle.pos.y, wv.vehicle.pos.z], [wv.wind.x, wv.wind.y, wv.wind.z], pk, wv.time);
         }
-        if let (Some(dg), Some(fr)) = (self.dust_gpu.as_mut(), wv.dust_gpu.as_ref()) { dg.update(&self.queue, &mut enc, fr); }
-        if let (Some(af), Some(fi)) = (self.airflow.as_mut(), wv.airflow.as_ref()) {
+                if let (Some(af), Some(fi)) = (self.airflow.as_mut(), wv.airflow.as_ref()) {
             af.update(&self.device, &self.queue, &mut enc, fi.inflow, &fi.boxes, wv.time);
+        }
+        if let (Some(dg), Some(fr)) = (self.dust_gpu.as_mut(), wv.dust_gpu.as_ref()) {
+            let grid = self.airflow.as_ref().filter(|_| wv.airflow.is_some()).map(|a| { let (v, s) = a.fields(); (v, s, a.box_size()) });
+            dg.update(&self.device, &self.queue, &mut enc, fr, grid);
         }
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -667,7 +670,7 @@ impl Raster {
         if let (true, Some(fl)) = (fluid_on, self.fluid.as_mut()) {
             fl.draw(&self.device, &self.queue, &mut enc, &view, &self.depth.1, &self.bg_main, (self.config.width, self.config.height));
         }
-        if let (Some(af), Some(_)) = (self.airflow.as_ref(), wv.airflow.as_ref()) {
+        if let (Some(af), Some(_), true) = (self.airflow.as_ref(), wv.airflow.as_ref(), crate::game::airflow::debug_on()) {
             af.draw(&self.device, &mut enc, &view, (self.config.width, self.config.height));
         }
         self.queue.submit([enc.finish()]);

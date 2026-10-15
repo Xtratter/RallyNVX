@@ -137,6 +137,11 @@ impl AirflowGpu {
         }
     }
 
+    /// The velocity field of the latest step (air relative to the car, in the car's frame) and the car's solid cells, for the dust.
+    pub fn fields(&self) -> (&wgpu::TextureView, &wgpu::TextureView) { (&self.v[self.cur], &self.solid) }
+    /// The box in metres (x, y, z) and its cell.
+    pub fn box_size(&self) -> [f32; 4] { [self.n[0] as f32 * self.cfg.cell, self.n[1] as f32 * self.cfg.cell, self.n[2] as f32 * self.cfg.cell, self.cfg.cell] }
+
     /// Draws the slice at the left, above the touch controls (half of the screen's width).
     pub fn draw(&self, dev: &wgpu::Device, enc: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, size: (u32, u32)) {
         let w = (size.0 as f32 * 0.5).max(64.0);
