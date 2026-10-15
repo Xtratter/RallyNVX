@@ -307,7 +307,7 @@ fn sway(w: vec3<f32>, k_world: f32) -> vec3<f32> {
     return vec3<f32>(w.x + off.x, w.y, w.z + off.y);
 }
 
-struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32, @location(5) own: f32, @location(6) uv: vec2<f32> };
+struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32, @location(5) own: f32, @location(6) uv: vec2<f32>, @location(7) heat: f32 };
 
 fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec4<f32>) -> vec3<f32> {
     return (mat4x4<f32>(m0, m1, m2, m3) * vec4<f32>(p, 1.0)).xyz;
@@ -332,6 +332,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let hgt = (p.y - base) * length(m1.xyz);
     o.ao = select(1.0, mix(0.55, 1.0, smoothstep(0.0, 1.8, hgt)), tint.a > 1.5);
     o.uv = uv;
+    o.heat = clamp((tint.a - 0.1) / 0.4, 0.0, 1.0);   // a brake disc's tint alpha carries its heat (0.1 .. 0.5)
     o.own = select(0.0, 1.0, tint.a < 0.75);   // tint.a 0.5 = the player's car: its lamps do not light it
     return o;
 }
@@ -381,6 +382,11 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
         else { on = max(select(0.0, 0.35, u.lamps.x > 0.5), max(select(0.0, 1.0, u.lamps.y > 0.5), select(0.0, 0.6, u.lamps.z > 0.5))); }
         let tint = select(vec3<f32>(1.0, 0.45, 0.35), vec3<f32>(1.0, 0.95, 0.85), m == 11);
         return vec4<f32>(shade(albedo * occl, i.wp, n, 0.9, 60.0) + finish(albedo * tint * on * 1.8), 1.0);
+    }
+    if (m == 13) {   // a brake disc: textured metal that glows orange-red when hot (stronger in the dark)
+        let hot = i.heat * i.heat;
+        let glow = vec3<f32>(1.0, 0.32, 0.08) * hot * (1.2 + 3.0 * u.disc.w);
+        return vec4<f32>(shade(albedo * occl, i.wp, n, 0.9, 60.0) + finish(glow), 1.0);
     }
     if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0), 1.0); }   // glass
     if (m == 4) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.9, 60.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome

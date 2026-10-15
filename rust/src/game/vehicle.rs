@@ -55,6 +55,8 @@ pub struct Vehicle {
     pub contacts: u8,
     /// Driver input of the last step, for the lights.
     pub braking: bool, pub reversing: bool,
+    /// Brake disc heat per wheel, 0..1 (grows with the braking power, cools with time and the air; only visual: the discs glow).
+    pub brake_heat: [f32; 4],
     /// The driver holds reverse (negative throttle), as opposed to merely rolling backwards.
     pub reverse_throttle: bool,
     /// The surface under the first wheel in contact (the HUD shows it); tests can force one for every wheel.
@@ -67,7 +69,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, braking: false, reversing: false, reverse_throttle: false, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, braking: false, reversing: false, brake_heat: [0.0; 4], reverse_throttle: false, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -127,6 +129,8 @@ impl Vehicle {
         for w in 0..4 {
             self.comp[w] = 0.0;
             let front = w < 2;
+            // the discs cool all the time, faster the faster the car goes
+            self.brake_heat[w] *= (-h * (1.0 + self.vel.len() / 15.0) / 6.0).exp();
             let r_att = self.rot.rotate(s.wheels[w]);
             let attach = self.pos + r_att;
             let ground = t.height(attach.x, attach.z);
@@ -164,7 +168,11 @@ impl Vehicle {
             // brake pedal: scaled by how hard it is pressed (0 = legacy full force); the handbrake always bites the rear wheels fully
             let kb = if inp.brake_amt > 0.0 { inp.brake_amt.clamp(0.05, 1.0) } else { 1.0 };
             let k = if inp.handbrake && !front { 1.0 } else if inp.brake { kb } else { 0.0 };
-            if k > 0.0 { fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0 * k; }
+            if k > 0.0 {
+                fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0 * k;
+                // the braking power heats the disc (the front brakes do more of the work)
+                self.brake_heat[w] = (self.brake_heat[w] + s.brake_force / 4.0 * k * vf.abs() * if front { 1.3 } else { 0.7 } * 4.5e-6 * h).min(1.0);
+            }
             let lim = lat_mu * fs;
             let mag = fl.hypot(fx);
             let excess = if lim > 1e-3 { ((mag / lim) - 1.0).clamp(0.0, 1.5) } else { 0.0 };

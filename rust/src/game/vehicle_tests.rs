@@ -309,3 +309,16 @@ fn cornering_accel(surface: Surface, spec: VehicleSpec) -> f32 {
     assert!(v.up().y > 0.5 && !v.flipped(), "up.y {}", v.up().y);
     assert!(v.wheels.iter().all(|w| w.grounded) || v.vel.len() < 1.0);
 }
+
+#[test] fn brake_heat_grows_when_braking_hard_cools_down_and_stays_in_range() {
+    let t = Terrain::flat(); let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0., 1.2, 0.), 0.0);
+    for _ in 0..180 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+    assert!(v.brake_heat.iter().all(|h| *h == 0.0), "cold at rest");
+    for _ in 0..600 { v.step(&t, &[], &Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+    let fast = v.vel.len(); assert!(fast > 10.0, "{fast}");
+    for _ in 0..240 { v.step(&t, &[], &Input { brake: true, ..Default::default() }, 1.0 / 60.0); }
+    let hot = v.brake_heat; assert!(hot.iter().all(|h| (0.0..=1.0).contains(h)) && hot[0] > 0.3, "a hard stop from speed heats the front discs well: {hot:?}");
+    assert!(hot[0] >= hot[2], "the front brakes work harder");
+    for _ in 0..1200 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+    assert!(v.brake_heat.iter().all(|h| *h < hot[0] * 0.2 + 1e-3), "{:?} cooled from {:?}", v.brake_heat, hot);
+}

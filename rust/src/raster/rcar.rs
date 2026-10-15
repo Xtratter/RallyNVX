@@ -22,15 +22,31 @@ fn mesh(d: &[u8], o: &mut usize, stride: usize) -> Result<Mesh3, String> {
     Ok(m)
 }
 
-/// `(body, wheel)` from the bytes of an `.rcar` file.
-pub fn parse(d: &[u8]) -> Result<(Mesh3, Mesh3), String> {
-    // RCAR: 28-byte vertices (position, normal, colour); RCA2: 32 bytes, with a u16x2 UV after the colour
-    let stride = match d.get(..4) { Some(b"RCAR") => 28, Some(b"RCA2") => 32, _ => return Err("not an RCAR/RCA2 file".into()) };
-    let mut o = 4;
-    let body = mesh(d, &mut o, stride)?;
-    let wheel = mesh(d, &mut o, stride)?;
-    Ok((body, wheel))
+/// The meshes of an `.rcar` file: the body and one wheel (tyre and rim), and in `RCA3` files the brake disc and the brake caliper (the caliper does not spin with the wheel).
+pub struct Parts { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3> }
+
+/// All the meshes of an `.rcar` file: `RCAR` (28-byte vertices), `RCA2` (32 bytes with a `u16x2` UV after the colour), `RCA3` (a `u32` mesh count of 2 to 4, then the meshes in
+/// the order body, wheel, disc, caliper, 32-byte vertices).
+pub fn parse_all(d: &[u8]) -> Result<Parts, String> {
+    let (stride, count) = match d.get(..4) {
+        Some(b"RCAR") => (28, 2usize),
+        Some(b"RCA2") => (32, 2),
+        Some(b"RCA3") => {
+            let n = d.get(4..8).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).ok_or("truncated")? as usize;
+            if !(2..=4).contains(&n) { return Err(format!("bad mesh count {n}")); }
+            (32, n)
+        }
+        _ => return Err("not an RCAR/RCA2/RCA3 file".into()),
+    };
+    let mut o = if &d[..4] == b"RCA3" { 8 } else { 4 };
+    let mut meshes = Vec::new();
+    for _ in 0..count { meshes.push(mesh(d, &mut o, stride)?); }
+    let mut it = meshes.into_iter();
+    Ok(Parts { body: it.next().unwrap(), wheel: it.next().unwrap(), disc: it.next(), caliper: it.next() })
 }
+
+/// `(body, wheel)` from the bytes of an `.rcar` file.
+pub fn parse(d: &[u8]) -> Result<(Mesh3, Mesh3), String> { parse_all(d).map(|p| (p.body, p.wheel)) }
 
 /// Where the lamp units of a car mesh are, found from its emissive vertices (material 5) by colour: headlight units (cream or white at the front), tail units (red) and reverse
 /// lamps (white at the rear). Metres in the mesh's frame, for the car's right-hand side (the cars are symmetric): the units' centres. A new car model only has to colour
@@ -165,6 +181,25 @@ mod tests {
         assert!(textured * 10 > paint.len() * 7, "{textured} of {} paint vertices have a UV", paint.len());
         assert!(b.verts.iter().filter(|v| v.col[3] == 5).all(|v| v.uv == NO_UV), "lamps keep their colour");
         assert!(b.verts.iter().all(|v| v.uv == NO_UV || (v.uv[0] < 0xFFFF && v.uv[1] < 0xFFFF)), "a real UV never equals the sentinel");
+    }
+    fn rca3(meshes: usize) -> Vec<u8> {
+        let mut d = b"RCA3".to_vec();
+        d.extend_from_slice(&(meshes as u32).to_le_bytes());
+        for m in 0..meshes {
+            d.extend_from_slice(&3u32.to_le_bytes()); d.extend_from_slice(&3u32.to_le_bytes());
+            for k in 0..3 { for f in [k as f32, m as f32, 0.0, 0.0, 1.0, 0.0] { d.extend_from_slice(&f.to_le_bytes()); } d.extend_from_slice(&[1, 2, 3, 0]); d.extend_from_slice(&[7, 0, 9, 0]); }
+            for i in 0..3u32 { d.extend_from_slice(&i.to_le_bytes()); }
+        }
+        d
+    }
+    #[test] fn rca3_carries_up_to_four_meshes_and_older_files_have_no_disc() {
+        let p = parse_all(&rca3(4)).unwrap();
+        assert!(p.disc.is_some() && p.caliper.is_some());
+        assert_eq!(p.body.verts[0].pos[1], 0.0); assert_eq!(p.wheel.verts[0].pos[1], 1.0); assert_eq!(p.disc.unwrap().verts[0].pos[1], 2.0); assert_eq!(p.caliper.unwrap().verts[0].uv, [7, 9]);
+        let p3 = parse_all(&rca3(3)).unwrap(); assert!(p3.disc.is_some() && p3.caliper.is_none());
+        let old = parse_all(PEUGEOT_V1).unwrap(); assert!(old.disc.is_none() && old.caliper.is_none());
+        assert!(parse_all(&rca3(2)).is_ok() && parse_all(&rca3(1)).is_err() && parse_all(&rca3(5)).is_err(), "2 to 4 meshes");
+        let t = rca3(4); assert!(parse_all(&t[..t.len() - 9]).is_err(), "truncated");
     }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());
