@@ -30,7 +30,8 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
     private var running = false
 
     private fun carName(i: Int) = when (i) { 0 -> t("Off-roader", "Внедорожник"); 1 -> "Vulpes WRC"; else -> t("Car", "Машина") + " ${i + 1}" }
-    private val upgradeNames get() = arrayOf(t("Engine", "Двигатель"), t("Tyres", "Шины"), t("Suspension", "Подвеска"), t("Brakes", "Тормоза"))
+    private val upgradeNames get() = arrayOf(t("Engine", "Двигатель"), t("Tyres", "Шины"), t("Suspension", "Подвеска"), t("Brakes", "Тормоза"),
+        t("Front splitter", "Передний сплиттер"), t("Rear wing", "Заднее крыло"), t("Underbody", "Днище"))
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -84,8 +85,15 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
             text = t("Model: Peugeot 206 WRC by vecarz (Sketchfab), CC BY-NC-SA 4.0, simplified", "Модель: Peugeot 206 WRC от vecarz (Sketchfab), CC BY-NC-SA 4.0, упрощена")
             textSize = 11f; setTextColor(M3.TEXT); alpha = 0.7f; gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
+        // the aero numbers of the car with its parts
+        panel.addView(TextView(this).apply {
+            text = t("Downforce at 150 km/h: ", "Прижим при 150 км/ч: ") + "${car.downforceKg.toInt()} " + t("kg", "кг") + "\n" +
+                t("Drag from parts: ", "Сопротивление от деталей: ") + (if (car.dragPct > 0.5f) "+" else "") + "${car.dragPct.toInt()} %" + "\n" +
+                t("Top speed (est.): ", "Макс. скорость (оценка): ") + "${car.topKmh.toInt()} " + t("km/h", "км/ч")
+            textSize = 12f; setTextColor(M3.TEXT); alpha = 0.85f; gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
         // upgrades
-        for (u in 0 until 4) {
+        for (u in 0 until GarageMath.UPGRADES) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             val level = car.levels[u]
             row.addView(TextView(this).apply { text = upgradeNames[u] + "\n" + GarageMath.pips(level); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -98,6 +106,15 @@ class GarageActivity : Activity(), SurfaceHolder.Callback {
             row.addView(btn, LinearLayout.LayoutParams(px(120f), px(44f)))
             panel.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(8f) })
         }
+        // the wing angle: low drag .. high downforce (free)
+        val angleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        angleRow.addView(TextView(this).apply { text = t("Wing angle", "Угол крыла"); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+        val angleBtn = M3Widgets.button(this, GarageMath.wingAngleLabel(car.wingAngle, t("en", "ru") == "en"), M3Widgets.ButtonKind.TONAL) {
+            if (car.owned) { Native.garageWingAngle(profile, shown, (car.wingAngle + 1) % 3); refresh() }
+        }
+        if (!car.owned || car.levels[5] == 0) angleBtn.alpha = 0.5f
+        angleRow.addView(angleBtn, LinearLayout.LayoutParams(px(120f), px(44f)))
+        panel.addView(angleRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(8f) })
     }
 
     private fun toast(s: String) = android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show()

@@ -12,7 +12,7 @@ The car gets real aerodynamic forces and the garage gets body parts (front split
 - `Vehicle::substep` replaces the old drag line: drag at the centre, downforce pushing the body down at the two axles (so the springs load the tyres and the grip grows), the side force at the rear point. A car without parts and with no stock downforce drives exactly as before (the drag is the same number).
 - Parts (`rust/aero.json`): splitter, wing, underbody, levels 0-3, `ClA` and `CdA` per level, the wing angle (low / mid / high: downforce x0.7 / 1 / 1.25, drag x0.55 / 1 / 1.7), the ground sensitivities (splitter 1, underbody 1, wing 0). Prices as the other upgrades (1x, 2x, 4x the car's `upgrade_cost`); the wing angle is free.
 - Garage data: the levels array of a car grows from 4 to 8 (`Upgrade` gets `Splitter`, `Wing`, `Underbody`; the 8th is the wing angle, default 1); old profiles load with the new ones at 0 / 1. `garage_info` gives per car 14 fields (the 7 old ones, then splitter, wing, underbody, wing angle, the downforce at 150 km/h in kg, the drag change in % against the stock car, the estimated top speed in km/h). The profile file and its tests stay compatible.
-- Kotlin: the garage panel shows the three new parts like the others, a wing angle button and the three numbers; the debug HUD slot `[46]`... not needed.
+- Kotlin: the garage panel shows the three new parts like the others, a wing angle button and the three numbers;.. not needed.
 - Autopilot: unchanged in this step (its cornering limit ignores downforce).
 
 ## Testing
