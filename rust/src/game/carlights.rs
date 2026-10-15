@@ -10,7 +10,7 @@ pub const HEAD_ON_NIGHT: f32 = 0.25;
 pub struct CarLights { pub head: bool, pub brake: bool, pub reverse: bool }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Lamps { pub head: [V3; 2], pub tail: [V3; 2], pub rev: [V3; 2], pub head_dir: V3 }
+pub struct Lamps { pub head: [V3; 2], pub pos: [V3; 2], pub tail: [V3; 2], pub rev: [V3; 2], pub head_dir: V3 }
 
 /// Debug/test: 0 headlights only, 1 + brake, 2 + reverse; `u8::MAX` = normal behaviour. Set over JNI only.
 static DEBUG: AtomicU8 = AtomicU8::new(u8::MAX);
@@ -39,6 +39,7 @@ pub fn lamps(v: &Vehicle) -> Lamps {
     let at = |lx: f32, lz: f32| v.pos + v.rot.rotate(v3(lx, y, lz));
     Lamps {
         head: [at(-x, half_l), at(x, half_l)],
+        pos: [at(-x, half_l), at(x, half_l)],
         tail: [at(-x, -half_l), at(x, -half_l)],
         rev: [at(-x * 0.55, -half_l), at(x * 0.55, -half_l)],
         head_dir: v.rot.rotate(v3(0.0, -0.05, 1.0).norm()),
@@ -58,11 +59,38 @@ fn rally_lamps(v: &Vehicle) -> Lamps {
     let at = |p: [f32; 3], side: f32| origin + rot.rotate(v3(side * p[0] * k[0], p[1] * k[1], p[2] * k[2]));
     Lamps {
         head: [at(p.head, -1.0), at(p.head, 1.0)],
+        pos: [at(p.pos, -1.0), at(p.pos, 1.0)],
         tail: [at(p.tail, -1.0), at(p.tail, 1.0)],
         rev: [at(p.rev, -1.0), at(p.rev, 1.0)],
         head_dir: v.rot.rotate(v3(0.0, -0.05, 1.0).norm()),
     }
 }
+
+/// One headlight's low beam at point `p` (0..1): `fwd` the beam axis (slightly down), `right` across it. Wide sideways (about 35 degrees each way), a sharp upper
+/// cut-off at the axis that rises towards the right (right-hand traffic: it lights the verge), a brighter middle, 1/d^2 fall-off with a far limit. Mirrored in `raster.wgsl::beam_one`.
+pub fn beam_gain(lamp: V3, fwd: V3, right: V3, p: V3) -> f32 {
+    let d = p - lamp;
+    let dist = d.len();
+    if !(dist > 0.05) { return 0.0; }
+    let l = d * (1.0 / dist);
+    let (z, x) = (l.dot(fwd), l.dot(right));
+    if z <= 0.05 { return 0.0; }
+    let y = l.dot(fwd.cross(right));
+    let (h, v) = ((x / z).atan(), (y / z).atan());
+    let cut = 0.07 * smooth(0.0, 0.25, h);
+    let gv = 1.0 - smooth(cut, cut + 0.02, v);
+    let gh = 1.0 - smooth(0.35, 0.65, h.abs());
+    let hot = 0.6 + 0.4 * (-(h / 0.2) * (h / 0.2)).exp();
+    let att = 1.0 / (1.0 + (dist / 18.0) * (dist / 18.0));
+    gv * gh * hot * att * (1.0 - dist / 90.0).clamp(0.0, 1.0)
+}
+fn smooth(a: f32, b: f32, x: f32) -> f32 { let t = ((x - a) / (b - a)).clamp(0.0, 1.0); t * t * (3.0 - 2.0 * t) }
+
+/// The beam of both lamps at `p`, the mean of the two.
+pub fn beam(l: &Lamps, right: V3, p: V3) -> f32 { 0.5 * (beam_gain(l.head[0], l.head_dir, right, p) + beam_gain(l.head[1], l.head_dir, right, p)) }
+
+/// How much of a lamp's glow shows from the camera: full along the lamp's axis, faint from the side, nothing from behind.
+pub fn glow_factor(axis: V3, to_cam: V3) -> f32 { let c = axis.dot(to_cam); if c <= 0.0 { 0.0 } else { c.powf(2.5) } }
 
 #[cfg(test)]
 #[path = "carlights_tests.rs"]
