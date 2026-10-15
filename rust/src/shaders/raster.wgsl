@@ -183,7 +183,7 @@ fn headbeam(wp: vec3<f32>) -> f32 {
     return 0.5 * (beam_one(u.hl_pos.xyz - s, f, r, wp) + beam_one(u.hl_pos.xyz + s, f, r, wp));
 }
 
-// the light of the lit lamps on the car's own body: a soft aureole hugging the bumper and the wing around each lamp unit (no billboard, so nothing shows through the car)
+// the light of the lit lamps on the car's own body: a thin soft rim of light on the bodywork right around each lamp unit (small: the car must not look lit by its own lamps) (no billboard, so nothing shows through the car)
 fn lamp_aureole(wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     let f = normalize(u.hl_dir.xyz);
     let r = normalize(u.rt.xyz);
@@ -192,14 +192,14 @@ fn lamp_aureole(wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
         for (var k = 0; k < 2; k++) {
             let c = u.hl_pos.xyz + r * (u.lamps.w * select(-1.0, 1.0, k == 1));
             let d = length(wp - c);
-            g = g + vec3<f32>(1.0, 0.93, 0.80) * (0.55 * exp(-d * d / 0.09)) * (0.4 + 0.6 * max(dot(n, f), 0.0));
+            g = g + vec3<f32>(1.0, 0.93, 0.80) * (0.22 * exp(-d * d / 0.016)) * (0.4 + 0.6 * max(dot(n, f), 0.0));
         }
     }
     if (u.tl_col.w > 0.0) {
         for (var k = 0; k < 2; k++) {
             let c = u.tl_pos.xyz + vec3<f32>(0.0, 0.3, 0.0) + r * (u.tl_pos.w * select(-1.0, 1.0, k == 1));
             let d = length(wp - c);
-            g = g + u.tl_col.rgb * (0.5 * exp(-d * d / 0.06)) * (0.4 + 0.6 * max(dot(n, -f), 0.0));
+            g = g + u.tl_col.rgb * (0.35 * exp(-d * d / 0.016)) * (0.4 + 0.6 * max(dot(n, -f), 0.0));
         }
     }
     return g;
