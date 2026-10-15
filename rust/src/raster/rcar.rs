@@ -79,6 +79,20 @@ pub fn lamp_points(body: &Mesh3) -> Option<LampPoints> {
     Some(LampPoints { head, tail: pick(&tail)?, rev: pick(&rev)?, pos: centre(&corner).unwrap_or(head) })
 }
 
+
+/// The glass covers of the headlight and tail units, found as the glass (material 1) vertices within a short distance of the lamp points (both sides): a car whose lamp
+/// bulbs sit behind an opaque cover shows its lights through these. `(head covers, tail covers)` as vertex indices.
+pub fn cover_vertices(body: &Mesh3, l: &LampPoints) -> (Vec<usize>, Vec<usize>) {
+    let near = |v: &Vert, p: [f32; 3], r: f32| { let d = [v.pos[0].abs() - p[0], v.pos[1] - p[1], v.pos[2] - p[2]]; d[0] * d[0] + d[1] * d[1] + d[2] * d[2] < r * r };
+    let (mut head, mut tail) = (Vec::new(), Vec::new());
+    for (i, v) in body.verts.iter().enumerate() {
+        if v.col[3] != 1 { continue; }
+        if v.pos[2] > 0.0 && near(v, l.head, 0.28) { head.push(i); }
+        else if v.pos[2] < 0.0 && near(v, l.tail, 0.17) { tail.push(i); }
+    }
+    (head, tail)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,6 +146,14 @@ mod tests {
         let l = lamp_points(&m).expect("lamps");
         assert_eq!(l.pos, l.head);
         assert!(position_vertices(&m).is_empty());
+    }
+    #[test] fn the_glass_covers_of_the_lamp_units_are_found() {
+        let (b, _) = parse(PEUGEOT).unwrap();
+        let l = lamp_points(&b).expect("lamps");
+        let (head, tail) = cover_vertices(&b, &l);
+        assert!(head.len() >= 20 && head.iter().all(|&i| b.verts[i].pos[2] > 1.4 && b.verts[i].pos[1] < 0.9), "{}", head.len());
+        assert!(tail.len() >= 8 && tail.iter().all(|&i| b.verts[i].pos[2] < -1.4), "{}", tail.len());
+        assert!(head.iter().any(|&i| b.verts[i].pos[0] < 0.0) && tail.iter().any(|&i| b.verts[i].pos[0] < 0.0), "both sides");
     }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());

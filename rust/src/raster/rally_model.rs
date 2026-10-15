@@ -23,6 +23,11 @@ pub fn build_rally(spec: &VehicleSpec) -> CarModel {
             // the lamp units show the car's lamp state in the shader: their own material
             for v in &mut body.verts { if v.col[3] == super::vehicle_models::MAT_EMISSIVE { v.col[3] = super::vehicle_models::MAT_CARLAMP; } }
             for i in super::rcar::position_vertices(&body) { body.verts[i].col[3] = super::vehicle_models::MAT_CARPOS; }
+            if let Some(l) = super::rcar::lamp_points(&body) {
+                let (head, tail) = super::rcar::cover_vertices(&body, &l);
+                for i in head { body.verts[i].col[3] = super::vehicle_models::MAT_CARHEADGLASS; }
+                for i in tail { body.verts[i].col[3] = super::vehicle_models::MAT_CARTAILGLASS; }
+            }
             // the asset is modelled at 1.91 x 1.50 x 3.97 m with 0.326 m wheels: follow a changed spec size and radius
             let (sx, sy, sz) = (spec.size.x / 1.91, spec.size.y / 1.50, spec.size.z / 3.97);
             for v in &mut body.verts { v.pos = [v.pos[0] * sx, v.pos[1] * sy, v.pos[2] * sz]; }

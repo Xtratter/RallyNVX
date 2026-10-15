@@ -1,7 +1,7 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
-    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>,
+    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
@@ -146,6 +146,18 @@ fn shade_lite(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return shade_with(albedo, wp, n, 0.0, 0.0, shadow_basic(wp, n));
 }
 
+// how much the tail lights light a point (0..1): only what lies behind the rear bumper, never under the car; mirrored in `carlights::tail_gain`
+fn taillight(wp: vec3<f32>) -> f32 {
+    if (u.tl_col.w <= 0.0) { return 0.0; }
+    let dv = wp - u.tl_pos.xyz;
+    let behind = smoothstep(0.3, 1.0, dot(dv, -normalize(u.hl_dir.xyz)));
+    let att = clamp(1.0 - length(dv) / u.tl_col.w, 0.0, 1.0);
+    return behind * att * att;
+}
+
+// set by the car model's fragment shader: the car is not lit by its own lamps (the beam on its bumper, the red light under it)
+var<private> own_surface: f32 = 0.0;
+
 fn beam_one(lamp: vec3<f32>, fwd: vec3<f32>, right: vec3<f32>, p: vec3<f32>) -> f32 {
     let d = p - lamp;
     let dist = length(d);
@@ -154,21 +166,43 @@ fn beam_one(lamp: vec3<f32>, fwd: vec3<f32>, right: vec3<f32>, p: vec3<f32>) -> 
     let z = dot(l, fwd);
     if (z <= 0.05) { return 0.0; }
     let h = atan(dot(l, right) / z);
-    let v = atan(dot(l, cross(fwd, right)) / z);
+    let v = atan(dot(l, cross(right, fwd)) / z);
     let cut = 0.07 * smoothstep(0.0, 0.25, h);
     let gv = 1.0 - smoothstep(cut, cut + 0.02, v);
     let gh = 1.0 - smoothstep(0.35, 0.65, abs(h));
     let hot = 0.6 + 0.4 * exp(-(h / 0.2) * (h / 0.2));
     let att = 1.0 / (1.0 + (dist / 18.0) * (dist / 18.0));
-    return gv * gh * hot * att * clamp(1.0 - dist / 90.0, 0.0, 1.0);
+    return gv * gh * hot * att * clamp(1.0 - dist / 90.0, 0.0, 1.0) * smoothstep(0.6, 2.0, dist);
 }
 // the low beam of both headlights at a world point (0..1), mirrored in `carlights::beam`; the lamps sit `lamps.w` either side of `hl_pos` across the axis
 fn headbeam(wp: vec3<f32>) -> f32 {
     if (u.hl_pos.w <= 0.0) { return 0.0; }
     let f = normalize(u.hl_dir.xyz);
-    let r = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), f));
+    let r = normalize(u.rt.xyz);   // the car's own right: the beam rolls and pitches with the body
     let s = r * u.lamps.w;
     return 0.5 * (beam_one(u.hl_pos.xyz - s, f, r, wp) + beam_one(u.hl_pos.xyz + s, f, r, wp));
+}
+
+// the light of the lit lamps on the car's own body: a thin soft rim of light on the bodywork right around each lamp unit (small: the car must not look lit by its own lamps) (no billboard, so nothing shows through the car)
+fn lamp_aureole(wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+    let f = normalize(u.hl_dir.xyz);
+    let r = normalize(u.rt.xyz);
+    var g = vec3<f32>(0.0);
+    if (u.hl_pos.w > 0.0) {
+        for (var k = 0; k < 2; k++) {
+            let c = u.hl_pos.xyz + r * (u.lamps.w * select(-1.0, 1.0, k == 1));
+            let d = length(wp - c);
+            g = g + vec3<f32>(1.0, 0.93, 0.80) * (0.22 * exp(-d * d / 0.016)) * (0.4 + 0.6 * max(dot(n, f), 0.0));
+        }
+    }
+    if (u.tl_col.w > 0.0) {
+        for (var k = 0; k < 2; k++) {
+            let c = u.tl_pos.xyz + vec3<f32>(0.0, 0.3, 0.0) + r * (u.tl_pos.w * select(-1.0, 1.0, k == 1));
+            let d = length(wp - c);
+            g = g + u.tl_col.rgb * (0.35 * exp(-d * d / 0.016)) * (0.4 + 0.6 * max(dot(n, -f), 0.0));
+        }
+    }
+    return g;
 }
 
 fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: f32, sh: f32) -> vec3<f32> {
@@ -176,16 +210,18 @@ fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: 
     let diff = max(dot(n, sun), 0.0) * sh;
     let amb = mix(vec3<f32>(0.20, 0.22, 0.26) * mix(1.0, 0.12, u.disc.w), u.sky_top.rgb * 0.55, n.y * 0.5 + 0.5);
     var c = albedo * (u.sun_col.rgb * diff + amb);
-    if (u.hl_pos.w > 0.0) {
+    if (u.hl_pos.w > 0.0 && own_surface < 0.5) {
         let l = normalize(wp - u.hl_pos.xyz);
         // a beam on a grazing surface (the ground far ahead) is weak by n.l alone: keep a floor so the beam reaches far
         c = c + albedo * vec3<f32>(1.0, 0.93, 0.80) * (14.0 * headbeam(wp) * (0.25 + 0.75 * max(dot(n, -l), 0.0)));
     }
-    if (u.tl_col.w > 0.0) {
+    if (u.tl_col.w > 0.0 && own_surface < 0.5) {
         let dv = wp - u.tl_pos.xyz;
         let dist = length(dv);
+        // only what lies behind the rear bumper is lit by the tail lights, never the ground under the car (mirrored in `carlights::tail_gain`)
+        let behind = smoothstep(0.3, 1.0, dot(dv, -normalize(u.hl_dir.xyz)));
         let att = clamp(1.0 - dist / u.tl_col.w, 0.0, 1.0);
-        c = c + albedo * u.tl_col.rgb * (att * att * (0.35 + 0.65 * max(dot(n, -dv / max(dist, 0.001)), 0.0)) * 4.0);
+        c = c + albedo * u.tl_col.rgb * (behind * att * att * (0.35 + 0.65 * max(dot(n, -dv / max(dist, 0.001)), 0.0)) * 4.0);
     }
     if (sharp > 0.0) {
         let v = normalize(u.cam.xyz - wp);
@@ -269,7 +305,7 @@ fn sway(w: vec3<f32>, k_world: f32) -> vec3<f32> {
     return vec3<f32>(w.x + off.x, w.y, w.z + off.y);
 }
 
-struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32 };
+struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32, @location(5) own: f32 };
 
 fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec4<f32>) -> vec3<f32> {
     return (mat4x4<f32>(m0, m1, m2, m3) * vec4<f32>(p, 1.0)).xyz;
@@ -293,6 +329,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let base = select(0.0, -0.4, tint.a > 2.5);
     let hgt = (p.y - base) * length(m1.xyz);
     o.ao = select(1.0, mix(0.55, 1.0, smoothstep(0.0, 1.8, hgt)), tint.a > 1.5);
+    o.own = select(0.0, 1.0, tint.a < 0.75);   // tint.a 0.5 = the player's car: its lamps do not light it
     return o;
 }
 @vertex fn vs_model_shadow(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>, @location(2) c: vec4<f32>,
@@ -308,6 +345,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let n = normalize(i.n);
     let occl = mix(1.0, i.ao, u.mode.x);
     let m = i32(i.mat + 0.5);
+    own_surface = i.own;
     if (m == 5) { return vec4<f32>(finish(i.col * (2.2 + 2.0 * u.disc.w)), 1.0); }       // lamps
     if (m == 7 || m == 8) {   // the car's own lamps: the shape is the mesh's, the state comes from the car; the class from the colour (8: a front position lamp)
         let c = i.col;
@@ -330,12 +368,21 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
         let dark = (c * 0.10 + u.sky_hor.rgb * 0.45 * fr * fr * fr + vec3<f32>(sunr) * 0.6) * (1.0 - on);
         return vec4<f32>(finish(lit + dark), 1.0);
     }
+    if (m == 9 || m == 10) {   // the glass cover of a headlight / tail unit: dark glass, and the lamp behind it shows through when it is on
+        let v = normalize(u.cam.xyz - i.wp);
+        let facing = clamp(dot(n, v), 0.0, 1.0);
+        var glow = vec3<f32>(0.0);
+        if (m == 9) { glow = vec3<f32>(1.0, 0.95, 0.82) * select(0.0, 1.0, u.lamps.x > 0.5) * (2.4 + 1.6 * u.disc.w); }
+        else { glow = vec3<f32>(1.0, 0.06, 0.03) * max(select(0.0, 0.3, u.lamps.x > 0.5), select(0.0, 1.0, u.lamps.y > 0.5)) * 3.2 + vec3<f32>(1.0, 1.0, 0.95) * select(0.0, 1.2, u.lamps.z > 0.5); }
+        let rings = 0.86 + 0.14 * step(0.5, fract((1.0 - facing) * 6.0));
+        return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0) + finish(glow * (0.45 + 0.55 * pow(facing, 2.0)) * rings), 1.0);
+    }
     if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0), 1.0); }   // glass
-    if (m == 4) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.9, 60.0), 1.0); }   // chrome
+    if (m == 4) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.9, 60.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
     if (m == 6) { return vec4<f32>(shade_lite(i.col * occl, i.wp, n), 1.0); }   // foliage
-    if (m == 0) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.5, 40.0), 1.0); }   // paint
+    if (m == 0) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.5, 40.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
     if (m == 2) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.04, 8.0), 1.0); }   // rubber
-    return vec4<f32>(shade(i.col * occl, i.wp, n, 0.15, 16.0), 1.0);                  // plastic
+    return vec4<f32>(shade(i.col * occl, i.wp, n, 0.15, 16.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
 }
 
 struct IOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) emi: f32,
@@ -562,16 +609,6 @@ fn dust_vertex(vi: u32, ps: vec4<f32>, c: vec4<f32>, e: vec4<f32>, size: f32) ->
     if (e.z > 1.5) { o.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0); }   // the specks are drawn by their own pass at full resolution
     return o;
 }
-// the glow around a lit lamp: a billboard with a bright small core and a wide soft falloff, added to the picture
-@vertex fn vs_halo(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>, @location(2) e: vec4<f32>) -> DOut {
-    return dust_vertex(vi, ps, c, e, ps.w);
-}
-@fragment fn fs_halo(i: DOut) -> @location(0) vec4<f32> {
-    let r = length(i.uv);
-    let edge = 1.0 - smoothstep(0.7, 1.0, r);
-    let g = (0.75 * exp(-r * r * 14.0) + 0.25 * exp(-r * 3.0)) * edge;   // the core, then a long soft tail
-    return vec4<f32>(i.c.rgb * (i.c.a * g), 0.0);
-}
 // the flying specks of grit: tiny, so never smaller than a pixel or two on the screen
 @vertex fn vs_dust_specks(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>, @location(2) e: vec4<f32>) -> DOut {
     let size = max(ps.w, 0.0013 * length(ps.xyz - u.cam.xyz));
@@ -613,7 +650,7 @@ fn dust_vertex(vi: u32, ps: vec4<f32>, c: vec4<f32>, e: vec4<f32>, size: f32) ->
     let amb = (u.sky_hor.rgb * 0.4 + vec3<f32>(0.45)) * 0.5 * mix(1.0, 0.2, u.disc.w);
     var col = i.c.rgb * (amb + vec3<f32>(sun) * (0.55 + 0.3 * shape + 1.2 * fwd * sun));
     col = col * mix(0.82, 1.0, smoothstep(0.0, 0.8, r));   // the thick middle of a puff is shaded by the rest of it
-    col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (2.6 * headbeam(wp));
+    col = col + i.c.rgb * (vec3<f32>(1.0, 0.93, 0.80) * (6.0 * headbeam(wp)) + u.tl_col.rgb * (5.0 * taillight(wp)));   // the lamps light the dust: the beam ahead, the red tail lights behind
     let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0);
     col = mix(col, u.sky_hor.rgb, f);
     return vec4<f32>(finish(col), a);
@@ -650,7 +687,7 @@ fn dust_pt(i: DOut) -> vec4<f32> {
     let ld = vec3<f32>(dot(sun_dir, vr), dot(sun_dir, vu), dot(sun_dir, vb));
     let sh = clamp(dot(n3, ld) * 0.5 + 0.5, 0.0, 1.0);
     col = col * (0.34 + 1.2 * sh);
-    col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (2.6 * headbeam(wp));
+    col = col + i.c.rgb * (vec3<f32>(1.0, 0.93, 0.80) * (6.0 * headbeam(wp)) + u.tl_col.rgb * (5.0 * taillight(wp)));   // the lamps light the dust: the beam ahead, the red tail lights behind
     let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0) * 0.6;
     col = mix(col, u.sky_hor.rgb, f);
     return vec4<f32>(finish(col), a);
