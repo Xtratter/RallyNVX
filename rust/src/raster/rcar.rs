@@ -110,14 +110,14 @@ mod tests {
         assert!(b.tris() > 3000 && w.tris() > 200, "{} / {} triangles", b.tris(), w.tris());
         for m in [&b, &w] {
             assert!(m.idx.iter().all(|&i| (i as usize) < m.verts.len()));
-            for v in &m.verts { let l = (v.nrm[0].powi(2) + v.nrm[1].powi(2) + v.nrm[2].powi(2)).sqrt(); assert!((l - 1.0).abs() < 0.02, "normal {l}"); assert!(v.col[3] <= 5 || (11..=14).contains(&v.col[3]), "material id {}", v.col[3]); }
+            for v in &m.verts { let l = (v.nrm[0].powi(2) + v.nrm[1].powi(2) + v.nrm[2].powi(2)).sqrt(); assert!((l - 1.0).abs() < 0.02, "normal {l}"); assert!(v.col[3] <= 5 || (11..=15).contains(&v.col[3]), "material id {}", v.col[3]); }
         }
         let (lo, hi) = b.bounds();
         assert!(lo.y > -0.02 && hi.y < 1.6 && hi.z - lo.z > 3.8 && hi.z - lo.z < 4.2 && hi.x > 0.8 && lo.x < -0.8, "{lo:?} {hi:?}");
         let (wl, wh) = w.bounds();
         assert!(((wh.y - wl.y) / 2.0 - 0.326).abs() < 0.01 && (wl.y + wh.y).abs() < 0.02 && (wl.z + wh.z).abs() < 0.02, "wheel {wl:?} {wh:?}");
         let mats: std::collections::HashSet<u8> = b.verts.iter().map(|v| v.col[3]).collect();
-        for want in [0u8, 1, 3, 5] { assert!(mats.contains(&want), "missing material {want}"); }
+        for want in [0u8, 3, 5] { assert!(mats.contains(&want), "missing material {want}"); }   // the glass is its own mesh now
     }
     #[test] fn broken_files_are_errors_not_panics() {
         assert!(parse(b"").is_err() && parse(b"NOPE").is_err() && parse(b"RCAR").is_err());
@@ -249,6 +249,22 @@ mod tests {
         }
         let textured = susp.iter().filter(|v| v.uv != NO_UV).count();
         assert!(textured * 10 > susp.len() * 9, "{textured} of {} suspension vertices have a UV", susp.len());
+    }
+    #[test] fn the_embedded_peugeot_has_glass_and_an_interior() {
+        let p = parse_all(PEUGEOT).unwrap();
+        let glass = p.glass.expect("glass"); let interior = p.interior.expect("interior");
+        assert!(glass.verts.iter().all(|v| v.col[3] == 1 && v.uv == NO_UV), "glass is class 1 and untextured");
+        assert!(glass.verts.iter().any(|v| v.col[0] == 0) && glass.verts.iter().any(|v| v.col[0] == 255), "windows (red 0) and clear lamp covers (red 255)");
+        assert!(glass.idx.len() / 3 > 2500 && glass.idx.len() / 3 < 5000, "{} glass triangles", glass.idx.len() / 3);
+        assert!(p.body.verts.iter().all(|v| v.col[3] != 1), "the body has no glass of its own any more");
+        let t = interior.idx.len() / 3;
+        assert!((12_000..=20_000).contains(&t), "{t} interior triangles");
+        assert!(interior.verts.iter().all(|v| v.col[3] == 15), "interior is class 15");
+        let textured = interior.verts.iter().filter(|v| v.uv != NO_UV).count();
+        assert!(textured * 10 > interior.verts.len() * 9, "{textured} of {} interior vertices have a UV", interior.verts.len());
+        // the interior sits inside the body's envelope
+        let ((blo, bhi), (ilo, ihi)) = (p.body.bounds(), interior.bounds());
+        assert!(ilo.x >= blo.x - 0.05 && ihi.x <= bhi.x + 0.05 && ilo.z >= blo.z - 0.1 && ihi.z <= bhi.z + 0.1 && ihi.y <= bhi.y + 0.05, "{ilo:?} {ihi:?} vs {blo:?} {bhi:?}");
     }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());

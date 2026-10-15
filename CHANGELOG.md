@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.34.0 - transparent glass and the interior
+
+- Added: the Peugeot's windows and lamp covers are transparent glass (a blended pass with a dark tint, sky reflection and a sun glint): near the car you see through the windows into a real interior (the dashboard, seats, steering wheel, door panels and a driver from the source model, a 1024 atlas, about 17 700 triangles); from beyond 9-16 m the windows turn solid dark and the interior is not drawn; the lamp covers are clear over the reflectors
+- Changed: the model format carries up to eight meshes (glass and interior added); the dust wraps the car with its windows closed
+
 ## 2.33.0 - suspension
 
 - Added: the Peugeot's suspension (wishbones, struts and springs of all four corners, from the source model) is seen through the wheel arches and moves with the wheels: the outer ends follow the hub over bumps, jumps and in corners, the inner ends stay on the body
