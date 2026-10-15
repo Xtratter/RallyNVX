@@ -70,3 +70,17 @@ fn check(m: &Mesh3, name: &str) {
     assert!((hi.y - lo.y) / 2.0 < spec.radius * 0.8 && (hi.y - lo.y) / 2.0 > spec.radius * 0.4, "{lo:?} {hi:?}");
     assert!(!caliper.verts.is_empty());
 }
+
+#[test] fn a_model_with_fewer_wheel_sets_shows_the_tarmac_wheel_and_unknown_sets_too() {
+    let m = CarModel::new(Mesh3::default(), Mesh3::default());
+    assert!(std::ptr::eq(m.wheel_for(0), &m.wheel) && std::ptr::eq(m.wheel_for(1), &m.wheel) && std::ptr::eq(m.wheel_for(2), &m.wheel) && std::ptr::eq(m.wheel_for(9), &m.wheel));
+    let mut g = Mesh3::default(); g.idx = vec![0, 1, 2];
+    let m = CarModel { alt_wheels: [Some(g), None], ..m };
+    assert!(!std::ptr::eq(m.wheel_for(1), &m.wheel) && std::ptr::eq(m.wheel_for(2), &m.wheel), "gravel exists, snow falls back");
+}
+#[test] #[ignore = "until the asset carries the gravel and snow wheels (Task 3)"] fn the_peugeot_has_three_different_wheel_sets() {
+    let m = build_rally(&peugeot());
+    let (a, b, c) = (m.wheel_for(0), m.wheel_for(1), m.wheel_for(2));
+    assert!(!std::ptr::eq(a, b) && !std::ptr::eq(b, c) && !std::ptr::eq(a, c));
+    assert!(a.verts.len() != b.verts.len() || a.verts[0].pos != b.verts[0].pos);
+}
