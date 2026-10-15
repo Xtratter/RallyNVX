@@ -27,7 +27,7 @@ pub struct VehicleSpec {
     /// stiffness, rolling resistance, air drag, angular damping, handbrake rear grip factor, reverse speed factor,
     /// suspension force cap in car weights per wheel.
     pub steer_max: f32, pub steer_speed_ref: f32, pub steer_rate: f32, pub lateral_k: f32, pub rolling: f32,
-    pub aero: f32, pub ang_damp: f32, pub handbrake_grip: f32, pub reverse_factor: f32, pub max_susp_factor: f32,
+    pub aero: f32, pub aero_base: super::aero::AeroBase, pub kit: super::aero::AeroKit, pub ang_damp: f32, pub handbrake_grip: f32, pub reverse_factor: f32, pub max_susp_factor: f32,
     /// Extra drag in water, 1/s with all four wheels wet (see docs/vehicles.md).
     pub water_drag: f32,
 }
@@ -173,7 +173,18 @@ impl Vehicle {
             let tire = rw * fl + fw * fx;
             force = force + tire; torque = torque + r_c.cross(tire);
         }
-        force = force - self.vel * (self.vel.len() * s.aero);
+        // aerodynamics: drag at the centre, downforce pressing the body down at the two axles (the springs load the tyres, so the grip
+        // grows), the side force behind the centre (it turns the nose back into the flow); the clearance comes from the suspension
+        let ac = super::aero::cfg();
+        let static_comp = s.mass * G / (4.0 * s.spring.max(1.0));
+        let ride = s.aero_base.ride_ref;
+        let clear = |m: f32| (ride - (m - static_comp)).clamp(0.3 * ride, 2.5 * ride);
+        let af = super::aero::forces(&s, self.vel, fwd, right, clear(0.5 * (self.comp[0] + self.comp[1])), clear(0.5 * (self.comp[2] + self.comp[3])), &ac);
+        force = force + af.drag + af.side;
+        let (zf, zr) = (0.5 * (s.wheels[0].z + s.wheels[1].z), 0.5 * (s.wheels[2].z + s.wheels[3].z));
+        let (pf, pr) = (up * (-af.down_front), up * (-af.down_rear));
+        force = force + pf + pr;
+        torque = torque + self.rot.rotate(v3(0.0, 0.0, zf)).cross(pf) + self.rot.rotate(v3(0.0, 0.0, zr)).cross(pr) + self.rot.rotate(v3(0.0, 0.0, -ac.cp)).cross(af.side);
         if wet > 0 { force = force - self.vel * (s.mass * s.water_drag * wet as f32 / 4.0); }
         self.vel = self.vel + force * (h / s.mass);
         let wb = self.rot.conj().rotate(self.omega);

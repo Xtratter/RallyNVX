@@ -10,6 +10,7 @@
       "max_speed": 35,
       "grip": 1.1,
       "water_drag": 1.4,
+      "aero": { "cl_front": -0.04, "cl_rear": -0.06, "ride_ref": 0.24 },
       "handling": {
         "steer_max": 0.55,
         "steer_speed_ref": 15,
@@ -36,13 +37,14 @@
       "max_speed": 52,
       "grip": 1.2,
       "water_drag": 1.4,
+      "aero": { "cl_front": 0.05, "cl_rear": 0.25, "ride_ref": 0.16 },
       "handling": {
         "steer_max": 0.5,
         "steer_speed_ref": 18,
         "steer_rate": 3.5,
         "lateral_stiffness": 14,
-        "rolling_resistance": 35,
-        "aero_drag": 0.30,
+        "rolling_resistance": 22,
+        "aero_drag": 0.45,
         "angular_damping": 0.9,
         "handbrake_grip": 0.35,
         "reverse_speed_factor": 0.4

@@ -1,14 +1,20 @@
-//! Garage rules: four upgrade categories (levels 0..3) applied to a car's physics numbers, and their prices.
+//! Garage rules: seven upgrade categories (levels 0..3): four change the car's physics numbers, three are aero body parts
+//! (splitter, wing, underbody); and the wing angle setting. Prices.
 use super::vehicle::VehicleSpec;
 
 pub const MAX_LEVEL: u8 = 3;
+/// Levels of a car: the seven upgrades and, last, the wing angle (0 low drag, 1 mid, 2 high downforce).
+pub const NLEVELS: usize = 8;
+pub const MAX_WING_ANGLE: u8 = 2;
+/// A new car: no upgrades, the wing angle in the middle.
+pub fn default_levels() -> [u8; NLEVELS] { [0, 0, 0, 0, 0, 0, 0, 1] }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Upgrade { Engine, Tyres, Suspension, Brakes }
+pub enum Upgrade { Engine, Tyres, Suspension, Brakes, Splitter, Wing, Underbody }
 
 impl Upgrade {
-    pub const ALL: [Upgrade; 4] = [Upgrade::Engine, Upgrade::Tyres, Upgrade::Suspension, Upgrade::Brakes];
-    pub fn index(self) -> usize { match self { Upgrade::Engine => 0, Upgrade::Tyres => 1, Upgrade::Suspension => 2, Upgrade::Brakes => 3 } }
+    pub const ALL: [Upgrade; 7] = [Upgrade::Engine, Upgrade::Tyres, Upgrade::Suspension, Upgrade::Brakes, Upgrade::Splitter, Upgrade::Wing, Upgrade::Underbody];
+    pub fn index(self) -> usize { match self { Upgrade::Engine => 0, Upgrade::Tyres => 1, Upgrade::Suspension => 2, Upgrade::Brakes => 3, Upgrade::Splitter => 4, Upgrade::Wing => 5, Upgrade::Underbody => 6 } }
     pub fn from_index(i: usize) -> Option<Upgrade> { Upgrade::ALL.get(i).copied() }
 }
 
@@ -19,7 +25,7 @@ const SUSPENSION: [f32; 4] = [1.0, 1.1, 1.2, 1.3];
 const BRAKES: [f32; 4] = [1.0, 1.2, 1.4, 1.6];
 
 /// The car with its upgrades applied; levels above the cap count as the cap. Geometry never changes.
-pub fn apply(spec: &VehicleSpec, levels: [u8; 4]) -> VehicleSpec {
+pub fn apply(spec: &VehicleSpec, levels: [u8; NLEVELS]) -> VehicleSpec {
     let l = |i: usize| levels[i].min(MAX_LEVEL) as usize;
     let mut s = *spec;
     s.engine_force *= ENGINE_FORCE[l(0)];
@@ -28,6 +34,7 @@ pub fn apply(spec: &VehicleSpec, levels: [u8; 4]) -> VehicleSpec {
     s.spring *= SUSPENSION[l(2)];
     s.damper *= SUSPENSION[l(2)];
     s.brake_force *= BRAKES[l(3)];
+    s.kit = super::aero::AeroKit { splitter: l(4) as u8, wing: l(5) as u8, underbody: l(6) as u8, wing_angle: levels[7].min(MAX_WING_ANGLE) };
     s
 }
 
@@ -39,17 +46,17 @@ pub fn upgrade_price(spec: &VehicleSpec, current: u8) -> Option<u32> {
 
 /// What the player owns: the selected car id and the upgrade levels of every owned car.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Garage { pub selected: String, pub cars: Vec<(String, [u8; 4])> }
+pub struct Garage { pub selected: String, pub cars: Vec<(String, [u8; NLEVELS])> }
 
 impl Garage {
     /// The cars that cost nothing (the off-roader), the first of them selected.
     pub fn new() -> Garage {
-        let free: Vec<(String, [u8; 4])> = VehicleSpec::all().into_iter().filter(|(_, s)| s.price == 0).map(|(id, _)| (id, [0; 4])).collect();
+        let free: Vec<(String, [u8; NLEVELS])> = VehicleSpec::all().into_iter().filter(|(_, s)| s.price == 0).map(|(id, _)| (id, default_levels())).collect();
         let selected = free.first().map_or_else(|| "offroader".to_string(), |c| c.0.clone());
         Garage { selected, cars: free }
     }
     pub fn owns(&self, id: &str) -> bool { self.cars.iter().any(|(i, _)| i == id) }
-    pub fn levels(&self, id: &str) -> [u8; 4] { self.cars.iter().find(|(i, _)| i == id).map_or([0; 4], |c| c.1) }
+    pub fn levels(&self, id: &str) -> [u8; NLEVELS] { self.cars.iter().find(|(i, _)| i == id).map_or_else(default_levels, |c| c.1) }
 }
 
 impl Default for Garage { fn default() -> Self { Garage::new() } }

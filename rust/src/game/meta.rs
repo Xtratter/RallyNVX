@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-use super::garage::{Garage, Upgrade, MAX_LEVEL};
+use super::garage::{default_levels, Garage, Upgrade, MAX_LEVEL, MAX_WING_ANGLE, NLEVELS};
 use super::vehicle::VehicleSpec;
 
 pub const PROFILE_VERSION: u32 = 1;
@@ -19,7 +19,7 @@ impl Profile {
 
     pub fn to_json(&self) -> String {
         let cars: serde_json::Map<String, Value> = self.garage.cars.iter()
-            .map(|(id, l)| (id.clone(), json!({ "engine": l[0], "tyres": l[1], "suspension": l[2], "brakes": l[3] }))).collect();
+            .map(|(id, l)| (id.clone(), json!({ "engine": l[0], "tyres": l[1], "suspension": l[2], "brakes": l[3], "splitter": l[4], "wing": l[5], "underbody": l[6], "wing_angle": l[7] }))).collect();
         serde_json::to_string_pretty(&json!({ "version": self.version, "money": self.money,
             "garage": { "selected": self.garage.selected, "cars": cars } })).unwrap()
     }
@@ -38,7 +38,8 @@ impl Profile {
                     let id = legacy_id(raw_id);
                     if VehicleSpec::by_id(id).is_none() { continue; }
                     let lv = |k: &str| l.get(k).and_then(Value::as_u64).unwrap_or(0).min(MAX_LEVEL as u64) as u8;
-                    let levels = [lv("engine"), lv("tyres"), lv("suspension"), lv("brakes")];
+                    let angle = l.get("wing_angle").and_then(Value::as_u64).map_or(default_levels()[7], |a| a.min(MAX_WING_ANGLE as u64) as u8);
+                    let levels: [u8; NLEVELS] = [lv("engine"), lv("tyres"), lv("suspension"), lv("brakes"), lv("splitter"), lv("wing"), lv("underbody"), angle];
                     match garage.cars.iter_mut().find(|(i, _)| i == id) { Some(c) => c.1 = levels, None => garage.cars.push((id.to_string(), levels)) }
                 }
             }
@@ -48,14 +49,14 @@ impl Profile {
     }
 
     pub fn owns(&self, id: &str) -> bool { self.garage.owns(id) }
-    pub fn levels(&self, id: &str) -> [u8; 4] { self.garage.levels(id) }
+    pub fn levels(&self, id: &str) -> [u8; NLEVELS] { self.garage.levels(id) }
 
     /// Buys a car from the garage list for its price; false (nothing changes) when unknown, owned or too expensive.
     pub fn buy_car(&mut self, id: &str) -> bool {
         let Some(spec) = VehicleSpec::by_id(id) else { return false };
         if self.owns(id) || spec.price == 0 || self.money < spec.price { return false; }
         self.money -= spec.price;
-        self.garage.cars.push((id.to_string(), [0; 4]));
+        self.garage.cars.push((id.to_string(), default_levels()));
         true
     }
 
@@ -73,6 +74,14 @@ impl Profile {
         if self.money < price { return false; }
         self.money -= price;
         entry.1[up.index()] += 1;
+        true
+    }
+
+    /// Sets the wing angle (0 low drag, 1 mid, 2 high downforce) of an owned car; free.
+    pub fn set_wing_angle(&mut self, id: &str, angle: u8) -> bool {
+        if angle > MAX_WING_ANGLE { return false; }
+        let Some(entry) = self.garage.cars.iter_mut().find(|(i, _)| i == id) else { return false };
+        entry.1[7] = angle;
         true
     }
 

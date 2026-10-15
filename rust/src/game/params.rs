@@ -80,12 +80,21 @@ fn parse_car(id: &str, v: &Value) -> Result<VehicleSpec, String> {
         max_speed: above(v, "max_speed", ctx, 0.0)?, mu: above(v, "grip", ctx, 0.0)?,
         steer_max: between(hnd, "steer_max", ctx, 0.01, 1.4)?, steer_speed_ref: above(hnd, "steer_speed_ref", ctx, 0.0)?,
         steer_rate: above(hnd, "steer_rate", ctx, 0.0)?, lateral_k: between(hnd, "lateral_stiffness", ctx, 0.0, 1e6)?,
-        rolling: between(hnd, "rolling_resistance", ctx, 0.0, 1e6)?, aero: between(hnd, "aero_drag", ctx, 0.0, 1e6)?,
+        rolling: between(hnd, "rolling_resistance", ctx, 0.0, 1e6)?, aero: between(hnd, "aero_drag", ctx, 0.0, 1e6)?, aero_base: parse_aero(v, ctx)?, kit: Default::default(),
         ang_damp: between(hnd, "angular_damping", ctx, 0.0, 1e3)?, handbrake_grip: between(hnd, "handbrake_grip", ctx, 0.0, 1.0)?,
         reverse_factor: between(hnd, "reverse_speed_factor", ctx, 0.01, 1.0)?,
         max_susp_factor: above(sus, "max_force_factor", ctx, 0.0)?,
         water_drag: match v.get("water_drag") { None => 0.0, Some(_) => between(v, "water_drag", ctx, 0.0, 1e3)? },
     })
+}
+
+/// The optional `aero` section of a car: the stock downforce areas (negative is lift) and the reference clearance.
+fn parse_aero(v: &Value, ctx: &str) -> Result<super::aero::AeroBase, String> {
+    let Some(a) = v.get("aero") else { return Ok(super::aero::AeroBase { cla_front: 0.0, cla_rear: 0.0, ride_ref: 0.2 }) };
+    let num = |k: &str, lo: f64, hi: f64, d: f64| -> Result<f32, String> {
+        match a.get(k) { None => Ok(d as f32), Some(x) => x.as_f64().filter(|f| f.is_finite() && *f >= lo && *f <= hi).map(|f| f as f32).ok_or_else(|| format!("{ctx}: aero \"{k}\" must be a number between {lo} and {hi}")) }
+    };
+    Ok(super::aero::AeroBase { cla_front: num("cl_front", -3.0, 3.0, 0.0)?, cla_rear: num("cl_rear", -3.0, 3.0, 0.0)?, ride_ref: num("ride_ref", 0.05, 1.0, 0.2)? })
 }
 
 impl Params {

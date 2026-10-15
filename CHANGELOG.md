@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.25.0 - aerodynamics
+
+- Added: car aerodynamics as physics: drag and downforce grow with the square of speed, downforce presses each axle separately, ground effect depends on the real ride height (suspension compression), sideslip adds drag, side force and loses downforce; numbers in `aero.json`
+- Added: body parts in the garage: front splitter, rear wing and underbody (3 levels each), the wing angle (Low / Mid / High, free) and a readout of the downforce at 150 km/h, the drag change and the estimated top speed
+- Changed: the Vulpes WRC has less rolling resistance and more air drag, so that speed depends on aerodynamics (0-100 km/h unchanged); old profiles load with no parts and a mid wing angle
+
 ## 2.24.1 - icons only
 
 - Changed: the pictograms are at the top, in the centre (in a rally the Autopilot button moves right, next to Reset)

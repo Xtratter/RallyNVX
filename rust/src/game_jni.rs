@@ -163,6 +163,11 @@ mod android {
         crate::game::api::garage_select(std::path::Path::new(&p), i.max(0) as usize) as jboolean
     }
     #[no_mangle]
+    pub extern "system" fn Java_dev_starinin_rallynvx_Native_garageWingAngle(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, i: jint, angle: jint) -> jboolean {
+        let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
+        crate::game::api::garage_set_wing_angle(std::path::Path::new(&p), i.max(0) as usize, angle.max(0) as usize) as jboolean
+    }
+    #[no_mangle]
     pub extern "system" fn Java_dev_starinin_rallynvx_Native_garageBuyUpgrade(mut env: JNIEnv, _c: JClass, path: jni::objects::JString, i: jint, up: jint) -> jboolean {
         let p: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
         crate::game::api::garage_buy_upgrade(std::path::Path::new(&p), i.max(0) as usize, up.max(0) as usize) as jboolean
