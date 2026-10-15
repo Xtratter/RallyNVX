@@ -10,6 +10,8 @@ pub const MAT_PLASTIC: u8 = 3;
 pub const MAT_CHROME: u8 = 4;
 pub const MAT_EMISSIVE: u8 = 5;
 pub const MAT_FOLIAGE: u8 = 6;
+/// The lamps of a car model whose lamp state the shader shows (the headlight, tail, reverse and indicator units keep their shape; see `rcar::lamp_points`).
+pub const MAT_CARLAMP: u8 = 7;
 
 /// One vertex: position, normal, colour (rgb) with the material id in the alpha byte. 28 bytes.
 #[repr(C)]

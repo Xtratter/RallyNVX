@@ -28,8 +28,10 @@ struct Uni {
     vp: [f32; 16], light_vp: [f32; 16], inv_vp: [f32; 16],
     cam: [f32; 4], sun: [f32; 4], fog: [f32; 4], sky_top: [f32; 4], sky_hor: [f32; 4], sun_col: [f32; 4],
     mode: [f32; 4], cam_tile: [f32; 4], moon: [f32; 4], disc: [f32; 4], hl_pos: [f32; 4], hl_dir: [f32; 4], tl_pos: [f32; 4], tl_col: [f32; 4], wind: [f32; 4],
+    /// The car's lamps: headlights on, braking, reversing (the car model's lamp material shows them), 0.
+    lamps: [f32; 4],
 }
-const _: () = assert!(std::mem::size_of::<Uni>() == 432);
+const _: () = assert!(std::mem::size_of::<Uni>() == 448);
 
 /// One instance: model matrix, per-axis scale (for normals), colour. Matches the instance vertex layout (96 bytes).
 #[repr(C)]
@@ -417,7 +419,8 @@ impl Raster {
             hl_dir: [wv.lamps.head_dir.x, wv.lamps.head_dir.y, wv.lamps.head_dir.z, 0.927],
             tl_pos: [tc.x, tc.y, tc.z, 0.],
             tl_col: tail_glow,
-            wind: [wv.wind.x, wv.wind.z, wv.cloud_off.0, wv.cloud_off.1] };
+            wind: [wv.wind.x, wv.wind.z, wv.cloud_off.0, wv.cloud_off.1],
+            lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, 0.0] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // a new level invalidates every cache keyed by tile coordinates
@@ -465,10 +468,11 @@ impl Raster {
         {
             let (lights, lamps, rot) = (&wv.lights, &wv.lamps, wv.vehicle.rot);
             let mut glow = |p: V3, s: V3, col: [f32; 3]| lists[0].push(inst_glow(rot, p, s, col));
-            if lights.head { for p in lamps.head { glow(p, v3(0.24, 0.13, 0.08), [1.0, 0.97, 0.85]); } }
+            let own_lamps = veh.spec.style == crate::game::vehicle::CarStyle::Rally;   // the rally car's mesh has real lamp shapes that show their own state
+            if own_lamps {} else if lights.head { for p in lamps.head { glow(p, v3(0.24, 0.13, 0.08), [1.0, 0.97, 0.85]); } }
             let tail_col = if lights.brake { [1.0, 0.05, 0.03] } else if lights.head { [0.35, 0.02, 0.01] } else { [0.0; 3] };
-            if tail_col[0] > 0.0 { for p in lamps.tail { glow(p, v3(0.28, 0.1, 0.06), tail_col); } }
-            if lights.reverse { for p in lamps.rev { glow(p, v3(0.16, 0.1, 0.06), [1.0, 1.0, 0.95]); } }
+            if own_lamps {} else if tail_col[0] > 0.0 { for p in lamps.tail { glow(p, v3(0.28, 0.1, 0.06), tail_col); } }
+            if !own_lamps && lights.reverse { for p in lamps.rev { glow(p, v3(0.16, 0.1, 0.06), [1.0, 1.0, 0.95]); } }
         }
         if let Some(level) = wv.terrain.water_level() {
             if veh.speed().abs() > 2.0 {
