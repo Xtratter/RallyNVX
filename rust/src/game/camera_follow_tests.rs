@@ -119,9 +119,13 @@ fn settle_in(view: i32, dist: f32, height: f32) -> (Vehicle, Terrain, FollowCam)
     assert_eq!(CamView::from_index(0), CamView::Chase);
     assert_eq!(CamView::from_index(4), CamView::Orbit);
     assert_eq!(CamView::from_index(-3), CamView::Chase);
-    assert_eq!(CamView::from_index(99), CamView::Orbit);
+    assert_eq!(CamView::from_index(5), CamView::Cockpit);
+    assert_eq!(CamView::from_index(99), CamView::Cockpit);
     let (_, _, mut c) = settled_car();
     c.set_view(99, 50.0, -50.0);
+    assert_eq!(c.view, CamView::Cockpit);
+    assert!(c.dist <= 2.5 && c.dist >= 0.5 && c.height >= -1.0 && c.height <= 1.0, "{} {}", c.dist, c.height);
+    c.set_view(4, 50.0, -50.0);
     assert_eq!(c.view, CamView::Orbit);
     assert!(c.dist <= 2.5 && c.dist >= 0.5 && c.height >= -3.0 && c.height <= 6.0, "{} {}", c.dist, c.height);
     c.set_view(0, f32::NAN, f32::INFINITY);
@@ -180,7 +184,7 @@ fn settle_in(view: i32, dist: f32, height: f32) -> (Vehicle, Terrain, FollowCam)
 #[test] fn every_view_stays_finite_and_the_chase_views_stay_above_the_ground() {
     let t = Terrain::new(9);
     let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., t.height(0., 0.) + 1.1, 0.), 0.0);
-    for view in 0..5 {
+    for view in 0..6 {
         let mut c = FollowCam::new(&v);
         c.set_view(view, 0.5, -3.0);
         for i in 0..400 {
@@ -207,4 +211,26 @@ fn settle_in(view: i32, dist: f32, height: f32) -> (Vehicle, Terrain, FollowCam)
     }
     assert!(v.speed() > 15.0, "the car is fast: {}", v.speed());
     assert!(worst < nominal + 1.6, "the camera dropped back to {worst:.1} m (at rest {nominal:.1} m)");
+}
+
+#[test] fn the_cockpit_view_sits_at_the_drivers_eyes_and_falls_back_to_the_bonnet() {
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0.0, 1.2, 0.0), 0.0);
+    for _ in 0..180 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+    let mut c = FollowCam::new(&v); c.set_view(5, 1.0, 0.0);
+    for _ in 0..240 { c.update(&v, &t, 1.0 / 60.0); }
+    let off = c.pos - v.pos;
+    let e = v.spec.cam_cockpit.expect("the Vulpes has cockpit eyes");
+    let (left, ahead) = (-off.dot(v.right()), off.dot(v.forward()));
+    assert!((left - e[0]).abs() < 0.02 && (ahead - e[2]).abs() < 0.02, "eyes at x {left}, z {ahead} vs {e:?}");
+    assert!(c.pos.y > v.pos.y && c.pos.y < v.pos.y + 1.6, "height {}", c.pos.y - v.pos.y);
+    assert!(((c.target - c.pos).norm()).dot(v.forward()) > 0.97, "looks along the car");
+    assert!(CamView::Cockpit.rigid());
+    // a car without cockpit eyes rides on the bonnet
+    let (v2, t2, mut c2) = settled_car();
+    let mut spec = v2.spec; spec.cam_cockpit = None;
+    let v2 = Vehicle::new(spec, v2.pos, 0.0);
+    c2.set_view(5, 1.0, 0.0); let mut c_hood = FollowCam::new(&v2); c_hood.set_view(1, 1.0, 0.0);
+    for _ in 0..30 { c2.update(&v2, &t2, 1.0 / 60.0); c_hood.update(&v2, &t2, 1.0 / 60.0); }
+    assert!((c2.pos - c_hood.pos).len() < 1e-4, "the same spot as the bonnet view");
 }

@@ -5,16 +5,16 @@ package dev.starinin.rallynvx
  * vertical two-finger move change the distance scale (zoom in the bonnet and bumper views) and the height offset (gaze tilt there).
  */
 object CamMath {
-    const val VIEWS = 5
+    const val VIEWS = 6
     const val DIST_MIN = 0.5f
     const val DIST_MAX = 2.5f
-    private val EN = arrayOf("Behind", "Bonnet", "Bumper", "Roof", "Orbit")
-    private val RU = arrayOf("Сзади", "Капот", "Бампер", "Сверху", "Обзор")
+    private val EN = arrayOf("Behind", "Bonnet", "Bumper", "Roof", "Orbit", "Cockpit")
+    private val RU = arrayOf("Сзади", "Капот", "Бампер", "Сверху", "Обзор", "Салон")
 
     fun name(view: Int, en: Boolean) = (if (en) EN else RU)[view.coerceIn(0, VIEWS - 1)]
     fun next(view: Int) = (view.coerceIn(0, VIEWS - 1) + 1) % VIEWS
-    /** The bonnet (1) and bumper (2) views ride on the car: their "height" is a gaze tilt and their "distance" a zoom. */
-    fun rigid(view: Int) = view == 1 || view == 2
+    /** The bonnet (1), bumper (2) and cockpit (5) views ride on the car: their "height" is a gaze tilt and their "distance" a zoom. */
+    fun rigid(view: Int) = view == 1 || view == 2 || view == 5
 
     /** The finger's camera drag can be inverted: bit 1 = horizontally, bit 2 = vertically (0 none, 3 both). */
     const val INVERT_MODES = 4

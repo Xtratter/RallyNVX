@@ -86,3 +86,15 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     assert_eq!(offroader.cam_hood, [0.66, 0.12], "the default hood spot");
     assert!(offroader.cam_bumper[1] > 0.4);
 }
+
+#[test] fn the_cockpit_eyes_are_optional_and_validated() {
+    assert!(VehicleSpec::by_id("vulpes").unwrap().cam_cockpit.is_some());
+    assert!(VehicleSpec::by_id("offroader").unwrap().cam_cockpit.is_none(), "a car without eyes: the cockpit view uses the bonnet");
+    let v: serde_json::Value = serde_json::from_str(r#"{"cameras":{"cockpit":[0.3,1.1,0.1]}}"#).unwrap();
+    assert_eq!(parse_cockpit(&v, "t").unwrap(), Some([0.3, 1.1, 0.1]));
+    for bad in [r#"{"cameras":{"cockpit":[0.3,1.1]}}"#, r#"{"cameras":{"cockpit":[9,1.1,0.1]}}"#, r#"{"cameras":{"cockpit":[0.3,-1,0.1]}}"#, r#"{"cameras":{"cockpit":"x"}}"#] {
+        let v: serde_json::Value = serde_json::from_str(bad).unwrap();
+        assert!(parse_cockpit(&v, "t").is_err(), "{bad}");
+    }
+    assert_eq!(parse_cockpit(&serde_json::from_str("{}").unwrap(), "t").unwrap(), None);
+}

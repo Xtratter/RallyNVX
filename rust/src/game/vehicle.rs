@@ -29,7 +29,7 @@ pub struct VehicleSpec {
     /// stiffness, rolling resistance, air drag, angular damping, handbrake rear grip factor, reverse speed factor,
     /// suspension force cap in car weights per wheel.
     pub steer_max: f32, pub steer_speed_ref: f32, pub steer_rate: f32, pub lateral_k: f32, pub rolling: f32,
-    pub aero: f32, pub aero_base: super::aero::AeroBase, pub kit: super::aero::AeroKit, pub cam_hood: [f32; 2], pub cam_bumper: [f32; 2], pub ang_damp: f32, pub handbrake_grip: f32, pub reverse_factor: f32, pub max_susp_factor: f32,
+    pub aero: f32, pub aero_base: super::aero::AeroBase, pub kit: super::aero::AeroKit, pub cam_hood: [f32; 2], pub cam_bumper: [f32; 2], pub cam_cockpit: Option<[f32; 3]>, pub ang_damp: f32, pub handbrake_grip: f32, pub reverse_factor: f32, pub max_susp_factor: f32,
     /// Extra drag in water, 1/s with all four wheels wet (see docs/vehicles.md).
     pub water_drag: f32,
 }

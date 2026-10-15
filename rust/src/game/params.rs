@@ -80,7 +80,7 @@ fn parse_car(id: &str, v: &Value) -> Result<VehicleSpec, String> {
         max_speed: above(v, "max_speed", ctx, 0.0)?, mu: above(v, "grip", ctx, 0.0)?,
         steer_max: between(hnd, "steer_max", ctx, 0.01, 1.4)?, steer_speed_ref: above(hnd, "steer_speed_ref", ctx, 0.0)?,
         steer_rate: above(hnd, "steer_rate", ctx, 0.0)?, lateral_k: between(hnd, "lateral_stiffness", ctx, 0.0, 1e6)?,
-        rolling: between(hnd, "rolling_resistance", ctx, 0.0, 1e6)?, aero: between(hnd, "aero_drag", ctx, 0.0, 1e6)?, aero_base: parse_aero(v, ctx)?, kit: Default::default(), cam_hood: parse_cam(v, ctx, "hood", [0.66, 0.12])?, cam_bumper: parse_cam(v, ctx, "bumper", [0.30, 0.51])?,
+        rolling: between(hnd, "rolling_resistance", ctx, 0.0, 1e6)?, aero: between(hnd, "aero_drag", ctx, 0.0, 1e6)?, aero_base: parse_aero(v, ctx)?, kit: Default::default(), cam_hood: parse_cam(v, ctx, "hood", [0.66, 0.12])?, cam_bumper: parse_cam(v, ctx, "bumper", [0.30, 0.51])?, cam_cockpit: parse_cockpit(v, ctx)?,
         ang_damp: between(hnd, "angular_damping", ctx, 0.0, 1e3)?, handbrake_grip: between(hnd, "handbrake_grip", ctx, 0.0, 1.0)?,
         reverse_factor: between(hnd, "reverse_speed_factor", ctx, 0.01, 1.0)?,
         max_susp_factor: above(sus, "max_force_factor", ctx, 0.0)?,
@@ -96,6 +96,15 @@ fn parse_cam(v: &Value, ctx: &str, key: &str, default: [f32; 2]) -> Result<[f32;
     let a = a.as_array().filter(|a| a.len() == 2).ok_or_else(err)?;
     let f = |i: usize| a[i].as_f64().filter(|x| x.is_finite() && (0.0..=1.0).contains(x)).map(|x| x as f32).ok_or_else(err);
     Ok([f(0)?, f(1)?])
+}
+
+/// The driver's eyes in metres (optional `cameras.cockpit`: `[x to the left, y above the road, z ahead of the centre]`, each within +-3 m, y within 0..3 m).
+fn parse_cockpit(v: &Value, ctx: &str) -> Result<Option<[f32; 3]>, String> {
+    let Some(a) = v.get("cameras").and_then(|c| c.get("cockpit")) else { return Ok(None) };
+    let err = || format!("{ctx}: cameras \"cockpit\" must be [x left, y above the road, z ahead] in metres");
+    let a = a.as_array().filter(|a| a.len() == 3).ok_or_else(err)?;
+    let f = |i: usize, lo: f64, hi: f64| a[i].as_f64().filter(|x| x.is_finite() && (lo..=hi).contains(x)).map(|x| x as f32).ok_or_else(err);
+    Ok(Some([f(0, -3.0, 3.0)?, f(1, 0.0, 3.0)?, f(2, -3.0, 3.0)?]))
 }
 
 fn parse_aero(v: &Value, ctx: &str) -> Result<super::aero::AeroBase, String> {

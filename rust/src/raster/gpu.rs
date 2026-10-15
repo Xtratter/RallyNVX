@@ -99,7 +99,9 @@ const SLOT_DISC: usize = SLOT_SIGN + 17;      // the car's brake discs (spin wit
 const SLOT_CALIPER: usize = SLOT_SIGN + 18;   // the car's brake calipers (steer and follow the suspension, no spin)
 const SLOT_INTERIOR: usize = SLOT_SIGN + 19;  // the car's interior and driver (opaque, drawn near the car only)
 const SLOT_GLASS: usize = SLOT_SIGN + 20;     // the car's transparent glass (its own blended pass)
-const MODEL_SLOTS: usize = SLOT_SIGN + 21;
+const SLOT_STEERING: usize = SLOT_SIGN + 21;  // the steering wheel (turns about its axis), drawn with the interior
+const SLOT_DRIVER: usize = SLOT_SIGN + 22;    // the driver, drawn with the interior unless the camera is inside the car
+const MODEL_SLOTS: usize = SLOT_SIGN + 23;
 const MAX_MODEL_INST: usize = 6144;
 const SIGN_SCALE: f32 = 2.2;   // the signs are drawn bigger than real ones so they read from a moving car
 const NEAR_SHADOW: f32 = 90.0;   // plants within this distance of the car cast shadows
@@ -152,6 +154,7 @@ pub struct Raster {
     pl_inst_sh: wgpu::RenderPipeline,
     pl_sky: wgpu::RenderPipeline,
     pl_model: wgpu::RenderPipeline,
+    pl_model_back: wgpu::RenderPipeline,   // the car's body seen from inside: back faces culled (the inside of the shell is not drawn)
     pl_model_sh: wgpu::RenderPipeline,
     models: Vec<ModelBuf>,
     mbuf: wgpu::Buffer,
@@ -169,6 +172,8 @@ pub struct Raster {
     dust_buf: wgpu::Buffer,
     cache_seed: u64,
     car_key: [u32; 13],
+    car_steering: Option<(V3, V3)>,   // the steering wheel's pivot and axis, when the car has one
+    car_has_driver: bool,
     car_parts: (bool, bool, bool, bool),   // whether the car model has brake discs / calipers / an interior / glass
     /// The signed distance field of the car's body mesh (for the dust's exact-shape option), rebuilt with the model; `sdf_serial` tells the dust a new one is there.
     car_sdf: Option<crate::game::sdf::Sdf>, sdf_serial: u32,
@@ -395,6 +400,12 @@ impl Raster {
         let model_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<vm::Vert>() as u64, step_mode: wgpu::VertexStepMode::Vertex, attributes: &MODEL_ATTRS };
         let minst_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<MInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &MINST_ATTRS };
         let pl_model = mk("model", &lay_main, "vs_model", Some("fs_model"), &[model_layout.clone(), minst_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
+        let pl_model_back = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("model_back"), layout: Some(&lay_main),
+            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_model"), compilation_options: Default::default(), buffers: &[model_layout.clone(), minst_layout.clone()] },
+            fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_model"), compilation_options: Default::default(), targets: &target }),
+            primitive: wgpu::PrimitiveState { cull_mode: Some(wgpu::Face::Back), ..Default::default() }, depth_stencil: depth_state(true, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+        });
         let pl_glass = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("glass"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_model"), compilation_options: Default::default(), buffers: &[model_layout.clone(), minst_layout.clone()] },
@@ -408,13 +419,13 @@ impl Raster {
         let nat = nature_models::build_all();
         let signs_meshes = sign_models::build_all();
         let models: Vec<ModelBuf> = [&car.body, &car.wheel].into_iter()
-            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass]).chain(signs_meshes.iter()).chain([&car.disc.clone().unwrap_or_else(placeholder_mesh), &car.caliper.clone().unwrap_or_else(placeholder_mesh), &car.interior.clone().unwrap_or_else(placeholder_mesh), &car.glass.clone().unwrap_or_else(placeholder_mesh)]).map(|m| model_buf(&device, m)).collect();
+            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass]).chain(signs_meshes.iter()).chain([&car.disc.clone().unwrap_or_else(placeholder_mesh), &car.caliper.clone().unwrap_or_else(placeholder_mesh), &car.interior.clone().unwrap_or_else(placeholder_mesh), &car.glass.clone().unwrap_or_else(placeholder_mesh), &car.steering.as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.driver.clone().unwrap_or_else(placeholder_mesh)]).map(|m| model_buf(&device, m)).collect();
         assert_eq!(models.len(), MODEL_SLOTS);
         let mbuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("model_inst"), size: (MAX_MODEL_INST * std::mem::size_of::<MInst>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -447,6 +458,10 @@ impl Raster {
         self.models[SLOT_CALIPER] = model_buf(&self.device, &car.caliper.clone().unwrap_or_else(placeholder_mesh));
         self.models[SLOT_INTERIOR] = model_buf(&self.device, &car.interior.clone().unwrap_or_else(placeholder_mesh));
         self.models[SLOT_GLASS] = model_buf(&self.device, &car.glass.clone().unwrap_or_else(placeholder_mesh));
+        self.models[SLOT_STEERING] = model_buf(&self.device, &car.steering.as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh));
+        self.models[SLOT_DRIVER] = model_buf(&self.device, &car.driver.clone().unwrap_or_else(placeholder_mesh));
+        self.car_steering = car.steering.as_ref().map(|s| (s.pivot, s.axis));
+        self.car_has_driver = car.driver.is_some();
         self.car_parts = (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some());
         self.car_key = key;
         // the exact shape for the dust: the body mesh as a signed distance field (0.1 m voxels)
@@ -478,7 +493,7 @@ impl Raster {
 
         // camera and light matrices
         let aspect = self.config.width as f32 / self.config.height as f32;
-        let vp = mat_mul(perspective(wv.cam_fov.clamp(0.4, 1.6), aspect, 0.3, 2500.0), look_at(wv.cam_pos, wv.cam_target, v3(0., 1., 0.)));
+        let vp = mat_mul(perspective(wv.cam_fov.clamp(0.4, 1.6), aspect, vm::near_for((wv.cam_pos - wv.vehicle.pos).len()), 2500.0), look_at(wv.cam_pos, wv.cam_target, v3(0., 1., 0.)));
         let centre = wv.vehicle.pos;
         let up = if wv.sun.y.abs() > 0.99 { v3(0., 0., 1.) } else { v3(0., 1., 0.) };
         let light_vp = mat_mul(ortho(-70., 70., -70., 70., 1., 300.), look_at(centre + wv.sun * 150.0, centre, up));
@@ -544,7 +559,15 @@ impl Raster {
         ml[0].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] });   // alpha 0.5: the player's car (not lit by its own lamps)
         // the glass (always) and the interior (near the car only) share the body's pose
         if self.car_parts.3 { ml[SLOT_GLASS].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] }); }
-        if self.car_parts.2 && vm::draw_interior((wv.cam_pos - veh.pos).len()) { ml[SLOT_INTERIOR].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] }); }
+        if self.car_parts.2 && vm::draw_interior((wv.cam_pos - veh.pos).len()) {
+            ml[SLOT_INTERIOR].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] });
+            // the steering wheel turns about its axis with the steering; the driver is left out when the camera is inside the car
+            if let Some((pivot, axis)) = self.car_steering {
+                let q = bq.mul(Q::axis_angle(axis, vm::steering_wheel_angle(veh.steer)));
+                ml[SLOT_STEERING].push(MInst { m: mmat(q, bp + bq.rotate(pivot)), tint: [1.0, 1.0, 1.0, 0.5] });
+            }
+            if self.car_has_driver && vm::draw_driver((wv.cam_pos - veh.pos).len()) { ml[SLOT_DRIVER].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] }); }
+        }
         for (w, p) in vm::car_wheel_poses(veh, self.wheel_spin).iter().enumerate() {
             ml[1].push(MInst { m: mmat(p.0, p.1), tint: [1.0, 1.0, 1.0, 0.5] });
             // the disc turns with the wheel; its tint alpha carries the brake heat (0.1 .. 0.5), see `fs_model`
@@ -697,7 +720,7 @@ impl Raster {
             rp.set_pipeline(&self.pl_model_sh);
             rp.set_vertex_buffer(1, self.mbuf.slice(..));
             for k in 0..MODEL_SLOTS {
-                if k == SLOT_GLASS || k == SLOT_INTERIOR { continue; }   // the glass and the interior cast no shadows
+                if k == SLOT_GLASS || k == SLOT_INTERIOR || k == SLOT_STEERING || k == SLOT_DRIVER { continue; }   // the glass and the interior cast no shadows
                 let (a, mut b) = mranges[k];
                 if k >= SLOT_TREE { b = if k == SLOT_GRASS { a } else { a + mnear[k].min(b - a) }; }
                 if b == a { continue; }
@@ -738,12 +761,15 @@ impl Raster {
             }
             rp.set_pipeline(&self.pl_model);
             rp.set_vertex_buffer(1, self.mbuf.slice(..));
+            let inside = (wv.cam_pos - wv.vehicle.pos).len() < 1.5;   // the camera is in the car: its body is drawn with the back faces culled
             for k in 0..MODEL_SLOTS {
                 if k == SLOT_GLASS { continue; }   // drawn blended, after everything opaque
                 let (a, b) = mranges[k]; if b == a { continue; }
                 let m = &self.models[k];
+                if k == 0 && inside { rp.set_pipeline(&self.pl_model_back); rp.set_vertex_buffer(1, self.mbuf.slice(..)); }
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, a..b);
+                if k == 0 && inside { rp.set_pipeline(&self.pl_model); rp.set_vertex_buffer(1, self.mbuf.slice(..)); }
             }
             rp.set_pipeline(&self.pl_inst);
             rp.set_vertex_buffer(1, self.ibuf.slice(..));

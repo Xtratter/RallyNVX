@@ -48,9 +48,35 @@ fn is_cover(n: &str) -> bool {
 /// The cabin parts and the driver of the source model (the windows, wipers, dials, LEDs and indicators are left out).
 fn is_cabin(n: &str) -> bool {
     let cabin = n.starts_with("int_") || n.starts_with("Int_");
-    cabin && !["window", "wiper", "dials", "LED", "INDICATOR", "glasspart", "notes"].iter().any(|b| n.contains(b))
+    cabin && !["window", "wiper", "dials", "LED", "INDICATOR", "glasspart", "notes", "steering"].iter().any(|b| n.contains(b))
 }
 fn is_driver(n: &str) -> bool { n.starts_with("CO_DRIVER") }
+/// The steering wheel (its own mesh: the game turns it).
+fn is_wheel(n: &str) -> bool { n.starts_with("int_steering") }
+
+/// The centroid and the axis of a ring-like part: the smallest principal axis of its points (the wheel's normal), oriented towards -z (the rear, where the driver sits).
+fn ring_pivot(pts: &[[f32; 3]]) -> ([f32; 3], [f32; 3]) {
+    let n = pts.len().max(1) as f64;
+    let c = [0, 1, 2].map(|k| pts.iter().map(|p| p[k] as f64).sum::<f64>() / n);
+    let mut m = [[0.0f64; 3]; 3];
+    for p in pts { let d = [0, 1, 2].map(|k| p[k] as f64 - c[k]); for i in 0..3 { for j in 0..3 { m[i][j] += d[i] * d[j] / n; } } }
+    // Jacobi eigen-decomposition of the symmetric 3x3 covariance
+    let mut v = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    for _ in 0..40 {
+        let (mut p, mut q, mut big) = (0, 1, 0.0);
+        for i in 0..3 { for j in i + 1..3 { if m[i][j].abs() > big { big = m[i][j].abs(); p = i; q = j; } } }
+        if big < 1e-14 { break; }
+        let theta = 0.5 * (2.0 * m[p][q]).atan2(m[q][q] - m[p][p]);
+        let (s, c2) = theta.sin_cos();
+        for k in 0..3 { let (a, b) = (m[k][p], m[k][q]); m[k][p] = c2 * a - s * b; m[k][q] = s * a + c2 * b; }
+        for k in 0..3 { let (a, b) = (m[p][k], m[q][k]); m[p][k] = c2 * a - s * b; m[q][k] = s * a + c2 * b; }
+        for k in 0..3 { let (a, b) = (v[k][p], v[k][q]); v[k][p] = c2 * a - s * b; v[k][q] = s * a + c2 * b; }
+    }
+    let smallest = (0..3).min_by(|&i, &j| m[i][i].total_cmp(&m[j][j])).unwrap();
+    let mut axis = [v[0][smallest], v[1][smallest], v[2][smallest]];
+    if axis[2] > 0.0 { axis = axis.map(|x| -x); }
+    ([c[0] as f32, c[1] as f32, c[2] as f32], axis.map(|x| x as f32))
+}
 
 /// The body's transform for parts: down to the ground, levelled about the rear axle (`cr`, `st`, `ct` as in `main`).
 fn body_xf(vs: &mut [V], ground: f32, cr: [f32; 3], st: f32, ct: f32) {
@@ -164,14 +190,17 @@ fn merge(parts: &[(String, Vec<V>, Vec<u32>)]) -> (Vec<V>, Vec<u32>) {
     (v, i)
 }
 
-fn simplify(v: &[V], idx: &[u32], target_tris: usize) -> (Vec<V>, Vec<u32>) {
+fn simplify(v: &[V], idx: &[u32], target_tris: usize) -> (Vec<V>, Vec<u32>) { simplify_with(v, idx, target_tris, 0.5, meshopt::SimplifyOptions::None) }
+
+/// `max_error` is relative to the mesh's extent; `LockBorder` keeps the open edges of thin shells (the cabin) from collapsing across openings.
+fn simplify_with(v: &[V], idx: &[u32], target_tris: usize, max_error: f32, opts: meshopt::SimplifyOptions) -> (Vec<V>, Vec<u32>) {
     if idx.len() / 3 <= target_tris { return compact(v, idx); }
     let bytes: Vec<u8> = v.iter().flat_map(|x| x.p.iter().flat_map(|f| f.to_le_bytes())).collect();
     let adapter = meshopt::VertexDataAdapter::new(&bytes, 12, 0).unwrap();
     let attrs: Vec<f32> = v.iter().flat_map(|x| [x.n[0], x.n[1], x.n[2], x.c[0] as f32 / 255.0, x.c[1] as f32 / 255.0, x.c[2] as f32 / 255.0, x.uv[0], x.uv[1]]).collect();
     let mut err = 0.0f32;
     let lock = vec![false; v.len()];
-    let out = meshopt::simplify_with_attributes_and_locks(idx, &adapter, &attrs, &[0.6, 0.6, 0.6, 0.4, 0.4, 0.4, 1.0, 1.0], 32, &lock, target_tris * 3, 0.5, meshopt::SimplifyOptions::None, Some(&mut err));
+    let out = meshopt::simplify_with_attributes_and_locks(idx, &adapter, &attrs, &[0.6, 0.6, 0.6, 0.4, 0.4, 0.4, 1.0, 1.0], 32, &lock, target_tris * 3, max_error, opts, Some(&mut err));
     eprintln!("  simplified {} -> {} tris (error {:.4})", idx.len() / 3, out.len() / 3, err);
     compact(v, &out)
 }
@@ -269,8 +298,9 @@ fn main() {
     const IATLAS: u32 = 1024;
     let cabin_t: usize = a.get(7).and_then(|x| x.parse().ok()).unwrap_or(13000);
     let driver_t: usize = a.get(8).and_then(|x| x.parse().ok()).unwrap_or(3000);
-    let mut interior: Vec<(Vec<V>, Vec<u32>, usize)> = Vec::new();   // (vertices, indices, budget)
-    for (want, budget) in [(is_cabin as fn(&str) -> bool, cabin_t), (is_driver as fn(&str) -> bool, driver_t)] {
+    let wheel_t2: usize = a.get(9).and_then(|x| x.parse().ok()).unwrap_or(2500);
+    let mut interior: Vec<(Vec<V>, Vec<u32>, usize)> = Vec::new();   // (vertices, indices, budget): the cabin, the steering wheel, the driver
+    for (want, budget) in [(is_cabin as fn(&str) -> bool, cabin_t), (is_wheel as fn(&str) -> bool, wheel_t2), (is_driver as fn(&str) -> bool, driver_t)] {
         let ps = collect(doc, &buffers, &mut tex, &|n| want(n), true);
         let (mut v, i) = merge(&ps);
         body_xf(&mut v, ground, cr, st, ct);
@@ -278,6 +308,8 @@ fn main() {
         eprintln!("interior group: {} parts, {} triangles, {} of {} vertices textured", ps.len(), i.len() / 3, v.iter().filter(|x| x.tex.is_some()).count(), v.len());
         interior.push((v, i, budget));
     }
+    let (pivot, axis) = ring_pivot(&interior[1].0.iter().map(|v| v.p).collect::<Vec<_>>());
+    eprintln!("steering wheel: pivot ({:.3}, {:.3}, {:.3}), axis ({:.3}, {:.3}, {:.3})", pivot[0], pivot[1], pivot[2], axis[0], axis[1], axis[2]);
     {
         let mut used: Vec<usize> = interior.iter().flat_map(|g| g.0.iter().filter_map(|v| v.tex)).collect(); used.sort(); used.dedup();
         // the cabin's main bake (2048 x 1024) keeps 512 pixels, everything else at most 256
@@ -382,20 +414,26 @@ fn main() {
         let f = std::fs::File::create(&a[5]).expect("create livery jpg");
         image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::BufWriter::new(f), 90).encode_image(&atlas_img).expect("write jpg");
     }
-    let (sv, si) = simplify(&bv, &bi, body_t);
+    // the body has openings (the windows, the lamps, the arches): LockBorder and a small error keep them from being bridged by big triangles
+    let (sv, si) = simplify_with(&bv, &bi, body_t, 0.03, meshopt::SimplifyOptions::LockBorder);
     let budgets = [wheel_t, 300, 500, wheel_t, wheel_t];
     let simplified: Vec<(Vec<V>, Vec<u32>)> = groups.iter().zip(budgets).map(|(g, t)| simplify(&g.0, &g.1, t)).collect();
     let (cgv, cgi) = compact(&gv, &gi);
-    // the interior: both groups simplified to their budgets and joined into one mesh
-    let (mut iv, mut ii): (Vec<V>, Vec<u32>) = (Vec::new(), Vec::new());
-    for (v, i, t) in &interior { let (sv2, si2) = simplify(v, i, *t); let base = iv.len() as u32; ii.extend(si2.iter().map(|x| x + base)); iv.extend(sv2); }
+    // the interior groups simplified to their budgets: the cabin, the steering wheel, the driver
+    let parts: Vec<(Vec<V>, Vec<u32>)> = interior.iter().enumerate().map(|(g, (v, i, t))| simplify_with(v, i, *t, if g == 2 { 0.02 } else { 0.004 }, meshopt::SimplifyOptions::LockBorder)).collect();   // tight for the cabin and the wheel (a loose error bridges the windscreen opening with a big black triangle), looser for the driver
+    // the steering pivot: a two-vertex mesh, vertex 0 `pos` = the wheel's centre, `nrm` = its axis
+    let meta_vert = |p: [f32; 3], n: [f32; 3]| V { p, n, c: [0, 0, 0, 0], uv: [0.0; 2], tex: None };
+    let (mv, mi) = (vec![meta_vert(pivot, axis), meta_vert(pivot, axis)], vec![0u32, 1, 1]);
     let mut out = b"RCA3".to_vec();
-    out.extend_from_slice(&8u32.to_le_bytes());
+    out.extend_from_slice(&11u32.to_le_bytes());
     write(&mut out, &sv, &si);
     for (v, i) in &simplified { write(&mut out, v, i); }
     write(&mut out, &cgv, &cgi);
-    write(&mut out, &iv, &ii);
-    eprintln!("glass {} tris, interior {} tris", cgi.len() / 3, ii.len() / 3);
+    write(&mut out, &parts[0].0, &parts[0].1);   // the interior (the cabin)
+    write(&mut out, &parts[1].0, &parts[1].1);   // the steering wheel
+    write(&mut out, &mv, &mi);                   // its pivot and axis
+    write(&mut out, &parts[2].0, &parts[2].1);   // the driver
+    eprintln!("glass {} tris, cabin {} tris, steering wheel {} tris, driver {} tris", cgi.len() / 3, parts[0].1.len() / 3, parts[1].1.len() / 3, parts[2].1.len() / 3);
     std::fs::write(&a[2], &out).unwrap();
     eprintln!("wrote {} bytes: body {} tris / {} verts; wheel {} tris, disc {} tris, caliper {} tris, gravel wheel {} tris, snow wheel {} tris", out.len(), si.len() / 3, sv.len(), simplified[0].1.len() / 3, simplified[1].1.len() / 3, simplified[2].1.len() / 3, simplified[3].1.len() / 3, simplified[4].1.len() / 3);
 }
@@ -414,12 +452,24 @@ mod tests {
         assert_eq!(corner_of("x0_suspension_bl"), Some(2)); assert_eq!(corner_of("x0_suspension5_br"), Some(3)); assert_eq!(corner_of("x0_suspension"), None);
         assert!(is_susp("x0_wishbone_fl") && is_susp("x0_suspension2_bl") && !is_susp("x0_main_body"));
     }
+    #[test] fn the_ring_pivot_is_the_normal_of_the_ring_plane_pointing_backwards() {
+        // a circle of radius 0.18 in a plane tilted 20 degrees about x, centred at (0.35, 0.9, 0.5)
+        let (st, ct) = (0.35f32.sin(), 0.35f32.cos());
+        let pts: Vec<[f32; 3]> = (0..60).map(|i| { let a = i as f32 / 60.0 * std::f32::consts::TAU; let (x, y) = (0.18 * a.cos(), 0.18 * a.sin()); [0.35 + x, 0.9 + y * ct, 0.5 + y * st] }).collect();
+        let (c, axis) = ring_pivot(&pts);
+        assert!((c[0] - 0.35).abs() < 1e-3 && (c[1] - 0.9).abs() < 1e-3 && (c[2] - 0.5).abs() < 1e-3, "{c:?}");
+        let want = [0.0, -st, ct];   // the plane's normal (y, z of the circle's plane are (ct, st)); the sign is fixed by -z
+        let want = if want[2] > 0.0 { [-want[0], -want[1], -want[2]] } else { want };
+        assert!((0..3).all(|k| (axis[k] - want[k]).abs() < 1e-3), "{axis:?} vs {want:?}");
+        assert!(axis[2] <= 0.0, "pointing backwards");
+    }
     #[test] fn glass_cabin_and_driver_parts_are_told_apart() {
         assert!(is_window("x0_window_f") && !is_window("int_window_f") && !is_window("x0_door_fl"));
         assert!(is_cover("Light_front_left_glass") && is_cover("Light_front_right_turn") && is_cover("Ligth_rear_glass") && is_cover("Light_bar_glass"));
         assert!(!is_cover("Ligth_rear_left_turn") && !is_cover("Light_front_left_plastics") && !is_cover("x0_window_b"), "the rear turn lens is an opaque lamp part");
-        assert!(is_cabin("int_main_SUB0") && is_cabin("int_seat_l_alcantara") && is_cabin("Int_doors_rebajos") && is_cabin("int_steering_wheel_SUB1"));
+        assert!(is_cabin("int_main_SUB0") && is_cabin("int_seat_l_alcantara") && is_cabin("Int_doors_rebajos") && !is_cabin("int_steering_wheel_SUB1"));
         assert!(!is_cabin("int_window_f") && !is_cabin("int_wiper_fl") && !is_cabin("int_boot_glasspart") && !is_cabin("x0_main_body") && !is_cabin("INT_INDICATOR_GEAR"));
         assert!(is_driver("CO_DRIVER:suit") && !is_driver("int_seat_l"));
+        assert!(is_wheel("int_steering_wheel_SUB1") && !is_cabin("int_steering_wheel_SUB1") && !is_wheel("int_main_SUB0"));
     }
 }

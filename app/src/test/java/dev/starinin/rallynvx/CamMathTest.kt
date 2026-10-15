@@ -10,7 +10,7 @@ class CamMathTest {
         repeat(CamMath.VIEWS) { seen += v; v = CamMath.next(v) }
         assertEquals(CamMath.VIEWS, seen.size); assertEquals(0, v)
         assertEquals("Behind", CamMath.name(0, true)); assertEquals("Капот", CamMath.name(1, false))
-        assertEquals("Orbit", CamMath.name(99, true)); assertEquals("Сзади", CamMath.name(-4, false))
+        assertEquals("Cockpit", CamMath.name(99, true)); assertEquals("Салон", CamMath.name(5, false)); assertEquals("Orbit", CamMath.name(4, true)); assertEquals("Сзади", CamMath.name(-4, false))
         assertEquals(0, CamMath.next(-3).minus(1))   // a wild view index is clamped before cycling
     }
     @Test fun distanceAndHeightAreClampedAndGarbageBecomesTheDefault() {
@@ -24,6 +24,8 @@ class CamMathTest {
         assertTrue(CamMath.pinchFor(0, 1f, 1.5f) < 1f)    // apart: closer
         assertTrue(CamMath.pinchFor(0, 1f, 0.6f) > 1f)    // together: further
         assertTrue(CamMath.pinchFor(1, 1f, 1.5f) > 1f)    // bonnet: apart zooms in (a bigger scale is a narrower field)
+        assertTrue(CamMath.pinchFor(5, 1f, 1.5f) > 1f)    // cockpit: the same, it rides on the car
+        assertTrue(CamMath.rigid(5) && CamMath.rigid(1) && CamMath.rigid(2) && !CamMath.rigid(4))
         assertEquals(CamMath.DIST_MAX, CamMath.pinchFor(0, 2.4f, 0.1f), 0f)
         assertEquals(1f, CamMath.pinchFor(0, 1f, Float.NaN), 0f); assertEquals(1f, CamMath.pinchFor(3, 1f, -2f), 0f)
     }

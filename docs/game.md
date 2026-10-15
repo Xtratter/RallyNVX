@@ -36,7 +36,7 @@ The GPU dust (Aerodynamics On, levels Normal and Lots) has four options, each on
 
 ## Camera
 
-The **View** button under the status line cycles the camera views: behind the car (default), on the bonnet, low on the front bumper, high behind (roof), and a free orbit (it never swings back by itself). One finger turns the camera round the car as before. **Two fingers** on free space: pinching changes the distance (spreading brings the camera closer; on the bonnet and bumper views it zooms in), moving both fingers up or down changes the height (on those views it tilts the gaze). A long press on the View button puts the current view back to its default distance and height. The view and each view's distance and height are remembered. Camera spots of a new car (bonnet and bumper, as fractions of its size) are `cameras.hood` and `cameras.bumper` in `vehicles.json`.
+The **View** button under the status line cycles the camera views: behind the car (default), on the bonnet, low on the front bumper, high behind (roof), a free orbit (it never swings back by itself) and the **Cockpit** (the driver's eyes inside the car; a car without cockpit eyes uses the bonnet's spot). One finger turns the camera round the car as before. **Two fingers** on free space: pinching changes the distance (spreading brings the camera closer; on the bonnet, bumper and cockpit views it zooms in), moving both fingers up or down changes the height (on those views it tilts the gaze). A long press on the View button puts the current view back to its default distance and height. The view and each view's distance and height are remembered. Camera spots of a new car (bonnet and bumper, as fractions of its size) are `cameras.hood` and `cameras.bumper` in `vehicles.json`.
 
 ## Aerodynamics (dust in the airflow)
 
@@ -144,7 +144,7 @@ No rally mode and no NPC orders yet, and only the raster and hybrid renderers. T
 
 ## Камера
 
-Кнопка **«Вид»** под строкой состояния переключает виды камеры по кругу: сзади машины (по умолчанию), на капоте, низко на переднем бампере, высоко сзади (крыша) и свободный обзор (сам не возвращается за машину). Один палец, как раньше, поворачивает камеру вокруг машины. **Два пальца** на свободном месте: щипок меняет расстояние (разведение приближает камеру; на капоте и бампере это зум), движение обоих пальцев вверх или вниз меняет высоту (в тех видах это наклон взгляда). Долгое нажатие на кнопку «Вид» возвращает расстояние и высоту текущего вида по умолчанию. Вид и расстояние с высотой для каждого вида запоминаются. Места камеры новой машины (капот и бампер, в долях её размера) задаются `cameras.hood` и `cameras.bumper` в `vehicles.json`.
+Кнопка **«Вид»** под строкой состояния переключает виды камеры по кругу: сзади машины (по умолчанию), на капоте, низко на переднем бампере, высоко сзади (крыша), свободный обзор (сам не возвращается за машину) и **Салон** (глаза водителя внутри машины; у машины без глаз водителя берётся место капота). Один палец, как раньше, поворачивает камеру вокруг машины. **Два пальца** на свободном месте: щипок меняет расстояние (разведение приближает камеру; на капоте, бампере и в салоне это зум), движение обоих пальцев вверх или вниз меняет высоту (в тех видах это наклон взгляда). Долгое нажатие на кнопку «Вид» возвращает расстояние и высоту текущего вида по умолчанию. Вид и расстояние с высотой для каждого вида запоминаются. Места камеры новой машины (капот и бампер, в долях её размера) задаются `cameras.hood` и `cameras.bumper` в `vehicles.json`.
 
 ## Аэродинамика (пыль в потоке воздуха)
 
