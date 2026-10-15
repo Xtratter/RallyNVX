@@ -2,6 +2,7 @@
 pub mod app;
 pub mod daylight;
 pub mod dust;
+pub mod dust_ref;
 pub mod rendermode;
 pub mod scatter;
 pub mod api;

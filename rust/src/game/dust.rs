@@ -13,8 +13,7 @@ use super::vehicle::Vehicle;
 #[derive(Clone, Copy, Debug)]
 pub struct Particle { pub pos: V3, pub size: f32, pub color: [f32; 3], pub alpha: f32, pub seed: f32, pub age: f32, pub kind: f32 }
 
-#[derive(Clone, Copy, Debug)]
-struct P { pos: V3, vel: V3, age: f32, life: f32, size0: f32, color: [f32; 3], coarse: bool, seed: f32 }
+use super::dust_ref::{self, GP as P};
 
 /// The numbers of `surfaces.json` -> `dust_physics`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -124,22 +123,8 @@ impl Dust {
         let mut i = 0;
         while i < self.parts.len() {
             let p = &mut self.parts[i];
-            p.age += dt;
-            if p.age >= p.life { self.parts.swap_remove(i); if self.head >= self.parts.len() { self.head = 0; } continue; }
-            let ground = t.height(p.pos.x, p.pos.z);
-            let u = air_velocity(p.pos, &air, ground, &ph);
-            let (tau, settle) = if p.coarse { (ph.tau_coarse, ph.settle_coarse) } else { (ph.tau_fine, ph.settle_fine) };
-            let target = v3(u.x, u.y - settle, u.z);
-            let k = 1.0 - (-dt / tau).exp();   // the exact relaxation of a Stokes-drag particle, stable at any step
-            p.vel = p.vel + (target - p.vel) * k;
-            p.pos = p.pos + p.vel * dt;
-            let g = t.height(p.pos.x, p.pos.z) + 0.04;
-            if p.pos.y < g {
-                if p.coarse { self.parts.swap_remove(i); if self.head >= self.parts.len() { self.head = 0; } continue; }   // grit is deposited
-                p.pos.y = g;
-                if p.vel.y < 0.0 { p.vel.y = 0.0; }
-                p.vel.x *= 1.0 - (2.5 * dt).min(1.0); p.vel.z *= 1.0 - (2.5 * dt).min(1.0);   // fine dust slides and slows on the ground
-            }
+            let u = air_velocity(p.pos, &air, t.height(p.pos.x, p.pos.z), &ph);
+            if !dust_ref::step(p, u, |x, z| t.height(x, z), &ph, dt) { self.parts.swap_remove(i); if self.head >= self.parts.len() { self.head = 0; } continue; }
             i += 1;
         }
         // emission
@@ -172,15 +157,7 @@ impl Dust {
         }
     }
 
-    pub fn particles(&self) -> Vec<Particle> {
-        self.parts.iter().map(|p| {
-            let x = (p.age / p.life).clamp(0.0, 1.0);
-            let fade_in = (x / 0.08).min(1.0);
-            // turbulent diffusion spreads a puff like the square root of its age
-            let size = p.size0 * (1.0 + if p.coarse { 0.8 } else { 1.7 } * (p.age.sqrt()) + 1.2 * x);
-            Particle { pos: p.pos, size, color: p.color, alpha: (if p.coarse { 0.6 } else { 0.55 }) * fade_in * (1.0 - x).powf(1.4), seed: p.seed, age: x, kind: if p.coarse { 1.0 } else { 0.0 } }
-        }).collect()
-    }
+    pub fn particles(&self) -> Vec<Particle> { self.parts.iter().map(dust_ref::render).collect() }
 }
 
 #[cfg(test)]
