@@ -57,6 +57,9 @@ object Controls {
     fun camDist(c: Context, view: Int): Float = CamMath.clampDist(p(c).getFloat("cam_dist_$view", 1f))
     fun camHeight(c: Context, view: Int): Float = CamMath.clampHeight(view, p(c).getFloat("cam_height_$view", 0f))
     fun setCam(c: Context, view: Int, dist: Float, height: Float) = p(c).edit().putInt("cam_view", view).putFloat("cam_dist_$view", dist).putFloat("cam_height_$view", height).apply()
+    /** Motion blur (the sense of speed): 0 off (the default), 1 low, 2 high. */
+    fun motionBlur(c: Context): Int = p(c).getInt("motion_blur", 0).coerceIn(0, 2)
+    fun setMotionBlur(c: Context, v: Int) = p(c).edit().putInt("motion_blur", v.coerceIn(0, 2)).apply()
     fun setDust(c: Context, v: Int) = p(c).edit().putInt("dust", v.coerceIn(0, 3)).apply()
     fun autoFallback(c: Context) = p(c).getBoolean("auto_fallback", false)
     fun setAutoFallback(c: Context, v: Boolean) = p(c).edit().putBoolean("auto_fallback", v).apply()

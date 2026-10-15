@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{airflow_gpu, dust_gpu, fluid_gpu, sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
+use super::{airflow_gpu, blur_gpu, dust_gpu, fluid_gpu, sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::scatter::{self, Bush};
@@ -149,6 +149,8 @@ pub struct Raster {
     airflow: Option<airflow_gpu::AirflowGpu>, airflow_tried: bool, adapter: wgpu::Adapter,
     /// The dust on the GPU, made on first use.
     prof: Option<Prof>,
+    /// The motion blur post pass (made when the setting is on and the surface can be copied), last frame's view-projection and camera position.
+    blur: Option<blur_gpu::MotionBlur>, prev_vp: Option<[f32; 16]>, prev_cam: V3,
     dust_gpu: Option<dust_gpu::DustGpu>, dust_render: Option<dust_gpu::DustRender>, bgl_main_keep: wgpu::BindGroupLayout, module_keep: wgpu::ShaderModule,
     dust_buf: wgpu::Buffer,
     cache_seed: u64,
@@ -196,7 +198,7 @@ impl Raster {
         let caps = surface.get_capabilities(&adapter);
         let format = caps.formats.iter().copied().find(|f| !f.is_srgb()).unwrap_or(caps.formats[0]);
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT, format, width: w.max(1), height: h.max(1),
+            usage: if caps.usages.contains(wgpu::TextureUsages::COPY_SRC) { wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC } else { wgpu::TextureUsages::RENDER_ATTACHMENT }, format, width: w.max(1), height: h.max(1),
             present_mode: wgpu::PresentMode::Fifo, desired_maximum_frame_latency: 2,
             alpha_mode: caps.alpha_modes[0], view_formats: vec![],
         };
@@ -345,7 +347,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -557,6 +559,9 @@ impl Raster {
             self.dust_render = Some(dust_gpu::DustRender::new(&self.device, &self.bgl_main_keep, &self.module_keep, self.config.format));
         }
         let dust_low = wv.dust_gpu.is_some() && self.dust_render.is_some();
+        let blur_params = blur_gpu::params(BLUR_LEVEL.load(std::sync::atomic::Ordering::Relaxed)).filter(|_| self.config.usage.contains(wgpu::TextureUsages::COPY_SRC));
+        if blur_params.is_some() && self.blur.is_none() { self.blur = Some(blur_gpu::MotionBlur::new(&self.device, self.config.format)); }
+        let blur_on = blur_params.is_some() && self.blur.is_some();
         let fluid_on = wv.fluid.is_some() && self.fluid.is_some();
         let dust_n = if fluid_on { 0 } else { dinst.len() as u32 };
         let mut all: Vec<Inst> = Vec::new();
@@ -634,7 +639,7 @@ impl Raster {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, resolve_target: None,
                     ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: wv.daylight.sky_hor[0] as f64 * 0.7, g: wv.daylight.sky_hor[1] as f64 * 0.7, b: wv.daylight.sky_hor[2] as f64 * 0.7, a: 1.0 }), store: wgpu::StoreOp::Store } })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.depth.1,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: if fluid_on || dust_low { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard } }), stencil_ops: None }),
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: if fluid_on || dust_low || blur_on { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard } }), stencil_ops: None }),
                 timestamp_writes: None, occlusion_query_set: None });
             rp.set_bind_group(0, &self.bg_main, &[]);
             rp.set_pipeline(&self.pl_sky);
@@ -695,6 +700,20 @@ impl Raster {
         if let (Some(af), Some(_), true) = (self.airflow.as_ref(), wv.airflow.as_ref(), crate::game::airflow::debug_on()) {
             af.draw(&self.device, &mut enc, &view, (self.config.width, self.config.height));
         }
+        // the speed effect: camera motion blur over the finished frame, the car masked so it stays sharp
+        if let (true, Some(bp), Some(mb)) = (blur_on, blur_params, self.blur.as_mut()) {
+            let cam_jump = self.prev_vp.is_none() || (wv.cam_pos - self.prev_cam).len() > 30.0;
+            if !cam_jump {
+                let cp = wv.vehicle.pos + v3(0.0, 0.8, 0.0);
+                let clip = [0, 1, 2, 3].map(|r| vp[0][r] * cp.x + vp[1][r] * cp.y + vp[2][r] * cp.z + vp[3][r]);
+                let inside = (wv.cam_pos - wv.vehicle.pos).len() < 2.5;   // the bonnet and bumper views sit in the car: nothing to mask
+                let cot = 1.0 / (wv.cam_fov.clamp(0.4, 1.6) * 0.5).tan();
+                let car = if clip[3] > 0.5 && !inside { [clip[0] / clip[3], clip[1] / clip[3], 1.5 * cot / clip[3], 1.0] } else { [0.0; 4] };
+                mb.draw(&self.device, &self.queue, &mut enc, &frame.texture, &view, &self.depth.1, (self.config.width, self.config.height),
+                    flatten(inverse(vp)), self.prev_vp.unwrap(), bp, blur_gpu::speed_gate(wv.vehicle.vel.len()), car);
+            }
+        }
+        self.prev_vp = Some(flatten(vp)); self.prev_cam = wv.cam_pos;
         if let Some(p) = &self.prof { p.mark(&mut enc, 5); p.resolve(&mut enc); }
         self.queue.submit([enc.finish()]);
         if let Some(p) = self.prof.as_mut() { p.report(&self.device); }
@@ -704,6 +723,10 @@ impl Raster {
 
 
 /// GPU timings of the frame's stages (debug: the extra `gpuprof=1`): timestamps between the stages, read back and logged every 90 frames.
+static BLUR_LEVEL: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+/// The Settings option "Motion blur": 0 off, 1 low, 2 high.
+pub fn set_blur(level: i32) { BLUR_LEVEL.store(level.clamp(0, 2), std::sync::atomic::Ordering::Relaxed); }
+
 static PROF_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub fn set_prof(on: bool) { PROF_ON.store(on, std::sync::atomic::Ordering::Relaxed); }
 const PROF_N: u32 = 6;

@@ -191,3 +191,20 @@ fn settle_in(view: i32, dist: f32, height: f32) -> (Vehicle, Terrain, FollowCam)
         }
     }
 }
+
+#[test] fn the_chase_camera_hardly_falls_behind_when_the_car_accelerates() {
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., 1.1, 0.), 0.0);
+    for _ in 0..120 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+    let mut c = FollowCam::new(&v);
+    for _ in 0..120 { c.update(&v, &t, 1.0 / 60.0); }
+    let nominal = behind(&c, &v);
+    let mut worst = 0.0f32;
+    for _ in 0..420 {
+        v.step(&t, &[], &Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0);
+        c.update(&v, &t, 1.0 / 60.0);
+        worst = worst.max(behind(&c, &v));
+    }
+    assert!(v.speed() > 15.0, "the car is fast: {}", v.speed());
+    assert!(worst < nominal + 1.6, "the camera dropped back to {worst:.1} m (at rest {nominal:.1} m)");
+}

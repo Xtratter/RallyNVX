@@ -57,6 +57,8 @@ object Native {
     @JvmStatic external fun gameAirflowDebug(on: Int)
     @JvmStatic external fun gameDustGpuDebug(on: Int)
     @JvmStatic external fun gameAero(on: Int)
+    /** Motion blur: 0 off, 1 low, 2 high. */
+    @JvmStatic external fun gameMotionBlur(level: Int)
     @JvmStatic external fun gameGpuProf(on: Int)
     @JvmStatic external fun gamePause(p: Boolean)
     @JvmStatic external fun gameStop()

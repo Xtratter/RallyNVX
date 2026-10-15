@@ -125,6 +125,10 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAero(_e: JNIEnv, _c: JClass, on: jint) {
         crate::game::dust::set_aero(on > 0);
     }
+    /// The Settings option "Motion blur" (0 off, 1 low, 2 high).
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameMotionBlur(_e: JNIEnv, _c: JClass, level: jint) {
+        crate::raster::set_blur(level);
+    }
     /// Debug/test: GPU stage timings in the log every 90 frames (0 off, 1 on).
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameGpuProf(_e: JNIEnv, _c: JClass, on: jint) {
         crate::raster::set_prof(on > 0);

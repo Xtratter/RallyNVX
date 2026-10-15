@@ -29,6 +29,7 @@ pub fn composite() -> String { join(include_str!("shaders/composite.wgsl")) }
 pub fn raster() -> String { include_str!("shaders/raster.wgsl").to_string() }
 pub fn fluid() -> String { include_str!("shaders/fluid.wgsl").to_string() }
 pub fn airflow() -> String { include_str!("shaders/airflow.wgsl").to_string() }
+pub fn blur() -> String { include_str!("shaders/blur.wgsl").to_string() }
 pub fn dust_gpu() -> String { include_str!("shaders/dust_gpu.wgsl").to_string() }
 pub fn present() -> String { join(include_str!("shaders/present.wgsl")) }
 
@@ -63,5 +64,6 @@ mod tests {
         validate("fluid", fluid());
         validate("airflow", airflow());
         validate("dust_gpu", dust_gpu());
+        validate("blur", blur());
     }
 }

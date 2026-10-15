@@ -335,6 +335,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         intent.getIntExtra("dust", -1).let { if (it >= 0) Controls.setDust(this, it) }   // debug/test: the dust level (3 = fluid)
         Native.gameDust(Controls.dust(this))
         Native.gameAero(if (Controls.aero(this)) 1 else 0)
+        intent.getIntExtra("blur", -1).let { if (it >= 0) Controls.setMotionBlur(this, it) }   // debug/test: motion blur level
+        Native.gameMotionBlur(Controls.motionBlur(this))
         Native.gameSigns(Controls.signs(this))
         Native.gameCameraView(camView, camDist, camHeight)
         running = true
@@ -392,7 +394,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun applyControls() {
         applyRender()
         Native.audioVolume(Controls.volume(this))
-        if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0) }
+        if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0); Native.gameMotionBlur(Controls.motionBlur(this)) }
         val d = drive ?: return
         d.configure(Controls.mode(this), Controls.sens(this), Controls.pedalsLeft(this), Controls.pedalsAnalog(this))
         applyControlLayout()

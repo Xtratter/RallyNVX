@@ -2,6 +2,7 @@
 pub mod citygen;
 pub mod dustgen;
 pub mod airflow_gpu;
+pub mod blur_gpu;
 pub mod dust_gpu;
 pub mod fluid_gpu;
 pub mod heightatlas;
@@ -71,4 +72,4 @@ mod plan_tests {
 #[cfg(any(target_os = "android", feature = "desktop"))]
 mod gpu;
 #[cfg(any(target_os = "android", feature = "desktop"))]
-pub use gpu::{set_prof, Raster};
+pub use gpu::{set_blur, set_prof, Raster};

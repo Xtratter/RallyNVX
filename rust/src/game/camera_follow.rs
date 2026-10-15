@@ -133,8 +133,11 @@ impl FollowCam {
         let dist = dh.hypot(dv);
         let elev = (dv.atan2(dh) + elev_off).clamp(ELEV_MIN, ELEV_MAX);
         let desired = look + dir * (dist * elev.cos()) + v3(0.0, dist * elev.sin(), 0.0);
-        let k = 1.0 - (-6.0 * dt).exp();
-        self.pos = self.pos + (desired - self.pos) * k;
+        // smoothing: soft sideways and up (the picture stays calm), stiff along the heading so the camera does not drop back when the car accelerates
+        let (k, k_along) = (1.0 - (-6.0 * dt).exp(), 1.0 - (-20.0 * dt).exp());
+        let delta = desired - self.pos;
+        let along = self.heading * delta.dot(self.heading);
+        self.pos = self.pos + along * k_along + (delta - along) * k;
         let floor = t.height(self.pos.x, self.pos.z) + 0.9;
         if self.pos.y < floor { self.pos.y = floor; }
         self.target = look;
