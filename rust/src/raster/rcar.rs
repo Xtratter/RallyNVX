@@ -219,6 +219,19 @@ mod tests {
         let (dl, dh) = disc.bounds();
         assert!(dh.y - dl.y > 0.3 && dh.y - dl.y < 0.5, "the disc fits inside the rim: {dl:?} {dh:?}");
     }
+    #[test] fn the_embedded_peugeot_has_three_wheel_sets() {
+        let p = parse_all(PEUGEOT).unwrap();
+        let sets = [Some(&p.wheel), p.alt_wheels[0].as_ref(), p.alt_wheels[1].as_ref()];
+        for (i, m) in sets.iter().enumerate() {
+            let m = m.unwrap_or_else(|| panic!("wheel set {i} is missing"));
+            assert!(m.idx.len() / 3 > 2000, "set {i}: {} triangles", m.idx.len() / 3);
+            let textured = m.verts.iter().filter(|v| v.uv != NO_UV).count();
+            assert!(textured * 10 > m.verts.len() * 7, "set {i}: {textured} of {} vertices have a UV", m.verts.len());
+            let (lo, hi) = m.bounds();
+            assert!(((hi.y - lo.y) / 2.0 - 0.326).abs() < 0.01 && (lo.y + hi.y).abs() < 0.02 && (lo.z + hi.z).abs() < 0.02, "set {i}: {lo:?} {hi:?}");
+        }
+        assert!(p.wheel.verts[0].pos != p.alt_wheels[0].as_ref().unwrap().verts[0].pos && p.alt_wheels[0].as_ref().unwrap().verts[0].pos != p.alt_wheels[1].as_ref().unwrap().verts[0].pos, "the sets differ");
+    }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());
     }

@@ -78,7 +78,7 @@ fn check(m: &Mesh3, name: &str) {
     let m = CarModel { alt_wheels: [Some(g), None], ..m };
     assert!(!std::ptr::eq(m.wheel_for(1), &m.wheel) && std::ptr::eq(m.wheel_for(2), &m.wheel), "gravel exists, snow falls back");
 }
-#[test] #[ignore = "until the asset carries the gravel and snow wheels (Task 3)"] fn the_peugeot_has_three_different_wheel_sets() {
+#[test] fn the_peugeot_has_three_different_wheel_sets() {
     let m = build_rally(&peugeot());
     let (a, b, c) = (m.wheel_for(0), m.wheel_for(1), m.wheel_for(2));
     assert!(!std::ptr::eq(a, b) && !std::ptr::eq(b, c) && !std::ptr::eq(a, c));

@@ -196,18 +196,26 @@ fn main() {
     eprintln!("body parts {} with {} vertices, {} triangles", parts.len(), bv.len(), bi.len() / 3);
     let (lo, hi) = bounds(&bv); eprintln!("body bounds: x {:.3}..{:.3} y {:.3}..{:.3} z {:.3}..{:.3}", lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]);
     // the wheel (left front): tyre + rim, the brake disc and the caliper as three meshes centred on the same point; their textures join the atlas
-    let wheel_names: [&[&str]; 3] = [&["tyre_tarmac_lf", "x0_wheel_fl_5radios"], &["x0_disc_fl"], &["x0_hub_caliper_fl"]];
+    let wheel_names: [&[&str]; 5] = [&["tyre_tarmac_lf", "x0_wheel_fl_5radios"], &["x0_disc_fl"], &["x0_hub_caliper_fl"], &["tyre_gravel_lf", "x0_wheel_fl_gravel"], &["snow_tire_lf", "rim_snow_lf"]];
     let mut groups: Vec<(Vec<V>, Vec<u32>)> = wheel_names.iter().map(|names| {
         let ps = collect(doc, &buffers, &mut tex, &|n| names.contains(&n), true);
-        eprintln!("wheel group {:?}: {} parts", names, ps.len());
-        merge(&ps)
+        let g = merge(&ps);
+        let (lo, hi) = bounds(&g.0);
+        eprintln!("wheel group {:?}: {} parts, {} vertices, bounds x {:.3}..{:.3} y {:.3}..{:.3} z {:.3}..{:.3}", names, ps.len(), g.0.len(), lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]);
+        g
     }).collect();
-    let (wl, wh) = { let all: Vec<V> = groups.iter().flat_map(|g| g.0.iter().copied()).collect(); bounds(&all) };
+    // the gravel and snow sets are hidden in the source by a 0.01 scale of their parent (about the hub): scale them back up about the hub (the centre of the tarmac tyre)
+    {
+        let t = tyres.iter().find(|t| t.0 == "tyre_tarmac_lf").map(|t| bounds(&t.1)).unwrap();
+        let hub = [(t.0[0] + t.1[0]) / 2.0, (t.0[1] + t.1[1]) / 2.0, (t.0[2] + t.1[2]) / 2.0];
+        for g in &mut groups[3..] { for v in &mut g.0 { for k in 0..3 { v.p[k] = hub[k] + (v.p[k] - hub[k]) * 100.0; } } }
+    }
+    let (wl, wh) = { let all: Vec<V> = groups[..3].iter().flat_map(|g| g.0.iter().copied()).collect(); bounds(&all) };   // the centre of the tarmac wheel, disc and caliper; the other sets are cut for the same centre
     let wc = [(wl[0] + wh[0]) / 2.0, (wl[1] + wh[1]) / 2.0, (wl[2] + wh[2]) / 2.0];
     for g in &mut groups { for v in &mut g.0 { for k in 0..3 { v.p[k] -= wc[k]; } } }
     eprintln!("wheel: centre ({:.3}, {:.3}, {:.3}) radius {:.3}", wc[0], wc[1] - ground, wc[2], (wh[1] - wl[1]) / 2.0);
     // the livery atlas: the body's textures packed into one square, the vertices' UVs remapped into their tiles
-    const ATLAS_W: u32 = 2048; const ATLAS_H: u32 = 2560;   // a tall atlas: the livery takes the whole width (1366 rows), the lamps, wheels and details the rest
+    const ATLAS_W: u32 = 2048; const ATLAS_H: u32 = 2688;   // a tall atlas: the livery takes the whole width (1366 rows), the lamps, wheels and details the rest
     // textures used by only a few vertices (a roof light bar, small details) are not worth an atlas tile: they keep a baked colour
     {
         let mut count: HashMap<usize, usize> = HashMap::new();
@@ -236,10 +244,12 @@ fn main() {
     for v in &mut bv { if let Some(t) = v.tex { v.tex = Some(*alias.get(&t).unwrap_or(&t)); } }
     let wheel_tex: std::collections::HashSet<usize> = groups.iter().flat_map(|g| g.0.iter().filter_map(|v| v.tex)).collect();
     let mut used: Vec<usize> = bv.iter().filter_map(|v| v.tex).chain(wheel_tex.iter().copied()).collect(); used.sort(); used.dedup();
-    // the wheel's textures are tiled at 512 pixels at most (the livery keeps the whole width); the others as they are
+    // the tarmac wheel's textures are tiled at 512 pixels at most (the livery keeps the whole width), the gravel and snow sets' at 256 (tyres) and 384 (rims); the others as they are
+    let alt_tex: std::collections::HashSet<usize> = groups[3..].iter().flat_map(|g| g.0.iter().filter_map(|v| v.tex)).filter(|t| !groups[..3].iter().any(|g| g.0.iter().any(|v| v.tex == Some(*t)))).collect();
     let sizes: Vec<(usize, u32, u32)> = used.iter().filter_map(|&i| tex.get(i).map(|im| {
         let (w, h) = (im.width(), im.height());
-        if wheel_tex.contains(&i) && w.max(h) > 512 { let k = 512.0 / w.max(h) as f32; (i, ((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1)) } else { (i, w, h) }
+        let cap = if alt_tex.contains(&i) { if w.max(h) >= 2048 { 256 } else { 384 } } else { 512 };
+        if wheel_tex.contains(&i) && w.max(h) > cap { let k = cap as f32 / w.max(h) as f32; (i, ((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1)) } else { (i, w, h) }
     })).collect();
     let rects = atlas::pack(&sizes, ATLAS_W, ATLAS_H);
     let mut atlas_img = image::RgbImage::from_pixel(ATLAS_W, ATLAS_H, image::Rgb([128, 128, 128]));
@@ -260,12 +270,12 @@ fn main() {
         image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::BufWriter::new(f), 90).encode_image(&atlas_img).expect("write jpg");
     }
     let (sv, si) = simplify(&bv, &bi, body_t);
-    let budgets = [wheel_t, 300, 500];
+    let budgets = [wheel_t, 300, 500, wheel_t, wheel_t];
     let simplified: Vec<(Vec<V>, Vec<u32>)> = groups.iter().zip(budgets).map(|(g, t)| simplify(&g.0, &g.1, t)).collect();
     let mut out = b"RCA3".to_vec();
-    out.extend_from_slice(&4u32.to_le_bytes());
+    out.extend_from_slice(&6u32.to_le_bytes());
     write(&mut out, &sv, &si);
     for (v, i) in &simplified { write(&mut out, v, i); }
     std::fs::write(&a[2], &out).unwrap();
-    eprintln!("wrote {} bytes: body {} tris / {} verts; wheel {} tris, disc {} tris, caliper {} tris", out.len(), si.len() / 3, sv.len(), simplified[0].1.len() / 3, simplified[1].1.len() / 3, simplified[2].1.len() / 3);
+    eprintln!("wrote {} bytes: body {} tris / {} verts; wheel {} tris, disc {} tris, caliper {} tris, gravel wheel {} tris, snow wheel {} tris", out.len(), si.len() / 3, sv.len(), simplified[0].1.len() / 3, simplified[1].1.len() / 3, simplified[2].1.len() / 3, simplified[3].1.len() / 3, simplified[4].1.len() / 3);
 }
