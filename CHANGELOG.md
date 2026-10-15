@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.30.0 - the Peugeot's livery as a texture
+
+- Changed: the livery of the Peugeot (stickers, sponsor logos, the 206 numbers) is a real texture instead of blurred vertex colours: the model keeps its UV coordinates (new `RCA2` format, the old one still loads) and the converter packs the model's textures into a 2048 x 2048 atlas (`rally_car_livery.jpg`, about 0.6 MB); the game decodes it once and the car's shader multiplies the paint by it; lamps, glass and wheels are unchanged; a missing atlas falls back to the old vertex colours
+
 ## 2.29.1 - lamps fixes
 
 - Fixed: the car is no longer lit by its own lamps (the beam on its bumper, the red tail light on the ground under it); the tail lights light only what lies behind the rear bumper and the beam starts a little way ahead of the lamps
