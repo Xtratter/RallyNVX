@@ -168,7 +168,8 @@ fn turbulence(p: vec3<f32>, age: f32) -> vec3<f32> {
         let behind = -dot(p - u.car.xyz, fwd_axis()) - u.body.y;
         wake = exp(-max(behind, 0.0) / 10.0) * smoothstep(-1.0, 1.0, behind) * box_weight(to_box(p));
     }
-    let amp = u.ph2.x * (0.35 + 0.05 * u.ph2.y) * (1.0 + 0.8 * age) * (1.0 + 2.5 * wake);   // the wake behind the car churns the dust   // the cloud expands: older dust is churned more
+    // the ambient air's turbulence (what slowly spreads an old cloud) plus the car's wake behind it, which churns the dust hard for the first seconds only
+    let amp = u.ph2.x * (0.4 + (0.6 + 0.05 * u.ph2.y) * 2.5 * wake);
     return turbulence_curl(p, amp);
 }
 // the car's axes on the ground plane: forward (sin yaw, 0, cos yaw), right (-cos yaw, 0, sin yaw)
@@ -430,7 +431,7 @@ fn dust_splat(@builtin(global_invocation_id) gid: vec3<u32>) {
     let c = vec3<i32>(floor(b / u.bx.w));
     let n = box_cells();
     if (any(b < vec3<f32>(0.0)) || any(c >= n)) { return; }
-    let m = select(u.cp.y, u.cp.z, s.d.x > 0.5) * 3.0;
+    let m = select(u.cp.y, u.cp.z, s.d.x > 0.5 && s.d.x < 1.5) * 3.0;
     let rel = s.b.xyz - u.car_vel.xyz;
     let v = vec3<f32>(dot(rel, right_axis()), rel.y, dot(rel, fwd_axis()));
     let k = dens_index(c);
@@ -575,7 +576,7 @@ fn air_at(p: vec3<f32>, age: f32) -> vec3<f32> {
     let behind = -dot(p - u.car.xyz, fwd_axis()) - 2.0;
     if (behind > 0.0 && u.ph2.z > 0.0) {
         let h = max(p.y - u.g.z, 0.0);
-        air.y = air.y + u.ph2.z * u.ph2.y * exp(-behind / 12.0) * (1.0 - smoothstep(0.4 * u.ph2.w, u.ph2.w, h));
+        air.y = air.y + u.ph2.z * u.ph2.y * exp(-behind / 7.0) * (1.0 - smoothstep(0.5 * u.ph2.w * u.body.z, u.ph2.w * u.body.z, h));   // the wake mixes the dust up to about 1.7 car heights, not beyond
     }
     return air + turbulence(p, age);
 }
@@ -591,8 +592,9 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     var pos = s.a.xyz; var vel = s.b.xyz; var age = s.b.w + dt;
     let life = s.c.w;
     if (age >= life) { if ((u.n.w & 8u) != 0u && s.d.x < 1.5) { add_deposit(pos, 64u); } s.d.z = 0.0; state[i] = s; render[i] = dead; return; }
-    let coarse = s.d.x > 0.5;
-    if (s.d.x > 1.5) {   // a speck of grit: ballistic (gravity, a little drag), bounces and slides on the ground, never part of the dust field
+    let coarse = s.d.x > 0.5 && s.d.x < 1.5;
+    let smoke = s.d.x > 2.5;
+    if (s.d.x > 1.5 && s.d.x < 2.5) {   // a speck of grit: ballistic (gravity, a little drag), bounces and slides on the ground, never part of the dust field
         var sv = vel;
         sv.y = sv.y - 9.8 * dt;
         sv = sv + (u.wind.xyz - sv) * (1.0 - exp(-dt / 2.5));
@@ -610,7 +612,8 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
     let tau = select(u.ph.x, u.ph.y, coarse) * (0.6 + 0.8 * fract(s.d.y * 7.31));   // every grain answers the air a little differently
-    let settle = select(u.ph.z, u.ph.w, coarse);
+    var settle = select(u.ph.z, u.ph.w, coarse);
+    if (smoke) { settle = -0.45; }   // tyre smoke is warm and fine: it drifts up a little
     var air = air_at(pos, age / life);
     if (any(air != air)) { air = vec3<f32>(0.0); }
     // pushed away from the dust around it; lit by the sun through the dust above it (the cells' light), the dense middle darker
@@ -668,8 +671,8 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     // what the sprite needs: it grows as it spreads, fades in over the first 8 % of its life and out at the end
     let x = clamp(age / life, 0.0, 1.0);
     let fade_in = min(x / 0.08, 1.0);
-    let size = s.a.w * (1.0 + select(0.45, 0.25, coarse) * sqrt(age) + 0.35 * x);   // small grains: they hardly grow
-    let alpha = select(0.46, 0.55, coarse) * fade_in * pow(1.0 - x, 1.4);
+    let size = s.a.w * (1.0 + select(select(0.45, 0.25, coarse), 1.1, smoke) * sqrt(age) + 0.35 * x);   // small grains hardly grow, smoke billows out
+    let alpha = select(select(0.46, 0.55, coarse), 0.3, smoke) * fade_in * pow(1.0 - x, select(1.4, 0.8, smoke));
     render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz * shade, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), light));
 }
 

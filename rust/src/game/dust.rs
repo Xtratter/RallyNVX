@@ -101,6 +101,34 @@ struct Puff { centre: V3, vel: V3, axis: V3, omega: f32, left: u32 }
 /// The most emits a frame hands to the GPU (more are dropped; one frame of the busiest slide emits far fewer).
 pub const MAX_EMITS: usize = 4096;
 
+/// How a surface's dust looks and lives on the GPU: how warm and light the loose-soil dust is (`tint` 0..1: asphalt has none), how long fine dust stays (seconds: real
+/// clouds behind a vehicle take half a minute to a minute to clear in still air, Goossens et al.; the fine fraction hardly settles), and whether it is tyre smoke or
+/// spray rather than dust (asphalt, water).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GpuLook { pub tint: f32, pub life: f32, pub smoke: bool }
+
+pub fn gpu_look(s: super::surface::Surface) -> GpuLook {
+    use super::surface::Surface::*;
+    match s {
+        Gravel => GpuLook { tint: 1.0, life: 16.0, smoke: false },
+        Dirt => GpuLook { tint: 1.0, life: 14.0, smoke: false },
+        Sand => GpuLook { tint: 1.0, life: 20.0, smoke: false },
+        Grass => GpuLook { tint: 0.6, life: 6.0, smoke: false },
+        Rock => GpuLook { tint: 0.5, life: 8.0, smoke: false },
+        Asphalt => GpuLook { tint: 0.0, life: 4.0, smoke: true },
+        Water => GpuLook { tint: 0.0, life: 3.0, smoke: true },
+    }
+}
+
+/// The colour of a GPU dust particle of a surface: the soil's colour lifted towards a light tan and warmed (the dust of a dirt road is paler and warmer than the road).
+pub fn gpu_colour(base: [f32; 3], look: GpuLook) -> [f32; 3] {
+    let t = grip::table();
+    [0, 1, 2].map(|i| {
+        let warm = ((base[i] + ([0.88f32, 0.74, 0.56][i] - base[i]) * t.dust_gpu_lift) * t.dust_gpu_tint[i]).min(1.0);
+        base[i] + (warm - base[i]) * look.tint
+    })
+}
+
 static GPU_DEBUG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Debug/test: the GPU dust without the Settings switch.
 pub fn set_gpu_debug(on: bool) { GPU_DEBUG.store(on, std::sync::atomic::Ordering::Relaxed); }
@@ -165,7 +193,7 @@ impl Dust {
     }
     fn push(&mut self, p: P) {
         if self.cap == 0 { return; }
-        if self.gpu { let q = self.pending.get_mut(); if q.len() < MAX_EMITS { let t = grip::table(); let mut p = p; p.size0 *= t.dust_gpu_size; p.life *= t.dust_gpu_life; p.vel = v3(p.vel.x * t.dust_gpu_kick, p.vel.y * t.dust_gpu_kick * 0.9, p.vel.z * t.dust_gpu_kick); p.color = [0, 1, 2].map(|i| { let base = [0.88f32, 0.74, 0.56][i]; ((p.color[i] + (base - p.color[i]) * t.dust_gpu_lift) * t.dust_gpu_tint[i]).min(1.0) }); q.push(p); } return; }
+        if self.gpu { let q = self.pending.get_mut(); if q.len() < MAX_EMITS { let mut p = p; p.size0 *= grip::table().dust_gpu_size; q.push(p); } return; }
         if self.parts.len() < self.cap { self.parts.push(p); } else { self.parts[self.head] = p; self.head = (self.head + 1) % self.cap; }
     }
 
@@ -218,7 +246,7 @@ impl Dust {
                 let shade = 0.9 + 0.2 * g2;
                 let tone = if coarse { 0.82 } else { 1.0 };
                 self.push(P { pos, vel, age: 0.0, life: d.life * (0.75 + 0.5 * a) * if coarse { 0.4 } else { 1.0 }, size0: d.size * if coarse { 0.55 } else { 1.0 },
-                    color: [d.color[0] * shade * tone, d.color[1] * shade * tone, d.color[2] * shade * tone], coarse, seed: g2, speck: false });
+                    color: [d.color[0] * shade * tone, d.color[1] * shade * tone, d.color[2] * shade * tone], coarse, seed: g2, speck: false, smoke: false });
             }
         }
         // the car's own aerodynamics raises dust too: its wake (the recirculation, the trailing vortices) scours the loose surface behind it, in proportion to
@@ -241,7 +269,9 @@ impl Dust {
                     pos.y = rear.contact.y + 0.05 + c * 0.15;
                     let vel = vh * 0.12 + v3(0.0, 0.3 + e * 0.8, 0.0);
                     let shade = 0.9 + 0.2 * g2;
-                    self.push(P { pos, vel, age: 0.0, life: d.life * (0.7 + 0.6 * a), size0: d.size, color: [d.color[0] * shade, d.color[1] * shade, d.color[2] * shade], coarse: false, seed: g2, speck: false });
+                    let look = gpu_look(rear.surface);
+                    let base = gpu_colour(d.color, look);
+                    self.push(P { pos, vel, age: 0.0, life: look.life * (0.6 + 0.8 * a), size0: d.size, color: [base[0] * shade, base[1] * shade, base[2] * shade], coarse: false, seed: g2, speck: false, smoke: look.smoke });
                 }
             }
         }
@@ -277,15 +307,22 @@ impl Dust {
         let shade = 0.9 + 0.2 * g2;
         let tone = if coarse { 0.82 } else { 1.0 };
         let pos = puff.centre + r;
-        self.push(P { pos, vel, age: 0.0, life: d.life * (0.75 + 0.5 * a) * if coarse { 0.4 } else { 1.0 }, size0: d.size * if coarse { 0.55 } else { 1.0 },
-            color: [d.color[0] * shade * tone, d.color[1] * shade * tone, d.color[2] * shade * tone], coarse, seed: g2, speck: false });
+        let look = gpu_look(info.surface);
+        let base = gpu_colour(d.color, look);
+        if look.smoke {
+            // tyre smoke or spray: fine and pale, it hangs and rises a little, and is gone in seconds
+            self.push(P { pos, vel: vel * 0.8, age: 0.0, life: look.life * (0.6 + 0.8 * a), size0: d.size * 1.3, color: [base[0] * shade, base[1] * shade, base[2] * shade], coarse: false, seed: g2, speck: false, smoke: true });
+            return;
+        }
+        self.push(P { pos, vel, age: 0.0, life: look.life * (0.7 + 0.6 * a) * if coarse { 0.2 } else { 1.0 }, size0: d.size * if coarse { 0.55 } else { 1.0 },
+            color: [base[0] * shade * tone, base[1] * shade * tone, base[2] * shade * tone], coarse, seed: g2, speck: false, smoke: false });
         // grit flung by the tyre: tiny dark flecks that fly in arcs and bounce
-        if self.rand() < t.dust_gpu_specks * (0.4 + slide) {
+        if look.tint > 0.5 && self.rand() < t.dust_gpu_specks * (0.4 + slide) {
             let (sa, sb, sc, sd) = (self.rand(), self.rand(), self.rand(), self.rand());
             let sp = puff.vel * (0.7 + 0.6 * sa) + v3(sb - 0.5, 0.0, sc - 0.5) * 5.0 + v3(0.0, 1.0 + 3.0 * sd * (0.5 + slide), 0.0);
             let bright = 0.5 + 0.9 * self.rand();
             self.push(P { pos: puff.centre + r * 0.5, vel: sp, age: 0.0, life: 1.6 + 1.6 * sa, size0: 0.012 + 0.02 * sd,
-                color: [(d.color[0] * 0.6 * bright).min(1.0), (d.color[1] * 0.55 * bright).min(1.0), (d.color[2] * 0.5 * bright).min(1.0)], coarse: true, seed: sb, speck: true });
+                color: [(d.color[0] * 0.6 * bright).min(1.0), (d.color[1] * 0.55 * bright).min(1.0), (d.color[2] * 0.5 * bright).min(1.0)], coarse: true, seed: sb, speck: true, smoke: false });
         }
     }
 

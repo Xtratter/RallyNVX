@@ -7,7 +7,9 @@ use super::math::{v3, V3};
 #[derive(Clone, Copy, Debug)]
 pub struct GP { pub pos: V3, pub vel: V3, pub age: f32, pub life: f32, pub size0: f32, pub color: [f32; 3], pub coarse: bool, pub seed: f32,
     /// A flying speck of grit or soil (the GPU dust): tiny, dark, ballistic; it bounces and slides on the ground. Only the GPU path makes them.
-    pub speck: bool }
+    pub speck: bool,
+    /// Tyre smoke or spray (the GPU dust on asphalt and water): very fine, pale, it hangs and rises a little, and is gone in seconds.
+    pub smoke: bool }
 
 /// Moves `p` for `dt` seconds in the air velocity `air` (Stokes drag: the exact relaxation towards it with the response time of its class, the settling
 /// speed of its class on top) and meets the ground (`ground(x, z)`): grit is deposited, fine dust slides and slows. False when the particle is gone

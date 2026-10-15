@@ -24,6 +24,9 @@ struct DUni { n: [u32; 4], g: [f32; 4], wind: [f32; 4], ph: [f32; 4], ph2: [f32;
 pub const CAPACITY: usize = 65536;
 /// The particles the settled layer lifts again live in this many extra slots after the main ring.
 pub const RS_N: usize = 4096;
+/// Real fine dust settles at millimetres to centimetres a second (Stokes: 6 um grains about 1 mm/s, 50 um about 0.1 m/s): the GPU dust uses a fraction of the CPU path's speeds.
+const SETTLE_FINE_SCALE: f32 = 0.3;
+const SETTLE_COARSE_SCALE: f32 = 0.35;
 /// The most cells of the airflow's box the per-cell dust field has room for.
 const MAX_CELLS: usize = 262144;
 /// Every this-many-th particle takes part in the pressure.
@@ -150,11 +153,11 @@ impl DustGpu {
         }
         let ph = phys();
         let mut u = DUni { n: [frame.emits.len().min(MAX_EMITS) as u32, self.head as u32, cap as u32, frame.opts], g: [dt, frame.time, frame.ground_y, 0.0],
-            wind: [frame.wind.x, frame.wind.y, frame.wind.z, 0.0], ph: [ph.tau_fine, ph.tau_coarse, ph.settle_fine, ph.settle_coarse], ph2: [ph.turbulence * 1.5, (frame.car_vel.x * frame.car_vel.x + frame.car_vel.z * frame.car_vel.z).sqrt(), ph.plume_lift, ph.plume_height],
+            wind: [frame.wind.x, frame.wind.y, frame.wind.z, 0.0], ph: [ph.tau_fine, ph.tau_coarse, ph.settle_fine * SETTLE_FINE_SCALE, ph.settle_coarse * SETTLE_COARSE_SCALE], ph2: [ph.turbulence * 1.5, (frame.car_vel.x * frame.car_vel.x + frame.car_vel.z * frame.car_vel.z).sqrt(), ph.plume_lift, ph.plume_height],
             car: [frame.car_pos.x, frame.car_pos.y, frame.car_pos.z, frame.yaw], car_vel: [frame.car_vel.x, frame.car_vel.y, frame.car_vel.z, 0.0], bx: grid.map_or([0.0; 4], |g| g.2), bpos: [frame.body_pose.0.x, frame.body_pose.0.y, frame.body_pose.0.z, 0.0],
             bax0: [frame.body_pose.1[0].x, frame.body_pose.1[0].y, frame.body_pose.1[0].z, 0.0], bax1: [frame.body_pose.1[1].x, frame.body_pose.1[1].y, frame.body_pose.1[1].z, 0.0], bax2: [frame.body_pose.1[2].x, frame.body_pose.1[2].y, frame.body_pose.1[2].z, 0.0],
             sdf_o: self.sdf.as_ref().map_or([0.0; 4], |s| s.1), sdf_n: self.sdf.as_ref().map_or([0.0; 4], |s| s.2), rs: [cap as u32, RS_N as u32, self.frame, 0], pb: { let c = dust_ref::coupling(); [c.pbd_h, dust_ref::rest_density(c.pbd_spacing, c.pbd_h), 100.0, c.pbd_visc] }, gw: [base[0], base[1], 0, 0], cp: { let c = dust_ref::coupling(); [c.push, c.mass_fine, c.mass_coarse, ph.street] }, sun: [frame.sun.x, frame.sun.y, frame.sun.z, dust_ref::coupling().shadow_k], body: [frame.body[0], frame.body[1], frame.body[2], ph.vortex * frame.vortex_scale] };
-        let emits: Vec<S> = frame.emits.iter().take(MAX_EMITS).map(|p| S { a: [p.pos.x, p.pos.y, p.pos.z, p.size0], b: [p.vel.x, p.vel.y, p.vel.z, p.age], c: [p.color[0], p.color[1], p.color[2], p.life], d: [if p.speck { 2.0 } else if p.coarse { 1.0 } else { 0.0 }, p.seed, 1.0, 0.0] }).collect();
+        let emits: Vec<S> = frame.emits.iter().take(MAX_EMITS).map(|p| S { a: [p.pos.x, p.pos.y, p.pos.z, p.size0], b: [p.vel.x, p.vel.y, p.vel.z, p.age], c: [p.color[0], p.color[1], p.color[2], p.life], d: [if p.smoke { 3.0 } else if p.speck { 2.0 } else if p.coarse { 1.0 } else { 0.0 }, p.seed, 1.0, 0.0] }).collect();
         if !emits.is_empty() { queue.write_buffer(&self.emit_buf, 0, bytemuck::cast_slice(&emits)); }
         self.head = (self.head + u.n[0] as usize) % cap;
         self.frame = self.frame.wrapping_add(1);
