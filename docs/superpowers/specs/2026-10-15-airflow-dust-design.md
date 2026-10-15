@@ -16,7 +16,7 @@ The solver is on the GPU, the particles are on the CPU today (`game/dust.rs`); r
   1. air velocity: inside the airflow box (position taken into the car frame: translate by the car, rotate by its yaw) the grid velocity `v_grid` (air relative to the car) is sampled trilinearly and the world air velocity is `car_vel + R · v_grid`; towards the box edge it blends (smoothstep over 1.5 m) into the outside air, the ground wind profile of `dust::air_velocity` (wind growing with height, turbulence);
   2. Stokes relaxation as in variant B: `v += (v_air − v) · (1 − exp(−dt/τ))`, `τ` by class (`dust_physics.tau_fine / tau_coarse`), then the settling speed of the class;
   3. the car's solid cells (the grid's solid texture) push particles out: a particle inside a solid cell is moved back to its previous position and its velocity along the cell's normal is dropped;
-  4. the ground: the terrain under the car is approximated by a plane (height at the car and two neighbours, sent by the CPU each frame); a particle that reaches it deposits (fades out), outside the plane's reach (more than 14 m from the car) particles only age;
+  4. the ground: a height texture of the box area (the CPU samples the terrain there as `fluid_gpu` does); a particle that reaches it deposits (fades out), outside the texture particles only age;
   5. age, fade, and retire (alpha 0).
 - The Eulerian grid does the part PhysX's PBF particles do by density constraints: incompressible flow around the body. Particle–particle interaction is not simulated.
 - The old CPU particles stay as the fallback when the device cannot run the compute passes (or the airflow could not be created), and for the Fluid (experimental) level 3.
@@ -35,11 +35,21 @@ The solver is on the GPU, the particles are on the CPU today (`game/dust.rs`); r
 - `shaders_validate` includes the new WGSL.
 - Phone: with the Vulpes and a garage rear wing, the dust cloud behind the car is shaped by the wake (compared with the CPU variant B), the dust runs on after a hard stop; fps with 6000 particles and the airflow on stays ≥ 30; numbers go into this spec.
 
+## Scope in stages
+
+Everything the first draft left out is added, in this order; each stage is released and measured against the 30 fps budget before the next one starts (a stage that does not fit is cut down or made optional, not dropped silently).
+
+1. **Step 3 (the core above)** plus two cheap parts that belong to it: the **ground as a height texture** instead of the plane (the box area of the terrain heights, same idea as `fluid_gpu`'s height texture), and a **Settings switch "Airflow"** (On / Off; Off falls back to the CPU particles, for weak devices).
+2. **Step 3b, dust feeds back into the air and particles push each other:** the particles are splatted into the grid as a density field every frame; where the density is high the grid gets a drag (dust drags the air along, a thick cloud rolls as one) and a pressure-like push apart that the particles feel (a cheap stand-in for PBF's density constraints, in the spirit of PIC/FLIP; no neighbour search). Cost: one splat pass and one gradient read per particle.
+3. **Step 4, the airflow acts on the car:** the pressure of the grid over the voxel body's faces and the wake give the drag and the lift/downforce per axle that now come from the analytic formulas of step 1; the analytic numbers stay as the reference and the fallback. This needs a converged pressure (the Jacobi residual noted in the airflow spec), so it starts with a better solver (red-black or multigrid-lite) and a check against the analytic forces on a box.
+4. **Step 5, other particle effects on the same GPU system:** rain, snow and splash (rain drops hitting the car, wet-road spray), reusing the emit/step passes with other class constants.
+
 ## Out of scope
 
-Feedback of the dust on the air or on the car, particle–particle collisions (PBF), rain, snow and other effects, a UI toggle for the airflow, forces from the airflow on the car (the aero forces of step 1 stay analytic).
+A real PBF/SPH neighbour-search fluid (stage 2's density field covers the look at a fraction of the cost).
 
 ## Risks
 
 - The compute path and its storage buffers as vertex buffers on the phone's driver: checked by the first task (a spike: particles move on the GPU and are drawn) before the rest is built.
-- The ground as a plane is crude on rough terrain; particles may float or sink by a few decimetres on slopes. Acceptable for a first version; a height texture is the next step if it shows.
+- The height texture for the ground costs a texture upload per frame (the box area only); if that is slow it is updated only when the car moves a cell.
+- Stage 2 and 4 depend on stage 1's solver cost; the 30 fps budget decides how much of them fits.
