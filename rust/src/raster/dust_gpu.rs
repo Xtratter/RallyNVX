@@ -82,7 +82,7 @@ impl DustGpu {
         }
         let ph = phys();
         let mut u = DUni { n: [frame.emits.len().min(MAX_EMITS) as u32, self.head as u32, cap as u32, 0], g: [dt, frame.time, frame.ground_y, 0.0],
-            wind: [frame.wind.x, frame.wind.y, frame.wind.z, 0.0], ph: [ph.tau_fine, ph.tau_coarse, ph.settle_fine, ph.settle_coarse], ph2: [ph.turbulence, (frame.car_vel.x * frame.car_vel.x + frame.car_vel.z * frame.car_vel.z).sqrt(), ph.plume_lift, ph.plume_height],
+            wind: [frame.wind.x, frame.wind.y, frame.wind.z, 0.0], ph: [ph.tau_fine, ph.tau_coarse, ph.settle_fine, ph.settle_coarse], ph2: [ph.turbulence * 1.5, (frame.car_vel.x * frame.car_vel.x + frame.car_vel.z * frame.car_vel.z).sqrt(), ph.plume_lift, ph.plume_height],
             car: [frame.car_pos.x, frame.car_pos.y, frame.car_pos.z, frame.yaw], car_vel: [frame.car_vel.x, frame.car_vel.y, frame.car_vel.z, 0.0], bx: grid.map_or([0.0; 4], |g| g.2), gw: [base[0], base[1], 0, 0], cp: { let c = dust_ref::coupling(); [c.push, c.mass_fine, c.mass_coarse, 0.0] } };
         let emits: Vec<S> = frame.emits.iter().take(MAX_EMITS).map(|p| S { a: [p.pos.x, p.pos.y, p.pos.z, p.size0], b: [p.vel.x, p.vel.y, p.vel.z, p.age], c: [p.color[0], p.color[1], p.color[2], p.life], d: [if p.coarse { 1.0 } else { 0.0 }, p.seed, 1.0, 0.0] }).collect();
         if !emits.is_empty() { queue.write_buffer(&self.emit_buf, 0, bytemuck::cast_slice(&emits)); }

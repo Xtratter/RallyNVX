@@ -141,7 +141,7 @@ impl Dust {
     }
     fn push(&mut self, p: P) {
         if self.cap == 0 { return; }
-        if self.gpu { let q = self.pending.get_mut(); if q.len() < MAX_EMITS { let t = grip::table(); let mut p = p; p.size0 *= t.dust_gpu_size; p.life *= t.dust_gpu_life; p.color = [0, 1, 2].map(|i| (p.color[i] * t.dust_gpu_tint[i]).min(1.0)); q.push(p); } return; }
+        if self.gpu { let q = self.pending.get_mut(); if q.len() < MAX_EMITS { let t = grip::table(); let mut p = p; p.size0 *= t.dust_gpu_size; p.life *= t.dust_gpu_life; p.vel = v3(p.vel.x * t.dust_gpu_kick, p.vel.y * t.dust_gpu_kick, p.vel.z * t.dust_gpu_kick); p.color = [0, 1, 2].map(|i| (p.color[i] * t.dust_gpu_tint[i]).min(1.0)); q.push(p); } return; }
         if self.parts.len() < self.cap { self.parts.push(p); } else { self.parts[self.head] = p; self.head = (self.head + 1) % self.cap; }
     }
 
