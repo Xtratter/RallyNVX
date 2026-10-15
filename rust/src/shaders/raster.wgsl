@@ -420,16 +420,16 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let to_cam = u.cam.xyz - i.wp;
     let dist = length(to_cam);
     let v = to_cam / max(dist, 0.001);
-    let fr = pow(1.0 - clamp(abs(dot(n, v)), 0.0, 1.0), 3.0);
+    let fr = pow(1.0 - clamp(abs(dot(n, v)), 0.0, 1.0), 4.0);   // concentrated at grazing angles: the glass has few, large triangles and a softer curve hides their edges
     let clear = clamp(i.col.r, 0.0, 1.0);
     let r = reflect(-v, n);
     let sun = normalize(u.sun.xyz);
-    var col = vec3<f32>(0.03, 0.05, 0.08) * (1.0 - clear) + sky_gradient(r) * fr * 0.9 + u.sun_col.rgb * pow(max(dot(r, sun), 0.0), 60.0) * 0.6;
+    var col = vec3<f32>(0.03, 0.05, 0.08) * (1.0 - clear) + sky_gradient(r) * fr * 0.6 + u.sun_col.rgb * pow(max(dot(r, sun), 0.0), 60.0) * 0.6;
     let f = clamp(1.0 - exp(-dist * u.fog.x), 0.0, 1.0);
     col = mix(col, u.sky_hor.rgb, f);
     let t = smoothstep(0.0, 1.0, clamp((dist - 9.0) / 7.0, 0.0, 1.0));
     let k = 1.0 - 0.75 * clear;
-    let near = (0.2 + 0.5 * fr) * k;
+    let near = (0.2 + 0.3 * fr) * k;
     let a = clamp(near + (0.95 - near) * t * k, 0.0, 1.0);
     return vec4<f32>(finish(col), a);
 }
