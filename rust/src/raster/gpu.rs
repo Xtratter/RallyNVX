@@ -599,7 +599,7 @@ impl Raster {
         if let Some(p) = &self.prof { p.mark(&mut enc, 1); }
         if let (Some(dg), Some(fr)) = (self.dust_gpu.as_mut(), wv.dust_gpu.as_ref()) {
             let grid = self.airflow.as_ref().filter(|_| wv.airflow.is_some()).map(|a| { let (v, s) = a.fields(); (v, s, a.box_size(), a.dens_buffer()) });
-            dg.update(&self.device, &self.queue, &mut enc, wv.terrain, fr, grid);
+            dg.update(&self.device, &self.queue, &mut enc, wv.terrain, fr, &wv.props, grid);
         }
         if let Some(p) = &self.prof { p.mark(&mut enc, 2); }
         {

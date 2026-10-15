@@ -369,7 +369,9 @@ impl World {
 /// What the GPU dust needs of a frame: the particles the wheels emitted, the car's pose and velocity, the wind, the ground under the car.
 pub struct DustGpuIn { pub emits: Vec<super::dust_ref::GP>, pub car_pos: V3, pub yaw: f32, pub car_vel: V3, pub wind: V3, pub ground_y: f32, pub cap: usize, pub time: f32, pub sun: V3, pub body: [f32; 3],
     /// The garage's aero parts strengthen the car's wake: 1 for the bare car.
-    pub vortex_scale: f32 }
+    pub vortex_scale: f32,
+    /// The GPU dust's option bits (`dust::OPT_*`).
+    pub opts: u32 }
 
 pub struct WorldView<'a> {
     /// The camera's vertical field of view in radians.
@@ -394,7 +396,7 @@ impl World {
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
         let dl = self.daylight();
-        WorldView { cam_fov: self.cam.fov, dust_gpu: if self.dust.gpu() { Some(DustGpuIn { emits: self.dust.take_emits(), car_pos: self.vehicle.pos, yaw: self.vehicle.forward().x.atan2(self.vehicle.forward().z), car_vel: self.vehicle.vel, wind: self.dust.wind(), ground_y: self.terrain.height(self.vehicle.pos.x, self.vehicle.pos.z), cap: self.dust.gpu_cap(), time: self.time, sun: self.sun_dir(), body: [self.vehicle.spec.size.x * 0.5, self.vehicle.spec.size.z * 0.5, self.vehicle.spec.size.y], vortex_scale: 1.0 + 0.25 * self.vehicle.spec.kit.wing as f32 + 0.12 * self.vehicle.spec.kit.underbody as f32 + 0.1 * self.vehicle.spec.kit.splitter as f32 }) } else { None },
+        WorldView { cam_fov: self.cam.fov, dust_gpu: if self.dust.gpu() { Some(DustGpuIn { emits: self.dust.take_emits(), car_pos: self.vehicle.pos, yaw: self.vehicle.forward().x.atan2(self.vehicle.forward().z), car_vel: self.vehicle.vel, wind: self.dust.wind(), ground_y: self.terrain.height(self.vehicle.pos.x, self.vehicle.pos.z), cap: self.dust.gpu_cap(), time: self.time, opts: super::dust::opts(), sun: self.sun_dir(), body: [self.vehicle.spec.size.x * 0.5, self.vehicle.spec.size.z * 0.5, self.vehicle.spec.size.y], vortex_scale: 1.0 + 0.25 * self.vehicle.spec.kit.wing as f32 + 0.12 * self.vehicle.spec.kit.underbody as f32 + 0.1 * self.vehicle.spec.kit.splitter as f32 }) } else { None },
             airflow: if super::airflow::debug_on() || self.dust.gpu() { Some(super::airflow::flow_in(&self.vehicle, self.wind(), &super::airflow::cfg())) } else { None }, fluid: if self.dust.level() == 3 { Some(super::fluid::pack(&self.vehicle, &super::fluid::cfg(), &super::grip::table())) } else { None }, signs: if self.signs_on { self.terrain.signs() } else { &[] }, terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(), wind: self.wind(), cloud_off: self.cloud_off,
             time: self.time, cities: &self.cities, tracks: &self.tracks }
     }

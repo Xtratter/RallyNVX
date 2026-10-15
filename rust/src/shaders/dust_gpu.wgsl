@@ -25,6 +25,8 @@ struct U {
 @group(0) @binding(1) var<storage, read_write> state: array<S>;
 @group(0) @binding(2) var<storage, read_write> render: array<DI>;
 @group(0) @binding(4) var<storage, read> emits: array<S>;   // this frame's new particles from the wheels
+@group(0) @binding(7) var<storage, read> colliders: array<vec4<f32>>;   // per collider two vec4: (a, r) and (b, 0): trunk capsules and rock spheres
+@group(0) @binding(8) var<storage, read> ccells: array<vec4<u32>>;     // per cell of the ground window up to four collider indices + 1
 @group(0) @binding(3) var ground_tex: texture_2d<f32>;   // terrain heights of the window, toroidal (cell mod 64)
 @group(1) @binding(0) var grid_vel: texture_3d<f32>;     // the airflow's velocity relative to the car, in the car's frame
 @group(1) @binding(1) var grid_solid: texture_3d<f32>;
@@ -55,6 +57,36 @@ fn ground(x: f32, z: f32) -> f32 {
     let b = mix(ground_cell(c + vec2<i32>(0, 1)), ground_cell(c + vec2<i32>(1, 1)), f.x);
     return mix(a, b, f.y);
 }
+// ---- the world: trees, rocks (the cell lists of the ground window) and the slope of the ground
+fn world_collide(pos: ptr<function, vec3<f32>>, vel: ptr<function, vec3<f32>>) {
+    let c = vec2<i32>(floor((*pos).xz));
+    let b = u.gw.xy;
+    if (any(c < b) || any(c >= b + vec2<i32>(WINDOW))) { return; }
+    let cell = ccells[((c.y % WINDOW + WINDOW) % WINDOW) * WINDOW + ((c.x % WINDOW + WINDOW) % WINDOW)];
+    for (var k = 0; k < 4; k++) {
+        let id = cell[k];
+        if (id == 0u) { break; }
+        let a0 = colliders[(id - 1u) * 2u]; let b0 = colliders[(id - 1u) * 2u + 1u];
+        let ab = b0.xyz - a0.xyz;
+        let l2 = dot(ab, ab);
+        var q = a0.xyz;
+        if (l2 > 1e-9) { q = a0.xyz + ab * clamp(dot(*pos - a0.xyz, ab) / l2, 0.0, 1.0); }
+        let d = *pos - q;
+        let len = length(d);
+        let reach = a0.w + 0.1;
+        if (len < reach) {
+            var n = vec3<f32>(0.0, 1.0, 0.0);
+            if (len > 1e-5) { n = d / len; }
+            *pos = q + n * reach;
+            *vel = *vel - n * min(dot(*vel, n), 0.0);
+        }
+    }
+}
+fn ground_normal(x: f32, z: f32) -> vec3<f32> {
+    let e = 0.5;
+    return normalize(vec3<f32>(-(ground(x + e, z) - ground(x - e, z)) / (2.0 * e), 1.0, -(ground(x, z + e) - ground(x, z - e)) / (2.0 * e)));
+}
+
 // the wind: weaker near the ground (the CPU path's `air_velocity` without the wake)
 fn wind_at(p: vec3<f32>) -> vec3<f32> {
     let h = max(p.y - u.g.z, 0.0);
@@ -387,12 +419,19 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
         pos = pos + nn * 0.08;
         vel = vel - nn * min(dot(vel, nn), 0.0);
     }
+    let world_on = (u.n.w & 4u) != 0u;
+    if (world_on) { world_collide(&pos, &vel); }
     let g = ground(pos.x, pos.z) + 0.04;
     if (pos.y < g) {
         if (coarse) { s.d.z = 0.0; state[i] = s; render[i] = dead; return; }
         pos.y = g;
-        if (vel.y < 0.0) { vel.y = 0.0; }
         let sl = 1.0 - min(2.5 * dt, 1.0);
+        if (world_on) {
+            // on the ground the dust slides along the slope, a wall of earth stops it
+            let gn = ground_normal(pos.x, pos.z);
+            let vn = dot(vel, gn);
+            if (vn < 0.0) { vel = vel - gn * vn; }
+        } else if (vel.y < 0.0) { vel.y = 0.0; }
         vel.x = vel.x * sl; vel.z = vel.z * sl;
     }
     s.a = vec4<f32>(pos, s.a.w); s.b = vec4<f32>(vel, age);

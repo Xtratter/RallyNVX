@@ -206,6 +206,74 @@ pub fn wake_inflow(c: V3, hw: f32, hl: f32, h: f32, speed: f32, k: f32) -> V3 {
     v3(-c.x / (hw + 0.5) * 0.6 * m * tall, 0.12 * m * wide * tall, 0.35 * m * wide * tall)
 }
 
+// ---- the world's colliders: trees (trunk capsules) and rocks (spheres), binned into the ground window's cells so a particle tests only its own cell's few.
+
+/// A capsule from `a` to `b` of radius `r` (a sphere when they coincide).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Collider { pub a: V3, pub b: V3, pub r: f32 }
+
+/// How many colliders a cell lists and how many the GPU holds.
+pub const CELL_SLOTS: usize = 4;
+pub const MAX_COLLIDERS: usize = 1024;
+
+/// The colliders of the props: a tree is its trunk (capped at 4 m, the canopy is up in the air), a rock a sphere about its body.
+pub fn colliders_from_props(props: &[&super::props::Prop]) -> Vec<Collider> {
+    props.iter().map(|p| match p.kind {
+        super::props::PropKind::Tree => Collider { a: p.pos, b: p.pos + v3(0.0, (p.height * 0.6).min(4.0), 0.0), r: p.radius },
+        super::props::PropKind::Rock => { let c = p.pos + v3(0.0, p.radius * 0.7, 0.0); Collider { a: c, b: c, r: p.radius } }
+    }).take(MAX_COLLIDERS).collect()
+}
+
+/// The closest point of the segment `a`-`b` to `p`.
+pub fn closest_on_segment(p: V3, a: V3, b: V3) -> V3 {
+    let ab = b - a;
+    let l2 = ab.dot(ab);
+    if l2 < 1e-9 { return a; }
+    a + ab * ((p - a).dot(ab) / l2).clamp(0.0, 1.0)
+}
+
+/// If `p` is within `margin` of the collider: the outward unit normal and how deep it is (so `p + n * depth` is on the margin's surface).
+pub fn collide(p: V3, c: &Collider, margin: f32) -> Option<(V3, f32)> {
+    let q = closest_on_segment(p, c.a, c.b);
+    let d = p - q;
+    let len = d.len();
+    let reach = c.r + margin;
+    if len >= reach { return None; }
+    let n = if len > 1e-5 { d * (1.0 / len) } else { v3(0.0, 1.0, 0.0) };
+    Some((n, reach - len))
+}
+
+/// The collider lists of the window's cells (`WINDOW * WINDOW`, the `slot` order): each cell lists the colliders whose box (grown by `grow`) touches it, as index + 1,
+/// 0 = empty; a full cell drops the rest.
+pub fn bin_colliders(cs: &[Collider], base: [i32; 2], grow: f32) -> Vec<[u32; CELL_SLOTS]> {
+    let mut cells = vec![[0u32; CELL_SLOTS]; (WINDOW * WINDOW) as usize];
+    for (i, c) in cs.iter().enumerate() {
+        let (lo, hi) = (v3(c.a.x.min(c.b.x), 0.0, c.a.z.min(c.b.z)), v3(c.a.x.max(c.b.x), 0.0, c.a.z.max(c.b.z)));
+        let (x0, x1) = ((lo.x - c.r - grow).floor() as i32, (hi.x + c.r + grow).floor() as i32);
+        let (z0, z1) = ((lo.z - c.r - grow).floor() as i32, (hi.z + c.r + grow).floor() as i32);
+        for cz in z0..=z1 { for cx in x0..=x1 {
+            if !in_window([cx, cz], base) { continue; }
+            let cell = &mut cells[slot([cx, cz])];
+            if let Some(s) = cell.iter_mut().find(|s| **s == 0) { *s = i as u32 + 1; }
+        } }
+    }
+    cells
+}
+
+/// The terrain's normal at (x, z) from the heights around it (`h(x, z)`, 0.5 m apart): slopes and walls slide the dust.
+pub fn ground_normal(x: f32, z: f32, h: impl Fn(f32, f32) -> f32) -> V3 {
+    let e = 0.5;
+    v3(-(h(x + e, z) - h(x - e, z)) / (2.0 * e), 1.0, -(h(x, z + e) - h(x, z - e)) / (2.0 * e)).norm()
+}
+
+/// What a particle does on meeting a surface with unit normal `n` (outward): the speed into it is lost (`bounce` of it comes back) and the rest slides, slowed by `friction` (0..1).
+pub fn slide_response(vel: V3, n: V3, bounce: f32, friction: f32) -> V3 {
+    let vn = vel.dot(n);
+    if vn >= 0.0 { return vel; }
+    let tangent = vel - n * vn;
+    tangent * (1.0 - friction) - n * (vn * bounce)
+}
+
 /// The ground under the dust comes from a window of terrain heights: `WINDOW` cells of 1 m around the car, stored toroidally (a cell lives in the
 /// slot `cell mod WINDOW`), so only the cells that come into the window are measured when the car moves.
 pub const WINDOW: i32 = 64;

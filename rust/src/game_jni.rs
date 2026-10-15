@@ -129,6 +129,10 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameMotionBlur(_e: JNIEnv, _c: JClass, level: jint) {
         crate::raster::set_blur(level);
     }
+    /// The GPU dust options as bits: 1 particle pressure, 2 the car's exact shape, 4 world collisions, 8 the settled layer.
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameDustOpts(_e: JNIEnv, _c: JClass, mask: jint) {
+        crate::game::dust::set_opts(mask as u32);
+    }
     /// Debug/test: GPU stage timings in the log every 90 frames (0 off, 1 on).
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameGpuProf(_e: JNIEnv, _c: JClass, on: jint) {
         crate::raster::set_prof(on > 0);

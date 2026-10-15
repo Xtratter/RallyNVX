@@ -261,3 +261,56 @@ fn the_recirculation_draws_the_dust_in_and_up_and_only_just_behind_the_car() {
     assert!(wake_inflow(v3(0.0, 0.4, -hl - 5.0), hw, hl, h, 20.0, 1.0).len() < 0.2 * wake_inflow(v3(0.0, 0.4, -hl - 0.8), hw, hl, h, 20.0, 1.0).len());
     assert_eq!(wake_inflow(v3(0.6, 0.4, -hl - 0.8), hw, hl, h, 0.0, 1.0), V3::ZERO);
 }
+
+fn prop(kind: crate::game::props::PropKind, x: f32, z: f32, radius: f32, height: f32) -> crate::game::props::Prop { crate::game::props::Prop { kind, pos: v3(x, 0.0, z), radius, height } }
+
+#[test]
+fn trees_are_trunk_capsules_and_rocks_spheres() {
+    use crate::game::props::PropKind::*;
+    let (t, r) = (prop(Tree, 5.0, 5.0, 0.35, 8.0), prop(Rock, 9.0, 3.0, 1.0, 1.4));
+    let cs = colliders_from_props(&[&t, &r]);
+    assert_eq!(cs.len(), 2);
+    assert!(cs[0].a.y == 0.0 && (cs[0].b.y - 4.0).abs() < 1e-5 && cs[0].r == 0.35, "the trunk is capped at 4 m: {:?}", cs[0]);
+    assert!(cs[1].a == cs[1].b && cs[1].r == 1.0 && cs[1].a.y > 0.5);
+}
+#[test]
+fn a_collider_pushes_out_along_the_normal_and_leaves_clear_air_alone() {
+    let c = Collider { a: v3(0.0, 0.0, 0.0), b: v3(0.0, 4.0, 0.0), r: 0.35 };
+    assert!(collide(v3(2.0, 1.0, 0.0), &c, 0.1).is_none());
+    let (n, depth) = collide(v3(0.3, 1.0, 0.0), &c, 0.1).unwrap();
+    assert!((n.x - 1.0).abs() < 1e-5 && n.y.abs() < 1e-5, "{n:?}");
+    assert!((depth - 0.15).abs() < 1e-5, "{depth}");
+    let (n2, d2) = collide(v3(0.0, 1.0, 0.0), &c, 0.1).unwrap();   // exactly on the axis: pushed up, never NaN
+    assert!(n2.is_finite() && d2 > 0.4);
+    // above the top of a capsule it is a cap
+    let (n3, _) = collide(v3(0.0, 4.3, 0.0), &c, 0.1).unwrap();
+    assert!(n3.y > 0.99);
+    let s = Collider { a: v3(1.0, 1.0, 1.0), b: v3(1.0, 1.0, 1.0), r: 1.0 };
+    assert!(collide(v3(1.0, 1.0, 1.0), &s, 0.0).unwrap().1 > 0.99);
+}
+#[test]
+fn colliders_are_binned_into_the_cells_they_touch_and_full_cells_drop_the_rest() {
+    let base = window_base([0, 0]);
+    let cs = vec![Collider { a: v3(0.5, 0.0, 0.5), b: v3(0.5, 4.0, 0.5), r: 0.35 }, Collider { a: v3(10.5, 1.0, 3.5), b: v3(10.5, 1.0, 3.5), r: 1.0 }];
+    let cells = bin_colliders(&cs, base, 0.5);
+    assert!(cells[slot([0, 0])].contains(&1), "the tree's own cell lists it");
+    assert!(cells[slot([10, 3])].contains(&2) && cells[slot([9, 3])].contains(&2) && cells[slot([11, 4])].contains(&2), "the rock's neighbourhood too");
+    assert!(cells[slot([20, 20])].iter().all(|s| *s == 0), "far cells are empty");
+    let crowd: Vec<Collider> = (0..9).map(|_| Collider { a: v3(2.5, 0.0, 2.5), b: v3(2.5, 1.0, 2.5), r: 0.3 }).collect();
+    let full = bin_colliders(&crowd, base, 0.0);
+    assert_eq!(full[slot([2, 2])].iter().filter(|s| **s != 0).count(), CELL_SLOTS);
+    let outside = bin_colliders(&[Collider { a: v3(500.0, 0.0, 500.0), b: v3(500.0, 1.0, 500.0), r: 1.0 }], base, 0.5);
+    assert!(outside.iter().all(|c| c.iter().all(|s| *s == 0)), "outside the window nothing is listed");
+}
+#[test]
+fn the_ground_normal_leans_with_the_slope_and_the_response_slides_it_off() {
+    let n = ground_normal(3.0, 4.0, |x, _| 0.5 * x);   // rises towards +x
+    assert!(n.x < -0.4 && n.y > 0.8 && (n.len() - 1.0).abs() < 1e-5, "{n:?}");
+    assert!((ground_normal(0.0, 0.0, |_, _| 7.0) - v3(0.0, 1.0, 0.0)).len() < 1e-5);
+    // a particle falling onto the slope keeps sliding down it and loses the speed into it
+    let v = slide_response(v3(0.0, -4.0, 0.0), n, 0.0, 0.0);
+    assert!(v.dot(n).abs() < 1e-4 && v.x < 0.0 && v.is_finite(), "{v:?}");
+    assert_eq!(slide_response(v3(1.0, 2.0, 0.0), v3(0.0, 1.0, 0.0), 0.5, 0.5), v3(1.0, 2.0, 0.0), "moving away: untouched");
+    let b = slide_response(v3(2.0, -3.0, 0.0), v3(0.0, 1.0, 0.0), 0.5, 0.5);
+    assert!((b.y - 1.5).abs() < 1e-5 && (b.x - 1.0).abs() < 1e-5, "{b:?}");
+}

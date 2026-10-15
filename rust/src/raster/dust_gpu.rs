@@ -2,7 +2,8 @@
 //! `game/dust_ref.rs`); the result is written in the layout of `DustInst`, so the render buffer is the vertex buffer of the dust sprites.
 use bytemuck::{Pod, Zeroable};
 use crate::game::dust::{phys, MAX_EMITS};
-use crate::game::dust_ref::{self, WINDOW};
+use crate::game::dust_ref::{self, WINDOW, MAX_COLLIDERS};
+use crate::game::props::Prop;
 use crate::game::terrain::Terrain;
 use crate::game::world::DustGpuIn;
 
@@ -20,7 +21,7 @@ const MAX_CELLS: usize = 262144;
 const DUST_INST_BYTES: u64 = 48;
 
 pub struct DustGpu {
-    ubuf: wgpu::Buffer, emit_buf: wgpu::Buffer, state: wgpu::Buffer, mass_buf: wgpu::Buffer, fld_buf: wgpu::Buffer, render: wgpu::Buffer,
+    ubuf: wgpu::Buffer, coll_buf: wgpu::Buffer, cell_buf: wgpu::Buffer, emit_buf: wgpu::Buffer, state: wgpu::Buffer, mass_buf: wgpu::Buffer, fld_buf: wgpu::Buffer, render: wgpu::Buffer,
     bg: wgpu::BindGroup, bgl_grid: wgpu::BindGroupLayout, dummy: wgpu::TextureView,
     pl_emit: wgpu::ComputePipeline, pl_step: wgpu::ComputePipeline, pl_clear: wgpu::ComputePipeline, pl_splat: wgpu::ComputePipeline, pl_fmass: wgpu::ComputePipeline, pl_flight: wgpu::ComputePipeline, dummy_buf: wgpu::Buffer,
     head: usize, cap: usize, last_time: f32,
@@ -31,6 +32,8 @@ pub struct DustGpu {
 impl DustGpu {
     pub fn new(dev: &wgpu::Device) -> DustGpu {
         let ubuf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_u"), size: std::mem::size_of::<DUni>() as u64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let coll_buf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_colliders"), size: (MAX_COLLIDERS * 32) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let cell_buf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_ccells"), size: (WINDOW * WINDOW * 16) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let emit_buf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_emits"), size: (MAX_EMITS * std::mem::size_of::<S>()) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let mass_buf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_mass"), size: (MAX_CELLS * 4) as u64, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
         let fld_buf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_fld"), size: (MAX_CELLS * 16) as u64, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
@@ -41,13 +44,15 @@ impl DustGpu {
             entry(0, wgpu::BufferBindingType::Uniform), entry(1, wgpu::BufferBindingType::Storage { read_only: false }), entry(2, wgpu::BufferBindingType::Storage { read_only: false }),
             entry(4, wgpu::BufferBindingType::Storage { read_only: true }),
             entry(5, wgpu::BufferBindingType::Storage { read_only: false }), entry(6, wgpu::BufferBindingType::Storage { read_only: false }),
+            entry(7, wgpu::BufferBindingType::Storage { read_only: true }), entry(8, wgpu::BufferBindingType::Storage { read_only: true }),
             wgpu::BindGroupLayoutEntry { binding: 3, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }, count: None }] });
         let ground_tex = dev.create_texture(&wgpu::TextureDescriptor { label: Some("dust_ground"), size: wgpu::Extent3d { width: WINDOW as u32, height: WINDOW as u32, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1,
             dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::R32Float, usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, view_formats: &[] });
         let ground_view = ground_tex.create_view(&Default::default());
         let bg = dev.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("dust_bg"), layout: &bgl, entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: state.as_entire_binding() }, wgpu::BindGroupEntry { binding: 2, resource: render.as_entire_binding() }, wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&ground_view) }, wgpu::BindGroupEntry { binding: 4, resource: emit_buf.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 5, resource: mass_buf.as_entire_binding() }, wgpu::BindGroupEntry { binding: 6, resource: fld_buf.as_entire_binding() }] });
+            wgpu::BindGroupEntry { binding: 5, resource: mass_buf.as_entire_binding() }, wgpu::BindGroupEntry { binding: 6, resource: fld_buf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 7, resource: coll_buf.as_entire_binding() }, wgpu::BindGroupEntry { binding: 8, resource: cell_buf.as_entire_binding() }] });
         let tex = |binding: u32| wgpu::BindGroupLayoutEntry { binding, visibility: wgpu::ShaderStages::COMPUTE,
             ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D3, multisampled: false }, count: None };
         let bgl_grid = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("dust_grid_bgl"), entries: &[tex(0), tex(1), entry(2, wgpu::BufferBindingType::Storage { read_only: false })] });
@@ -60,7 +65,7 @@ impl DustGpu {
         let (pl_emit, pl_step, pl_clear, pl_splat) = (cp("emit"), cp("dust_step"), cp("dust_clear"), cp("dust_splat"));
         let (pl_fmass, pl_flight) = (cp("dust_field_mass"), cp("dust_field_light"));
         log::info!("dust gpu: {CAPACITY} particles");
-        DustGpu { ubuf, emit_buf, state, mass_buf, fld_buf, render, bg, bgl_grid, dummy, pl_emit, pl_step, pl_clear, pl_splat, pl_fmass, pl_flight, dummy_buf, head: 0, cap: 0, last_time: -1.0, ground_tex, heights: vec![0.0; (WINDOW * WINDOW) as usize], cells: vec![[i32::MIN; 2]; (WINDOW * WINDOW) as usize] }
+        DustGpu { ubuf, coll_buf, cell_buf, emit_buf, state, mass_buf, fld_buf, render, bg, bgl_grid, dummy, pl_emit, pl_step, pl_clear, pl_splat, pl_fmass, pl_flight, dummy_buf, head: 0, cap: 0, last_time: -1.0, ground_tex, heights: vec![0.0; (WINDOW * WINDOW) as usize], cells: vec![[i32::MIN; 2]; (WINDOW * WINDOW) as usize] }
     }
 
     pub fn render_buffer(&self) -> &wgpu::Buffer { &self.render }
@@ -69,7 +74,7 @@ impl DustGpu {
 
     /// Emits the wheels' new particles and moves all of them to `frame.time`.
     /// `grid`: the airflow's velocity and solid textures and its box (see `AirflowGpu::fields`), or None (the wind only).
-    pub fn update(&mut self, dev: &wgpu::Device, queue: &wgpu::Queue, enc: &mut wgpu::CommandEncoder, terrain: &Terrain, frame: &DustGpuIn, grid: Option<(&wgpu::TextureView, &wgpu::TextureView, [f32; 4], &wgpu::Buffer)>) {
+    pub fn update(&mut self, dev: &wgpu::Device, queue: &wgpu::Queue, enc: &mut wgpu::CommandEncoder, terrain: &Terrain, frame: &DustGpuIn, props: &[&Prop], grid: Option<(&wgpu::TextureView, &wgpu::TextureView, [f32; 4], &wgpu::Buffer)>) {
         let cap = frame.cap.clamp(1, CAPACITY);
         if cap != self.cap { queue.write_buffer(&self.state, 0, &vec![0u8; CAPACITY * std::mem::size_of::<S>()]); queue.write_buffer(&self.render, 0, &vec![0u8; CAPACITY * DUST_INST_BYTES as usize]); self.head = 0; self.cap = cap; }
         let dt = if self.last_time < 0.0 { 0.0 } else { (frame.time - self.last_time).clamp(0.0, 0.1) };
@@ -87,8 +92,18 @@ impl DustGpu {
                 bytemuck::cast_slice(&self.heights), wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(WINDOW as u32 * 4), rows_per_image: Some(WINDOW as u32) },
                 wgpu::Extent3d { width: WINDOW as u32, height: WINDOW as u32, depth_or_array_layers: 1 });
         }
+        // the trees and rocks near the car as colliders, binned into the ground window's cells
+        if frame.opts & crate::game::dust::OPT_WORLD != 0 {
+            let near: Vec<&Prop> = props.iter().copied().filter(|p| (p.pos.x - frame.car_pos.x).abs() < 34.0 && (p.pos.z - frame.car_pos.z).abs() < 34.0).collect();
+            let cs = dust_ref::colliders_from_props(&near);
+            let mut raw: Vec<f32> = Vec::with_capacity(cs.len() * 8);
+            for c in &cs { raw.extend_from_slice(&[c.a.x, c.a.y, c.a.z, c.r, c.b.x, c.b.y, c.b.z, 0.0]); }
+            if !raw.is_empty() { queue.write_buffer(&self.coll_buf, 0, bytemuck::cast_slice(&raw)); }
+            let cells = dust_ref::bin_colliders(&cs, base, 0.5);
+            queue.write_buffer(&self.cell_buf, 0, bytemuck::cast_slice(&cells));
+        }
         let ph = phys();
-        let mut u = DUni { n: [frame.emits.len().min(MAX_EMITS) as u32, self.head as u32, cap as u32, 0], g: [dt, frame.time, frame.ground_y, 0.0],
+        let mut u = DUni { n: [frame.emits.len().min(MAX_EMITS) as u32, self.head as u32, cap as u32, frame.opts], g: [dt, frame.time, frame.ground_y, 0.0],
             wind: [frame.wind.x, frame.wind.y, frame.wind.z, 0.0], ph: [ph.tau_fine, ph.tau_coarse, ph.settle_fine, ph.settle_coarse], ph2: [ph.turbulence * 1.5, (frame.car_vel.x * frame.car_vel.x + frame.car_vel.z * frame.car_vel.z).sqrt(), ph.plume_lift, ph.plume_height],
             car: [frame.car_pos.x, frame.car_pos.y, frame.car_pos.z, frame.yaw], car_vel: [frame.car_vel.x, frame.car_vel.y, frame.car_vel.z, 0.0], bx: grid.map_or([0.0; 4], |g| g.2), gw: [base[0], base[1], 0, 0], cp: { let c = dust_ref::coupling(); [c.push, c.mass_fine, c.mass_coarse, ph.street] }, sun: [frame.sun.x, frame.sun.y, frame.sun.z, dust_ref::coupling().shadow_k], body: [frame.body[0], frame.body[1], frame.body[2], ph.vortex * frame.vortex_scale] };
         let emits: Vec<S> = frame.emits.iter().take(MAX_EMITS).map(|p| S { a: [p.pos.x, p.pos.y, p.pos.z, p.size0], b: [p.vel.x, p.vel.y, p.vel.z, p.age], c: [p.color[0], p.color[1], p.color[2], p.life], d: [if p.speck { 2.0 } else if p.coarse { 1.0 } else { 0.0 }, p.seed, 1.0, 0.0] }).collect();

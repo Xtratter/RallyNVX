@@ -106,6 +106,17 @@ static GPU_DEBUG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 pub fn set_gpu_debug(on: bool) { GPU_DEBUG.store(on, std::sync::atomic::Ordering::Relaxed); }
 pub fn gpu_debug() -> bool { GPU_DEBUG.load(std::sync::atomic::Ordering::Relaxed) }
 
+/// The GPU dust's options (Settings and the in-drive panel), each on its own bit: particle pressure (PBD), the car's exact shape, collisions with the world, the settled layer.
+pub const OPT_PBD: u32 = 1;
+pub const OPT_SHAPE: u32 = 2;
+pub const OPT_WORLD: u32 = 4;
+pub const OPT_DEPOSIT: u32 = 8;
+/// The defaults: all but the heaviest (the pressure).
+pub const OPTS_DEFAULT: u32 = OPT_SHAPE | OPT_WORLD | OPT_DEPOSIT;
+static OPTS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(OPTS_DEFAULT);
+pub fn set_opts(mask: u32) { OPTS.store(mask & 15, std::sync::atomic::Ordering::Relaxed); }
+pub fn opts() -> u32 { OPTS.load(std::sync::atomic::Ordering::Relaxed) }
+
 static AERO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// The Settings switch "Aerodynamics" (the app sets it at start; the host tests leave it off, so they run the CPU particles).
 pub fn set_aero(on: bool) { AERO.store(on, std::sync::atomic::Ordering::Relaxed); }
