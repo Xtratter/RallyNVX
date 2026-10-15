@@ -136,9 +136,12 @@ mod game {
         /// Shows car `index` (file order) in the garage scene.
         pub fn set_garage_car(&mut self, index: i32) {
             let cars = crate::game::vehicle::VehicleSpec::all();
-            let Some((_, spec)) = cars.get(index.max(0) as usize).or_else(|| cars.first()) else { return };
+            let Some((id, spec)) = cars.get(index.max(0) as usize).or_else(|| cars.first()) else { return };
+            // the turntable shows the car as the profile on disk has it (upgrades and the wheel set; the garage screen changes the file, then asks for the car again)
+            if let Some(path) = &self.profile_path { self.profile = Some(Profile::load_or_new(path)); }
+            let shown = self.profile.as_ref().and_then(|p| p.spec_of(id)).unwrap_or(*spec);
             self.garage = true; self.paused = false;
-            self.world = World::garage(*spec);
+            self.world = World::garage(shown);
         }
         pub fn set_paused(&mut self, p: bool) { self.paused = p; self.last = Instant::now(); self.acc = 0.0; }
 

@@ -101,6 +101,9 @@ impl Profile {
         super::garage::apply(&spec, self.levels(id))
     }
 
+    /// A car of the vehicles file with this profile's upgrades and wheel set applied (`None` for an unknown id): what the garage shows on the turntable.
+    pub fn spec_of(&self, id: &str) -> Option<VehicleSpec> { VehicleSpec::by_id(id).map(|s| super::garage::apply(&s, self.levels(id))) }
+
     /// Writes to `<path>.tmp` then renames over `path`.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         if let Some(d) = path.parent() { std::fs::create_dir_all(d)?; }

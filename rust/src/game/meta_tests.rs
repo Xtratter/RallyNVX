@@ -155,4 +155,12 @@ mod aero_parts {
         let q = Profile::from_json(&p.to_json()).unwrap();
         assert_eq!(q.levels("offroader")[8], 1);
     }
+
+    #[test] fn the_garage_preview_spec_carries_the_wheel_set_and_unknown_cars_have_none() {
+        let mut p = Profile::new();
+        p.garage.cars.push(("vulpes".to_string(), [0, 0, 0, 0, 0, 0, 0, 1, 2]));
+        assert_eq!(p.spec_of("vulpes").unwrap().wheel_set, 2);
+        assert_eq!(p.spec_of("offroader").unwrap().wheel_set, 0);
+        assert!(p.spec_of("nobody").is_none());
+    }
 }
