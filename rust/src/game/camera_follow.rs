@@ -15,8 +15,27 @@ const RETURN_TIME: f32 = 0.5;
 const ELEV_MIN: f32 = 0.02;
 const ELEV_MAX: f32 = 1.25;
 
+/// The camera views the player cycles through: behind the car (the default), on the bonnet, low on the front bumper, high behind the car, and a free orbit round it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CamView { Chase = 0, Hood = 1, Bumper = 2, Roof = 3, Orbit = 4 }
+pub const VIEWS: usize = 5;
+
+impl CamView {
+    /// Any number becomes a view (out of range: the nearest one).
+    pub fn from_index(i: i32) -> CamView { match i.clamp(0, VIEWS as i32 - 1) { 0 => CamView::Chase, 1 => CamView::Hood, 2 => CamView::Bumper, 3 => CamView::Roof, _ => CamView::Orbit } }
+    /// The bonnet and bumper views ride on the car; the others follow it from outside.
+    pub fn rigid(self) -> bool { matches!(self, CamView::Hood | CamView::Bumper) }
+}
+
+/// Distance scale (the chase views) or zoom (the bonnet and bumper views) limits, and the height offset limits (metres, or the gaze tilt of the rigid views).
+pub const DIST_MIN: f32 = 0.5;
+pub const DIST_MAX: f32 = 2.5;
+
 pub struct FollowCam {
     pub pos: V3, pub target: V3, heading: V3,
+    /// The view, its distance scale (zoom in the rigid views) and height offset (gaze tilt in the rigid views), and the vertical field of view in radians.
+    pub view: CamView, pub dist: f32, pub height: f32, pub fov: f32,
+    gaze: V3,
     /// The player's orbit: yaw around the car (radians, positive = the camera moves towards the car's left) and a pitch
     /// offset of the camera's elevation angle.
     pub user_yaw: f32, pub user_pitch: f32,
@@ -31,8 +50,19 @@ impl FollowCam {
 
     pub fn new_for(pos: V3, forward: V3, back: f32, up: f32) -> FollowCam {
         let heading = v3(forward.x, 0.0, forward.z).norm();
-        FollowCam { pos: pos - heading * back + v3(0.0, up, 0.0), target: pos + v3(0.0, 1.2, 0.0), heading,
+        FollowCam { pos: pos - heading * back + v3(0.0, up, 0.0), target: pos + v3(0.0, 1.2, 0.0), heading, view: CamView::Chase, dist: 1.0, height: 0.0, fov: 1.0, gaze: heading,
             user_yaw: 0.0, user_pitch: 0.0, dragging: false, rev_t: 0.0, flip: 0.0 }
+    }
+
+    /// Picks the view with its distance scale and height offset (clamped; garbage becomes the defaults).
+    pub fn set_view(&mut self, view: i32, dist: f32, height: f32) {
+        self.view = CamView::from_index(view);
+        self.dist = if dist.is_finite() { dist.clamp(DIST_MIN, DIST_MAX) } else { 1.0 };
+        let h = if self.view.rigid() { 1.0 } else { 6.0 };
+        let lo = if self.view.rigid() { -1.0 } else { -3.0 };
+        self.height = if height.is_finite() { height.clamp(lo, h) } else { 0.0 };
+        if self.view.rigid() { self.fov = (1.0 / self.dist).clamp(0.5, 1.45); } else { self.fov = 1.0; }
+        if self.view != CamView::Orbit { self.user_yaw = 0.0; self.user_pitch = 0.0; }
     }
 
     /// The finger moves on the screen: orbit by `dyaw` and tilt the elevation by `dpitch` (radians).
@@ -49,21 +79,38 @@ impl FollowCam {
     fn base_elev(back: f32, up: f32) -> f32 { (up - 1.2).atan2(back + 3.0) }
 
     pub fn update(&mut self, v: &Vehicle, t: &Terrain, dt: f32) {
+        if self.view.rigid() { self.ride(v, dt); return; }
         let sp = v.speed();
         // reverse view: after a short delay of reversing the camera swings to the front of the car
         // (the driver holds reverse and the car is nearly stopped or rolling back, or the car really rolls backwards)
+        let orbit = self.view == CamView::Orbit;   // the free orbit never swings behind or to the front by itself
         if (v.reverse_throttle && sp < 1.0) || sp < -1.5 { self.rev_t += dt; } else { self.rev_t = (self.rev_t - 3.0 * dt).max(0.0); }
         if sp > 1.5 { self.rev_t = 0.0; }
-        let want = if self.rev_t > REVERSE_DELAY { 1.0 } else { 0.0 };
+        let want = if self.rev_t > REVERSE_DELAY && !orbit { 1.0 } else { 0.0 };
         self.flip += (want - self.flip).clamp(-dt / SWING_TIME, dt / SWING_TIME);
         // the player's orbit fades out when the car drives forward and the finger is up
         self.user_yaw = (self.user_yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
-        if !self.dragging && sp > RETURN_SPEED {
+        if !self.dragging && sp > RETURN_SPEED && !orbit {
             let k = (-dt / RETURN_TIME).exp();
             self.user_yaw *= k; self.user_pitch *= k;
         }
         let yaw = self.user_yaw + std::f32::consts::PI * smooth01(self.flip);
-        self.follow_orbit(v.pos, v.forward(), 8.0, 3.5, yaw, self.user_pitch, t, dt);
+        let (back, up) = match self.view { CamView::Roof => (5.0 * self.dist, 11.0 * self.dist + self.height), _ => (8.0 * self.dist, 3.5 * self.dist + self.height) };
+        self.fov = 1.0;
+        self.follow_orbit(v.pos, v.forward(), back, up, yaw, self.user_pitch, t, dt);
+    }
+
+    /// The bonnet and bumper views ride on the car (the point follows it exactly); the gaze follows its heading with a little damping so bumps do not shake the picture.
+    fn ride(&mut self, v: &Vehicle, dt: f32) {
+        let s = &v.spec;
+        let ground = s.wheels[0].y - s.rest - s.radius;   // the road, in the car's frame
+        let (ly, lz) = match self.view { CamView::Bumper => (ground + 0.30 * s.size.y, 0.5 * s.size.z + 0.05), _ => (ground + 0.66 * s.size.y, 0.12 * s.size.z) };
+        self.pos = v.pos + v.rot.rotate(v3(0.0, ly, lz));
+        let k = 1.0 - (-14.0 * dt).exp();
+        let g = self.gaze + (v.forward() - self.gaze) * k;
+        if g.len() > 1e-3 { self.gaze = g.norm(); }
+        self.target = self.pos + self.gaze * 40.0 + v3(0.0, self.height * 3.0, 0.0);
+        self.fov = (1.0 / self.dist).clamp(0.5, 1.45);
     }
 
     /// Chase any target: `back` metres behind its smoothed heading and `up` metres above it, never under the terrain.

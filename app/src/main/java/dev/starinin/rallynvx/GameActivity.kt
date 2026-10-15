@@ -33,6 +33,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var autopilotOn = false
     private var autopilotStyle = 1
     private var autopilotBtn: View? = null
+    private var camBtn: View? = null
+    private var camView = 0; private var camDist = 1f; private var camHeight = 0f
     private var seed = 0L
     private lateinit var audio: AudioEngine
     private var profile = ""
@@ -90,6 +92,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         drive = DriveControls(this).also { it.onChange = { thr, steer, brake, amt -> if (autopilotOn && (thr != 0f || steer != 0f || brake)) setAutopilot(false); carThr = thr; carSteer = steer; carBrake = brake; carAmt = amt; sendInput() } }
         drive?.onCamera = { dx, dy -> if (running) Native.gameCamera(dx * 0.006f, -dy * 0.004f) }   // drag right = the camera swings round, drag down = lower
         drive?.onCameraUp = { if (running) Native.gameCameraUp() }
+        drive?.onCameraPinch = { ratio, dy -> changeCamera(CamMath.pinchFor(camView, camDist, ratio), CamMath.height(camView, camHeight, dy, resources.displayMetrics.density)) }   // spread = closer, both fingers up = higher
         root.addView(drive, FrameLayout.LayoutParams(-1, -1))
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
@@ -101,6 +104,13 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         newLevelBtn = button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { autopilotOn = false; showAutopilot(); seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
         autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, if (rallyIdx > 0) 150f else 284f, 168f) { setAutopilot(!autopilotOn) }
         autopilotBtn?.setOnLongClickListener { showAutopilotPanel(); true }   // long press: the autopilot settings
+        // the camera view button under the status line: a tap cycles the views, a long press puts the current view back to its default distance and height
+        camView = intent.getIntExtra("camview", Controls.camView(this)).coerceIn(0, CamMath.VIEWS - 1)   // debug/test: `camview`, `camdist`, `camheight` pick a view
+        camDist = CamMath.clampDist(intent.getFloatExtra("camdist", Controls.camDist(this, camView))); camHeight = CamMath.clampHeight(camView, intent.getFloatExtra("camheight", Controls.camHeight(this, camView)))
+        camBtn = M3Widgets.button(this, camLabel(), M3Widgets.ButtonKind.TONAL) { selectCameraView(CamMath.next(camView)) }.also {
+            root.addView(it, FrameLayout.LayoutParams(px(150f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(88f), 0, 0) })
+            it.setOnLongClickListener { changeCamera(1f, 0f); true }
+        }
         button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
             handbrakeBtn = this
             applyControlLayout()
@@ -326,6 +336,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Native.gameDust(Controls.dust(this))
         Native.gameAero(if (Controls.aero(this)) 1 else 0)
         Native.gameSigns(Controls.signs(this))
+        Native.gameCameraView(camView, camDist, camHeight)
         running = true
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
@@ -360,6 +371,22 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val rev = Controls.renderRev(this)   // bumped by the settings screen: a deliberate pick is sent again even if the value is the same
         if (mode != sentRender || rev != sentRev) { Native.gameRenderMode(mode); sentRender = mode; sentRev = rev }
         if (auto != sentAuto) { Native.gameAutoFallback(auto == 1); sentAuto = auto }
+    }
+
+    private fun camLabel() = t("View: ", "Вид: ") + CamMath.name(camView, java.util.Locale.getDefault().language != "ru")
+
+    /** Takes the distance (zoom) and height (tilt) of the current view, keeps them for next time and sends them to the game. */
+    private fun changeCamera(dist: Float, height: Float) {
+        camDist = CamMath.clampDist(dist); camHeight = CamMath.clampHeight(camView, height)
+        Controls.setCam(this, camView, camDist, camHeight)
+        if (running) Native.gameCameraView(camView, camDist, camHeight)
+    }
+
+    private fun selectCameraView(view: Int) {
+        camView = view; camDist = Controls.camDist(this, view); camHeight = Controls.camHeight(this, view)
+        Controls.setCam(this, camView, camDist, camHeight)
+        (camBtn as? android.widget.TextView)?.text = camLabel()
+        if (running) Native.gameCameraView(camView, camDist, camHeight)
     }
 
     private fun applyControls() {

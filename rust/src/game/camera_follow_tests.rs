@@ -107,3 +107,87 @@ fn behind(c: &FollowCam, v: &Vehicle) -> f32 { -(c.pos - v.pos).dot(v.forward())
     c.drag(0.0, -9.0);
     for _ in 0..120 { c.update(&v, &t, 1.0 / 60.0); assert!(c.pos.y >= t.height(c.pos.x, c.pos.z) + 0.89 && c.pos.is_finite()); }
 }
+
+// ---- views, distance and height ----
+fn settle_in(view: i32, dist: f32, height: f32) -> (Vehicle, Terrain, FollowCam) {
+    let (v, t, mut c) = settled_car();
+    c.set_view(view, dist, height);
+    for _ in 0..240 { c.update(&v, &t, 1.0 / 60.0); }
+    (v, t, c)
+}
+#[test] fn views_are_numbered_and_a_wild_index_is_clamped() {
+    assert_eq!(CamView::from_index(0), CamView::Chase);
+    assert_eq!(CamView::from_index(4), CamView::Orbit);
+    assert_eq!(CamView::from_index(-3), CamView::Chase);
+    assert_eq!(CamView::from_index(99), CamView::Orbit);
+    let (_, _, mut c) = settled_car();
+    c.set_view(99, 50.0, -50.0);
+    assert_eq!(c.view, CamView::Orbit);
+    assert!(c.dist <= 2.5 && c.dist >= 0.5 && c.height >= -3.0 && c.height <= 6.0, "{} {}", c.dist, c.height);
+    c.set_view(0, f32::NAN, f32::INFINITY);
+    assert!(c.dist.is_finite() && c.height.is_finite());
+}
+#[test] fn the_chase_distance_scales_and_the_height_offset_raises_the_camera() {
+    let (v, _, near) = settle_in(0, 0.5, 0.0);
+    let (_, _, far) = settle_in(0, 2.0, 0.0);
+    assert!(behind(&far, &v) > behind(&near, &v) + 6.0, "{} vs {}", behind(&far, &v), behind(&near, &v));
+    let (_, _, low) = settle_in(0, 1.0, 0.0);
+    let (_, _, high) = settle_in(0, 1.0, 4.0);
+    assert!(high.pos.y > low.pos.y + 2.5, "{} vs {}", high.pos.y, low.pos.y);
+}
+#[test] fn the_roof_view_is_higher_and_steeper_than_the_chase() {
+    let (v, _, chase) = settle_in(0, 1.0, 0.0);
+    let (_, _, roof) = settle_in(3, 1.0, 0.0);
+    assert!(roof.pos.y > chase.pos.y + 4.0, "{} vs {}", roof.pos.y, chase.pos.y);
+    assert!(behind(&roof, &v) < behind(&chase, &v) + 1.0);
+}
+#[test] fn the_hood_view_sits_on_the_bonnet_and_looks_ahead() {
+    let (v, _, c) = settle_in(1, 1.0, 0.0);
+    let off = c.pos - v.pos;
+    let ahead = off.dot(v.forward());
+    assert!(ahead > 0.0 && ahead < v.spec.size.z * 0.5, "on the bonnet: {ahead} m ahead of the centre");
+    assert!(off.dot(v.right()).abs() < 0.2, "on the centre line");
+    assert!(c.pos.y > v.pos.y - 0.2 && c.pos.y < v.pos.y + 1.4, "height {}", c.pos.y - v.pos.y);
+    let dir = (c.target - c.pos).norm();
+    assert!(dir.dot(v.forward()) > 0.97, "looks along the car: {}", dir.dot(v.forward()));
+}
+#[test] fn the_bumper_view_is_lower_and_further_forward_than_the_hood() {
+    let (v, _, hood) = settle_in(1, 1.0, 0.0);
+    let (_, _, bumper) = settle_in(2, 1.0, 0.0);
+    assert!(bumper.pos.y < hood.pos.y - 0.2, "{} vs {}", bumper.pos.y, hood.pos.y);
+    assert!((bumper.pos - v.pos).dot(v.forward()) > (hood.pos - v.pos).dot(v.forward()) + 0.3);
+}
+#[test] fn in_the_hood_view_the_distance_is_the_zoom_and_the_height_tilts_the_gaze() {
+    let (_, _, wide) = settle_in(1, 0.6, 0.0);
+    let (_, _, tele) = settle_in(1, 1.8, 0.0);
+    assert!(tele.fov < wide.fov - 0.2, "zoomed in has a narrower field: {} vs {}", tele.fov, wide.fov);
+    assert!(wide.fov <= 1.45 && tele.fov >= 0.5);
+    let (_, _, level) = settle_in(1, 1.0, 0.0);
+    let (_, _, up) = settle_in(1, 1.0, 1.0);
+    assert!(up.target.y > level.target.y + 1.0, "{} vs {}", up.target.y, level.target.y);
+}
+#[test] fn the_orbit_view_keeps_the_players_angle_while_the_car_drives_on() {
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., 1.1, 0.), 0.0);
+    for _ in 0..120 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+    let mut c = FollowCam::new(&v);
+    c.set_view(4, 1.0, 0.0);
+    c.drag(1.2, 0.0); c.set_dragging(false);
+    for _ in 0..360 { v.step(&t, &[], &Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); c.update(&v, &t, 1.0 / 60.0); }
+    assert!(v.speed() > 5.0);
+    assert!(c.user_yaw.abs() > 1.0, "the orbit view does not swing back behind: {}", c.user_yaw);
+}
+#[test] fn every_view_stays_finite_and_the_chase_views_stay_above_the_ground() {
+    let t = Terrain::new(9);
+    let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., t.height(0., 0.) + 1.1, 0.), 0.0);
+    for view in 0..5 {
+        let mut c = FollowCam::new(&v);
+        c.set_view(view, 0.5, -3.0);
+        for i in 0..400 {
+            v.step(&t, &[], &Input { throttle: 1.0, steer: if (i / 100) % 2 == 0 { 0.3 } else { -0.3 }, ..Default::default() }, 1.0 / 60.0);
+            c.update(&v, &t, 1.0 / 60.0);
+            assert!(c.pos.is_finite() && c.target.is_finite() && c.fov.is_finite(), "view {view} step {i}");
+            if matches!(c.view, CamView::Chase | CamView::Roof | CamView::Orbit) { assert!(c.pos.y >= t.height(c.pos.x, c.pos.z) + 0.89, "view {view} step {i}"); }
+        }
+    }
+}

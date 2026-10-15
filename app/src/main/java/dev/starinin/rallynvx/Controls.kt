@@ -52,6 +52,11 @@ object Controls {
     /** Aerodynamics: the dust follows the airflow around the car (on the GPU); off = the simple CPU particles. */
     fun aero(c: Context): Boolean = p(c).getBoolean("aero", true)
     fun setAero(c: Context, v: Boolean) = p(c).edit().putBoolean("aero", v).apply()
+    /** The camera view and, per view, the distance scale and the height offset the player chose. */
+    fun camView(c: Context): Int = p(c).getInt("cam_view", 0).coerceIn(0, CamMath.VIEWS - 1)
+    fun camDist(c: Context, view: Int): Float = CamMath.clampDist(p(c).getFloat("cam_dist_$view", 1f))
+    fun camHeight(c: Context, view: Int): Float = CamMath.clampHeight(view, p(c).getFloat("cam_height_$view", 0f))
+    fun setCam(c: Context, view: Int, dist: Float, height: Float) = p(c).edit().putInt("cam_view", view).putFloat("cam_dist_$view", dist).putFloat("cam_height_$view", height).apply()
     fun setDust(c: Context, v: Int) = p(c).edit().putInt("dust", v.coerceIn(0, 3)).apply()
     fun autoFallback(c: Context) = p(c).getBoolean("auto_fallback", false)
     fun setAutoFallback(c: Context, v: Boolean) = p(c).edit().putBoolean("auto_fallback", v).apply()

@@ -15,6 +15,8 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     /** A finger dragging on free space: (dx, dy) in pixels since the last event; `onCameraUp` when it lifts. */
     var onCamera: (Float, Float) -> Unit = { _, _ -> }
     var onCameraUp: () -> Unit = {}
+    /** Two fingers on free space: the span between them changed by `ratio` (new / old) and their middle moved by `dy` pixels (negative = up). */
+    var onCameraPinch: (Float, Float) -> Unit = { _, _ -> }
     /** Current speed in km/h (the brake pedal reverses when nearly stopped). */
     var speedKmh = 0f
     /** Roll angle of the phone in degrees (tilt mode), fed by the activity. */
@@ -43,6 +45,8 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     private var sens = 1
     private var wheelId = -1; private var gasId = -1; private var brakeId = -1
     private var camId = -1; private var camX = 0f; private var camY = 0f
+    /** The second free-space finger: with the first it pinches (distance) and moves up or down (height). */
+    private var cam2Id = -1; private var cam2X = 0f; private var cam2Y = 0f
     private var sent = floatArrayOf(Float.NaN, 0f, 0f, 0f)
     private var lastNs = 0L
     private val loop = object : Runnable { override fun run() { frame(); postOnAnimation(this) } }
@@ -82,6 +86,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     fun release() {
         wheelId = -1; gasId = -1; brakeId = -1; leftId = -1; rightId = -1
         if (camId >= 0) { camId = -1; onCameraUp() }
+        cam2Id = -1
         wheel.up(); buttons.reset(); leftBtn.down = false; rightBtn.down = false; gasView.pressure = 0f; brakeView.pressure = 0f
         report()
     }
@@ -121,7 +126,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
 
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
         if (visibility != VISIBLE) return false
-        val any = wheelId >= 0 || gasId >= 0 || brakeId >= 0 || leftId >= 0 || rightId >= 0 || camId >= 0
+        val any = wheelId >= 0 || gasId >= 0 || brakeId >= 0 || leftId >= 0 || rightId >= 0 || camId >= 0 || cam2Id >= 0
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val k = e.actionIndex; val pid = e.getPointerId(k); val x = e.getX(k); val y = e.getY(k)
@@ -132,6 +137,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
                     gasId < 0 && inView(gasView, x, y) -> { gasId = pid; gasView.pressure = pedalAt(gasView, y) }
                     brakeId < 0 && inView(brakeView, x, y) -> { brakeId = pid; brakeView.pressure = pedalAt(brakeView, y) }
                     camId < 0 -> { camId = pid; camX = x; camY = y }   // free space: a camera drag (also while the other fingers drive)
+                    cam2Id < 0 -> { cam2Id = pid; cam2X = x; cam2Y = y; onCameraUp() }   // a second free finger: a pinch, the orbit drag pauses
                     else -> if (e.actionMasked == MotionEvent.ACTION_DOWN && !any) return false
                 }
                 report()
@@ -143,7 +149,18 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
                         wheelId -> { if (!nearHub(e.getX(i), e.getY(i))) wheel.move(touchAngle(e.getX(i), e.getY(i))); wheelView.angle = wheel.angle }
                         gasId -> gasView.pressure = pedalAt(gasView, e.getY(i))
                         brakeId -> brakeView.pressure = pedalAt(brakeView, e.getY(i))
-                        camId -> { onCamera(e.getX(i) - camX, e.getY(i) - camY); camX = e.getX(i); camY = e.getY(i) }
+                        camId -> if (cam2Id >= 0) {
+                            // two fingers: the change of the span between them (distance) and of their middle height (height)
+                            val j = e.findPointerIndex(cam2Id)
+                            if (j >= 0) {
+                                val (x1, y1, x2, y2) = floatArrayOf(e.getX(i), e.getY(i), e.getX(j), e.getY(j))
+                                val old = hypot(camX - cam2X, camY - cam2Y); val now = hypot(x1 - x2, y1 - y2)
+                                val ratio = if (old > 20f) now / old else 1f
+                                val dy = ((y1 + y2) - (camY + cam2Y)) / 2f
+                                if (ratio != 1f || dy != 0f) onCameraPinch(ratio, dy)
+                                camX = x1; camY = y1; cam2X = x2; cam2Y = y2
+                            }
+                        } else { onCamera(e.getX(i) - camX, e.getY(i) - camY); camX = e.getX(i); camY = e.getY(i) }
                     }
                 }
                 report()
@@ -155,7 +172,11 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
                 if (pid == rightId) { rightId = -1; rightBtn.down = false }
                 if (pid == gasId) { gasId = -1; gasView.pressure = 0f }
                 if (pid == brakeId) { brakeId = -1; brakeView.pressure = 0f }
-                if (pid == camId) { camId = -1; onCameraUp() }
+                if (pid == cam2Id) { cam2Id = -1 }
+                if (pid == camId) {
+                    if (cam2Id >= 0) { camId = cam2Id; camX = cam2X; camY = cam2Y; cam2Id = -1 }   // the other finger carries on as a single drag
+                    else { camId = -1; onCameraUp() }
+                }
                 report()
             }
             MotionEvent.ACTION_CANCEL -> release()

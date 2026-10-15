@@ -33,7 +33,7 @@ mod android {
     use crate::game::{app::{Game, STAT_LEN}, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Rally(i32), Signs(bool), Camera(f32, f32), CameraUp, Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
+    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Rally(i32), Signs(bool), Camera(f32, f32), CameraUp, CameraView(i32, f32, f32), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -82,6 +82,7 @@ mod android {
                             Ok(GCmd::Signs(on)) => g.set_signs(on),
                             Ok(GCmd::Camera(y, p)) => g.camera_drag(y, p),
                             Ok(GCmd::CameraUp) => g.camera_release(),
+                            Ok(GCmd::CameraView(v, d, h)) => g.camera_view(v, d, h),
                             Ok(GCmd::Reset) => g.input.reset = true,
                             Ok(GCmd::NewLevel(s)) => g.new_level(s),
                             Ok(GCmd::Resize(w, h)) => g.resize(w, h),
@@ -155,6 +156,8 @@ mod android {
     /// The player drags on the screen: orbit the chase camera by (yaw, pitch) radians.
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameCamera(_e: JNIEnv, _c: JClass, dyaw: jfloat, dpitch: jfloat) { send(GCmd::Camera(dyaw, dpitch)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameCameraUp(_e: JNIEnv, _c: JClass) { send(GCmd::CameraUp); }
+    /// The camera view: 0 chase, 1 bonnet, 2 bumper, 3 roof, 4 orbit, with its distance scale (zoom) and height offset (tilt).
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameCameraView(_e: JNIEnv, _c: JClass, view: jint, dist: jfloat, height: jfloat) { send(GCmd::CameraView(view, dist, height)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameInCity(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::InCity(mode)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameQuality(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Quality(level)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameRenderMode(_e: JNIEnv, _c: JClass, m: jint) { send(GCmd::RenderMode(m)); }
