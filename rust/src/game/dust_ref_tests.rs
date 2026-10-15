@@ -1,7 +1,7 @@
 use super::*;
 use crate::game::dust::phys;
 
-fn gp(coarse: bool) -> GP { GP { pos: v3(0.0, 5.0, 0.0), vel: V3::ZERO, age: 0.0, life: 10.0, size0: 0.5, color: [0.7, 0.6, 0.5], coarse, seed: 0.3 } }
+fn gp(coarse: bool) -> GP { GP { pos: v3(0.0, 5.0, 0.0), vel: V3::ZERO, age: 0.0, life: 10.0, size0: 0.5, color: [0.7, 0.6, 0.5], coarse, seed: 0.3, speck: false, smoke: false } }
 fn flat(_: f32, _: f32) -> f32 { 0.0 }
 
 #[test]
@@ -112,4 +112,243 @@ fn the_ground_window_is_toroidal_and_interpolates() {
     let g = ground_height(100.3, -40.8, base, h, -999.0);
     assert!((g - (0.5 * 100.3 + 0.2 * -40.8)).abs() < 1e-3, "{g}");
     assert_eq!(ground_height(500.0, 0.0, base, h, 7.0), 7.0);   // outside the window: the fallback
+}
+
+#[test]
+fn the_coupling_config_parses_and_errors_are_clear() {
+    let c = coupling();
+    assert!(c.push > 0.0 && c.drag_max <= 1.0 && c.mass_coarse > c.mass_fine);
+    assert!(Coupling::from_json("{}").unwrap_err().contains("dust_air"));
+    assert!(Coupling::from_json(r#"{"dust_air":{"push":-1,"drag":0.3,"drag_max":0.5,"mass_fine":1,"mass_coarse":3}}"#).unwrap_err().contains("push"));
+}
+#[test]
+fn the_field_adds_up_mass_and_momentum_and_ignores_particles_outside() {
+    let mut f = Field::new([8, 6, 10], 0.5);
+    f.splat([1.2, 1.2, 2.2], v3(2.0, 0.0, -4.0), 1.0);
+    f.splat([1.3, 1.3, 2.3], v3(4.0, 0.0, -2.0), 3.0);   // the same cell
+    f.splat([99.0, 1.0, 1.0], v3(1.0, 1.0, 1.0), 5.0);   // outside
+    f.splat([1.0, -0.1, 1.0], v3(1.0, 1.0, 1.0), 5.0);   // below the road
+    let c = [2, 2, 4];
+    assert!((f.mass(c) - 4.0).abs() < 1e-2, "{}", f.mass(c));
+    let v = f.mean_velocity(c);
+    assert!((v.x - 3.5).abs() < 0.02 && (v.z + 2.5).abs() < 0.02, "{v:?}");
+    let total: f32 = (0..8).flat_map(|x| (0..6).flat_map(move |y| (0..10).map(move |z| [x, y, z]))).map(|c| f.mass(c)).sum();
+    assert!((total - 4.0).abs() < 1e-2, "{total}");
+    assert_eq!(f.mean_velocity([0, 0, 0]), V3::ZERO);
+}
+#[test]
+fn dust_pushes_away_from_dense_dust_and_not_in_a_uniform_field() {
+    let mut f = Field::new([12, 12, 12], 0.5);
+    for _ in 0..20 { f.splat([3.0, 3.0, 3.0], V3::ZERO, 1.0); }   // a blob
+    let right = f.push([3.7, 3.25, 3.25], 2.0);   // on the +x side of the blob: pushed towards +x
+    let left = f.push([2.3, 3.25, 3.25], 2.0);
+    assert!(right.x > 0.0 && left.x < 0.0, "{right:?} {left:?}");
+    assert!(f.push([5.5, 5.5, 5.5], 2.0).len() < 1e-6, "far from the blob nothing pushes");
+    let mut u = Field::new([8, 8, 8], 0.5);
+    for x in 0..8 { for y in 0..8 { for z in 0..8 { u.splat([x as f32 * 0.5 + 0.25, y as f32 * 0.5 + 0.25, z as f32 * 0.5 + 0.25], V3::ZERO, 1.0); } } }
+    assert!(u.push([2.0, 2.0, 2.0], 2.0).len() < 1e-4, "a uniform field has no gradient");
+}
+#[test]
+fn the_air_drag_grows_with_the_mass_and_saturates() {
+    let c = coupling();
+    assert_eq!(air_drag(0.0, &c), 0.0);
+    assert!(air_drag(0.5, &c) < air_drag(1.0, &c) || air_drag(1.0, &c) == c.drag_max);
+    assert_eq!(air_drag(1000.0, &c), c.drag_max);
+}
+
+#[test]
+fn the_noise_is_deterministic_bounded_and_smooth() {
+    let p = v3(1.3, -4.7, 9.1);
+    assert_eq!(vnoise3(p, 0), vnoise3(p, 0));
+    assert_ne!(vnoise3(p, 0), vnoise3(p, 1));
+    let mut m = 0.0f32; let mut sum = 0.0f32;
+    for i in 0..2000 { let q = v3(i as f32 * 0.37, i as f32 * 0.11 - 50.0, (i % 17) as f32 * 0.9); let n = vnoise3(q, 1); assert!(n.abs() <= 1.0001, "{n}"); m = m.max(n.abs()); sum += n; }
+    assert!(m > 0.6, "uses the range: {m}");
+    assert!((sum / 2000.0).abs() < 0.1, "mean {}", sum / 2000.0);
+    // smooth: a step of 1/1000 changes little
+    assert!((vnoise3(p + v3(0.001, 0.0, 0.0), 2) - vnoise3(p, 2)).abs() < 0.01);
+}
+#[test]
+fn curl_noise_has_no_sinks_or_sources() {
+    // the divergence of a curl is zero; with finite differences it is small against the field's own variation
+    let e = 0.05;
+    let (mut div_sum, mut mag_sum) = (0.0f32, 0.0f32);
+    for i in 0..200 {
+        let q = v3(i as f32 * 0.173, (i as f32 * 0.071).sin() * 5.0, i as f32 * 0.093 - 8.0);
+        let d = (curl_noise(q + v3(e, 0.0, 0.0)).x - curl_noise(q - v3(e, 0.0, 0.0)).x + curl_noise(q + v3(0.0, e, 0.0)).y - curl_noise(q - v3(0.0, e, 0.0)).y
+            + curl_noise(q + v3(0.0, 0.0, e)).z - curl_noise(q - v3(0.0, 0.0, e)).z) / (2.0 * e);
+        div_sum += d.abs(); mag_sum += curl_noise(q).len();
+    }
+    assert!(mag_sum / 200.0 > 0.3, "the field is not empty: {}", mag_sum / 200.0);
+    assert!(div_sum / 200.0 < 0.25 * mag_sum / 200.0 + 0.05, "divergence {} against magnitude {}", div_sum / 200.0, mag_sum / 200.0);
+}
+#[test]
+fn turbulence_scales_with_amplitude_and_moves_with_the_drift() {
+    let p = v3(3.0, 1.0, -2.0);
+    let a = turbulence_curl(p, 1.0, V3::ZERO, 2.0);
+    let b = turbulence_curl(p, 1.0, V3::ZERO, 4.0);
+    assert!(a.is_finite() && ((b - a * 2.0).len() < 1e-4), "{a:?} {b:?}");
+    assert_eq!(turbulence_curl(p, 0.0, V3::ZERO, 0.0), V3::ZERO);
+    // the pattern is carried by the drift: the same feature one second later sits `drift` further on (the slow evolution aside, which is small for the first octave)
+    let drift = v3(2.0, 0.0, 0.0);
+    let (v0, v1) = (turbulence_curl(p, 0.0, drift, 1.0), turbulence_curl(p + drift, 1.0, drift, 1.0));
+    assert!((v0 - v1).len() < 0.6 * v0.len().max(0.05) + 0.2, "{v0:?} {v1:?}");
+}
+
+#[test]
+fn the_analytic_gradient_matches_finite_differences_and_the_value() {
+    for i in 0..60 {
+        let p = v3(i as f32 * 0.31 - 7.0, (i as f32 * 0.17).cos() * 4.0, i as f32 * 0.23 + 1.0);
+        let (val, g) = vnoise3_grad(p, 1);
+        assert!((val - vnoise3(p, 1)).abs() < 1e-5, "value {val} vs {}", vnoise3(p, 1));
+        let e = 0.001;
+        let fd = v3((vnoise3(p + v3(e, 0.0, 0.0), 1) - vnoise3(p - v3(e, 0.0, 0.0), 1)) / (2.0 * e), (vnoise3(p + v3(0.0, e, 0.0), 1) - vnoise3(p - v3(0.0, e, 0.0), 1)) / (2.0 * e), (vnoise3(p + v3(0.0, 0.0, e), 1) - vnoise3(p - v3(0.0, 0.0, e), 1)) / (2.0 * e));
+        assert!((g - fd).len() < 0.02 * (1.0 + fd.len()), "{g:?} vs {fd:?}");
+    }
+}
+
+#[test]
+fn the_trailing_vortices_press_the_centre_down_lift_the_outside_and_fade() {
+    let (hw, hl, h) = (0.9, 2.0, 1.4);
+    // behind the car on the centre line at the height of the vortices: downwash; outboard of the left vortex: upwash
+    let mid = trailing_vortices(v3(0.0, 0.9, -hl - 2.0), hw, hl, h, 20.0, 0.3);
+    assert!(mid.y < -0.5 && mid.x.abs() < 1e-3 && mid.z == 0.0, "{mid:?}");
+    let outside = trailing_vortices(v3(hw * 0.8 + 1.5, 0.9, -hl - 2.0), hw, hl, h, 20.0, 0.3);
+    assert!(outside.y > 0.1, "{outside:?}");
+    // mirror symmetry
+    let l = trailing_vortices(v3(-0.7, 0.9, -hl - 3.0), hw, hl, h, 20.0, 0.3);
+    let r = trailing_vortices(v3(0.7, 0.9, -hl - 3.0), hw, hl, h, 20.0, 0.3);
+    assert!((l.x + r.x).abs() < 1e-5 && (l.y - r.y).abs() < 1e-5, "{l:?} {r:?}");
+    // nothing ahead of the rear, fading with the distance, bounded by the peak, finite on the core
+    assert_eq!(trailing_vortices(v3(0.0, 0.9, 0.0), hw, hl, h, 20.0, 0.3), V3::ZERO);
+    let near = trailing_vortices(v3(0.3, 0.9, -hl - 1.0), hw, hl, h, 20.0, 0.3).len();
+    let far = trailing_vortices(v3(0.3, 0.9, -hl - 20.0), hw, hl, h, 20.0, 0.3).len();
+    assert!(near > 3.0 * far, "{near} {far}");
+    for i in 0..400 { let p = v3(i as f32 * 0.02 - 4.0, 0.1 + (i % 17) as f32 * 0.15, -hl - 0.5 - (i % 23) as f32); let v = trailing_vortices(p, hw, hl, h, 20.0, 0.3); assert!(v.is_finite() && v.len() <= 2.0 * 0.3 * 20.0 + 1e-3, "{p:?} {v:?}"); }
+    let on_core = trailing_vortices(v3(hw * 0.8, 0.55 * h + 0.15, -hl - 3.0), hw, hl, h, 20.0, 0.3);
+    assert!(on_core.is_finite());
+    assert_eq!(trailing_vortices(v3(0.0, 0.9, -hl - 2.0), hw, hl, h, 0.0, 0.3), V3::ZERO);
+}
+
+#[test]
+fn the_vortex_street_alternates_is_periodic_bounded_and_lives_by_the_body() {
+    let (hw, hl, h, u) = (0.9f32, 2.0f32, 1.4f32, 20.0f32);
+    let period = 2.0 * hw / (0.2 * u);
+    let p = v3(0.2, 0.7, -hl - 4.0);
+    let a = karman_street(p, 1.0, hw, hl, h, u, 0.25);
+    let b = karman_street(p, 1.0 + 2.0 * period, hw, hl, h, u, 0.25);   // the street alternates, so it repeats every two shedding periods
+    assert!(a.is_finite() && (a - b).len() < 0.05 * a.len().max(1.0), "periodic in two shedding periods: {a:?} {b:?}");
+    assert!(a.len() > 0.1, "there is a swirl behind the car: {a:?}");
+    // the flow changes sign over half a period of shedding at a fixed point (the street alternates)
+    let mut signs = std::collections::HashSet::new();
+    for i in 0..40 { let v = karman_street(p, i as f32 * period / 20.0, hw, hl, h, u, 0.25); signs.insert(v.x > 0.0); }
+    assert_eq!(signs.len(), 2, "alternates");
+    // above the roof it fades out, with no speed none at all, and always bounded
+    assert!(karman_street(v3(0.2, 5.0, -hl - 4.0), 1.0, hw, hl, h, u, 0.25).len() < 1e-6);
+    assert_eq!(karman_street(p, 1.0, hw, hl, h, 0.0, 0.25), V3::ZERO);
+    for i in 0..500 { let q = v3(i as f32 * 0.02 - 5.0, (i % 13) as f32 * 0.15, -hl - 0.1 - (i % 31) as f32); let v = karman_street(q, i as f32 * 0.07, hw, hl, h, u, 0.25); assert!(v.is_finite() && v.len() <= 5.0 * 0.25 * u * 2.0, "{q:?} {v:?}"); }
+}
+
+#[test]
+fn the_recirculation_draws_the_dust_in_and_up_and_only_just_behind_the_car() {
+    let (hw, hl, h) = (0.9f32, 2.0f32, 1.4f32);
+    let a = wake_inflow(v3(0.6, 0.4, -hl - 0.8), hw, hl, h, 20.0, 1.0);
+    assert!(a.x < 0.0 && a.y > 0.0 && a.z > 0.0, "inwards, up and towards the car: {a:?}");
+    let b = wake_inflow(v3(-0.6, 0.4, -hl - 0.8), hw, hl, h, 20.0, 1.0);
+    assert!((a.x + b.x).abs() < 1e-5 && (a.z - b.z).abs() < 1e-5, "mirror");
+    assert_eq!(wake_inflow(v3(0.0, 0.4, 0.0), hw, hl, h, 20.0, 1.0), V3::ZERO);   // not under the car
+    assert_eq!(wake_inflow(v3(0.0, 0.4, -hl - 12.0), hw, hl, h, 20.0, 1.0), V3::ZERO);
+    assert!(wake_inflow(v3(0.0, 0.4, -hl - 5.0), hw, hl, h, 20.0, 1.0).len() < 0.2 * wake_inflow(v3(0.0, 0.4, -hl - 0.8), hw, hl, h, 20.0, 1.0).len());
+    assert_eq!(wake_inflow(v3(0.6, 0.4, -hl - 0.8), hw, hl, h, 0.0, 1.0), V3::ZERO);
+}
+
+fn prop(kind: crate::game::props::PropKind, x: f32, z: f32, radius: f32, height: f32) -> crate::game::props::Prop { crate::game::props::Prop { kind, pos: v3(x, 0.0, z), radius, height } }
+
+#[test]
+fn trees_are_trunk_capsules_and_rocks_spheres() {
+    use crate::game::props::PropKind::*;
+    let (t, r) = (prop(Tree, 5.0, 5.0, 0.35, 8.0), prop(Rock, 9.0, 3.0, 1.0, 1.4));
+    let cs = colliders_from_props(&[&t, &r]);
+    assert_eq!(cs.len(), 2);
+    assert!(cs[0].a.y == 0.0 && (cs[0].b.y - 4.0).abs() < 1e-5 && cs[0].r == 0.35, "the trunk is capped at 4 m: {:?}", cs[0]);
+    assert!(cs[1].a == cs[1].b && cs[1].r == 1.0 && cs[1].a.y > 0.5);
+}
+#[test]
+fn a_collider_pushes_out_along_the_normal_and_leaves_clear_air_alone() {
+    let c = Collider { a: v3(0.0, 0.0, 0.0), b: v3(0.0, 4.0, 0.0), r: 0.35 };
+    assert!(collide(v3(2.0, 1.0, 0.0), &c, 0.1).is_none());
+    let (n, depth) = collide(v3(0.3, 1.0, 0.0), &c, 0.1).unwrap();
+    assert!((n.x - 1.0).abs() < 1e-5 && n.y.abs() < 1e-5, "{n:?}");
+    assert!((depth - 0.15).abs() < 1e-5, "{depth}");
+    let (n2, d2) = collide(v3(0.0, 1.0, 0.0), &c, 0.1).unwrap();   // exactly on the axis: pushed up, never NaN
+    assert!(n2.is_finite() && d2 > 0.4);
+    // above the top of a capsule it is a cap
+    let (n3, _) = collide(v3(0.0, 4.3, 0.0), &c, 0.1).unwrap();
+    assert!(n3.y > 0.99);
+    let s = Collider { a: v3(1.0, 1.0, 1.0), b: v3(1.0, 1.0, 1.0), r: 1.0 };
+    assert!(collide(v3(1.0, 1.0, 1.0), &s, 0.0).unwrap().1 > 0.99);
+}
+#[test]
+fn colliders_are_binned_into_the_cells_they_touch_and_full_cells_drop_the_rest() {
+    let base = window_base([0, 0]);
+    let cs = vec![Collider { a: v3(0.5, 0.0, 0.5), b: v3(0.5, 4.0, 0.5), r: 0.35 }, Collider { a: v3(10.5, 1.0, 3.5), b: v3(10.5, 1.0, 3.5), r: 1.0 }];
+    let cells = bin_colliders(&cs, base, 0.5);
+    assert!(cells[slot([0, 0])].contains(&1), "the tree's own cell lists it");
+    assert!(cells[slot([10, 3])].contains(&2) && cells[slot([9, 3])].contains(&2) && cells[slot([11, 4])].contains(&2), "the rock's neighbourhood too");
+    assert!(cells[slot([20, 20])].iter().all(|s| *s == 0), "far cells are empty");
+    let crowd: Vec<Collider> = (0..9).map(|_| Collider { a: v3(2.5, 0.0, 2.5), b: v3(2.5, 1.0, 2.5), r: 0.3 }).collect();
+    let full = bin_colliders(&crowd, base, 0.0);
+    assert_eq!(full[slot([2, 2])].iter().filter(|s| **s != 0).count(), CELL_SLOTS);
+    let outside = bin_colliders(&[Collider { a: v3(500.0, 0.0, 500.0), b: v3(500.0, 1.0, 500.0), r: 1.0 }], base, 0.5);
+    assert!(outside.iter().all(|c| c.iter().all(|s| *s == 0)), "outside the window nothing is listed");
+}
+#[test]
+fn the_ground_normal_leans_with_the_slope_and_the_response_slides_it_off() {
+    let n = ground_normal(3.0, 4.0, |x, _| 0.5 * x);   // rises towards +x
+    assert!(n.x < -0.4 && n.y > 0.8 && (n.len() - 1.0).abs() < 1e-5, "{n:?}");
+    assert!((ground_normal(0.0, 0.0, |_, _| 7.0) - v3(0.0, 1.0, 0.0)).len() < 1e-5);
+    // a particle falling onto the slope keeps sliding down it and loses the speed into it
+    let v = slide_response(v3(0.0, -4.0, 0.0), n, 0.0, 0.0);
+    assert!(v.dot(n).abs() < 1e-4 && v.x < 0.0 && v.is_finite(), "{v:?}");
+    assert_eq!(slide_response(v3(1.0, 2.0, 0.0), v3(0.0, 1.0, 0.0), 0.5, 0.5), v3(1.0, 2.0, 0.0), "moving away: untouched");
+    let b = slide_response(v3(2.0, -3.0, 0.0), v3(0.0, 1.0, 0.0), 0.5, 0.5);
+    assert!((b.y - 1.5).abs() < 1e-5 && (b.x - 1.0).abs() < 1e-5, "{b:?}");
+}
+
+#[test]
+fn the_kernels_are_smooth_normalised_and_point_outwards() {
+    let h = 0.5;
+    assert!(poly6(0.0, h) > poly6(0.04, h) && poly6(h * h, h) == 0.0 && poly6(1.0, h) == 0.0);
+    // poly6 integrates to one over its ball (numerically, shells)
+    let mut total = 0.0;
+    let n = 200;
+    for i in 0..n { let r = (i as f32 + 0.5) / n as f32 * h; total += poly6(r * r, h) * 4.0 * std::f32::consts::PI * r * r * (h / n as f32); }
+    assert!((total - 1.0).abs() < 0.01, "{total}");
+    let g = spiky_grad(v3(0.2, 0.0, 0.0), h);
+    assert!(g.x < 0.0 && g.y == 0.0, "the kernel falls away from the centre, so its gradient points back: {g:?}");
+    assert_eq!(spiky_grad(v3(0.6, 0.0, 0.0), h), V3::ZERO);
+    assert_eq!(spiky_grad(V3::ZERO, h), V3::ZERO);
+    let r0 = rest_density(0.3, h);
+    assert!(r0 > poly6(0.0, h) && r0.is_finite(), "{r0}");
+    assert!(rest_density(0.2, h) > rest_density(0.4, h), "closer lattice, denser");
+}
+#[test]
+fn the_constraint_spreads_a_compressed_clump_and_leaves_a_sparse_cloud_alone() {
+    let (h, spacing) = (0.5f32, 0.3f32);
+    let rho0 = rest_density(spacing, h);
+    let density = |pos: &[V3], i: usize| pos.iter().map(|p| poly6((pos[i] - *p).dot(pos[i] - *p), h)).sum::<f32>();
+    // a clump much denser than the rest: 60 particles in a ball of 0.2 m
+    let mut pos: Vec<V3> = (0..60).map(|i| { let f = i as f32; v3((f * 0.7).sin() * 0.1, (f * 1.3).cos() * 0.1, (f * 2.1).sin() * 0.1) }).collect();
+    let before = (0..60).map(|i| density(&pos, i)).sum::<f32>() / 60.0;
+    for _ in 0..40 { let d = pbd_corrections(&pos, h, rho0, 100.0, 0.0); for (p, c) in pos.iter_mut().zip(d) { *p = *p + c; } }
+    let after = (0..60).map(|i| density(&pos, i)).sum::<f32>() / 60.0;
+    assert!(after < 0.5 * before, "the clump spread: {before} -> {after}");
+    assert!(pos.iter().all(|p| p.is_finite()));
+    // particles farther apart than the rest spacing feel nothing
+    let sparse = vec![v3(0.0, 0.0, 0.0), v3(1.0, 0.0, 0.0), v3(0.0, 1.0, 0.0)];
+    assert!(pbd_corrections(&sparse, h, rho0, 100.0, 0.0).iter().all(|c| c.len() < 1e-6));
+    // the correction is symmetric: two close particles are pushed apart equally
+    let two = vec![v3(-0.05, 0.0, 0.0), v3(0.05, 0.0, 0.0)];
+    let c = pbd_corrections(&two, h, rho0 * 0.1, 1.0, 0.0);
+    assert!(c[0].x < 0.0 && c[1].x > 0.0 && (c[0].x + c[1].x).abs() < 1e-5, "{c:?}");
 }

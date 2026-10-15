@@ -5,7 +5,7 @@ use crate::game::airflow::{self, AirflowCfg, WAKE_LEN};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct AUni { n: [i32; 4], g: [f32; 4], inflow: [f32; 4], shift: [f32; 4], boxes: [[f32; 4]; 16] }
+struct AUni { n: [i32; 4], g: [f32; 4], inflow: [f32; 4], dust: [f32; 4], shift: [f32; 4], boxes: [[f32; 4]; 16] }
 
 /// The airflow steps at 30 Hz: the target of the game is 30 fps, and the semi-Lagrangian solver is stable at this step.
 const STEP: f32 = 1.0 / 30.0;
@@ -20,6 +20,8 @@ pub struct AirflowGpu {
     p: [wgpu::TextureView; 2], div: wgpu::TextureView, solid: wgpu::TextureView, zs: wgpu::TextureView, zr: wgpu::TextureView,
     cur: usize,
     ubuf: wgpu::Buffer,
+    /// The dust field (mass and momentum per cell, fixed point) the dust passes write and the solver reads.
+    dens: wgpu::Buffer,
     c_bgl: wgpu::BindGroupLayout,
     pl_init: wgpu::ComputePipeline, pl_solids: wgpu::ComputePipeline, pl_fwd: wgpu::ComputePipeline, pl_corr: wgpu::ComputePipeline, pl_fin: wgpu::ComputePipeline, pl_vort: wgpu::ComputePipeline,
     pl_confine: wgpu::ComputePipeline, pl_div: wgpu::ComputePipeline, pl_jacobi: wgpu::ComputePipeline, pl_project: wgpu::ComputePipeline,
@@ -47,6 +49,7 @@ impl AirflowGpu {
         let (t1, t2, zv) = (tex3d(dev, "at1", n, h), tex3d(dev, "at2", n, h), tex3d(dev, "azv", n, h));
         let p = [tex3d(dev, "ap0", n, r), tex3d(dev, "ap1", n, r)];
         let (div, solid, zs, zr) = (tex3d(dev, "adiv", n, r), tex3d(dev, "asolid", n, r), tex3d(dev, "azs", n, r), tex3d(dev, "azr", n, r));
+        let dens = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("adens"), size: (n[0] * n[1] * n[2] * 4 * 4) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let ubuf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("aparams"), size: std::mem::size_of::<AUni>() as u64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
 
         let ub = |vis: wgpu::ShaderStages| wgpu::BindGroupLayoutEntry { binding: 0, visibility: vis, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None };
@@ -57,6 +60,7 @@ impl AirflowGpu {
         let c = wgpu::ShaderStages::COMPUTE;
         let c_bgl = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("airflow_c"), entries: &[
             ub(c | wgpu::ShaderStages::FRAGMENT), tex(1, c | wgpu::ShaderStages::FRAGMENT), tex(2, c), tex(3, c), tex(4, c), tex(5, c | wgpu::ShaderStages::FRAGMENT), store(6, h), store(7, r),
+            wgpu::BindGroupLayoutEntry { binding: 8, visibility: c, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
         ] });
         let module = dev.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("airflow"), source: wgpu::ShaderSource::Wgsl(crate::shaders::airflow().into()) });
         let c_lay = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[&c_bgl], push_constant_ranges: &[] });
@@ -76,7 +80,7 @@ impl AirflowGpu {
                 targets: &[Some(wgpu::ColorTargetState { format: surface_format, blend: None, write_mask: wgpu::ColorWrites::ALL })] }),
             primitive: wgpu::PrimitiveState::default(), depth_stencil: None, multisample: wgpu::MultisampleState::default(), multiview: None, cache: None });
         log::info!("airflow: {}x{}x{} cells of {} m", n[0], n[1], n[2], cfg.cell);
-        Some(AirflowGpu { cfg, n, v, t1, t2, zv, p, div, solid, zs, zr, cur: 0, ubuf, c_bgl, pl_init, pl_solids, pl_fwd, pl_corr, pl_fin, pl_vort, pl_confine, pl_div, pl_jacobi, pl_project,
+        Some(AirflowGpu { cfg, n, dens, v, t1, t2, zv, p, div, solid, zs, zr, cur: 0, ubuf, c_bgl, pl_init, pl_solids, pl_fwd, pl_corr, pl_fin, pl_vort, pl_confine, pl_div, pl_jacobi, pl_project,
             s_bgl, pl_slice, acc: 0.0, last_time: 0.0, inflow: None })
     }
 
@@ -84,7 +88,7 @@ impl AirflowGpu {
     fn bind(&self, dev: &wgpu::Device, vel: &wgpu::TextureView, t: &wgpu::TextureView, pres: &wgpu::TextureView, div: &wgpu::TextureView, solid: &wgpu::TextureView, dv: &wgpu::TextureView, ds: &wgpu::TextureView) -> wgpu::BindGroup {
         fn e<'a>(binding: u32, v: &'a wgpu::TextureView) -> wgpu::BindGroupEntry<'a> { wgpu::BindGroupEntry { binding, resource: wgpu::BindingResource::TextureView(v) } }
         dev.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("airflow_bg"), layout: &self.c_bgl, entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: self.ubuf.as_entire_binding() }, e(1, vel), e(2, t), e(3, pres), e(4, div), e(5, solid), e(6, dv), e(7, ds),
+            wgpu::BindGroupEntry { binding: 0, resource: self.ubuf.as_entire_binding() }, e(1, vel), e(2, t), e(3, pres), e(4, div), e(5, solid), e(6, dv), e(7, ds), wgpu::BindGroupEntry { binding: 8, resource: self.dens.as_entire_binding() },
         ] })
     }
 
@@ -106,7 +110,7 @@ impl AirflowGpu {
         let per = 1.0 / steps.max(1) as f32;
         let shift = [0, 1, 2].map(|a| (inflow[a] - prev[a]) * per);
         let mut u = AUni { n: [self.n[0] as i32, self.n[1] as i32, self.n[2] as i32, boxes.len().min(MAX_BOXES) as i32], g: [self.cfg.cell, STEP, self.cfg.confinement, (WAKE_LEN / self.cfg.cell).max(1.0).floor()],
-            inflow: [inflow[0], inflow[1], inflow[2], 0.0], shift: [shift[0], shift[1], shift[2], 0.0], boxes: [[0.0; 4]; 16] };
+            inflow: [inflow[0], inflow[1], inflow[2], 0.0], dust: { let c = crate::game::dust_ref::coupling(); [c.drag, c.drag_max, 0.0, 0.0] }, shift: [shift[0], shift[1], shift[2], 0.0], boxes: [[0.0; 4]; 16] };
         for (i, (lo, hi)) in boxes.iter().take(MAX_BOXES).enumerate() { u.boxes[2 * i] = [lo[0], lo[1], lo[2], 0.0]; u.boxes[2 * i + 1] = [hi[0], hi[1], hi[2], 0.0]; }
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
         if steps == 0 && !first { return; }
@@ -140,6 +144,8 @@ impl AirflowGpu {
 
     /// The velocity field of the latest step (air relative to the car, in the car's frame) and the car's solid cells, for the dust.
     pub fn fields(&self) -> (&wgpu::TextureView, &wgpu::TextureView) { (&self.v[self.cur], &self.solid) }
+    /// The dust field buffer (see `dens`).
+    pub fn dens_buffer(&self) -> &wgpu::Buffer { &self.dens }
     /// The box in metres (x, y, z) and its cell.
     pub fn box_size(&self) -> [f32; 4] { [self.n[0] as f32 * self.cfg.cell, self.n[1] as f32 * self.cfg.cell, self.n[2] as f32 * self.cfg.cell, self.cfg.cell] }
 

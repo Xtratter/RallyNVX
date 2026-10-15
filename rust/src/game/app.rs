@@ -91,6 +91,8 @@ mod game {
         /// The player drags on the screen: orbit the chase camera (radians); `camera_release` when the finger goes up.
         pub fn camera_drag(&mut self, dyaw: f32, dpitch: f32) { self.world.cam.drag(dyaw, dpitch); }
         pub fn camera_release(&mut self) { self.world.cam.set_dragging(false); }
+        /// The camera view (see `CamView`), its distance scale or zoom and its height or tilt offset.
+        pub fn camera_view(&mut self, view: i32, dist: f32, height: f32) { self.world.cam.set_view(view, dist, height); }
         /// Tyre dust: 0 off, 1 normal, 2 lots.
         pub fn set_dust(&mut self, level: i32) { self.dust_level = level.clamp(0, 3); self.world.dust.set_level(self.dust_level); }
         /// Rally: stage 0 the special stage, 1 the city loop, -1 leaves the rally mode.

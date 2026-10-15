@@ -11,9 +11,17 @@ const ASSET: &[u8] = include_bytes!("../../assets/rally_car.rcar");
 
 /// The rally car: the simplified Vulpes WRC asset (see `assets/ASSET-LICENSE.md`), scaled to the spec size; the
 /// generated hatchback below is the fallback when the asset cannot be read.
+/// The lamp points of the asset (see `rcar::lamp_points`), found once.
+pub fn lamp_points() -> Option<super::rcar::LampPoints> {
+    static P: std::sync::OnceLock<Option<super::rcar::LampPoints>> = std::sync::OnceLock::new();
+    *P.get_or_init(|| super::rcar::parse(ASSET).ok().and_then(|(b, _)| super::rcar::lamp_points(&b)))
+}
+
 pub fn build_rally(spec: &VehicleSpec) -> CarModel {
     match super::rcar::parse(ASSET) {
         Ok((mut body, mut wheel)) => {
+            // the lamp units show the car's lamp state in the shader: their own material
+            for v in &mut body.verts { if v.col[3] == super::vehicle_models::MAT_EMISSIVE { v.col[3] = super::vehicle_models::MAT_CARLAMP; } }
             // the asset is modelled at 1.91 x 1.50 x 3.97 m with 0.326 m wheels: follow a changed spec size and radius
             let (sx, sy, sz) = (spec.size.x / 1.91, spec.size.y / 1.50, spec.size.z / 3.97);
             for v in &mut body.verts { v.pos = [v.pos[0] * sx, v.pos[1] * sy, v.pos[2] * sz]; }

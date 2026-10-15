@@ -125,7 +125,7 @@ impl World {
         };
         self.autopilot = None;
         self.vehicle = Vehicle::new(self.car_spec, v3(at.x, at.y + 1.1, at.z), yaw);
-        self.cam = FollowCam::new(&self.vehicle);
+        self.reset_cam();
         if stage == 0 { self.loose = self.terrain.roads().map_or_else(LooseMap::empty, LooseMap::new); }
         junctions.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         let notes = super::pacenotes::generate(&pace_path, &junctions);
@@ -195,7 +195,7 @@ impl World {
         let (x, z) = (self.vehicle.pos.x, self.vehicle.pos.z);
         self.car_spec = car;
         self.vehicle = Vehicle::new(car, v3(x, self.terrain.height(x, z) + 1.1, z), f.x.atan2(f.z));
-        self.cam = FollowCam::new(&self.vehicle);
+        self.reset_cam();
     }
 
     /// Debug/test: puts the car on a road facing along it: 1 liaison 60 m in, 2 stage 60 m in, 3 stage middle, 4 stage
@@ -207,7 +207,7 @@ impl World {
             let (a, b) = (l.pts[0], l.pts[2]);
             let yaw = (b.x - a.x).atan2(b.z - a.z);
             self.vehicle = Vehicle::new(self.car_spec, v3(a.x, a.y + 1.1, a.z), yaw);
-            self.cam = FollowCam::new(&self.vehicle);
+            self.reset_cam();
             return true;
         }
         let Some(net) = self.terrain.roads() else { return false };
@@ -220,8 +220,15 @@ impl World {
         let yaw = (b.x - a.x).atan2(b.z - a.z);
         let g = self.terrain.height(a.x, a.z);
         self.vehicle = Vehicle::new(self.car_spec, v3(a.x, g + 1.1, a.z), yaw);
-        self.cam = FollowCam::new(&self.vehicle);
+        self.reset_cam();
         true
+    }
+
+    /// A fresh camera behind the car (after a reset or a teleport) that keeps the player's view, distance and height.
+    fn reset_cam(&mut self) {
+        let (view, dist, height) = (self.cam.view as i32, self.cam.dist, self.cam.height);
+        self.cam = FollowCam::new(&self.vehicle);
+        self.cam.set_view(view, dist, height);
     }
 
     /// The garage scene: the car settled on the flat spawn plateau, never driven; `step_garage` orbits the camera.
@@ -316,7 +323,7 @@ impl World {
         let s = c.site;
         let (x, z) = (s.centre.x - 24.0, s.centre.z - 24.0);       // the intersection of the 5th street each way
         self.vehicle = Vehicle::new(self.car_spec, v3(x, s.centre.y + 1.1, z), 0.0);
-        self.cam = FollowCam::new(&self.vehicle);
+        self.reset_cam();
         true
     }
 
@@ -328,7 +335,7 @@ impl World {
         let yaw = std::f32::consts::FRAC_PI_2;
         let g = self.terrain.height(x, z);
         self.vehicle = Vehicle::new(self.car_spec, v3(x, g + 1.1, z), yaw);
-        self.cam = FollowCam::new(&self.vehicle);
+        self.reset_cam();
         true
     }
 
@@ -347,7 +354,7 @@ impl World {
                 let yaw = (wx - x).atan2(wz - z);
                 let g = t.height(x, z);
                 self.vehicle = Vehicle::new(self.car_spec, v3(x, g + 1.1, z), yaw);
-                self.cam = FollowCam::new(&self.vehicle);
+                self.reset_cam();
                 return true;
             }
         }
@@ -360,9 +367,17 @@ impl World {
 
 /// What a render backend may read; gameplay never touches the GPU.
 /// What the GPU dust needs of a frame: the particles the wheels emitted, the car's pose and velocity, the wind, the ground under the car.
-pub struct DustGpuIn { pub emits: Vec<super::dust_ref::GP>, pub car_pos: V3, pub yaw: f32, pub car_vel: V3, pub wind: V3, pub ground_y: f32, pub cap: usize, pub time: f32 }
+pub struct DustGpuIn { pub emits: Vec<super::dust_ref::GP>, pub car_pos: V3, pub yaw: f32, pub car_vel: V3, pub wind: V3, pub ground_y: f32, pub cap: usize, pub time: f32, pub sun: V3, pub body: [f32; 3],
+    /// The garage's aero parts strengthen the car's wake: 1 for the bare car.
+    pub vortex_scale: f32,
+    /// The GPU dust's option bits (`dust::OPT_*`).
+    pub opts: u32,
+    /// Where the body mesh is drawn: its origin and its three axes in the world (for the dust's exact-shape collisions).
+    pub body_pose: (V3, [V3; 3]) }
 
 pub struct WorldView<'a> {
+    /// The camera's vertical field of view in radians.
+    pub cam_fov: f32,
     /// The fluid dust's car and wheel data when that dust level is on.
     pub fluid: Option<super::fluid::Packed>,
     /// The airflow debug view's input when it is on.
@@ -383,7 +398,7 @@ impl World {
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
         let dl = self.daylight();
-        WorldView { dust_gpu: if self.dust.gpu() { Some(DustGpuIn { emits: self.dust.take_emits(), car_pos: self.vehicle.pos, yaw: self.vehicle.forward().x.atan2(self.vehicle.forward().z), car_vel: self.vehicle.vel, wind: self.dust.wind(), ground_y: self.terrain.height(self.vehicle.pos.x, self.vehicle.pos.z), cap: self.dust.cap(), time: self.time }) } else { None },
+        WorldView { cam_fov: self.cam.fov, dust_gpu: if self.dust.gpu() { Some(DustGpuIn { emits: self.dust.take_emits(), car_pos: self.vehicle.pos, yaw: self.vehicle.forward().x.atan2(self.vehicle.forward().z), car_vel: self.vehicle.vel, wind: self.dust.wind(), ground_y: self.terrain.height(self.vehicle.pos.x, self.vehicle.pos.z), cap: self.dust.gpu_cap(), time: self.time, body_pose: { let (q, o) = crate::raster::vehicle_models::car_body_pose(&self.vehicle); (o, [q.rotate(v3(1.0, 0.0, 0.0)), q.rotate(v3(0.0, 1.0, 0.0)), q.rotate(v3(0.0, 0.0, 1.0))]) }, opts: super::dust::opts(), sun: self.sun_dir(), body: [self.vehicle.spec.size.x * 0.5, self.vehicle.spec.size.z * 0.5, self.vehicle.spec.size.y], vortex_scale: 1.0 + 0.25 * self.vehicle.spec.kit.wing as f32 + 0.12 * self.vehicle.spec.kit.underbody as f32 + 0.1 * self.vehicle.spec.kit.splitter as f32 }) } else { None },
             airflow: if super::airflow::debug_on() || self.dust.gpu() { Some(super::airflow::flow_in(&self.vehicle, self.wind(), &super::airflow::cfg())) } else { None }, fluid: if self.dust.level() == 3 { Some(super::fluid::pack(&self.vehicle, &super::fluid::cfg(), &super::grip::table())) } else { None }, signs: if self.signs_on { self.terrain.signs() } else { &[] }, terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(), wind: self.wind(), cloud_off: self.cloud_off,
             time: self.time, cities: &self.cities, tracks: &self.tracks }
     }

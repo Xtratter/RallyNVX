@@ -1,13 +1,14 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
-    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>,
+    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
 @group(0) @binding(2) var shadow_smp: sampler_comparison;
 @group(0) @binding(5) var atlas: texture_2d<f32>;
 @group(0) @binding(6) var atlas_smp: sampler;   // height atlas (R16Float, 8x8 tiles of 64x64 texels, 2 m per texel)
+@group(0) @binding(7) var dep_tex: texture_2d<f32>;   // the settled dust layer of the ground window (R = amount), 64 x 64 cells of 1 m
 @group(0) @binding(3) var mat_tex: texture_2d_array<f32>;
 @group(0) @binding(4) var mat_smp: sampler;
 
@@ -192,6 +193,25 @@ fn mat_sample(layer: i32, uv: vec2<f32>) -> vec3<f32> {
     return textureSample(mat_tex, mat_smp, uv, layer).rgb;
 }
 
+// how much dust has settled at a ground position: bilinear over the window's cells (the window's first cell is in mode.yz; 0 when the option is off)
+fn dust_layer(wp: vec3<f32>) -> f32 {
+    if (u.mode.w < 0.5) { return 0.0; }
+    let g = wp.xz - vec2<f32>(0.5);
+    let i = floor(g);
+    let f = g - i;
+    let b = u.mode.yz;
+    var s = 0.0;
+    for (var k = 0; k < 4; k++) {
+        let o = vec2<f32>(f32(k & 1), f32(k >> 1));
+        let c = i + o;
+        if (any(c < b) || any(c >= b + vec2<f32>(64.0))) { continue; }
+        let ci = vec2<i32>(c);
+        let t = textureLoad(dep_tex, vec2<i32>(((ci.x % 64) + 64) % 64, ((ci.y % 64) + 64) % 64), 0).x;
+        s = s + t * select(1.0 - f.x, f.x, (k & 1) == 1) * select(1.0 - f.y, f.y, (k >> 1) == 1);
+    }
+    return s;
+}
+
 @fragment fn fs_terrain(i: TOut) -> @location(0) vec4<f32> {
     let n = normalize(i.n);
     let uv = i.wp.xz * 0.25;
@@ -209,6 +229,7 @@ fn mat_sample(layer: i32, uv: vec2<f32>) -> vec3<f32> {
         let hn = (terrain_h(i.wp.x + 3.0, i.wp.z) + terrain_h(i.wp.x - 3.0, i.wp.z) + terrain_h(i.wp.x, i.wp.z + 3.0) + terrain_h(i.wp.x, i.wp.z - 3.0)) * 0.25;
         a = a * (1.0 - clamp((hn - i.wp.y) * 0.22, 0.0, 0.45) * conc_fade);
     }
+    a = mix(a, vec3<f32>(0.72, 0.58, 0.42), 0.5 * dust_layer(i.wp));   // settled dust
     return vec4<f32>(lit(a, i.wp, n), 1.0);
 }
 
@@ -267,6 +288,15 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let occl = mix(1.0, i.ao, u.mode.x);
     let m = i32(i.mat + 0.5);
     if (m == 5) { return vec4<f32>(finish(i.col * (2.2 + 2.0 * u.disc.w)), 1.0); }       // lamps
+    if (m == 7) {   // the car's own lamps: the shape is the mesh's, the state comes from the car (head, brake, reverse); the class from the colour
+        let c = i.col;
+        var k = 0.4;
+        if (c.r > 0.8 && c.g < 0.3) { k = select(select(0.3, 1.0, u.lamps.x > 0.5), 3.2, u.lamps.y > 0.5); }          // tail unit: brake bright, headlights dim red
+        else if (c.r > 0.8 && c.g < 0.75 && c.b < 0.4) { k = 0.5; }                                                      // indicator
+        else if (c.b > 0.93) { k = select(0.35, 3.0, u.lamps.z > 0.5); }                                               // reverse lamp
+        else { k = select(0.4, 2.8 + 2.0 * u.disc.w, u.lamps.x > 0.5); }                                               // headlight unit
+        return vec4<f32>(finish(c * k * mix(1.0, 0.8, 1.0 - u.lamps.x)), 1.0);
+    }
     if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0), 1.0); }   // glass
     if (m == 4) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.9, 60.0), 1.0); }   // chrome
     if (m == 6) { return vec4<f32>(shade_lite(i.col * occl, i.wp, n), 1.0); }   // foliage
@@ -476,11 +506,12 @@ struct RIn { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @loc
         col = col * (1.0 + 0.10 * (1.0 - smoothstep(0.0, 0.10, ac)) + 0.10 * smoothstep(0.72, 0.9, ac));
         alpha = 1.0 - smoothstep(0.86, 1.0, ac);
     }
+    col = mix(col, vec3<f32>(0.72, 0.58, 0.42), 0.5 * dust_layer(i.wp));   // settled dust
     return vec4<f32>(lit(col, i.wp, up), alpha);
 }
 
 struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) c: vec4<f32>, @location(2) wp: vec3<f32>, @location(3) e: vec4<f32> };
-@vertex fn vs_dust(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>, @location(2) e: vec4<f32>) -> DOut {
+fn dust_vertex(vi: u32, ps: vec4<f32>, c: vec4<f32>, e: vec4<f32>, size: f32) -> DOut {
     var q = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0));
     let right = normalize(vec3<f32>(u.vp[0].x, u.vp[1].x, u.vp[2].x));
     let up = normalize(vec3<f32>(u.vp[0].y, u.vp[1].y, u.vp[2].y));
@@ -488,10 +519,34 @@ struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @lo
     // every puff turns slowly about its own axis, so the noise of the sprite does not look the same twice
     let ang = e.x * 6.2831 + e.y * 1.5;
     let rc = vec2<f32>(corner.x * cos(ang) - corner.y * sin(ang), corner.x * sin(ang) + corner.y * cos(ang));
-    let wp = ps.xyz + (right * rc.x + up * rc.y) * ps.w;
+    let wp = ps.xyz + (right * rc.x + up * rc.y) * size;
     var o: DOut;
-    o.pos = u.vp * vec4<f32>(wp, 1.0); o.uv = rc; o.c = c; o.wp = wp; o.e = e;
+    o.pos = u.vp * vec4<f32>(wp, 1.0); o.uv = rc; o.c = c; o.wp = wp; o.e = vec4<f32>(e.x, e.y, e.z, e.w);
     return o;
+}
+@vertex fn vs_dust(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>, @location(2) e: vec4<f32>) -> DOut {
+    var o = dust_vertex(vi, ps, c, e, ps.w);
+    if (e.z > 1.5) { o.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0); }   // the specks are drawn by their own pass at full resolution
+    return o;
+}
+// the flying specks of grit: tiny, so never smaller than a pixel or two on the screen
+@vertex fn vs_dust_specks(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>, @location(2) e: vec4<f32>) -> DOut {
+    let size = max(ps.w, 0.0013 * length(ps.xyz - u.cam.xyz));
+    var o = dust_vertex(vi, ps, c, e, size);
+    if (e.z < 1.5 || c.a < 0.02) { o.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0); }
+    return o;
+}
+@fragment fn fs_dust_speck(i: DOut) -> @location(0) vec4<f32> {
+    let r = length(i.uv);
+    let a = i.c.a * (1.0 - smoothstep(0.5, 1.0, r));
+    if (a < 0.03) { discard; }
+    let sun = clamp(length(u.sun_col.rgb) / 2.6, 0.06, 1.0);
+    let amb = (u.sky_hor.rgb * 0.15 + vec3<f32>(0.62, 0.55, 0.45)) * 0.55 * mix(1.0, 0.2, u.disc.w);
+    var col = i.c.rgb * (amb * 1.6 + vec3<f32>(sun) * 1.1);
+    let dcam = length(i.wp - u.cam.xyz);
+    let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0) * 0.6;
+    col = mix(col, u.sky_hor.rgb, f);
+    return vec4<f32>(finish(col), a);
 }
 @fragment fn fs_dust(i: DOut) -> @location(0) vec4<f32> {
     let r = length(i.uv);
@@ -526,6 +581,74 @@ struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @lo
     col = mix(col, u.sky_hor.rgb, f);
     return vec4<f32>(finish(col), a);
 }
+
+// The GPU dust: tens of thousands of soft, rotating, noisy-edged particles whose overlap builds the cloud. `e.w` is the light of the particle
+// (the dust above it towards the sun shades it, computed by the step pass); the puff is soft against the terrain and fades near the camera.
+fn dust_pt(i: DOut) -> vec4<f32> {
+    // a soft puff, not a disc and not grains: a smooth falloff whose radius wobbles slowly (low-frequency noise), so overlapping puffs blend into one smooth cloud
+    let r = length(i.uv);
+    let n = vnoise2(i.uv * 0.9 + vec2<f32>(i.e.x * 31.0, i.e.x * 17.0));
+    let rr = r / (0.78 + 0.34 * n);
+    let body = 1.0 - smoothstep(0.0, 1.0, clamp(rr, 0.0, 1.0));
+    // inside the puff a second, finer layer of soft noise gives the cloud its billowing structure (smooth, never grainy)
+    let n2 = vnoise2(i.uv * 2.3 + vec2<f32>(i.e.x * 7.0 + i.e.y * 3.0, i.e.x * 13.0));
+    let shape = body * body * (0.55 + 0.45 * body) * (0.62 + 0.76 * n2);
+    let wp = i.wp;
+    let dcam = length(wp - u.cam.xyz);
+    let near = smoothstep(3.0, 10.0, dcam);   // dust right at the camera fades, so the picture does not fill with a veil
+    if (i.c.a * shape * near < 0.003) { return vec4<f32>(0.0); }
+    let a = i.c.a * shape * near;   // softness against the terrain and the car comes from the sampled depth of the low-resolution pass
+    let sun_dir = normalize(u.sun.xyz);
+    let view = normalize(wp - u.cam.xyz);
+    let sun = clamp(length(u.sun_col.rgb) / 2.6, 0.06, 1.0);
+    let fwd = pow(max(dot(view, sun_dir), 0.0), 4.0);   // forward scattering: a cloud seen against the sun glows
+    let amb = (u.sky_hor.rgb * 0.15 + vec3<f32>(0.62, 0.55, 0.45)) * 0.55 * mix(1.0, 0.2, u.disc.w);   // warm skylight: dust is tan, not grey
+    let light = max(i.e.w, 0.02);
+    var col = i.c.rgb * (amb * 2.5 * mix(0.55, 1.0, light) + vec3<f32>(sun) * (1.35 * light) + vec3<f32>(1.0, 0.72, 0.4) * (3.2 * fwd * sun * light));   // thin lit dust glows amber against the sun, the thick core is dark
+    // every puff is shaded like a soft sphere (the sun in the view's frame): bright on the sunny side, a soft grey underside, so the cloud has a volume
+    let vr = normalize(vec3<f32>(u.vp[0].x, u.vp[1].x, u.vp[2].x));
+    let vu = normalize(vec3<f32>(u.vp[0].y, u.vp[1].y, u.vp[2].y));
+    let vb = normalize(cross(vr, vu));
+    let n3 = vec3<f32>(i.uv, sqrt(max(1.0 - r * r, 0.0)));
+    let ld = vec3<f32>(dot(sun_dir, vr), dot(sun_dir, vu), dot(sun_dir, vb));
+    let sh = clamp(dot(n3, ld) * 0.5 + 0.5, 0.0, 1.0);
+    col = col * (0.34 + 1.2 * sh);
+    if (u.hl_pos.w > 0.0) {
+        let dv = wp - u.hl_pos.xyz;
+        let dist = length(dv);
+        let cone = smoothstep(u.hl_dir.w, u.hl_dir.w + 0.06, dot(dv / max(dist, 0.001), normalize(u.hl_dir.xyz)));
+        col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (1.6 * cone * clamp(1.0 - dist / 55.0, 0.0, 1.0));
+    }
+    let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0) * 0.6;
+    col = mix(col, u.sky_hor.rgb, f);
+    return vec4<f32>(finish(col), a);
+}
+
+@fragment fn fs_dust_pt(i: DOut) -> @location(0) vec4<f32> {
+    let c = dust_pt(i);
+    if (c.a < 0.003) { discard; }
+    return c;
+}
+
+const DUST_DIV: f32 = 6.0;   // the low-resolution dust target is 1/DUST_DIV of the screen (= DUST_DIV in raster/dust_gpu.rs)
+// the same particle drawn into the low-resolution target: premultiplied, hidden behind and soft against the scene (the depth buffer is sampled)
+@fragment fn fs_dust_lo(i: DOut) -> @location(0) vec4<f32> {
+    var c = dust_pt(i);
+    if (c.a < 0.003) { discard; }
+    c = vec4<f32>(c.rgb + vec3<f32>(fract(52.9829189 * fract(dot(i.pos.xy, vec2<f32>(0.06711056, 0.00583715)))) - 0.5) * (1.5 / 255.0), c.a);   // a little dither against the banding of soft gradients in the 8-bit target
+    let dims = textureDimensions(vol_depth);
+    let px = clamp(vec2<i32>(i.pos.xy * DUST_DIV), vec2<i32>(0), vec2<i32>(dims) - vec2<i32>(1));
+    let d = textureLoad(vol_depth, px, 0);
+    if (d < 0.9999) {
+        let ndc = vec2<f32>((f32(px.x) + 0.5) / f32(dims.x) * 2.0 - 1.0, 1.0 - (f32(px.y) + 0.5) / f32(dims.y) * 2.0);
+        let ws = u.inv_vp * vec4<f32>(ndc, d, 1.0);
+        let t_scene = length(ws.xyz / ws.w - u.cam.xyz);
+        c.a = c.a * clamp((t_scene - length(i.wp - u.cam.xyz)) / 1.2, 0.0, 1.0);
+    }
+    if (c.a < 0.003) { discard; }
+    return vec4<f32>(c.rgb * c.a, c.a);
+}
+
 
 // ---- the fluid dust as a volume: a ray per pixel through the wrap-around dust grid (see fluid.wgsl) ----
 struct VolParams {

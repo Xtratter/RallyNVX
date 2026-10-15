@@ -5,7 +5,11 @@ use super::math::{v3, V3};
 
 /// A dust particle: `life` in seconds, `size0` the size when it is born, `coarse` heavy grit (else fine dust), `seed` a stable random number.
 #[derive(Clone, Copy, Debug)]
-pub struct GP { pub pos: V3, pub vel: V3, pub age: f32, pub life: f32, pub size0: f32, pub color: [f32; 3], pub coarse: bool, pub seed: f32 }
+pub struct GP { pub pos: V3, pub vel: V3, pub age: f32, pub life: f32, pub size0: f32, pub color: [f32; 3], pub coarse: bool, pub seed: f32,
+    /// A flying speck of grit or soil (the GPU dust): tiny, dark, ballistic; it bounces and slides on the ground. Only the GPU path makes them.
+    pub speck: bool,
+    /// Tyre smoke or spray (the GPU dust on asphalt and water): very fine, pale, it hangs and rises a little, and is gone in seconds.
+    pub smoke: bool }
 
 /// Moves `p` for `dt` seconds in the air velocity `air` (Stokes drag: the exact relaxation towards it with the response time of its class, the settling
 /// speed of its class on top) and meets the ground (`ground(x, z)`): grit is deposited, fine dust slides and slows. False when the particle is gone
@@ -81,6 +85,247 @@ pub fn turbulence(p: V3, t: f32, speed: f32, ph: &Phys) -> V3 {
     n * amp
 }
 
+// ---- curl noise: the divergence-free turbulence of the GPU dust (Bridson, Hourihan, Nordenstam, "Curl-Noise for Procedural Fluid Flow", 2007).
+// The potential is three decorrelated value noises; the velocity is its curl, so it has no sinks or sources and particles swirl without clumping.
+// The hash and the noise are written with integer ops so the shader can repeat them exactly (`dust_gpu.wgsl`).
+
+fn pcg(v: u32) -> u32 {
+    let s = v.wrapping_mul(747796405).wrapping_add(2891336453);
+    let w = ((s >> ((s >> 28) + 4)) ^ s).wrapping_mul(277803737);
+    (w >> 22) ^ w
+}
+/// A random number in [-1, 1] for an integer lattice point and a channel.
+pub fn hash3(x: i32, y: i32, z: i32, k: u32) -> f32 {
+    let h = pcg((x as u32) ^ pcg((y as u32) ^ pcg((z as u32) ^ pcg(k))));
+    h as f32 / 4294967295.0 * 2.0 - 1.0
+}
+fn fade(t: f32) -> f32 { t * t * t * (t * (t * 6.0 - 15.0) + 10.0) }
+/// Smooth value noise in [-1, 1] at `p` for channel `k`.
+pub fn vnoise3(p: V3, k: u32) -> f32 {
+    let (ix, iy, iz) = (p.x.floor(), p.y.floor(), p.z.floor());
+    let (f, g, h) = (fade(p.x - ix), fade(p.y - iy), fade(p.z - iz));
+    let (x, y, z) = (ix as i32, iy as i32, iz as i32);
+    let l = |a: f32, b: f32, t: f32| a + (b - a) * t;
+    let c = |dx: i32, dy: i32, dz: i32| hash3(x + dx, y + dy, z + dz, k);
+    let x00 = l(c(0, 0, 0), c(1, 0, 0), f); let x10 = l(c(0, 1, 0), c(1, 1, 0), f);
+    let x01 = l(c(0, 0, 1), c(1, 0, 1), f); let x11 = l(c(0, 1, 1), c(1, 1, 1), f);
+    l(l(x00, x10, g), l(x01, x11, g), h)
+}
+fn dfade(t: f32) -> f32 { 30.0 * t * t * (t - 1.0) * (t - 1.0) }
+/// The value noise and its analytic gradient (with respect to `p`) in one go.
+pub fn vnoise3_grad(p: V3, k: u32) -> (f32, V3) {
+    let (ix, iy, iz) = (p.x.floor(), p.y.floor(), p.z.floor());
+    let (tx, ty, tz) = (p.x - ix, p.y - iy, p.z - iz);
+    let (u, v, w) = (fade(tx), fade(ty), fade(tz));
+    let (du, dv, dw) = (dfade(tx), dfade(ty), dfade(tz));
+    let (x, y, z) = (ix as i32, iy as i32, iz as i32);
+    let c = |dx: i32, dy: i32, dz: i32| hash3(x + dx, y + dy, z + dz, k);
+    let l = |a: f32, b: f32, t: f32| a + (b - a) * t;
+    let (c000, c100, c010, c110, c001, c101, c011, c111) = (c(0, 0, 0), c(1, 0, 0), c(0, 1, 0), c(1, 1, 0), c(0, 0, 1), c(1, 0, 1), c(0, 1, 1), c(1, 1, 1));
+    let (x00, x10, x01, x11) = (l(c000, c100, u), l(c010, c110, u), l(c001, c101, u), l(c011, c111, u));
+    let (y0, y1) = (l(x00, x10, v), l(x01, x11, v));
+    let val = l(y0, y1, w);
+    let dx = du * l(l(c100 - c000, c110 - c010, v), l(c101 - c001, c111 - c011, v), w);
+    let dy = dv * l(x10 - x00, x11 - x01, w);
+    let dz = dw * (y1 - y0);
+    (val, v3(dx, dy, dz))
+}
+/// The curl of the noise potential at `q` (noise-space coordinates; the result is of the order of 1 whatever the scale): the potential is three value
+/// noises, the curl comes from their analytic gradients, so it is exactly divergence-free.
+pub fn curl_noise(q: V3) -> V3 {
+    let (g0, g1, g2) = (vnoise3_grad(q, 0).1, vnoise3_grad(q, 1).1, vnoise3_grad(q, 2).1);
+    v3(g2.y - g1.z, g0.z - g2.x, g1.x - g0.y)
+}
+/// Three octaves of curl noise as a velocity (m/s): wavelengths 6, 2.5 and 1 m with weights 1, 0.55 and 0.3, the pattern carried along by `drift`
+/// (the wind) and slowly evolving in time `t`; `amp` is the speed of the largest octave.
+pub fn turbulence_curl(p: V3, t: f32, drift: V3, amp: f32) -> V3 {
+    let q = p - drift * t;
+    let mut v = V3::ZERO;
+    for (i, (lambda, w)) in [(6.0f32, 1.0f32), (2.5, 0.55), (1.0, 0.3)].iter().enumerate() {
+        let shift = v3(0.0, 0.0, t * 0.35 * (i as f32 + 1.0)) + v3(17.0 * i as f32, 31.0 * i as f32, 7.0 * i as f32);
+        v = v + curl_noise(q * (1.0 / lambda) + shift) * (amp * w * 0.35);
+    }
+    v
+}
+
+/// The car's trailing vortices (the C-pillar and rear-corner vortices of a hatchback or wing tips of a wing): two counter-rotating line vortices
+/// along the car behind its rear corners, rotating so that the air between them goes down and outboard of them up. In the car's frame (x across,
+/// y up from the road, z forward, origin under the car's centre): `c`, the half width `hw`, the half length `hl` and the height `h` of the body, the car's speed.
+/// The strength is the peak swirl speed as a share of the car's speed (`strength`); the core grows and the swirl fades with the distance behind the rear.
+pub fn trailing_vortices(c: V3, hw: f32, hl: f32, h: f32, speed: f32, strength: f32) -> V3 {
+    let behind = -c.z - hl;                     // metres behind the rear face
+    if behind < -1.0 { return V3::ZERO; }
+    let ramp = smooth((behind + 1.0) / 1.5);    // the vortices form over the first metres
+    let b = behind.max(0.0);
+    let fade = (-b / 11.0).exp();
+    let rc = 0.7 + 0.2 * b;                   // the core grows as the vortex ages
+    let v_peak = strength * speed * ramp * fade;
+    let mut out = V3::ZERO;
+    for s in [1.0f32, -1.0] {
+        let (cx, cy) = (s * hw * 0.8, 0.55 * h + 0.15);
+        let (rx, ry) = (c.x - cx, c.y - cy);
+        let r2 = rx * rx + ry * ry;
+        // a smooth vortex (peak v_peak at r = rc): v = 2 v_peak r rc / (r^2 + rc^2)
+        let k = 2.0 * v_peak * rc / (r2 + rc * rc);
+        out = out + v3(-s * ry * k, s * rx * k, 0.0);
+    }
+    out
+}
+
+/// The vortex street behind the bluff body (Karman): vortices with vertical axes are shed alternately from the two sides of the car (Strouhal number
+/// 0.2 of the car's width) and drift back with the wake, each turning opposite to its neighbour; seen from behind or above they are the rolling eddies in the dust.
+/// Same frame as `trailing_vortices`; `t` is the time, `strength` the peak swirl speed as a share of the car's speed. Five vortices at a time, the oldest fading out.
+pub fn karman_street(c: V3, t: f32, hw: f32, hl: f32, h: f32, speed: f32, strength: f32) -> V3 {
+    if speed < 0.5 || c.y > 2.0 * h + 1.0 { return V3::ZERO; }
+    let period = (2.0 * hw / (0.2 * speed)).clamp(0.12, 2.0);   // one vortex per period
+    let n = (t / period).floor();
+    let s = t / period - n;
+    let up = 1.0 - smooth((c.y - h) / (0.8 * h + 0.2));       // the street lives up to the roof, fading above
+    let mut out = V3::ZERO;
+    for j in 0..5 {
+        let age = (j as f32 + s) * period;
+        let z = -hl - 0.6 - 0.8 * speed * age;
+        let x = if ((j as f32 + n) as i32) % 2 == 0 { hw * 0.9 } else { -hw * 0.9 };
+        let sign = if x > 0.0 { 1.0 } else { -1.0 };
+        let fade = (1.0 - age / (5.0 * period)).clamp(0.0, 1.0) * smooth(age / (0.4 * period));   // forms, then fades
+        let rc = 0.6 + 0.12 * speed * age * 0.25;
+        let (rx, rz) = (c.x - x, c.z - z);
+        let k = 2.0 * strength * speed * fade * rc / (rx * rx + rz * rz + rc * rc);
+        out = out + v3(-sign * rz * k, 0.0, sign * rx * k);
+    }
+    out * up
+}
+
+/// The recirculation right behind the car's rear face: the air there is drawn in towards the centre line, back to the car and up its tail, which is what
+/// holds the dust against the rear and lifts it into the cloud. Same frame as `trailing_vortices`; it reaches about 6 m behind and fades quickly.
+pub fn wake_inflow(c: V3, hw: f32, hl: f32, h: f32, speed: f32, k: f32) -> V3 {
+    let behind = -c.z - hl;
+    if behind < -0.5 || behind > 8.0 || speed < 0.5 { return V3::ZERO; }
+    let f = (-behind.max(0.0) / 2.5).exp() * smooth((behind + 0.5) / 1.0);
+    let wide = (-(c.x / (hw + 1.0)).powi(2)).exp();
+    let tall = (-(c.y / (h * 1.1)).powi(2)).exp();
+    let m = k * speed * f;
+    v3(-c.x / (hw + 0.5) * 0.6 * m * tall, 0.12 * m * wide * tall, 0.35 * m * wide * tall)
+}
+
+// ---- the world's colliders: trees (trunk capsules) and rocks (spheres), binned into the ground window's cells so a particle tests only its own cell's few.
+
+/// A capsule from `a` to `b` of radius `r` (a sphere when they coincide).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Collider { pub a: V3, pub b: V3, pub r: f32 }
+
+/// How many colliders a cell lists and how many the GPU holds.
+pub const CELL_SLOTS: usize = 4;
+pub const MAX_COLLIDERS: usize = 1024;
+
+/// The colliders of the props: a tree is its trunk (capped at 4 m, the canopy is up in the air), a rock a sphere about its body.
+pub fn colliders_from_props(props: &[&super::props::Prop]) -> Vec<Collider> {
+    props.iter().map(|p| match p.kind {
+        super::props::PropKind::Tree => Collider { a: p.pos, b: p.pos + v3(0.0, (p.height * 0.6).min(4.0), 0.0), r: p.radius },
+        super::props::PropKind::Rock => { let c = p.pos + v3(0.0, p.radius * 0.7, 0.0); Collider { a: c, b: c, r: p.radius } }
+    }).take(MAX_COLLIDERS).collect()
+}
+
+/// The closest point of the segment `a`-`b` to `p`.
+pub fn closest_on_segment(p: V3, a: V3, b: V3) -> V3 {
+    let ab = b - a;
+    let l2 = ab.dot(ab);
+    if l2 < 1e-9 { return a; }
+    a + ab * ((p - a).dot(ab) / l2).clamp(0.0, 1.0)
+}
+
+/// If `p` is within `margin` of the collider: the outward unit normal and how deep it is (so `p + n * depth` is on the margin's surface).
+pub fn collide(p: V3, c: &Collider, margin: f32) -> Option<(V3, f32)> {
+    let q = closest_on_segment(p, c.a, c.b);
+    let d = p - q;
+    let len = d.len();
+    let reach = c.r + margin;
+    if len >= reach { return None; }
+    let n = if len > 1e-5 { d * (1.0 / len) } else { v3(0.0, 1.0, 0.0) };
+    Some((n, reach - len))
+}
+
+/// The collider lists of the window's cells (`WINDOW * WINDOW`, the `slot` order): each cell lists the colliders whose box (grown by `grow`) touches it, as index + 1,
+/// 0 = empty; a full cell drops the rest.
+pub fn bin_colliders(cs: &[Collider], base: [i32; 2], grow: f32) -> Vec<[u32; CELL_SLOTS]> {
+    let mut cells = vec![[0u32; CELL_SLOTS]; (WINDOW * WINDOW) as usize];
+    for (i, c) in cs.iter().enumerate() {
+        let (lo, hi) = (v3(c.a.x.min(c.b.x), 0.0, c.a.z.min(c.b.z)), v3(c.a.x.max(c.b.x), 0.0, c.a.z.max(c.b.z)));
+        let (x0, x1) = ((lo.x - c.r - grow).floor() as i32, (hi.x + c.r + grow).floor() as i32);
+        let (z0, z1) = ((lo.z - c.r - grow).floor() as i32, (hi.z + c.r + grow).floor() as i32);
+        for cz in z0..=z1 { for cx in x0..=x1 {
+            if !in_window([cx, cz], base) { continue; }
+            let cell = &mut cells[slot([cx, cz])];
+            if let Some(s) = cell.iter_mut().find(|s| **s == 0) { *s = i as u32 + 1; }
+        } }
+    }
+    cells
+}
+
+/// The terrain's normal at (x, z) from the heights around it (`h(x, z)`, 0.5 m apart): slopes and walls slide the dust.
+pub fn ground_normal(x: f32, z: f32, h: impl Fn(f32, f32) -> f32) -> V3 {
+    let e = 0.5;
+    v3(-(h(x + e, z) - h(x - e, z)) / (2.0 * e), 1.0, -(h(x, z + e) - h(x, z - e)) / (2.0 * e)).norm()
+}
+
+/// What a particle does on meeting a surface with unit normal `n` (outward): the speed into it is lost (`bounce` of it comes back) and the rest slides, slowed by `friction` (0..1).
+pub fn slide_response(vel: V3, n: V3, bounce: f32, friction: f32) -> V3 {
+    let vn = vel.dot(n);
+    if vn >= 0.0 { return vel; }
+    let tangent = vel - n * vn;
+    tangent * (1.0 - friction) - n * (vn * bounce)
+}
+
+// ---- position based fluids (the particle pressure option): Macklin and Mueller's density constraint, the poly6 kernel for the density, the spiky kernel's gradient for
+// the correction (the same maths as PhysX 5's PBD particles and Flex), with the tensile-instability term and XSPH viscosity.
+
+/// The poly6 kernel: 315 / (64 pi h^9) * (h^2 - r^2)^3 for r < h.
+pub fn poly6(r2: f32, h: f32) -> f32 {
+    let h2 = h * h;
+    if r2 >= h2 { return 0.0; }
+    let d = h2 - r2;
+    315.0 / (64.0 * std::f32::consts::PI * h.powi(9)) * d * d * d
+}
+/// The gradient of the spiky kernel at the offset `r` (from the neighbour to the particle): -45 / (pi h^6) (h - |r|)^2 r / |r| for |r| < h; zero at the centre.
+pub fn spiky_grad(r: V3, h: f32) -> V3 {
+    let l = r.len();
+    if l >= h || l < 1e-6 { return V3::ZERO; }
+    r * (-45.0 / (std::f32::consts::PI * h.powi(6)) * (h - l) * (h - l) / l)
+}
+/// The density (poly6 sum with unit masses) of a particle in a cubic lattice of `spacing`: the rest density the constraint holds.
+pub fn rest_density(spacing: f32, h: f32) -> f32 {
+    let n = (h / spacing).ceil() as i32;
+    let mut s = 0.0;
+    for i in -n..=n { for j in -n..=n { for k in -n..=n { s += poly6(((i * i + j * j + k * k) as f32) * spacing * spacing, h); } } }
+    s
+}
+/// One iteration of the density constraint over `pos` (all neighbours, a plain reference of what the GPU does with its cell lists): returns the position corrections.
+/// `eps` relaxes the constraint, `k_corr` the artificial pressure that stops particles from clumping.
+pub fn pbd_corrections(pos: &[V3], h: f32, rho0: f32, eps: f32, k_corr: f32) -> Vec<V3> {
+    let n = pos.len();
+    let mut lam = vec![0.0f32; n];
+    for i in 0..n {
+        let (mut rho, mut gsum, mut sq) = (0.0f32, V3::ZERO, 0.0f32);
+        for j in 0..n {
+            rho += poly6((pos[i] - pos[j]).dot(pos[i] - pos[j]), h);
+            if i != j { let g = spiky_grad(pos[i] - pos[j], h) * (1.0 / rho0); gsum = gsum + g; sq += g.dot(g); }
+        }
+        let c = rho / rho0 - 1.0;
+        lam[i] = if c > 0.0 { -c / (sq + gsum.dot(gsum) + eps) } else { 0.0 };   // only compression is resisted (dust has no cohesion)
+    }
+    let w_dq = poly6(0.04 * h * h, h).max(1e-12);
+    (0..n).map(|i| {
+        let mut d = V3::ZERO;
+        for j in 0..n {
+            if i == j { continue; }
+            let r = pos[i] - pos[j];
+            let s_corr = -k_corr * (poly6(r.dot(r), h) / w_dq).powi(4);
+            d = d + spiky_grad(r, h) * (lam[i] + lam[j] + s_corr);
+        }
+        d * (1.0 / rho0)
+    }).collect()
+}
+
 /// The ground under the dust comes from a window of terrain heights: `WINDOW` cells of 1 m around the car, stored toroidally (a cell lives in the
 /// slot `cell mod WINDOW`), so only the cells that come into the window are measured when the car moves.
 pub const WINDOW: i32 = 64;
@@ -102,6 +347,82 @@ pub fn ground_height(x: f32, z: f32, base: [i32; 2], height: impl Fn(usize) -> f
     let (a, b) = (h(0, 0) + (h(1, 0) - h(0, 0)) * fx, h(0, 1) + (h(1, 1) - h(0, 1)) * fx);
     a + (b - a) * fz
 }
+
+/// The coupling of the dust and the air (`surfaces.json` -> `dust_air`): the particles are splatted into the airflow's grid as a density and a momentum
+/// field; the density pushes the particles apart (a stand-in for the particle-particle pressure) and drags the air along (a thick cloud rolls as one).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Coupling { pub push: f32, pub drag: f32, pub drag_max: f32, pub mass_fine: f32, pub mass_coarse: f32, pub shadow_k: f32,
+    /// The particle pressure option: the kernel radius, the rest spacing of the dust, the XSPH viscosity and the iterations per frame.
+    pub pbd_h: f32, pub pbd_spacing: f32, pub pbd_visc: f32, pub pbd_iters: u32 }
+
+impl Coupling {
+    pub fn from_json(text: &str) -> Result<Coupling, String> {
+        let v: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("surfaces file is not valid JSON: {e}"))?;
+        let f = v.get("dust_air").filter(|o| o.is_object()).ok_or("surfaces: missing object \"dust_air\"")?;
+        let num = |key: &str, lo: f64, hi: f64| -> Result<f32, String> {
+            let x = f.get(key).and_then(|k| k.as_f64()).filter(|x| x.is_finite()).ok_or_else(|| format!("dust_air: missing or non-numeric \"{key}\""))?;
+            if x < lo || x > hi { return Err(format!("dust_air: \"{key}\" must be between {lo} and {hi} (got {x})")); }
+            Ok(x as f32)
+        };
+        Ok(Coupling { push: num("push", 0.0, 50.0)?, drag: num("drag", 0.0, 5.0)?, drag_max: num("drag_max", 0.0, 1.0)?, mass_fine: num("mass_fine", 0.01, 20.0)?, mass_coarse: num("mass_coarse", 0.01, 20.0)?,
+            shadow_k: f.get("shadow_k").and_then(|x| x.as_f64()).filter(|x| (0.0..=10.0).contains(x)).map_or(0.8, |x| x as f32),
+            pbd_h: f.get("pbd_h").and_then(|x| x.as_f64()).filter(|x| (0.15..=1.2).contains(x)).map_or(0.45, |x| x as f32),
+            pbd_spacing: f.get("pbd_spacing").and_then(|x| x.as_f64()).filter(|x| (0.05..=1.5).contains(x)).map_or(0.35, |x| x as f32),
+            pbd_visc: f.get("pbd_visc").and_then(|x| x.as_f64()).filter(|x| (0.0..=1.0).contains(x)).map_or(0.05, |x| x as f32),
+            pbd_iters: f.get("pbd_iters").and_then(|x| x.as_f64()).filter(|x| (1.0..=4.0).contains(x)).map_or(2, |x| x as u32) })
+    }
+}
+pub fn coupling() -> Coupling {
+    static CELL: std::sync::OnceLock<Coupling> = std::sync::OnceLock::new();
+    *CELL.get_or_init(|| Coupling::from_json(super::grip::EMBEDDED).expect("the embedded surfaces.json has a bad dust_air block"))
+}
+
+/// Fixed point of the atomic counters of the GPU field.
+pub const FP: f32 = 1024.0;
+
+/// The dust field on the airflow's grid: per cell the mass, and the momentum (mass times velocity relative to the car, in the car's frame), in fixed point
+/// (the GPU adds them with integer atomics). Cell (x, y, z) is at `(z * ny + y) * nx + x`, as in the airflow.
+pub struct Field { pub n: [usize; 3], pub cell: f32, pub data: Vec<i32> }
+
+impl Field {
+    pub fn new(n: [usize; 3], cell: f32) -> Field { Field { n, cell, data: vec![0; n[0] * n[1] * n[2] * 4] } }
+    pub fn index(&self, c: [i32; 3]) -> Option<usize> {
+        if (0..3).any(|a| c[a] < 0 || c[a] >= self.n[a] as i32) { return None; }
+        Some(((c[2] as usize * self.n[1] + c[1] as usize) * self.n[0] + c[0] as usize) * 4)
+    }
+    /// Adds a particle at `b` (box coordinates, metres) with mass `w` and velocity `v` (relative to the car, in its frame); outside the box it is ignored.
+    pub fn splat(&mut self, b: [f32; 3], v: V3, w: f32) {
+        let c = b.map(|x| (x / self.cell).floor() as i32);
+        let Some(i) = self.index(c) else { return };
+        self.data[i] += (w * FP) as i32;
+        self.data[i + 1] += (w * v.x * FP) as i32; self.data[i + 2] += (w * v.y * FP) as i32; self.data[i + 3] += (w * v.z * FP) as i32;
+    }
+    pub fn mass(&self, c: [i32; 3]) -> f32 { self.index(c).map_or(0.0, |i| self.data[i] as f32 / FP) }
+    /// The mean velocity of the dust in a cell (zero when empty).
+    pub fn mean_velocity(&self, c: [i32; 3]) -> V3 {
+        match self.index(c) { Some(i) if self.data[i] > 0 => { let m = self.data[i] as f32; v3(self.data[i + 1] as f32 / m, self.data[i + 2] as f32 / m, self.data[i + 3] as f32 / m) } _ => V3::ZERO }
+    }
+    /// The mass at a box position, trilinear between the cell centres.
+    pub fn mass_at(&self, b: [f32; 3]) -> f32 {
+        let g = b.map(|x| x / self.cell - 0.5);
+        let i = g.map(|x| x.floor());
+        let f = [g[0] - i[0], g[1] - i[1], g[2] - i[2]];
+        let c0 = [i[0] as i32, i[1] as i32, i[2] as i32];
+        let m = |dx: i32, dy: i32, dz: i32| self.mass([c0[0] + dx, c0[1] + dy, c0[2] + dz]);
+        let l = |a: f32, b: f32, t: f32| a + (b - a) * t;
+        let x00 = l(m(0, 0, 0), m(1, 0, 0), f[0]); let x10 = l(m(0, 1, 0), m(1, 1, 0), f[0]);
+        let x01 = l(m(0, 0, 1), m(1, 0, 1), f[0]); let x11 = l(m(0, 1, 1), m(1, 1, 1), f[0]);
+        l(l(x00, x10, f[1]), l(x01, x11, f[1]), f[2])
+    }
+    /// The acceleration (box frame) that pushes a particle at `b` away from denser dust: minus `push` times the mass gradient (per cell).
+    pub fn push(&self, b: [f32; 3], push: f32) -> V3 {
+        let d = |a: usize| { let (mut p, mut m) = (b, b); p[a] += self.cell; m[a] -= self.cell; (self.mass_at(p) - self.mass_at(m)) * 0.5 };
+        v3(-d(0), -d(1), -d(2)) * push
+    }
+}
+
+/// How strongly the dust drags the air in a cell holding `mass`: `drag` per unit of mass, at most `drag_max`.
+pub fn air_drag(mass: f32, c: &Coupling) -> f32 { (mass * c.drag).clamp(0.0, c.drag_max) }
 
 #[cfg(test)]
 #[path = "dust_ref_tests.rs"]

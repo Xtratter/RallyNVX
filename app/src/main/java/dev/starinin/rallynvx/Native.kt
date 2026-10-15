@@ -36,6 +36,8 @@ object Native {
     /** The player drags on the screen: orbit the chase camera by (yaw, pitch) radians; [gameCameraUp] when the finger goes up. */
     @JvmStatic external fun gameCamera(dyaw: Float, dpitch: Float)
     @JvmStatic external fun gameCameraUp()
+    /** The camera view (0 behind, 1 bonnet, 2 bumper, 3 roof, 4 orbit), its distance scale or zoom and its height offset or tilt. */
+    @JvmStatic external fun gameCameraView(view: Int, dist: Float, height: Float)
     /** Debug/test: put the car on a road facing along it (1 liaison, 2 stage start, 3 stage middle, 4 stage end). */
     @JvmStatic external fun gameOnRoad(mode: Int)
     /** Tyre dust: 0 off, 1 normal, 2 lots. */
@@ -55,6 +57,11 @@ object Native {
     @JvmStatic external fun gameAirflowDebug(on: Int)
     @JvmStatic external fun gameDustGpuDebug(on: Int)
     @JvmStatic external fun gameAero(on: Int)
+    /** Motion blur: 0 off, 1 low, 2 high. */
+    @JvmStatic external fun gameMotionBlur(level: Int)
+    /** The GPU dust options as bits: 1 particle pressure, 2 the car's exact shape, 4 world collisions, 8 the settled layer. */
+    @JvmStatic external fun gameDustOpts(mask: Int)
+    @JvmStatic external fun gameGpuProf(on: Int)
     @JvmStatic external fun gamePause(p: Boolean)
     @JvmStatic external fun gameStop()
     @JvmStatic external fun gameResize(w: Int, h: Int)

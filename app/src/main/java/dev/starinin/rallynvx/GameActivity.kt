@@ -33,6 +33,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var autopilotOn = false
     private var autopilotStyle = 1
     private var autopilotBtn: View? = null
+    private var settingsPanel: View? = null
+    private var camBtn: View? = null
+    private var camView = 0; private var camDist = 1f; private var camHeight = 0f
     private var seed = 0L
     private lateinit var audio: AudioEngine
     private var profile = ""
@@ -88,8 +91,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         }
         root.addView(sv, FrameLayout.LayoutParams(-1, -1))
         drive = DriveControls(this).also { it.onChange = { thr, steer, brake, amt -> if (autopilotOn && (thr != 0f || steer != 0f || brake)) setAutopilot(false); carThr = thr; carSteer = steer; carBrake = brake; carAmt = amt; sendInput() } }
-        drive?.onCamera = { dx, dy -> if (running) Native.gameCamera(dx * 0.006f, -dy * 0.004f) }   // drag right = the camera swings round, drag down = lower
+        drive?.onCamera = { dx, dy -> if (running) { val (sx, sy) = CamMath.dragSigns(Controls.camInvert(this)); Native.gameCamera(dx * 0.006f * sx, -dy * 0.004f * sy) } }   // drag right = the camera swings round, drag down = lower
         drive?.onCameraUp = { if (running) Native.gameCameraUp() }
+        drive?.onCameraPinch = { ratio, dy -> changeCamera(CamMath.pinchFor(camView, camDist, ratio), CamMath.height(camView, camHeight, dy, resources.displayMetrics.density)) }   // spread = closer, both fingers up = higher
         root.addView(drive, FrameLayout.LayoutParams(-1, -1))
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
@@ -101,6 +105,17 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         newLevelBtn = button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { autopilotOn = false; showAutopilot(); seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
         autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, if (rallyIdx > 0) 150f else 284f, 168f) { setAutopilot(!autopilotOn) }
         autopilotBtn?.setOnLongClickListener { showAutopilotPanel(); true }   // long press: the autopilot settings
+        // the camera view button under the status line: a tap cycles the views, a long press puts the current view back to its default distance and height
+        camView = intent.getIntExtra("camview", Controls.camView(this)).coerceIn(0, CamMath.VIEWS - 1)   // debug/test: `camview`, `camdist`, `camheight` pick a view
+        camDist = CamMath.clampDist(intent.getFloatExtra("camdist", Controls.camDist(this, camView))); camHeight = CamMath.clampHeight(camView, intent.getFloatExtra("camheight", Controls.camHeight(this, camView)))
+        camBtn = M3Widgets.button(this, camLabel(), M3Widgets.ButtonKind.TONAL) { selectCameraView(CamMath.next(camView)) }.also {
+            root.addView(it, FrameLayout.LayoutParams(px(150f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(88f), 0, 0) })
+            it.setOnLongClickListener { changeCamera(1f, 0f); true }
+        }
+        // the quick settings: a gear next to the View button opens a panel of the dust and effect options that applies at once, while driving
+        M3Widgets.button(this, "⚙", M3Widgets.ButtonKind.TONAL) { showSettingsPanel() }.also {
+            root.addView(it, FrameLayout.LayoutParams(px(56f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(174f), px(88f), 0, 0) })
+        }
         button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
             handbrakeBtn = this
             applyControlLayout()
@@ -315,6 +330,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) {
         if (running) { Native.gameResize(w, hh); return }
         intent.getIntExtra("lights", -1).let { if (it >= 0) Native.gameLightsDebug(it) }   // debug/test: car lights
+        intent.getIntExtra("aero", -1).let { if (it >= 0) Controls.setAero(this, it > 0) }   // debug/test: the Aerodynamics switch
+        intent.getIntExtra("gpuprof", 0).let { if (it > 0) Native.gameGpuProf(it) }   // debug/test: GPU stage timings in the log
         intent.getIntExtra("dustgpu", 0).let { if (it > 0) Native.gameDustGpuDebug(it) }   // debug/test: the dust on the GPU
         intent.getIntExtra("airflow", 0).let { if (it > 0) Native.gameAirflowDebug(it) }   // debug/test: the airflow slice
         intent.getFloatExtra("tod", -1f).let { if (it >= 0f) Native.gameTimeOfDay(it) }   // debug/test: time of day
@@ -323,11 +340,17 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         intent.getIntExtra("dust", -1).let { if (it >= 0) Controls.setDust(this, it) }   // debug/test: the dust level (3 = fluid)
         Native.gameDust(Controls.dust(this))
         Native.gameAero(if (Controls.aero(this)) 1 else 0)
+        intent.getIntExtra("blur", -1).let { if (it >= 0) Controls.setMotionBlur(this, it) }   // debug/test: motion blur level
+        intent.getIntExtra("dustopts", -1).let { if (it >= 0) Controls.setDustOpts(this, it) }   // debug/test: the GPU dust options as bits
+        Native.gameMotionBlur(Controls.motionBlur(this))
+        Native.gameDustOpts(Controls.dustOpts(this))
         Native.gameSigns(Controls.signs(this))
+        Native.gameCameraView(camView, camDist, camHeight)
         running = true
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
         intent.getIntExtra("city", 0).let { if (it > 0) Native.gameInCity(it) }   // debug/test: start in a city
+        if (intent.getIntExtra("settingspanel", 0) > 0) handler.postDelayed({ showSettingsPanel() }, 2500)   // debug/test: the quick settings panel
         if (intent.getIntExtra("autopilotpanel", 0) > 0) handler.postDelayed({ showAutopilotPanel() }, 1500)   // debug/test: the autopilot settings
         if (rallyIdx > 0) startRallyStage(intent.getIntExtra("rallystage", 0))   // the Rally mode (debug: `rallystage` 0/1)
         intent.getIntExtra("road", 0).let { if (it > 0) Native.gameOnRoad(it) }   // debug/test: start on a road
@@ -360,10 +383,67 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         if (auto != sentAuto) { Native.gameAutoFallback(auto == 1); sentAuto = auto }
     }
 
+    /** The quick settings over the game: the dust, its four physics options, aerodynamics, motion blur and the camera view; every change applies at once and is kept. */
+    private fun showSettingsPanel() {
+        settingsPanel?.let { it.visibility = View.VISIBLE; (it.tag as? () -> Unit)?.invoke(); return }
+        val dp = resources.displayMetrics.density
+        fun px(v: Float) = (v * dp).toInt()
+        val refreshers = ArrayList<() -> Unit>()
+        // two columns so all the rows are in view at once
+        val colA = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val colB = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; addView(colA, LinearLayout.LayoutParams(px(330f), -2)); addView(colB, LinearLayout.LayoutParams(px(330f), -2).apply { marginStart = px(16f) }) }
+        var rows = 0
+        fun applyLive() { if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0); Native.gameDustOpts(Controls.dustOpts(this)); Native.gameMotionBlur(Controls.motionBlur(this)) }; refreshers.forEach { it() } }
+        fun row(text: String, value: () -> String, onClick: () -> Unit) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            r.addView(TextView(this).apply { this.text = text; textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+            val btn = M3Widgets.button(this, value(), M3Widgets.ButtonKind.TONAL) {}
+            btn.setOnClickListener { onClick(); applyLive() }
+            refreshers.add { (btn as? TextView)?.text = value() }
+            r.addView(btn, LinearLayout.LayoutParams(px(120f), px(44f)))
+            (if (rows++ % 2 == 0) colA else colB).addView(r, LinearLayout.LayoutParams(px(330f), -2).apply { topMargin = px(8f) })
+        }
+        fun onOff(b: Boolean) = if (b) t("On", "Вкл") else t("Off", "Выкл")
+        row(t("Dust", "Пыль"), { arrayOf(t("Off", "Выкл"), t("Normal", "Обычная"), t("Lots", "Много"), t("Fluid (test)", "Жидкая (опыт)"))[Controls.dust(this)] }) { Controls.setDust(this, DriveMath.cycle(Controls.dust(this), 4)) }
+        row(t("Aerodynamics", "Аэродинамика"), { onOff(Controls.aero(this)) }) { Controls.setAero(this, !Controls.aero(this)) }
+        row(t("Particle pressure", "Давление частиц"), { onOff(Controls.dustOpt(this, 1)) }) { Controls.toggleDustOpt(this, 1) }
+        row(t("Exact car shape", "Точная форма кузова"), { onOff(Controls.dustOpt(this, 2)) }) { Controls.toggleDustOpt(this, 2) }
+        row(t("World collisions", "Столкновения с миром"), { onOff(Controls.dustOpt(this, 4)) }) { Controls.toggleDustOpt(this, 4) }
+        row(t("Settled dust layer", "Слой осевшей пыли"), { onOff(Controls.dustOpt(this, 8)) }) { Controls.toggleDustOpt(this, 8) }
+        row(t("Motion blur", "Размытие в движении"), { arrayOf(t("Off", "Выкл"), t("Low", "Слабое"), t("High", "Сильное"))[Controls.motionBlur(this)] }) { Controls.setMotionBlur(this, DriveMath.cycle(Controls.motionBlur(this), 3)) }
+        row(t("Camera drag inversion", "Инверсия поворота камеры"), { CamMath.invertName(Controls.camInvert(this), java.util.Locale.getDefault().language != "ru") }) { Controls.setCamInvert(this, DriveMath.cycle(Controls.camInvert(this), CamMath.INVERT_MODES)) }
+        row(t("Camera view", "Вид камеры"), { CamMath.name(camView, java.util.Locale.getDefault().language != "ru") }) { selectCameraView(CamMath.next(camView)) }
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        content.addView(label(t("Quick settings", "Быстрые настройки"), 22f))
+        content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(230f)))
+        val p = panel(content)
+        content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(12f) })
+        p.tag = { refreshers.forEach { it() } }
+        p.visibility = View.VISIBLE
+        settingsPanel = p
+    }
+
+    private fun camLabel() = t("View: ", "Вид: ") + CamMath.name(camView, java.util.Locale.getDefault().language != "ru")
+
+    /** Takes the distance (zoom) and height (tilt) of the current view, keeps them for next time and sends them to the game. */
+    private fun changeCamera(dist: Float, height: Float) {
+        camDist = CamMath.clampDist(dist); camHeight = CamMath.clampHeight(camView, height)
+        Controls.setCam(this, camView, camDist, camHeight)
+        if (running) Native.gameCameraView(camView, camDist, camHeight)
+    }
+
+    private fun selectCameraView(view: Int) {
+        camView = view; camDist = Controls.camDist(this, view); camHeight = Controls.camHeight(this, view)
+        Controls.setCam(this, camView, camDist, camHeight)
+        (camBtn as? android.widget.TextView)?.text = camLabel()
+        if (running) Native.gameCameraView(camView, camDist, camHeight)
+    }
+
     private fun applyControls() {
         applyRender()
         Native.audioVolume(Controls.volume(this))
-        if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0) }
+        if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0); Native.gameMotionBlur(Controls.motionBlur(this)); Native.gameDustOpts(Controls.dustOpts(this)) }
         val d = drive ?: return
         d.configure(Controls.mode(this), Controls.sens(this), Controls.pedalsLeft(this), Controls.pedalsAnalog(this))
         applyControlLayout()

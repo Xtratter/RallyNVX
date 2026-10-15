@@ -78,3 +78,11 @@ fn embedded() -> Params { Params::from_json(EMBEDDED).expect("the embedded vehic
     let p = Params::from_json(&none).unwrap(); let g = p.car("vulpes").unwrap();
     assert_eq!((g.style, g.price, g.upgrade_cost), (CarStyle::Suv, 0, 300));
 }
+
+#[test] fn camera_spots_are_optional_fractions_with_clear_errors() {
+    let vulpes = VehicleSpec::by_id("vulpes").unwrap();
+    assert_eq!(vulpes.cam_hood, [0.72, 0.277]);
+    let offroader = VehicleSpec::offroader();
+    assert_eq!(offroader.cam_hood, [0.66, 0.12], "the default hood spot");
+    assert!(offroader.cam_bumper[1] > 0.4);
+}

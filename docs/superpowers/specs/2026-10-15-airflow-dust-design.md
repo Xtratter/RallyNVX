@@ -39,6 +39,8 @@ The solver is on the GPU, the particles are on the CPU today (`game/dust.rs`); r
 
 Autopilot run on a gravel stage, dust level Lots, three runs each (the world seed differs per run, so the scenes differ): CPU particles 55 / 38 / 49 fps (mean 47); GPU dust with the airflow (0.3 m cells, 30 Hz) 31 / 41 / 42 fps (mean 38). The target of 30 fps is met, the cost is about 9 fps. The airflow was moved from 60 to 30 Hz for this (the first measurement at 60 Hz gave 31 fps with a scene at 47 fps for the CPU dust). The buffer holds 4096 particles; the level caps (400 / 800) are still the CPU numbers and can be raised for the GPU later within the budget.
 
+Stage 2 (dust feeds back), same heavy scene and fixed seed 9050163: CPU dust 33 / 33 fps; airflow dust with the density push and drag 30 / 29 fps (without the coupling 30 / 30; 10 pressure iterations 29 / 28, so the iterations are not the cost; 12 kept). Still at the 30 fps limit in the heaviest scene we have.
+
 ## Scope in stages
 
 Everything the first draft left out is added, in this order; each stage is released and measured against the 30 fps budget before the next one starts (a stage that does not fit is cut down or made optional, not dropped silently).

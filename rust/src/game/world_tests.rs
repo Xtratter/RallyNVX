@@ -263,3 +263,11 @@ mod pace_world {
         }
     }
 }
+
+#[test] fn the_camera_view_survives_a_new_car_or_a_reset() {
+    let mut w = World::new(3);
+    w.cam.set_view(1, 1.5, 0.5);
+    w.swap_car(crate::game::vehicle::VehicleSpec::by_id("vulpes").unwrap());
+    assert_eq!((w.cam.view as i32, w.cam.dist, w.cam.height), (1, 1.5, 0.5));
+    assert!(w.view(1).cam_fov < 1.0, "the zoomed bonnet view reaches the renderer");
+}

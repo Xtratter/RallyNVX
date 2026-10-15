@@ -52,6 +52,23 @@ object Controls {
     /** Aerodynamics: the dust follows the airflow around the car (on the GPU); off = the simple CPU particles. */
     fun aero(c: Context): Boolean = p(c).getBoolean("aero", true)
     fun setAero(c: Context, v: Boolean) = p(c).edit().putBoolean("aero", v).apply()
+    /** The camera view and, per view, the distance scale and the height offset the player chose. */
+    fun camView(c: Context): Int = p(c).getInt("cam_view", 0).coerceIn(0, CamMath.VIEWS - 1)
+    fun camDist(c: Context, view: Int): Float = CamMath.clampDist(p(c).getFloat("cam_dist_$view", 1f))
+    fun camHeight(c: Context, view: Int): Float = CamMath.clampHeight(view, p(c).getFloat("cam_height_$view", 0f))
+    fun setCam(c: Context, view: Int, dist: Float, height: Float) = p(c).edit().putInt("cam_view", view).putFloat("cam_dist_$view", dist).putFloat("cam_height_$view", height).apply()
+    /** Motion blur (the sense of speed): 0 off (the default), 1 low, 2 high. */
+    fun motionBlur(c: Context): Int = p(c).getInt("motion_blur", 0).coerceIn(0, 2)
+    fun setMotionBlur(c: Context, v: Int) = p(c).edit().putInt("motion_blur", v.coerceIn(0, 2)).apply()
+    /** The GPU dust options (bits: 1 particle pressure, 2 the car's exact shape, 4 collisions with the world, 8 the settled layer); all but the pressure by default. */
+    const val DUST_OPTS_DEFAULT = 14
+    fun dustOpts(c: Context): Int = p(c).getInt("dust_opts", DUST_OPTS_DEFAULT) and 15
+    fun setDustOpts(c: Context, v: Int) = p(c).edit().putInt("dust_opts", v and 15).apply()
+    fun dustOpt(c: Context, bit: Int): Boolean = dustOpts(c) and bit != 0
+    fun toggleDustOpt(c: Context, bit: Int) = setDustOpts(c, dustOpts(c) xor bit)
+    /** Inversion of the camera drag by a finger: 0 none, 1 horizontal, 2 vertical, 3 both. */
+    fun camInvert(c: Context): Int = p(c).getInt("cam_invert", 0).coerceIn(0, CamMath.INVERT_MODES - 1)
+    fun setCamInvert(c: Context, v: Int) = p(c).edit().putInt("cam_invert", v.coerceIn(0, CamMath.INVERT_MODES - 1)).apply()
     fun setDust(c: Context, v: Int) = p(c).edit().putInt("dust", v.coerceIn(0, 3)).apply()
     fun autoFallback(c: Context) = p(c).getBoolean("auto_fallback", false)
     fun setAutoFallback(c: Context, v: Boolean) = p(c).edit().putBoolean("auto_fallback", v).apply()

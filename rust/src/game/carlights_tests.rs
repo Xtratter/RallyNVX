@@ -51,3 +51,23 @@ fn settled(spec: VehicleSpec) -> Vehicle {
     assert!(v.speed() < -0.5 && v.reversing, "rolling backwards: reverse lamps stay on, speed {}", v.speed());
     v.vel = v3(0., 0., 0.3); v.step(&t, &[], &Input::default(), 1.0 / 60.0); assert!(!v.reversing, "creeping forward is not reversing");
 }
+
+#[test] fn the_rally_lamps_sit_on_the_lamp_vertices_of_the_asset() {
+    // the lamp vertices (material 5) of the embedded Peugeot asset: the headlight units are light cream, the tail units red
+    let d = include_bytes!("../../assets/rally_car.rcar");
+    let nv = u32::from_le_bytes([d[4], d[5], d[6], d[7]]) as usize;
+    let f = |at: usize| f32::from_le_bytes([d[at], d[at + 1], d[at + 2], d[at + 3]]);
+    let (mut head, mut n) = ([0.0f32; 3], 0.0f32);
+    for i in 0..nv {
+        let a = 12 + i * 28;
+        if d[a + 24..a + 28] == [255, 242, 204, 5] && f(a) > 0.45 && f(a + 8) > 1.5 { for k in 0..3 { head[k] += f(a + 4 * k); } n += 1.0; }
+    }
+    assert!(n > 20.0, "the asset has headlight vertices");
+    let spec = VehicleSpec::by_id("vulpes").unwrap();
+    let v = Vehicle::new(spec, v3(0.0, 0.0, 0.0), 0.0);   // at rest on no ground: the body pose is fixed by the spec
+    let (rot, origin) = crate::raster::vehicle_models::car_body_pose(&v);
+    let k = [spec.size.x / 1.91, spec.size.y / 1.50, spec.size.z / 3.97];
+    let centre = origin + rot.rotate(v3(head[0] / n * k[0], head[1] / n * k[1], head[2] / n * k[2]));
+    let right_lamp = lamps(&v).head.iter().copied().min_by(|a, b| (*a - centre).len().total_cmp(&(*b - centre).len())).unwrap();
+    assert!((right_lamp - centre).len() < 0.05, "the lamp is {:.3} m from the asset's headlight", (right_lamp - centre).len());
+}
