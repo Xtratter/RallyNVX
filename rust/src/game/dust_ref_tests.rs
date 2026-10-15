@@ -194,3 +194,15 @@ fn turbulence_scales_with_amplitude_and_moves_with_the_drift() {
     let (v0, v1) = (turbulence_curl(p, 0.0, drift, 1.0), turbulence_curl(p + drift, 1.0, drift, 1.0));
     assert!((v0 - v1).len() < 0.6 * v0.len().max(0.05) + 0.2, "{v0:?} {v1:?}");
 }
+
+#[test]
+fn the_analytic_gradient_matches_finite_differences_and_the_value() {
+    for i in 0..60 {
+        let p = v3(i as f32 * 0.31 - 7.0, (i as f32 * 0.17).cos() * 4.0, i as f32 * 0.23 + 1.0);
+        let (val, g) = vnoise3_grad(p, 1);
+        assert!((val - vnoise3(p, 1)).abs() < 1e-5, "value {val} vs {}", vnoise3(p, 1));
+        let e = 0.001;
+        let fd = v3((vnoise3(p + v3(e, 0.0, 0.0), 1) - vnoise3(p - v3(e, 0.0, 0.0), 1)) / (2.0 * e), (vnoise3(p + v3(0.0, e, 0.0), 1) - vnoise3(p - v3(0.0, e, 0.0), 1)) / (2.0 * e), (vnoise3(p + v3(0.0, 0.0, e), 1) - vnoise3(p - v3(0.0, 0.0, e), 1)) / (2.0 * e));
+        assert!((g - fd).len() < 0.02 * (1.0 + fd.len()), "{g:?} vs {fd:?}");
+    }
+}

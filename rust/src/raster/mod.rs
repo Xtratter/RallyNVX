@@ -71,4 +71,4 @@ mod plan_tests {
 #[cfg(any(target_os = "android", feature = "desktop"))]
 mod gpu;
 #[cfg(any(target_os = "android", feature = "desktop"))]
-pub use gpu::Raster;
+pub use gpu::{set_prof, Raster};

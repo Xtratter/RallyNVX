@@ -146,7 +146,8 @@ pub struct Raster {
     /// The airflow debug view: made on first use (`airflow_tried`), so nothing is allocated while it is off.
     airflow: Option<airflow_gpu::AirflowGpu>, airflow_tried: bool, adapter: wgpu::Adapter,
     /// The dust on the GPU, made on first use.
-    dust_gpu: Option<dust_gpu::DustGpu>,
+    prof: Option<Prof>,
+    dust_gpu: Option<dust_gpu::DustGpu>, dust_render: Option<dust_gpu::DustRender>, bgl_main_keep: wgpu::BindGroupLayout, module_keep: wgpu::ShaderModule,
     dust_buf: wgpu::Buffer,
     cache_seed: u64,
     car_key: [u32; 12],
@@ -186,9 +187,10 @@ impl Raster {
         let info = adapter.get_info();
         log::info!("adapter: {} ({:?}) {}", info.name, info.backend, info.driver_info);
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("game_device"), required_features: wgpu::Features::empty(), required_limits: adapter.limits(),
+            label: Some("game_device"), required_features: adapter.features() & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS), required_limits: adapter.limits(),
             memory_hints: wgpu::MemoryHints::Performance,
         }, None)).expect("request_device");
+        let prof = if device.features().contains(wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS) { Some(Prof::new(&device, queue.get_timestamp_period())) } else { None };
         let caps = surface.get_capabilities(&adapter);
         let format = caps.formats.iter().copied().find(|f| !f.is_srgb()).unwrap_or(caps.formats[0]);
         let config = wgpu::SurfaceConfiguration {
@@ -341,7 +343,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), dust_gpu: None, dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -546,7 +548,11 @@ impl Raster {
             self.airflow_tried = true;
             self.airflow = airflow_gpu::AirflowGpu::new(&self.adapter, &self.device, self.config.format);
         }
-        if wv.dust_gpu.is_some() && self.dust_gpu.is_none() { self.dust_gpu = Some(dust_gpu::DustGpu::new(&self.device)); }
+        if wv.dust_gpu.is_some() && self.dust_gpu.is_none() {
+            self.dust_gpu = Some(dust_gpu::DustGpu::new(&self.device));
+            self.dust_render = Some(dust_gpu::DustRender::new(&self.device, &self.bgl_main_keep, &self.module_keep, self.config.format));
+        }
+        let dust_low = wv.dust_gpu.is_some() && self.dust_render.is_some();
         let fluid_on = wv.fluid.is_some() && self.fluid.is_some();
         let dust_n = if fluid_on { 0 } else { dinst.len() as u32 };
         let mut all: Vec<Inst> = Vec::new();
@@ -568,16 +574,19 @@ impl Raster {
             let d = c - centre; d.x.hypot(d.z) < 180.0
         };
         let mut enc = self.device.create_command_encoder(&Default::default());
+        if let Some(p) = &self.prof { p.mark(&mut enc, 0); }
         if let (true, Some(fl), Some(pk)) = (fluid_on, self.fluid.as_mut(), wv.fluid.as_ref()) {
             fl.update(&self.device, &self.queue, &mut enc, wv.terrain, [wv.vehicle.pos.x, wv.vehicle.pos.y, wv.vehicle.pos.z], [wv.wind.x, wv.wind.y, wv.wind.z], pk, wv.time);
         }
                 if let (Some(af), Some(fi)) = (self.airflow.as_mut(), wv.airflow.as_ref()) {
             af.update(&self.device, &self.queue, &mut enc, fi.inflow, &fi.boxes, wv.time);
         }
+        if let Some(p) = &self.prof { p.mark(&mut enc, 1); }
         if let (Some(dg), Some(fr)) = (self.dust_gpu.as_mut(), wv.dust_gpu.as_ref()) {
             let grid = self.airflow.as_ref().filter(|_| wv.airflow.is_some()).map(|a| { let (v, s) = a.fields(); (v, s, a.box_size(), a.dens_buffer()) });
             dg.update(&self.device, &self.queue, &mut enc, wv.terrain, fr, grid);
         }
+        if let Some(p) = &self.prof { p.mark(&mut enc, 2); }
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow"), color_attachments: &[],
@@ -621,7 +630,7 @@ impl Raster {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, resolve_target: None,
                     ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: wv.daylight.sky_hor[0] as f64 * 0.7, g: wv.daylight.sky_hor[1] as f64 * 0.7, b: wv.daylight.sky_hor[2] as f64 * 0.7, a: 1.0 }), store: wgpu::StoreOp::Store } })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.depth.1,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: if fluid_on { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard } }), stencil_ops: None }),
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: if fluid_on || dust_low { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard } }), stencil_ops: None }),
                 timestamp_writes: None, occlusion_query_set: None });
             rp.set_bind_group(0, &self.bg_main, &[]);
             rp.set_pipeline(&self.pl_sky);
@@ -663,10 +672,8 @@ impl Raster {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, 0..1);
             }
-            if let (Some(dg), true) = (self.dust_gpu.as_ref(), wv.dust_gpu.is_some()) {
-                rp.set_pipeline(&self.pl_dust_pt);
-                rp.set_vertex_buffer(0, dg.render_buffer().slice(..));
-                rp.draw(0..6, 0..dg.count());
+            if dust_low {
+                // drawn after the pass at low resolution
             } else if dust_n > 0 {
                 rp.set_pipeline(&self.pl_dust);
                 rp.set_vertex_buffer(0, self.dust_buf.slice(..));
@@ -676,10 +683,55 @@ impl Raster {
         if let (true, Some(fl)) = (fluid_on, self.fluid.as_mut()) {
             fl.draw(&self.device, &self.queue, &mut enc, &view, &self.depth.1, &self.bg_main, (self.config.width, self.config.height));
         }
+        if let Some(p) = &self.prof { p.mark(&mut enc, 3); }
+        if let (true, Some(dg), Some(dr)) = (dust_low, self.dust_gpu.as_ref(), self.dust_render.as_mut()) {
+            dr.draw(&self.device, &mut enc, &view, &self.depth.1, &self.bg_main, dg.render_buffer(), dg.count(), (self.config.width, self.config.height));
+        }
+        if let Some(p) = &self.prof { p.mark(&mut enc, 4); }
         if let (Some(af), Some(_), true) = (self.airflow.as_ref(), wv.airflow.as_ref(), crate::game::airflow::debug_on()) {
             af.draw(&self.device, &mut enc, &view, (self.config.width, self.config.height));
         }
+        if let Some(p) = &self.prof { p.mark(&mut enc, 5); p.resolve(&mut enc); }
         self.queue.submit([enc.finish()]);
+        if let Some(p) = self.prof.as_mut() { p.report(&self.device); }
         frame.present();
+    }
+}
+
+
+/// GPU timings of the frame's stages (debug: the extra `gpuprof=1`): timestamps between the stages, read back and logged every 90 frames.
+static PROF_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub fn set_prof(on: bool) { PROF_ON.store(on, std::sync::atomic::Ordering::Relaxed); }
+const PROF_N: u32 = 6;
+const PROF_NAMES: [&str; 5] = ["fluid+airflow", "dust compute", "shadow+main", "dust low+comp", "rest"];
+
+struct Prof { qs: wgpu::QuerySet, resolve: wgpu::Buffer, read: wgpu::Buffer, period: f32, frame: u32 }
+
+impl Prof {
+    fn new(dev: &wgpu::Device, period: f32) -> Prof {
+        Prof { qs: dev.create_query_set(&wgpu::QuerySetDescriptor { label: Some("prof"), ty: wgpu::QueryType::Timestamp, count: PROF_N }),
+            resolve: dev.create_buffer(&wgpu::BufferDescriptor { label: Some("prof_resolve"), size: 8 * PROF_N as u64, usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false }),
+            read: dev.create_buffer(&wgpu::BufferDescriptor { label: Some("prof_read"), size: 8 * PROF_N as u64, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }),
+            period, frame: 0 }
+    }
+    fn mark(&self, enc: &mut wgpu::CommandEncoder, i: u32) { if PROF_ON.load(std::sync::atomic::Ordering::Relaxed) { enc.write_timestamp(&self.qs, i); } }
+    fn resolve(&self, enc: &mut wgpu::CommandEncoder) {
+        if !PROF_ON.load(std::sync::atomic::Ordering::Relaxed) { return; }
+        enc.resolve_query_set(&self.qs, 0..PROF_N, &self.resolve, 0);
+        enc.copy_buffer_to_buffer(&self.resolve, 0, &self.read, 0, 8 * PROF_N as u64);
+    }
+    /// After the submit: every 90th frame wait for the frame and log the stage times.
+    fn report(&mut self, dev: &wgpu::Device) {
+        if !PROF_ON.load(std::sync::atomic::Ordering::Relaxed) { return; }
+        self.frame += 1;
+        if self.frame % 90 != 0 { return; }
+        let slice = self.read.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        dev.poll(wgpu::Maintain::Wait);
+        let ts: Vec<u64> = bytemuck::cast_slice(&slice.get_mapped_range()).to_vec();
+        self.read.unmap();
+        let ms = |a: usize| (ts[a + 1].wrapping_sub(ts[a])) as f32 * self.period / 1.0e6;
+        let parts: Vec<String> = (0..5).map(|i| format!("{} {:.1}", PROF_NAMES[i], ms(i))).collect();
+        log::info!("gpuprof ms: {} | total {:.1}", parts.join(", "), (ts[5].wrapping_sub(ts[0])) as f32 * self.period / 1.0e6);
     }
 }

@@ -107,12 +107,30 @@ pub fn vnoise3(p: V3, k: u32) -> f32 {
     let x01 = l(c(0, 0, 1), c(1, 0, 1), f); let x11 = l(c(0, 1, 1), c(1, 1, 1), f);
     l(l(x00, x10, g), l(x01, x11, g), h)
 }
-/// The curl of the noise potential at `q` (noise-space coordinates; the result is of the order of 1 whatever the scale): central differences of three noises.
+fn dfade(t: f32) -> f32 { 30.0 * t * t * (t - 1.0) * (t - 1.0) }
+/// The value noise and its analytic gradient (with respect to `p`) in one go.
+pub fn vnoise3_grad(p: V3, k: u32) -> (f32, V3) {
+    let (ix, iy, iz) = (p.x.floor(), p.y.floor(), p.z.floor());
+    let (tx, ty, tz) = (p.x - ix, p.y - iy, p.z - iz);
+    let (u, v, w) = (fade(tx), fade(ty), fade(tz));
+    let (du, dv, dw) = (dfade(tx), dfade(ty), dfade(tz));
+    let (x, y, z) = (ix as i32, iy as i32, iz as i32);
+    let c = |dx: i32, dy: i32, dz: i32| hash3(x + dx, y + dy, z + dz, k);
+    let l = |a: f32, b: f32, t: f32| a + (b - a) * t;
+    let (c000, c100, c010, c110, c001, c101, c011, c111) = (c(0, 0, 0), c(1, 0, 0), c(0, 1, 0), c(1, 1, 0), c(0, 0, 1), c(1, 0, 1), c(0, 1, 1), c(1, 1, 1));
+    let (x00, x10, x01, x11) = (l(c000, c100, u), l(c010, c110, u), l(c001, c101, u), l(c011, c111, u));
+    let (y0, y1) = (l(x00, x10, v), l(x01, x11, v));
+    let val = l(y0, y1, w);
+    let dx = du * l(l(c100 - c000, c110 - c010, v), l(c101 - c001, c111 - c011, v), w);
+    let dy = dv * l(x10 - x00, x11 - x01, w);
+    let dz = dw * (y1 - y0);
+    (val, v3(dx, dy, dz))
+}
+/// The curl of the noise potential at `q` (noise-space coordinates; the result is of the order of 1 whatever the scale): the potential is three value
+/// noises, the curl comes from their analytic gradients, so it is exactly divergence-free.
 pub fn curl_noise(q: V3) -> V3 {
-    let e = 0.1;
-    let d = |k: u32, a: usize| { let (mut p, mut m) = (q, q); match a { 0 => { p.x += e; m.x -= e; } 1 => { p.y += e; m.y -= e; } _ => { p.z += e; m.z -= e; } } (vnoise3(p, k) - vnoise3(m, k)) / (2.0 * e) };
-    // curl of (psi0, psi1, psi2) = (d psi2/dy - d psi1/dz, d psi0/dz - d psi2/dx, d psi1/dx - d psi0/dy)
-    v3(d(2, 1) - d(1, 2), d(0, 2) - d(2, 0), d(1, 0) - d(0, 1))
+    let (g0, g1, g2) = (vnoise3_grad(q, 0).1, vnoise3_grad(q, 1).1, vnoise3_grad(q, 2).1);
+    v3(g2.y - g1.z, g0.z - g2.x, g1.x - g0.y)
 }
 /// Three octaves of curl noise as a velocity (m/s): wavelengths 6, 2.5 and 1 m with weights 1, 0.55 and 0.3, the pattern carried along by `drift`
 /// (the wind) and slowly evolving in time `t`; `amp` is the speed of the largest octave.

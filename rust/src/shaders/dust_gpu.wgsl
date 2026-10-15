@@ -27,6 +27,8 @@ struct U {
 @group(0) @binding(3) var ground_tex: texture_2d<f32>;   // terrain heights of the window, toroidal (cell mod 64)
 @group(1) @binding(0) var grid_vel: texture_3d<f32>;     // the airflow's velocity relative to the car, in the car's frame
 @group(1) @binding(1) var grid_solid: texture_3d<f32>;
+@group(0) @binding(5) var<storage, read_write> mass: array<f32>;      // the dust mass per cell (floats)
+@group(0) @binding(6) var<storage, read_write> fld: array<vec4<f32>>;  // per cell: the mass gradient and the sun light
 @group(1) @binding(2) var<storage, read_write> dens: array<atomic<i32>>;   // the dust field: per cell mass and momentum x, y, z (fixed point 1024), the airflow's cell order
 
 @compute @workgroup_size(64)
@@ -78,14 +80,26 @@ fn vnoise3(p: vec3<f32>, k: u32) -> f32 {
     let x11 = mix(hash3(c + vec3<i32>(0, 1, 1), k), hash3(c + vec3<i32>(1, 1, 1), k), f);
     return mix(mix(x00, x10, g), mix(x01, x11, g), h);
 }
-fn dnoise(q: vec3<f32>, k: u32, a: i32) -> f32 {
-    let e = 0.1;
-    var d = vec3<f32>(0.0);
-    if (a == 0) { d.x = e; } else if (a == 1) { d.y = e; } else { d.z = e; }
-    return (vnoise3(q + d, k) - vnoise3(q - d, k)) / (2.0 * e);
+fn dfade(t: f32) -> f32 { return 30.0 * t * t * (t - 1.0) * (t - 1.0); }
+// the value noise and its analytic gradient in one go (game/dust_ref.rs::vnoise3_grad)
+fn vnoise3_grad(p: vec3<f32>, k: u32) -> vec4<f32> {
+    let i = floor(p);
+    let t = p - i;
+    let u3 = vec3<f32>(fade(t.x), fade(t.y), fade(t.z));
+    let d3 = vec3<f32>(dfade(t.x), dfade(t.y), dfade(t.z));
+    let c = vec3<i32>(i);
+    let c000 = hash3(c, k); let c100 = hash3(c + vec3<i32>(1, 0, 0), k); let c010 = hash3(c + vec3<i32>(0, 1, 0), k); let c110 = hash3(c + vec3<i32>(1, 1, 0), k);
+    let c001 = hash3(c + vec3<i32>(0, 0, 1), k); let c101 = hash3(c + vec3<i32>(1, 0, 1), k); let c011 = hash3(c + vec3<i32>(0, 1, 1), k); let c111 = hash3(c + vec3<i32>(1, 1, 1), k);
+    let x00 = mix(c000, c100, u3.x); let x10 = mix(c010, c110, u3.x); let x01 = mix(c001, c101, u3.x); let x11 = mix(c011, c111, u3.x);
+    let y0 = mix(x00, x10, u3.y); let y1 = mix(x01, x11, u3.y);
+    let dx = d3.x * mix(mix(c100 - c000, c110 - c010, u3.y), mix(c101 - c001, c111 - c011, u3.y), u3.z);
+    let dy = d3.y * mix(x10 - x00, x11 - x01, u3.z);
+    let dz = d3.z * (y1 - y0);
+    return vec4<f32>(mix(y0, y1, u3.z), dx, dy, dz);
 }
 fn curl_noise(q: vec3<f32>) -> vec3<f32> {
-    return vec3<f32>(dnoise(q, 2u, 1) - dnoise(q, 1u, 2), dnoise(q, 0u, 2) - dnoise(q, 2u, 0), dnoise(q, 1u, 0) - dnoise(q, 0u, 1));
+    let g0 = vnoise3_grad(q, 0u).yzw; let g1 = vnoise3_grad(q, 1u).yzw; let g2 = vnoise3_grad(q, 2u).yzw;
+    return vec3<f32>(g2.y - g1.z, g0.z - g2.x, g1.x - g0.y);
 }
 // three octaves (6, 2.5, 1 m), carried along by the wind and evolving in time; `amp` is the speed of the largest octave
 fn turbulence_curl(p: vec3<f32>, amp: f32) -> vec3<f32> {
@@ -144,11 +158,12 @@ fn in_solid(p: vec3<f32>) -> bool {
 // ---- the dust field: the density pushes the particles apart, the momentum drags the air (in the airflow's solver)
 fn box_cells() -> vec3<i32> { return vec3<i32>(round(u.bx.xyz / u.bx.w)); }
 fn dens_index(c: vec3<i32>) -> i32 { let n = box_cells(); return ((c.z * n.y + c.y) * n.x + c.x) * 4; }
-fn mass_cell(c: vec3<i32>) -> f32 {
-    let n = box_cells();
-    if (any(c < vec3<i32>(0)) || any(c >= n)) { return 0.0; }
-    return f32(atomicLoad(&dens[dens_index(c)])) / 1024.0;
-}
+// The per-cell field the particles read (plain loads, no atomics): `mass` (the splat counters as floats) and `fld` = (the mass gradient, the sun light),
+// both made once per frame by `dust_field_mass` and `dust_field_light` from the counters.
+fn cell_ok(c: vec3<i32>) -> bool { let n = box_cells(); return all(c >= vec3<i32>(0)) && all(c < n); }
+fn cell_index(c: vec3<i32>) -> i32 { let n = box_cells(); return (c.z * n.y + c.y) * n.x + c.x; }
+fn mass_cell(c: vec3<i32>) -> f32 { if (!cell_ok(c)) { return 0.0; } return mass[cell_index(c)]; }
+fn fld_cell(c: vec3<i32>) -> vec4<f32> { if (!cell_ok(c)) { return vec4<f32>(0.0, 0.0, 0.0, 1.0); } return fld[cell_index(c)]; }
 fn mass_at(b: vec3<f32>) -> f32 {
     let g = b / u.bx.w - vec3<f32>(0.5);
     let i = floor(g);
@@ -160,17 +175,20 @@ fn mass_at(b: vec3<f32>) -> f32 {
     let x11 = mix(mass_cell(c + vec3<i32>(0, 1, 1)), mass_cell(c + vec3<i32>(1, 1, 1)), f.x);
     return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
 }
-// the acceleration (world) that pushes a particle away from denser dust (game/dust_ref.rs::Field::push)
-fn push_at(p: vec3<f32>) -> vec3<f32> {
-    if (u.bx.w <= 0.0) { return vec3<f32>(0.0); }
-    let b = to_box(p);
-    let w = box_weight(b);
-    if (w <= 0.0) { return vec3<f32>(0.0); }
-    let d = u.bx.w;
-    let gx = (mass_at(b + vec3<f32>(d, 0.0, 0.0)) - mass_at(b - vec3<f32>(d, 0.0, 0.0))) * 0.5;
-    let gy = (mass_at(b + vec3<f32>(0.0, d, 0.0)) - mass_at(b - vec3<f32>(0.0, d, 0.0))) * 0.5;
-    let gz = (mass_at(b + vec3<f32>(0.0, 0.0, d)) - mass_at(b - vec3<f32>(0.0, 0.0, d))) * 0.5;
-    let a = -u.cp.x * vec3<f32>(gx, gy, gz) * w;
+fn fld_at(b: vec3<f32>) -> vec4<f32> {
+    let g = b / u.bx.w - vec3<f32>(0.5);
+    let i = floor(g);
+    let f = g - i;
+    let c = vec3<i32>(i);
+    let x00 = mix(fld_cell(c), fld_cell(c + vec3<i32>(1, 0, 0)), f.x);
+    let x10 = mix(fld_cell(c + vec3<i32>(0, 1, 0)), fld_cell(c + vec3<i32>(1, 1, 0)), f.x);
+    let x01 = mix(fld_cell(c + vec3<i32>(0, 0, 1)), fld_cell(c + vec3<i32>(1, 0, 1)), f.x);
+    let x11 = mix(fld_cell(c + vec3<i32>(0, 1, 1)), fld_cell(c + vec3<i32>(1, 1, 1)), f.x);
+    return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
+}
+// the acceleration (world) that pushes a particle away from denser dust: minus the mass gradient of its cell (game/dust_ref.rs::Field::push)
+fn push_from(g: vec3<f32>, w: f32) -> vec3<f32> {
+    let a = -u.cp.x * g * w;
     return right_axis() * a.x + vec3<f32>(0.0, a.y, 0.0) + fwd_axis() * a.z;
 }
 
@@ -186,13 +204,14 @@ fn dust_clear(@builtin(global_invocation_id) gid: vec3<u32>) {
 fn dust_splat(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
     if (i >= u.n.z || u.bx.w <= 0.0) { return; }
+    if (i % 3u != 0u) { return; }   // one particle in three stands for all (the field is statistics): a third of the atomics, three times the mass
     let s = state[i];
     if (s.d.z < 0.5) { return; }
     let b = to_box(s.a.xyz);
     let c = vec3<i32>(floor(b / u.bx.w));
     let n = box_cells();
     if (any(b < vec3<f32>(0.0)) || any(c >= n)) { return; }
-    let m = select(u.cp.y, u.cp.z, s.d.x > 0.5);
+    let m = select(u.cp.y, u.cp.z, s.d.x > 0.5) * 3.0;
     let rel = s.b.xyz - u.car_vel.xyz;
     let v = vec3<f32>(dot(rel, right_axis()), rel.y, dot(rel, fwd_axis()));
     let k = dens_index(c);
@@ -240,10 +259,23 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let settle = select(u.ph.z, u.ph.w, coarse);
     var air = air_at(pos, age / life);
     if (any(air != air)) { air = vec3<f32>(0.0); }
+    // pushed away from the dust around it; lit by the sun through the dust above it (the cells' light), the dense middle darker
+    var light = 1.0;
+    var shade = 1.0;
+    var push = vec3<f32>(0.0);
+    if (u.bx.w > 0.0) {
+        let b = to_box(pos);
+        let w = box_weight(b);
+        if (w > 0.0) {
+            let f = fld_at(b);
+            push = push_from(f.xyz, w);
+            light = mix(1.0, f.w, w);
+            shade = mix(1.0, 0.7, smoothstep(0.3, 3.0, mass_at(b)) * w);
+        }
+    }
     let target_v = vec3<f32>(air.x, air.y - settle, air.z);
     let k = 1.0 - exp(-dt / tau);
-    vel = vel + (target_v - vel) * k;
-    vel = vel + push_at(pos) * dt;   // pushed away from the dust around it
+    vel = vel + (target_v - vel) * k + push * dt;
     let before = pos;
     pos = pos + vel * dt;
     if (in_solid(pos)) { pos = before; vel = vel * -0.2; }   // the car's body: it does not go through
@@ -262,16 +294,27 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let fade_in = min(x / 0.08, 1.0);
     let size = s.a.w * (1.0 + select(0.45, 0.25, coarse) * sqrt(age) + 0.35 * x);   // small grains: they hardly grow
     let alpha = select(0.14, 0.2, coarse) * fade_in * pow(1.0 - x, 1.4);
-    // the light of a particle: the dust above it towards the sun shades it (6 samples through the dust field), the dense middle is darker
-    var light = 1.0;
-    var shade = 1.0;
-    if (u.bx.w > 0.0) {
-        let b = to_box(pos);
-        let sb = vec3<f32>(dot(u.sun.xyz, right_axis()), u.sun.y, dot(u.sun.xyz, fwd_axis())) * 0.7;
-        var acc = 0.0;
-        for (var j = 1; j <= 6; j++) { acc = acc + mass_at(b + sb * f32(j)); }
-        light = mix(0.25, 1.0, exp(-u.sun.w * acc * 0.7));
-        shade = mix(1.0, 0.7, smoothstep(0.3, 3.0, mass_at(b)));
-    }
     render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz * shade, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), light));
+}
+
+// the counters as floats
+@compute @workgroup_size(64)
+fn dust_field_mass(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let n = box_cells();
+    if (i32(gid.x) >= n.x * n.y * n.z) { return; }
+    mass[gid.x] = f32(atomicLoad(&dens[gid.x * 4u])) / 1024.0;
+}
+// per cell: the mass gradient (central, per cell) and the sun light (6 steps of about one cell towards the sun through the masses)
+@compute @workgroup_size(64)
+fn dust_field_light(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let n = box_cells();
+    let id = i32(gid.x);
+    if (id >= n.x * n.y * n.z) { return; }
+    let c = vec3<i32>(id % n.x, (id / n.x) % n.y, id / (n.x * n.y));
+    let g = vec3<f32>(mass_cell(c + vec3<i32>(1, 0, 0)) - mass_cell(c - vec3<i32>(1, 0, 0)), mass_cell(c + vec3<i32>(0, 1, 0)) - mass_cell(c - vec3<i32>(0, 1, 0)), mass_cell(c + vec3<i32>(0, 0, 1)) - mass_cell(c - vec3<i32>(0, 0, 1))) * 0.5;
+    let sb = vec3<f32>(dot(u.sun.xyz, right_axis()), u.sun.y, dot(u.sun.xyz, fwd_axis()));
+    let step_v = sb / max(max(abs(sb.x), abs(sb.y)), max(abs(sb.z), 0.0001));
+    var acc = 0.0;
+    for (var j = 1; j <= 6; j++) { acc = acc + mass_cell(vec3<i32>(floor(vec3<f32>(c) + vec3<f32>(0.5) + step_v * f32(j)))); }
+    fld[id] = vec4<f32>(g, mix(0.25, 1.0, exp(-u.sun.w * acc * 0.4)));
 }

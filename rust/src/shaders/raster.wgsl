@@ -529,7 +529,7 @@ struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @lo
 
 // The GPU dust: tens of thousands of soft, rotating, noisy-edged particles whose overlap builds the cloud. `e.w` is the light of the particle
 // (the dust above it towards the sun shades it, computed by the step pass); the puff is soft against the terrain and fades near the camera.
-@fragment fn fs_dust_pt(i: DOut) -> @location(0) vec4<f32> {
+fn dust_pt(i: DOut) -> vec4<f32> {
     let r = length(i.uv);
     let n = vnoise2(i.uv * 2.2 + vec2<f32>(i.e.x * 31.0, i.e.x * 17.0));
     let edge = mix(0.5, 1.05, n);
@@ -537,10 +537,8 @@ struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @lo
     let wp = i.wp;
     let dcam = length(wp - u.cam.xyz);
     let near = smoothstep(1.5, 6.0, dcam);
-    if (i.c.a * shape * near < 0.003) { discard; }
-    let above = wp.y - terrain_h(wp.x, wp.z);
-    let soft = mix(0.3, 1.0, smoothstep(0.0, 0.5, above));
-    let a = i.c.a * shape * near * soft;
+    if (i.c.a * shape * near < 0.003) { return vec4<f32>(0.0); }
+    let a = i.c.a * shape * near;   // softness against the terrain and the car comes from the sampled depth of the low-resolution pass
     let sun_dir = normalize(u.sun.xyz);
     let view = normalize(wp - u.cam.xyz);
     let sun = clamp(length(u.sun_col.rgb) / 2.6, 0.06, 1.0);
@@ -559,6 +557,31 @@ struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @lo
     col = mix(col, u.sky_hor.rgb, f);
     return vec4<f32>(finish(col), a);
 }
+
+@fragment fn fs_dust_pt(i: DOut) -> @location(0) vec4<f32> {
+    let c = dust_pt(i);
+    if (c.a < 0.003) { discard; }
+    return c;
+}
+
+const DUST_DIV: f32 = 6.0;   // the low-resolution dust target is 1/DUST_DIV of the screen (= DUST_DIV in raster/dust_gpu.rs)
+// the same particle drawn into the low-resolution target: premultiplied, hidden behind and soft against the scene (the depth buffer is sampled)
+@fragment fn fs_dust_lo(i: DOut) -> @location(0) vec4<f32> {
+    var c = dust_pt(i);
+    if (c.a < 0.003) { discard; }
+    let dims = textureDimensions(vol_depth);
+    let px = clamp(vec2<i32>(i.pos.xy * DUST_DIV), vec2<i32>(0), vec2<i32>(dims) - vec2<i32>(1));
+    let d = textureLoad(vol_depth, px, 0);
+    if (d < 0.9999) {
+        let ndc = vec2<f32>((f32(px.x) + 0.5) / f32(dims.x) * 2.0 - 1.0, 1.0 - (f32(px.y) + 0.5) / f32(dims.y) * 2.0);
+        let ws = u.inv_vp * vec4<f32>(ndc, d, 1.0);
+        let t_scene = length(ws.xyz / ws.w - u.cam.xyz);
+        c.a = c.a * clamp((t_scene - length(i.wp - u.cam.xyz)) / 0.6, 0.0, 1.0);
+    }
+    if (c.a < 0.003) { discard; }
+    return vec4<f32>(c.rgb * c.a, c.a);
+}
+
 
 // ---- the fluid dust as a volume: a ray per pixel through the wrap-around dust grid (see fluid.wgsl) ----
 struct VolParams {
