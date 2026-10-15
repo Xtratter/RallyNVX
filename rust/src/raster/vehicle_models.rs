@@ -231,6 +231,14 @@ pub fn susp_offsets(v: &Vehicle) -> [f32; 4] {
     out
 }
 
+/// The vertices and indices the car's signed distance field (the dust wraps the car) is built from: the body and the glass (without the glass the window holes would let the dust into the cabin).
+pub fn sdf_input(car: &CarModel) -> (Vec<[f32; 3]>, Vec<u32>) {
+    let mut verts: Vec<[f32; 3]> = car.body.verts.iter().map(|v| v.pos).collect();
+    let mut idx = car.body.idx.clone();
+    if let Some(g) = &car.glass { let base = verts.len() as u32; verts.extend(g.verts.iter().map(|v| v.pos)); idx.extend(g.idx.iter().map(|i| i + base)); }
+    (verts, idx)
+}
+
 /// The brake calipers: the wheels' poses with no spin (a caliper follows the steering and the suspension, not the rolling).
 pub fn car_caliper_poses(v: &Vehicle) -> [(Q, V3); 4] { car_wheel_poses(v, 0.0) }
 

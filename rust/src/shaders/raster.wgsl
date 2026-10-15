@@ -10,6 +10,8 @@ struct U {
 @group(0) @binding(6) var atlas_smp: sampler;   // height atlas (R16Float, 8x8 tiles of 64x64 texels, 2 m per texel)
 @group(0) @binding(8) var livery_tex: texture_2d<f32>;   // the rally car's livery atlas (sRGB), sampled with the vertex's UV
 @group(0) @binding(9) var livery_smp: sampler;
+@group(0) @binding(10) var interior_tex: texture_2d<f32>;   // the interior atlas (the cabin and the driver, sRGB)
+@group(0) @binding(11) var interior_smp: sampler;
 @group(0) @binding(7) var dep_tex: texture_2d<f32>;   // the settled dust layer of the ground window (R = amount), 64 x 64 cells of 1 m
 @group(0) @binding(3) var mat_tex: texture_2d_array<f32>;
 @group(0) @binding(4) var mat_smp: sampler;
@@ -359,6 +361,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     // the livery (uniform control flow for the sample): a vertex with the sentinel UV (1, 1) has no texture and keeps its colour
     let lv = textureSample(livery_tex, livery_smp, clamp(i.uv, vec2<f32>(0.0), vec2<f32>(1.0)));
     let has_uv = i.uv.x < 0.9999;
+    let iv = textureSample(interior_tex, interior_smp, clamp(i.uv, vec2<f32>(0.0), vec2<f32>(1.0)));
     let albedo = select(i.col, i.col * lv.rgb, has_uv);
     if (m == 5) { return vec4<f32>(finish(i.col * (2.2 + 2.0 * u.disc.w)), 1.0); }       // lamps
     if (m == 7 || m == 8) {   // the car's own lamps: the shape is the mesh's, the state comes from the car; the class from the colour (8: a front position lamp)
@@ -389,6 +392,10 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
         let tint = select(vec3<f32>(1.0, 0.45, 0.35), vec3<f32>(1.0, 0.95, 0.85), m == 11);
         return vec4<f32>(shade(albedo * occl, i.wp, n, 0.9, 60.0) + finish(albedo * tint * on * 1.8), 1.0);
     }
+    if (m == 15) {   // the interior and the driver: the interior atlas, in the shade of the roof (a cabin factor: little sun, no shadow map inside)
+        let ia = select(vec3<f32>(0.12), iv.rgb, has_uv);
+        return vec4<f32>(shade_with(ia * occl, i.wp, n, 0.1, 10.0, 0.3) * 0.7, 1.0);
+    }
     if (m == 14) {   // a suspension part: its texture only (the vertex colour carries the weight and the corner)
         let sc = select(vec3<f32>(0.22), lv.rgb, has_uv);
         return vec4<f32>(shade(sc * occl, i.wp, n, 0.5, 30.0), 1.0);
@@ -404,6 +411,27 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     if (m == 0) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.5, 40.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
     if (m == 2) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.04, 8.0), 1.0); }   // rubber
     return vec4<f32>(shade(albedo * occl, i.wp, n, 0.15, 16.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
+}
+
+// The car's glass, blended over the opaque scene: a dark tint, the sky reflected by Fresnel, a sun glint; see-through near the car (the interior shows), solid and dark from afar
+// (mirrored in `vehicle_models::glass_alpha`). The vertex colour's red is 1 for a clear lamp cover (a quarter of the alpha).
+@fragment fn fs_glass(i: MOut) -> @location(0) vec4<f32> {
+    let n = normalize(i.n);
+    let to_cam = u.cam.xyz - i.wp;
+    let dist = length(to_cam);
+    let v = to_cam / max(dist, 0.001);
+    let fr = pow(1.0 - clamp(abs(dot(n, v)), 0.0, 1.0), 3.0);
+    let clear = clamp(i.col.r, 0.0, 1.0);
+    let r = reflect(-v, n);
+    let sun = normalize(u.sun.xyz);
+    var col = vec3<f32>(0.03, 0.05, 0.08) * (1.0 - clear) + sky_gradient(r) * fr * 0.9 + u.sun_col.rgb * pow(max(dot(r, sun), 0.0), 60.0) * 0.6;
+    let f = clamp(1.0 - exp(-dist * u.fog.x), 0.0, 1.0);
+    col = mix(col, u.sky_hor.rgb, f);
+    let t = smoothstep(0.0, 1.0, clamp((dist - 9.0) / 7.0, 0.0, 1.0));
+    let k = 1.0 - 0.75 * clear;
+    let near = (0.2 + 0.5 * fr) * k;
+    let a = clamp(near + (0.95 - near) * t * k, 0.0, 1.0);
+    return vec4<f32>(finish(col), a);
 }
 
 struct IOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) emi: f32,

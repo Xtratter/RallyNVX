@@ -82,3 +82,15 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
 #[test] fn the_interior_is_drawn_only_near_the_car() {
     assert!(draw_interior(0.0) && draw_interior(15.9) && !draw_interior(16.0) && !draw_interior(500.0));
 }
+
+#[test] fn the_dust_sdf_input_includes_the_glass_so_window_holes_do_not_let_dust_in() {
+    let tri = |x: f32| { let v = |p: [f32; 3]| Vert { pos: p, nrm: [0.0, 1.0, 0.0], col: [0; 4], uv: NO_UV }; Mesh3 { verts: vec![v([x, 0.0, 0.0]), v([x + 1.0, 0.0, 0.0]), v([x, 1.0, 0.0])], idx: vec![0, 1, 2] } };
+    let mut car = CarModel::new(tri(0.0), tri(0.0));
+    let (v0, i0) = sdf_input(&car);
+    assert_eq!((v0.len(), i0.len()), (3, 3), "no glass: the body only");
+    car.glass = Some(tri(5.0));
+    let (v1, i1) = sdf_input(&car);
+    assert_eq!((v1.len(), i1.len()), (6, 6));
+    assert_eq!(&i1[3..], &[3, 4, 5], "the glass indices are shifted past the body's vertices");
+    assert_eq!(v1[3][0], 5.0);
+}
