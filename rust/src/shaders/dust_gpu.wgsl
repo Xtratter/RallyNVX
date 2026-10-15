@@ -169,7 +169,7 @@ fn turbulence(p: vec3<f32>, age: f32) -> vec3<f32> {
         wake = exp(-max(behind, 0.0) / 10.0) * smoothstep(-1.0, 1.0, behind) * box_weight(to_box(p));
     }
     // the ambient air's turbulence (what slowly spreads an old cloud) plus the car's wake behind it, which churns the dust hard for the first seconds only
-    let amp = u.ph2.x * (0.4 + (0.6 + 0.05 * u.ph2.y) * 2.5 * wake);
+    let amp = u.ph2.x * (1.2 + (0.6 + 0.05 * u.ph2.y) * 2.5 * wake);
     return turbulence_curl(p, amp);
 }
 // the car's axes on the ground plane: forward (sin yaw, 0, cos yaw), right (-cos yaw, 0, sin yaw)
@@ -627,7 +627,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
             let f = fld_at(b);
             push = push_from(f.xyz, w);
             light = mix(1.0, f.w, w);
-            shade = mix(1.0, 0.82, smoothstep(0.2, 2.0, mass_at(b)) * w);
+            shade = mix(1.0, 0.9, smoothstep(0.2, 2.0, mass_at(b)) * w);
         }
     }
     let target_v = vec3<f32>(air.x, air.y - settle, air.z);
@@ -671,8 +671,8 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     // what the sprite needs: it grows as it spreads, fades in over the first 8 % of its life and out at the end
     let x = clamp(age / life, 0.0, 1.0);
     let fade_in = min(x / 0.08, 1.0);
-    let size = s.a.w * (1.0 + select(select(0.45, 0.25, coarse), 1.1, smoke) * sqrt(age) + 0.35 * x);   // small grains hardly grow, smoke billows out
-    let alpha = select(select(0.46, 0.55, coarse), 0.3, smoke) * fade_in * pow(1.0 - x, select(1.4, 0.8, smoke));
+    let size = s.a.w * (1.0 + select(select(0.8, 0.25, coarse), 1.1, smoke) * sqrt(age) + 0.35 * x);   // small grains hardly grow, smoke billows out
+    let alpha = select(select(0.38, 0.46, coarse), 0.3, smoke) * fade_in * pow(1.0 - x, select(1.4, 0.8, smoke));
     render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz * shade, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), light));
 }
 
@@ -695,5 +695,5 @@ fn dust_field_light(@builtin(global_invocation_id) gid: vec3<u32>) {
     let step_v = sb / max(max(abs(sb.x), abs(sb.y)), max(abs(sb.z), 0.0001));
     var acc = 0.0;
     for (var j = 1; j <= 6; j++) { acc = acc + mass_cell(vec3<i32>(floor(vec3<f32>(c) + vec3<f32>(0.5) + step_v * f32(j)))); }
-    fld[id] = vec4<f32>(g, mix(0.5, 1.0, exp(-u.sun.w * acc * 0.4)));
+    fld[id] = vec4<f32>(g, mix(0.68, 1.0, exp(-u.sun.w * acc * 0.4)));
 }

@@ -91,7 +91,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         }
         root.addView(sv, FrameLayout.LayoutParams(-1, -1))
         drive = DriveControls(this).also { it.onChange = { thr, steer, brake, amt -> if (autopilotOn && (thr != 0f || steer != 0f || brake)) setAutopilot(false); carThr = thr; carSteer = steer; carBrake = brake; carAmt = amt; sendInput() } }
-        drive?.onCamera = { dx, dy -> if (running) Native.gameCamera(dx * 0.006f, -dy * 0.004f) }   // drag right = the camera swings round, drag down = lower
+        drive?.onCamera = { dx, dy -> if (running) { val (sx, sy) = CamMath.dragSigns(Controls.camInvert(this)); Native.gameCamera(dx * 0.006f * sx, -dy * 0.004f * sy) } }   // drag right = the camera swings round, drag down = lower
         drive?.onCameraUp = { if (running) Native.gameCameraUp() }
         drive?.onCameraPinch = { ratio, dy -> changeCamera(CamMath.pinchFor(camView, camDist, ratio), CamMath.height(camView, camHeight, dy, resources.displayMetrics.density)) }   // spread = closer, both fingers up = higher
         root.addView(drive, FrameLayout.LayoutParams(-1, -1))
@@ -412,6 +412,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         row(t("World collisions", "Столкновения с миром"), { onOff(Controls.dustOpt(this, 4)) }) { Controls.toggleDustOpt(this, 4) }
         row(t("Settled dust layer", "Слой осевшей пыли"), { onOff(Controls.dustOpt(this, 8)) }) { Controls.toggleDustOpt(this, 8) }
         row(t("Motion blur", "Размытие в движении"), { arrayOf(t("Off", "Выкл"), t("Low", "Слабое"), t("High", "Сильное"))[Controls.motionBlur(this)] }) { Controls.setMotionBlur(this, DriveMath.cycle(Controls.motionBlur(this), 3)) }
+        row(t("Camera drag inversion", "Инверсия поворота камеры"), { CamMath.invertName(Controls.camInvert(this), java.util.Locale.getDefault().language != "ru") }) { Controls.setCamInvert(this, DriveMath.cycle(Controls.camInvert(this), CamMath.INVERT_MODES)) }
         row(t("Camera view", "Вид камеры"), { CamMath.name(camView, java.util.Locale.getDefault().language != "ru") }) { selectCameraView(CamMath.next(camView)) }
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
         content.addView(label(t("Quick settings", "Быстрые настройки"), 22f))

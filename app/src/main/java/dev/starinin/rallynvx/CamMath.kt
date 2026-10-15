@@ -16,6 +16,12 @@ object CamMath {
     /** The bonnet (1) and bumper (2) views ride on the car: their "height" is a gaze tilt and their "distance" a zoom. */
     fun rigid(view: Int) = view == 1 || view == 2
 
+    /** The finger's camera drag can be inverted: bit 1 = horizontally, bit 2 = vertically (0 none, 3 both). */
+    const val INVERT_MODES = 4
+    fun invertName(mode: Int, en: Boolean) = (if (en) arrayOf("None", "Horizontal", "Vertical", "Both") else arrayOf("Нет", "По горизонтали", "По вертикали", "Обе"))[mode.coerceIn(0, INVERT_MODES - 1)]
+    /** The signs (horizontal, vertical) that multiply the finger's drag for an inversion mode. */
+    fun dragSigns(mode: Int): Pair<Float, Float> = Pair(if (mode and 1 != 0) -1f else 1f, if (mode and 2 != 0) -1f else 1f)
+
     fun heightMin(view: Int) = if (rigid(view)) -1f else -3f
     fun heightMax(view: Int) = if (rigid(view)) 1f else 6f
 

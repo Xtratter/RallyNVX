@@ -36,4 +36,9 @@ class CamMathTest {
         assertEquals(CamMath.height(0, 0f, -100f, 2.6f), CamMath.height(0, 0f, -100f, 2.6f), 0f)
         assertTrue("the same swipe moves a denser screen's camera by the same amount", Math.abs(CamMath.height(0, 0f, -100f, 2.6f) - CamMath.height(0, 0f, -200f, 5.2f)) < 1e-4f)
     }
+    @Test fun theFingerDragCanBeInverted() {
+        assertEquals(Pair(1f, 1f), CamMath.dragSigns(0)); assertEquals(Pair(-1f, 1f), CamMath.dragSigns(1))
+        assertEquals(Pair(1f, -1f), CamMath.dragSigns(2)); assertEquals(Pair(-1f, -1f), CamMath.dragSigns(3))
+        assertEquals("Both", CamMath.invertName(3, true)); assertEquals("Нет", CamMath.invertName(-5, false)); assertEquals("Обе", CamMath.invertName(99, false))
+    }
 }

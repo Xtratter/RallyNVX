@@ -66,6 +66,9 @@ object Controls {
     fun setDustOpts(c: Context, v: Int) = p(c).edit().putInt("dust_opts", v and 15).apply()
     fun dustOpt(c: Context, bit: Int): Boolean = dustOpts(c) and bit != 0
     fun toggleDustOpt(c: Context, bit: Int) = setDustOpts(c, dustOpts(c) xor bit)
+    /** Inversion of the camera drag by a finger: 0 none, 1 horizontal, 2 vertical, 3 both. */
+    fun camInvert(c: Context): Int = p(c).getInt("cam_invert", 0).coerceIn(0, CamMath.INVERT_MODES - 1)
+    fun setCamInvert(c: Context, v: Int) = p(c).edit().putInt("cam_invert", v.coerceIn(0, CamMath.INVERT_MODES - 1)).apply()
     fun setDust(c: Context, v: Int) = p(c).edit().putInt("dust", v.coerceIn(0, 3)).apply()
     fun autoFallback(c: Context) = p(c).getBoolean("auto_fallback", false)
     fun setAutoFallback(c: Context, v: Boolean) = p(c).edit().putBoolean("auto_fallback", v).apply()
