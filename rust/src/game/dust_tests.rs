@@ -167,3 +167,26 @@ fn in_gpu_mode_the_wheels_only_emit() {
     d.set_gpu(false);
     assert_eq!(d.len(), 0);
 }
+
+#[test]
+fn the_cars_wake_scours_the_road_behind_it_even_without_slip() {
+    use crate::game::{input::Input, terrain::Terrain, vehicle::{Vehicle, VehicleSpec}, math::v3};
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0.0, 1.2, 0.0), 0.0);
+    v.force_surface = Some(crate::game::surface::Surface::Dirt);
+    for _ in 0..180 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+    v.vel = v.forward() * 25.0;
+    let mut d = Dust::new(5);
+    d.set_gpu(true);
+    let (fwd, hl) = (v.forward(), v.spec.size.z * 0.5);
+    let mut behind = 0;
+    for i in 0..120 {
+        d.update(&v, &t, i as f32 / 60.0, 1.0 / 60.0);
+        for p in d.take_emits() {
+            let back = -(p.pos - v.pos).dot(fwd) - hl;
+            if back > 0.25 && back < 4.5 && p.vel.len() < 6.0 { behind += 1; }
+        }
+        v.pos = v.pos + v.vel * (1.0 / 60.0);   // the car drives on (the wheels keep their last contact data)
+    }
+    assert!(behind > 20, "the wake picked up {behind} particles behind the car");
+}

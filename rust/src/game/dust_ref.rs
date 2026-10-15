@@ -153,8 +153,8 @@ pub fn trailing_vortices(c: V3, hw: f32, hl: f32, h: f32, speed: f32, strength: 
     if behind < -1.0 { return V3::ZERO; }
     let ramp = smooth((behind + 1.0) / 1.5);    // the vortices form over the first metres
     let b = behind.max(0.0);
-    let fade = (-b / 7.0).exp();
-    let rc = 0.45 + 0.16 * b;                   // the core grows as the vortex ages
+    let fade = (-b / 11.0).exp();
+    let rc = 0.7 + 0.2 * b;                   // the core grows as the vortex ages
     let v_peak = strength * speed * ramp * fade;
     let mut out = V3::ZERO;
     for s in [1.0f32, -1.0] {
@@ -166,6 +166,42 @@ pub fn trailing_vortices(c: V3, hw: f32, hl: f32, h: f32, speed: f32, strength: 
         out = out + v3(-s * ry * k, s * rx * k, 0.0);
     }
     out
+}
+
+/// The vortex street behind the bluff body (Karman): vortices with vertical axes are shed alternately from the two sides of the car (Strouhal number
+/// 0.2 of the car's width) and drift back with the wake, each turning opposite to its neighbour; seen from behind or above they are the rolling eddies in the dust.
+/// Same frame as `trailing_vortices`; `t` is the time, `strength` the peak swirl speed as a share of the car's speed. Five vortices at a time, the oldest fading out.
+pub fn karman_street(c: V3, t: f32, hw: f32, hl: f32, h: f32, speed: f32, strength: f32) -> V3 {
+    if speed < 0.5 || c.y > 2.0 * h + 1.0 { return V3::ZERO; }
+    let period = (2.0 * hw / (0.2 * speed)).clamp(0.12, 2.0);   // one vortex per period
+    let n = (t / period).floor();
+    let s = t / period - n;
+    let up = 1.0 - smooth((c.y - h) / (0.8 * h + 0.2));       // the street lives up to the roof, fading above
+    let mut out = V3::ZERO;
+    for j in 0..5 {
+        let age = (j as f32 + s) * period;
+        let z = -hl - 0.6 - 0.8 * speed * age;
+        let x = if ((j as f32 + n) as i32) % 2 == 0 { hw * 0.9 } else { -hw * 0.9 };
+        let sign = if x > 0.0 { 1.0 } else { -1.0 };
+        let fade = (1.0 - age / (5.0 * period)).clamp(0.0, 1.0) * smooth(age / (0.4 * period));   // forms, then fades
+        let rc = 0.6 + 0.12 * speed * age * 0.25;
+        let (rx, rz) = (c.x - x, c.z - z);
+        let k = 2.0 * strength * speed * fade * rc / (rx * rx + rz * rz + rc * rc);
+        out = out + v3(-sign * rz * k, 0.0, sign * rx * k);
+    }
+    out * up
+}
+
+/// The recirculation right behind the car's rear face: the air there is drawn in towards the centre line, back to the car and up its tail, which is what
+/// holds the dust against the rear and lifts it into the cloud. Same frame as `trailing_vortices`; it reaches about 6 m behind and fades quickly.
+pub fn wake_inflow(c: V3, hw: f32, hl: f32, h: f32, speed: f32, k: f32) -> V3 {
+    let behind = -c.z - hl;
+    if behind < -0.5 || behind > 8.0 || speed < 0.5 { return V3::ZERO; }
+    let f = (-behind.max(0.0) / 2.5).exp() * smooth((behind + 0.5) / 1.0);
+    let wide = (-(c.x / (hw + 1.0)).powi(2)).exp();
+    let tall = (-(c.y / (h * 1.1)).powi(2)).exp();
+    let m = k * speed * f;
+    v3(-c.x / (hw + 0.5) * 0.6 * m * tall, 0.12 * m * wide * tall, 0.35 * m * wide * tall)
 }
 
 /// The ground under the dust comes from a window of terrain heights: `WINDOW` cells of 1 m around the car, stored toroidally (a cell lives in the

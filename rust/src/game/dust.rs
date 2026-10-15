@@ -21,7 +21,9 @@ pub struct Phys { pub tau_fine: f32, pub tau_coarse: f32, pub settle_fine: f32, 
     /// GPU dust: the plume behind the car rises (m/s of lift per m/s of car speed), up to about `plume_height` metres.
     pub plume_lift: f32, pub plume_height: f32,
     /// GPU dust: the peak swirl speed of the car's trailing vortices as a share of its speed.
-    pub vortex: f32 }
+    pub vortex: f32,
+    /// GPU dust: the vortex street behind the car, as a share of its speed.
+    pub street: f32 }
 
 impl Phys {
     pub fn from_json(text: &str) -> Result<Phys, String> {
@@ -35,7 +37,8 @@ impl Phys {
         Ok(Phys { tau_fine: num("tau_fine", 0.02, 3.0)?, tau_coarse: num("tau_coarse", 0.02, 5.0)?, settle_fine: num("settle_fine", 0.0, 3.0)?, settle_coarse: num("settle_coarse", 0.0, 6.0)?,
             coarse_share: num("coarse_share", 0.0, 1.0)?, wake_gain: num("wake_gain", 0.0, 3.0)?, wake_len: num("wake_len", 1.0, 60.0)?, turbulence: num("turbulence", 0.0, 5.0)?, throw: num("throw", 0.0, 2.0)?,
             plume_lift: f.get("plume_lift").and_then(|x| x.as_f64()).filter(|x| (0.0..=1.0).contains(x)).map_or(0.0, |x| x as f32), plume_height: f.get("plume_height").and_then(|x| x.as_f64()).filter(|x| (0.5..=20.0).contains(x)).map_or(4.0, |x| x as f32),
-            vortex: f.get("vortex").and_then(|x| x.as_f64()).filter(|x| (0.0..=1.0).contains(x)).map_or(0.0, |x| x as f32) })
+            vortex: f.get("vortex").and_then(|x| x.as_f64()).filter(|x| (0.0..=1.0).contains(x)).map_or(0.0, |x| x as f32),
+            street: f.get("street").and_then(|x| x.as_f64()).filter(|x| (0.0..=1.0).contains(x)).map_or(0.0, |x| x as f32) })
     }
 }
 
@@ -86,7 +89,9 @@ pub fn air_velocity(p: V3, a: &Air, ground_y: f32, ph: &Phys) -> V3 {
 
 pub struct Dust { seed: u64, rng: u32, parts: Vec<P>, head: usize, cap: usize, level: i32, acc: [f32; 4], wind: V3,
     /// GPU mode: the particles live on the GPU (`raster/dust_gpu.rs`); the wheels' new ones wait here until the renderer takes them.
-    gpu: bool, pending: std::cell::Cell<Vec<P>> }
+    gpu: bool, pending: std::cell::Cell<Vec<P>>,
+    /// The road pickup behind the car (GPU dust): how many particles the car's wake owes the road.
+    pick: f32 }
 
 /// The most emits a frame hands to the GPU (more are dropped; one frame of the busiest slide emits far fewer).
 pub const MAX_EMITS: usize = 4096;
@@ -112,12 +117,12 @@ fn caps(level: i32) -> (usize, f32) {
 impl Dust {
     pub fn new(seed: u64) -> Dust {
         let (cap, _) = caps(1);
-        Dust { seed, rng: (seed as u32) ^ 0x9E37_79B9 | 1, parts: Vec::new(), head: 0, cap, level: 1, acc: [0.0; 4], wind: V3::ZERO, gpu: false, pending: std::cell::Cell::new(Vec::new()) }
+        Dust { seed, rng: (seed as u32) ^ 0x9E37_79B9 | 1, parts: Vec::new(), head: 0, cap, level: 1, acc: [0.0; 4], wind: V3::ZERO, gpu: false, pending: std::cell::Cell::new(Vec::new()), pick: 0.0 }
     }
     /// Whether the particles are on the GPU (then `update` only emits, `particles` is empty).
     pub fn gpu(&self) -> bool { self.gpu }
     pub fn set_gpu(&mut self, on: bool) {
-        if on != self.gpu { self.parts.clear(); self.head = 0; self.pending.get_mut().clear(); self.acc = [0.0; 4]; }
+        if on != self.gpu { self.parts.clear(); self.head = 0; self.pending.get_mut().clear(); self.acc = [0.0; 4]; self.pick = 0.0; }
         self.gpu = on;
     }
     /// The wheels' new particles since the last call (GPU mode).
@@ -144,7 +149,7 @@ impl Dust {
     }
     fn push(&mut self, p: P) {
         if self.cap == 0 { return; }
-        if self.gpu { let q = self.pending.get_mut(); if q.len() < MAX_EMITS { let t = grip::table(); let mut p = p; p.size0 *= t.dust_gpu_size; p.life *= t.dust_gpu_life; p.vel = v3(p.vel.x * t.dust_gpu_kick, p.vel.y * t.dust_gpu_kick, p.vel.z * t.dust_gpu_kick); p.color = [0, 1, 2].map(|i| (p.color[i] * t.dust_gpu_tint[i]).min(1.0)); q.push(p); } return; }
+        if self.gpu { let q = self.pending.get_mut(); if q.len() < MAX_EMITS { let t = grip::table(); let mut p = p; p.size0 *= t.dust_gpu_size; p.life *= t.dust_gpu_life; p.vel = v3(p.vel.x * t.dust_gpu_kick, p.vel.y * t.dust_gpu_kick * 0.9, p.vel.z * t.dust_gpu_kick); p.color = [0, 1, 2].map(|i| { let base = [0.88f32, 0.74, 0.56][i]; ((p.color[i] + (base - p.color[i]) * t.dust_gpu_lift) * t.dust_gpu_tint[i]).min(1.0) }); q.push(p); } return; }
         if self.parts.len() < self.cap { self.parts.push(p); } else { self.parts[self.head] = p; self.head = (self.head + 1) % self.cap; }
     }
 
@@ -184,15 +189,10 @@ impl Dust {
                 let mut pos = v3(info.contact.x + (a - 0.5) * 0.4, info.contact.y + 0.1, info.contact.z + (b - 0.5) * 0.4);
                 let mut out_push = V3::ZERO;
                 if self.gpu {
-                    // the dust never starts inside the body: a wheel under the body's footprint throws it out at the side (beyond the body by a hand)
-                    let (right, hw) = (v.right(), v.spec.size.x * 0.5);
-                    let off = pos - v.pos;
-                    let lx = off.dot(right);
-                    if lx.abs() < hw + 0.25 {
-                        let s = if lx >= 0.0 { 1.0 } else { -1.0 };
-                        pos = pos + right * (s * (hw + 0.25) - lx);
-                        out_push = right * (s * 0.8);
-                    }
+                    // the dust leaves the contact patch behind the tyre, under the wheel arch, and the air under the body carries it out at the side
+                    pos = pos - v.forward() * 0.25;
+                    let lx = (pos - v.pos).dot(v.right());
+                    out_push = v.right() * (if lx >= 0.0 { 1.0 } else { -1.0 });
                 }
                 // the tyre throws the dust back and up, and away from the direction of a slide
                 let kick = if coarse { 1.35 } else { 0.8 };
@@ -202,6 +202,30 @@ impl Dust {
                 let tone = if coarse { 0.82 } else { 1.0 };
                 self.push(P { pos, vel, age: 0.0, life: d.life * (0.75 + 0.5 * a) * if coarse { 0.4 } else { 1.0 }, size0: d.size * if coarse { 0.55 } else { 1.0 },
                     color: [d.color[0] * shade * tone, d.color[1] * shade * tone, d.color[2] * shade * tone], coarse, seed: g2 });
+            }
+        }
+        // the car's own aerodynamics raises dust too: its wake (the recirculation, the trailing vortices) scours the loose surface behind it, in proportion to
+        // the square of its speed, whatever the wheels do; the particles start at rest-ish on the road behind the rear bumper and the wake lifts them
+        if self.gpu {
+            let rear = v.wheels[2];
+            let speed = vh.len();
+            if rear.grounded && speed > 3.0 && rear.speed.is_finite() {
+                let d = table.dust(rear.surface);
+                let rate = d.roll * 26.0 * (speed / 20.0).powi(2).min(2.2) * factor;
+                self.pick = (self.pick + rate * dt).min(8.0 * table.dust_gpu_factor);
+                let (fwd, right) = (v.forward(), v.right());
+                let (hw, hl) = (v.spec.size.x * 0.5, v.spec.size.z * 0.5);
+                while self.pick >= 1.0 {
+                    self.pick -= 1.0;
+                    let (a, b, c, e, g2) = (self.rand(), self.rand(), self.rand(), self.rand(), self.rand());
+                    let back = hl + 0.3 + b * 4.0;                       // 0.3 to 4.3 m behind the rear bumper
+                    let side = (a - 0.5) * 2.0 * (hw + 0.5);
+                    let mut pos = v.pos + fwd * (-back) + right * side;
+                    pos.y = rear.contact.y + 0.05 + c * 0.15;
+                    let vel = vh * 0.12 + v3(0.0, 0.3 + e * 0.8, 0.0);
+                    let shade = 0.9 + 0.2 * g2;
+                    self.push(P { pos, vel, age: 0.0, life: d.life * (0.7 + 0.6 * a), size0: d.size, color: [d.color[0] * shade, d.color[1] * shade, d.color[2] * shade], coarse: false, seed: g2 });
+                }
             }
         }
     }

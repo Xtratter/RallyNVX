@@ -17,7 +17,7 @@ struct U {
     car_vel: vec4<f32>,
     bx: vec4<f32>,      // the airflow box in metres (x, y, z) and its cell; cell 0 = no airflow
     gw: vec4<i32>,      // the first cell (x, z) of the ground window
-    cp: vec4<f32>,      // the dust's push, the masses of fine and coarse grit, 0
+    cp: vec4<f32>,      // the dust's push, the masses of fine and coarse grit, the strength of the vortex street
     sun: vec4<f32>,     // the direction to the sun (world), the absorption of the dust per unit of mass
     body: vec4<f32>,    // the car's half width, half length, height, and the strength of its trailing vortices
 };
@@ -235,8 +235,8 @@ fn trailing_vortices(c: vec3<f32>) -> vec3<f32> {
     if (behind < -1.0) { return vec3<f32>(0.0); }
     let ramp = smooth01((behind + 1.0) / 1.5);
     let b = max(behind, 0.0);
-    let v_peak = u.body.w * u.ph2.y * ramp * exp(-b / 7.0);
-    let rc = 0.45 + 0.16 * b;
+    let v_peak = u.body.w * u.ph2.y * ramp * exp(-b / 11.0);
+    let rc = 0.7 + 0.2 * b;
     var out = vec3<f32>(0.0);
     for (var j = 0; j < 2; j++) {
         let s = select(1.0, -1.0, j == 1);
@@ -245,6 +245,40 @@ fn trailing_vortices(c: vec3<f32>) -> vec3<f32> {
         out = out + vec3<f32>(-s * ry * k, s * rx * k, 0.0);
     }
     return out;
+}
+// the recirculation right behind the car's rear face (game/dust_ref.rs::wake_inflow)
+fn wake_inflow(c: vec3<f32>) -> vec3<f32> {
+    let hw = u.body.x; let hl = u.body.y; let h = u.body.z; let speed = u.ph2.y;
+    let behind = -c.z - hl;
+    if (behind < -0.5 || behind > 8.0 || speed < 0.5) { return vec3<f32>(0.0); }
+    let f = exp(-max(behind, 0.0) / 2.5) * smooth01((behind + 0.5) / 1.0);
+    let wide = exp(-pow(c.x / (hw + 1.0), 2.0));
+    let tall = exp(-pow(c.y / (h * 1.1), 2.0));
+    let m = speed * f;
+    return vec3<f32>(-c.x / (hw + 0.5) * 0.6 * m * tall, 0.12 * m * wide * tall, 0.35 * m * wide * tall);
+}
+// the vortex street behind the car (game/dust_ref.rs::karman_street): vortices with vertical axes shed alternately from the two sides
+fn karman_street(c: vec3<f32>) -> vec3<f32> {
+    let hw = u.body.x; let hl = u.body.y; let h = u.body.z; let speed = u.ph2.y; let strength = u.cp.w;
+    if (speed < 0.5 || c.y > 2.0 * h + 1.0 || strength <= 0.0) { return vec3<f32>(0.0); }
+    let period = clamp(2.0 * hw / (0.2 * speed), 0.12, 2.0);
+    let n = floor(u.g.y / period);
+    let s = u.g.y / period - n;
+    let up = 1.0 - smooth01((c.y - h) / (0.8 * h + 0.2));
+    var out = vec3<f32>(0.0);
+    for (var j = 0; j < 5; j++) {
+        let age = (f32(j) + s) * period;
+        let z = -hl - 0.6 - 0.8 * speed * age;
+        let even = (i32(f32(j) + n) % 2) == 0;
+        let x = select(-hw * 0.9, hw * 0.9, even);
+        let sign = select(-1.0, 1.0, x > 0.0);
+        let fade = clamp(1.0 - age / (5.0 * period), 0.0, 1.0) * smooth01(age / (0.4 * period));
+        let rc = 0.6 + 0.12 * speed * age * 0.25;
+        let rx = c.x - x; let rz = c.z - z;
+        let k = 2.0 * strength * speed * fade * rc / (rx * rx + rz * rz + rc * rc);
+        out = out + vec3<f32>(-sign * rz * k, 0.0, sign * rx * k);
+    }
+    return out * up;
 }
 // the direction (world) away from the car's body for a particle inside it or close to it (zero in clear air): from the solid cells around it
 fn solid_at(b: vec3<f32>) -> bool {
@@ -281,7 +315,7 @@ fn air_at(p: vec3<f32>, age: f32) -> vec3<f32> {
             let inside = u.car_vel.xyz + right_axis() * gv.x + vec3<f32>(0.0, gv.y, 0.0) + fwd_axis() * gv.z;
             air = outside + (inside - outside) * w;
             let cc = vec3<f32>(b.x - u.bx.x * 0.5, b.y, b.z - u.bx.z * 0.5);
-            let vv = trailing_vortices(cc);
+            let vv = trailing_vortices(cc) + karman_street(cc) + wake_inflow(cc);
             air = air + (right_axis() * vv.x + vec3<f32>(0.0, vv.y, 0.0) + fwd_axis() * vv.z) * w;
         }
     }
@@ -350,7 +384,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let x = clamp(age / life, 0.0, 1.0);
     let fade_in = min(x / 0.08, 1.0);
     let size = s.a.w * (1.0 + select(0.45, 0.25, coarse) * sqrt(age) + 0.35 * x);   // small grains: they hardly grow
-    let alpha = select(0.1, 0.16, coarse) * fade_in * pow(1.0 - x, 1.4);
+    let alpha = select(0.15, 0.22, coarse) * fade_in * pow(1.0 - x, 1.4);
     render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz * shade, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), light));
 }
 

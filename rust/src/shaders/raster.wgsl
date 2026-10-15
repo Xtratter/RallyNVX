@@ -543,7 +543,7 @@ fn dust_pt(i: DOut) -> vec4<f32> {
     let view = normalize(wp - u.cam.xyz);
     let sun = clamp(length(u.sun_col.rgb) / 2.6, 0.06, 1.0);
     let fwd = pow(max(dot(view, sun_dir), 0.0), 4.0);   // forward scattering: a cloud seen against the sun glows
-    let amb = (u.sky_hor.rgb * 0.4 + vec3<f32>(0.45)) * 0.5 * mix(1.0, 0.2, u.disc.w);
+    let amb = (u.sky_hor.rgb * 0.15 + vec3<f32>(0.62, 0.55, 0.45)) * 0.55 * mix(1.0, 0.2, u.disc.w);   // warm skylight: dust is tan, not grey
     let light = max(i.e.w, 0.02);
     var col = i.c.rgb * (amb * 1.5 * mix(0.75, 1.0, light) + vec3<f32>(sun) * (0.85 * light + 1.6 * fwd * sun * light));
     col = col * mix(0.8, 1.0, smoothstep(0.0, 0.8, r));
@@ -553,7 +553,7 @@ fn dust_pt(i: DOut) -> vec4<f32> {
         let cone = smoothstep(u.hl_dir.w, u.hl_dir.w + 0.06, dot(dv / max(dist, 0.001), normalize(u.hl_dir.xyz)));
         col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (1.6 * cone * clamp(1.0 - dist / 55.0, 0.0, 1.0));
     }
-    let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0);
+    let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0) * 0.6;
     col = mix(col, u.sky_hor.rgb, f);
     return vec4<f32>(finish(col), a);
 }

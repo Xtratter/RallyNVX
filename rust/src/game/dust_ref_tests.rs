@@ -229,3 +229,35 @@ fn the_trailing_vortices_press_the_centre_down_lift_the_outside_and_fade() {
     assert!(on_core.is_finite());
     assert_eq!(trailing_vortices(v3(0.0, 0.9, -hl - 2.0), hw, hl, h, 0.0, 0.3), V3::ZERO);
 }
+
+#[test]
+fn the_vortex_street_alternates_is_periodic_bounded_and_lives_by_the_body() {
+    let (hw, hl, h, u) = (0.9f32, 2.0f32, 1.4f32, 20.0f32);
+    let period = 2.0 * hw / (0.2 * u);
+    let p = v3(0.2, 0.7, -hl - 4.0);
+    let a = karman_street(p, 1.0, hw, hl, h, u, 0.25);
+    let b = karman_street(p, 1.0 + 2.0 * period, hw, hl, h, u, 0.25);   // the street alternates, so it repeats every two shedding periods
+    assert!(a.is_finite() && (a - b).len() < 0.05 * a.len().max(1.0), "periodic in two shedding periods: {a:?} {b:?}");
+    assert!(a.len() > 0.1, "there is a swirl behind the car: {a:?}");
+    // the flow changes sign over half a period of shedding at a fixed point (the street alternates)
+    let mut signs = std::collections::HashSet::new();
+    for i in 0..40 { let v = karman_street(p, i as f32 * period / 20.0, hw, hl, h, u, 0.25); signs.insert(v.x > 0.0); }
+    assert_eq!(signs.len(), 2, "alternates");
+    // above the roof it fades out, with no speed none at all, and always bounded
+    assert!(karman_street(v3(0.2, 5.0, -hl - 4.0), 1.0, hw, hl, h, u, 0.25).len() < 1e-6);
+    assert_eq!(karman_street(p, 1.0, hw, hl, h, 0.0, 0.25), V3::ZERO);
+    for i in 0..500 { let q = v3(i as f32 * 0.02 - 5.0, (i % 13) as f32 * 0.15, -hl - 0.1 - (i % 31) as f32); let v = karman_street(q, i as f32 * 0.07, hw, hl, h, u, 0.25); assert!(v.is_finite() && v.len() <= 5.0 * 0.25 * u * 2.0, "{q:?} {v:?}"); }
+}
+
+#[test]
+fn the_recirculation_draws_the_dust_in_and_up_and_only_just_behind_the_car() {
+    let (hw, hl, h) = (0.9f32, 2.0f32, 1.4f32);
+    let a = wake_inflow(v3(0.6, 0.4, -hl - 0.8), hw, hl, h, 20.0, 1.0);
+    assert!(a.x < 0.0 && a.y > 0.0 && a.z > 0.0, "inwards, up and towards the car: {a:?}");
+    let b = wake_inflow(v3(-0.6, 0.4, -hl - 0.8), hw, hl, h, 20.0, 1.0);
+    assert!((a.x + b.x).abs() < 1e-5 && (a.z - b.z).abs() < 1e-5, "mirror");
+    assert_eq!(wake_inflow(v3(0.0, 0.4, 0.0), hw, hl, h, 20.0, 1.0), V3::ZERO);   // not under the car
+    assert_eq!(wake_inflow(v3(0.0, 0.4, -hl - 12.0), hw, hl, h, 20.0, 1.0), V3::ZERO);
+    assert!(wake_inflow(v3(0.0, 0.4, -hl - 5.0), hw, hl, h, 20.0, 1.0).len() < 0.2 * wake_inflow(v3(0.0, 0.4, -hl - 0.8), hw, hl, h, 20.0, 1.0).len());
+    assert_eq!(wake_inflow(v3(0.6, 0.4, -hl - 0.8), hw, hl, h, 0.0, 1.0), V3::ZERO);
+}
