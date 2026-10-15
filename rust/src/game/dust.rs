@@ -17,7 +17,9 @@ use super::dust_ref::{self, GP as P};
 
 /// The numbers of `surfaces.json` -> `dust_physics`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Phys { pub tau_fine: f32, pub tau_coarse: f32, pub settle_fine: f32, pub settle_coarse: f32, pub coarse_share: f32, pub wake_gain: f32, pub wake_len: f32, pub turbulence: f32, pub throw: f32 }
+pub struct Phys { pub tau_fine: f32, pub tau_coarse: f32, pub settle_fine: f32, pub settle_coarse: f32, pub coarse_share: f32, pub wake_gain: f32, pub wake_len: f32, pub turbulence: f32, pub throw: f32,
+    /// GPU dust: the plume behind the car rises (m/s of lift per m/s of car speed), up to about `plume_height` metres.
+    pub plume_lift: f32, pub plume_height: f32 }
 
 impl Phys {
     pub fn from_json(text: &str) -> Result<Phys, String> {
@@ -29,7 +31,8 @@ impl Phys {
             Ok(x as f32)
         };
         Ok(Phys { tau_fine: num("tau_fine", 0.02, 3.0)?, tau_coarse: num("tau_coarse", 0.02, 5.0)?, settle_fine: num("settle_fine", 0.0, 3.0)?, settle_coarse: num("settle_coarse", 0.0, 6.0)?,
-            coarse_share: num("coarse_share", 0.0, 1.0)?, wake_gain: num("wake_gain", 0.0, 3.0)?, wake_len: num("wake_len", 1.0, 60.0)?, turbulence: num("turbulence", 0.0, 5.0)?, throw: num("throw", 0.0, 2.0)? })
+            coarse_share: num("coarse_share", 0.0, 1.0)?, wake_gain: num("wake_gain", 0.0, 3.0)?, wake_len: num("wake_len", 1.0, 60.0)?, turbulence: num("turbulence", 0.0, 5.0)?, throw: num("throw", 0.0, 2.0)?,
+            plume_lift: f.get("plume_lift").and_then(|x| x.as_f64()).filter(|x| (0.0..=1.0).contains(x)).map_or(0.0, |x| x as f32), plume_height: f.get("plume_height").and_then(|x| x.as_f64()).filter(|x| (0.5..=20.0).contains(x)).map_or(4.0, |x| x as f32) })
     }
 }
 
@@ -83,7 +86,7 @@ pub struct Dust { seed: u64, rng: u32, parts: Vec<P>, head: usize, cap: usize, l
     gpu: bool, pending: std::cell::Cell<Vec<P>> }
 
 /// The most emits a frame hands to the GPU (more are dropped; one frame of the busiest slide emits far fewer).
-pub const MAX_EMITS: usize = 64;
+pub const MAX_EMITS: usize = 4096;
 
 static GPU_DEBUG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Debug/test: the GPU dust without the Settings switch.
@@ -119,6 +122,8 @@ impl Dust {
     pub fn wind(&self) -> V3 { self.wind }
     pub fn len(&self) -> usize { self.parts.len() }
     pub fn cap(&self) -> usize { self.cap }
+    /// The ring size on the GPU: the GPU holds and emits `dust.gpu_factor` times more than the CPU path.
+    pub fn gpu_cap(&self) -> usize { (self.cap as f32 * grip::table().dust_gpu_factor) as usize }
 
     /// 0 off, 1 normal, 2 lots, 3 fluid (the experiment: the particles stay off, the grid does the dust).
     pub fn level(&self) -> i32 { self.level }
@@ -136,7 +141,7 @@ impl Dust {
     }
     fn push(&mut self, p: P) {
         if self.cap == 0 { return; }
-        if self.gpu { let q = self.pending.get_mut(); if q.len() < MAX_EMITS { q.push(p); } return; }
+        if self.gpu { let q = self.pending.get_mut(); if q.len() < MAX_EMITS { let t = grip::table(); let mut p = p; p.size0 *= t.dust_gpu_size; p.life *= t.dust_gpu_life; p.color = [0, 1, 2].map(|i| (p.color[i] * t.dust_gpu_tint[i]).min(1.0)); q.push(p); } return; }
         if self.parts.len() < self.cap { self.parts.push(p); } else { self.parts[self.head] = p; self.head = (self.head + 1) % self.cap; }
     }
 
@@ -156,8 +161,9 @@ impl Dust {
             i += 1;
         }
         // emission
-        let (cap, factor) = caps(self.level);
+        let (cap, mut factor) = caps(self.level);
         if cap == 0 { return; }
+        if self.gpu { factor *= table.dust_gpu_factor; }
         let vh = horizontal(v.vel);
         let lateral = v.vel.dot(v.right());
         for w in 0..4 {
@@ -167,7 +173,7 @@ impl Dust {
             let roll = if info.speed > 2.0 { d.roll * 14.0 * (info.speed / 20.0).min(1.5) } else { 0.0 };
             let slide = d.slide * (40.0 * info.slide.min(1.5) + 18.0 * (info.lat_slip / 6.0).min(1.5));
             let rate = (roll + slide) * factor;
-            self.acc[w] = (self.acc[w] + rate * dt).min(8.0);
+            self.acc[w] = (self.acc[w] + rate * dt).min(8.0 * if self.gpu { table.dust_gpu_factor } else { 1.0 });
             while self.acc[w] >= 1.0 {
                 self.acc[w] -= 1.0;
                 let (a, b, c, e, f, g2, h2) = (self.rand(), self.rand(), self.rand(), self.rand(), self.rand(), self.rand(), self.rand());

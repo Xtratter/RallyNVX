@@ -141,7 +141,7 @@ pub struct Raster {
     mbuf: wgpu::Buffer,
     pl_water: wgpu::RenderPipeline,
     pl_road: wgpu::RenderPipeline,
-    pl_dust: wgpu::RenderPipeline,
+    pl_dust: wgpu::RenderPipeline, pl_dust_pt: wgpu::RenderPipeline,
     fluid: Option<fluid_gpu::FluidGpu>,
     /// The airflow debug view: made on first use (`airflow_tried`), so nothing is allocated while it is off.
     airflow: Option<airflow_gpu::AirflowGpu>, airflow_tried: bool, adapter: wgpu::Adapter,
@@ -314,6 +314,12 @@ impl Raster {
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_dust"), compilation_options: Default::default(), targets: &target_blend }),
             primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
         });
+        let pl_dust_pt = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("dust_pt"), layout: Some(&lay_main),
+            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_dust"), compilation_options: Default::default(), buffers: &[wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<dustgen::DustInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &DUST_ATTRS }] },
+            fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_dust_pt"), compilation_options: Default::default(), targets: &target_blend }),
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+        });
         let fluid = fluid_gpu::FluidGpu::new(&adapter, &device, &queue, &bgl_main, &module, format);
         let dust_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_inst"), size: (dustgen::MAX_INST * std::mem::size_of::<dustgen::DustInst>()) as u64, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let pl_terrain_sh = mk("terrain_sh", &lay_shadow, "vs_terrain_shadow", None, &[mesh_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
@@ -335,7 +341,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), dust_gpu: None, dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), dust_gpu: None, dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -658,7 +664,7 @@ impl Raster {
                 rp.draw_indexed(0..m.n, 0, 0..1);
             }
             if let (Some(dg), true) = (self.dust_gpu.as_ref(), wv.dust_gpu.is_some()) {
-                rp.set_pipeline(&self.pl_dust);
+                rp.set_pipeline(&self.pl_dust_pt);
                 rp.set_vertex_buffer(0, dg.render_buffer().slice(..));
                 rp.draw(0..6, 0..dg.count());
             } else if dust_n > 0 {

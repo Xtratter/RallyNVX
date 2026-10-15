@@ -14,7 +14,7 @@ pub struct DustSpec { pub color: [f32; 3], pub roll: f32, pub slide: f32, pub si
 /// The numbers of `rust/surfaces.json`: one grip per surface (gravel's `mu` is the packed value), the loose gravel's
 /// own `mu` and how fast the wheels pack it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct GripTable { surfaces: [SurfaceGrip; 7], dust: [DustSpec; 7], pub gravel_loose_mu: f32, pub wear_per_metre: f32, pub dust_cap_normal: usize, pub dust_cap_lots: usize, pub wind_speed: f32, pub wind_gust: f32 }
+pub struct GripTable { surfaces: [SurfaceGrip; 7], dust: [DustSpec; 7], pub gravel_loose_mu: f32, pub wear_per_metre: f32, pub dust_cap_normal: usize, pub dust_cap_lots: usize, pub dust_gpu_factor: f32, pub dust_gpu_size: f32, pub dust_gpu_life: f32, pub dust_gpu_tint: [f32; 3], pub wind_speed: f32, pub wind_gust: f32 }
 
 /// The embedded default file.
 pub const EMBEDDED: &str = include_str!("../../surfaces.json");
@@ -53,7 +53,10 @@ impl GripTable {
             surfaces: [plain("grass")?, plain("dirt")?, plain("sand")?, plain("rock")?, gravel_grip, plain("asphalt")?, plain("water")?],
             dust: [dust_of("grass")?, dust_of("dirt")?, dust_of("sand")?, dust_of("rock")?, dust_of("gravel")?, dust_of("asphalt")?, dust_of("water")?],
             gravel_loose_mu: loose, wear_per_metre: wear,
-            dust_cap_normal: cap("cap_normal")?, dust_cap_lots: cap("cap_lots")?, wind_speed: num(wind_top, "wind", "speed", 0.0, 20.0)?, wind_gust: num(wind_top, "wind", "gust", 0.0, 1.0)?,
+            dust_cap_normal: cap("cap_normal")?, dust_cap_lots: cap("cap_lots")?, dust_gpu_factor: dust_top.get("gpu_factor").and_then(|x| x.as_f64()).filter(|x| (1.0..=100.0).contains(x)).map_or(1.0, |x| x as f32),
+            dust_gpu_life: dust_top.get("gpu_life").and_then(|x| x.as_f64()).filter(|x| (0.2..=5.0).contains(x)).map_or(1.0, |x| x as f32),
+            dust_gpu_tint: dust_top.get("gpu_tint").and_then(|c| c.as_array()).filter(|c| c.len() == 3).map(|c| [0, 1, 2].map(|i| c[i].as_f64().filter(|x| (0.0..=2.0).contains(x)).unwrap_or(1.0) as f32)).unwrap_or([1.0; 3]),
+            dust_gpu_size: dust_top.get("gpu_size").and_then(|x| x.as_f64()).filter(|x| (0.005..=1.0).contains(x)).map_or(1.0, |x| x as f32), wind_speed: num(wind_top, "wind", "speed", 0.0, 20.0)?, wind_gust: num(wind_top, "wind", "gust", 0.0, 1.0)?,
         })
     }
 

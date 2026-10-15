@@ -12,17 +12,17 @@ struct U {
     g: vec4<f32>,       // dt, time, ground y, 0
     wind: vec4<f32>,
     ph: vec4<f32>,      // tau fine, tau coarse, settle fine, settle coarse
-    ph2: vec4<f32>,     // turbulence, the horizontal speed of the car, 0, 0
+    ph2: vec4<f32>,     // turbulence, the horizontal speed of the car, the plume's lift, the plume's height
     car: vec4<f32>,     // car position, yaw
     car_vel: vec4<f32>,
     bx: vec4<f32>,      // the airflow box in metres (x, y, z) and its cell; cell 0 = no airflow
     gw: vec4<i32>,      // the first cell (x, z) of the ground window
     cp: vec4<f32>,      // the dust's push, the masses of fine and coarse grit, 0
-    emits: array<S, 64>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read_write> state: array<S>;
 @group(0) @binding(2) var<storage, read_write> render: array<DI>;
+@group(0) @binding(4) var<storage, read> emits: array<S>;   // this frame's new particles from the wheels
 @group(0) @binding(3) var ground_tex: texture_2d<f32>;   // terrain heights of the window, toroidal (cell mod 64)
 @group(1) @binding(0) var grid_vel: texture_3d<f32>;     // the airflow's velocity relative to the car, in the car's frame
 @group(1) @binding(1) var grid_solid: texture_3d<f32>;
@@ -32,7 +32,7 @@ struct U {
 fn emit(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
     if (i >= u.n.x) { return; }
-    state[(u.n.y + i) % u.n.z] = u.emits[i];
+    state[(u.n.y + i) % u.n.z] = emits[i];
 }
 
 const WINDOW: i32 = 64;
@@ -175,6 +175,12 @@ fn air_at(p: vec3<f32>) -> vec3<f32> {
             air = outside + (inside - outside) * w;
         }
     }
+    // the plume: behind the car the turbulent wake carries the dust up, the higher the less (it hangs at about the plume's height)
+    let behind = -dot(p - u.car.xyz, fwd_axis()) - 2.0;
+    if (behind > 0.0 && u.ph2.z > 0.0) {
+        let h = max(p.y - u.g.z, 0.0);
+        air.y = air.y + u.ph2.z * u.ph2.y * exp(-behind / 12.0) * (1.0 - smoothstep(0.4 * u.ph2.w, u.ph2.w, h));
+    }
     return air + turbulence(p);
 }
 
@@ -214,7 +220,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     // what the sprite needs: it grows as it spreads, fades in over the first 8 % of its life and out at the end
     let x = clamp(age / life, 0.0, 1.0);
     let fade_in = min(x / 0.08, 1.0);
-    let size = s.a.w * (1.0 + select(1.7, 0.8, coarse) * sqrt(age) + 1.2 * x);
-    let alpha = select(0.55, 0.6, coarse) * fade_in * pow(1.0 - x, 1.4);
+    let size = s.a.w * (1.0 + select(0.45, 0.25, coarse) * sqrt(age) + 0.35 * x);   // small grains: they hardly grow
+    let alpha = select(0.42, 0.55, coarse) * fade_in * pow(1.0 - x, 1.4);
     render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), 0.0));
 }

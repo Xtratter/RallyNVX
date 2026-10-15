@@ -527,6 +527,31 @@ struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @lo
     return vec4<f32>(finish(col), a);
 }
 
+// The GPU dust: tens of thousands of small separate particles, each a soft dot; the cloud is what the density of them makes. No noise, no
+// ground fade (the depth test hides a particle behind the car and the terrain), only the light of the puff and the fog.
+@fragment fn fs_dust_pt(i: DOut) -> @location(0) vec4<f32> {
+    let r = length(i.uv);
+    let dcam = length(i.wp - u.cam.xyz);
+    let near = smoothstep(1.5, 5.0, dcam);   // a particle close to the camera fades out
+    let a = i.c.a * (1.0 - smoothstep(0.25, 1.0, r)) * near;
+    if (a < 0.003) { discard; }
+    let sun_dir = normalize(u.sun.xyz);
+    let view = normalize(i.wp - u.cam.xyz);
+    let sun = clamp(length(u.sun_col.rgb) / 2.6, 0.06, 1.0);
+    let fwd = pow(max(dot(view, sun_dir), 0.0), 5.0);
+    let amb = (u.sky_hor.rgb * 0.4 + vec3<f32>(0.45)) * 0.5 * mix(1.0, 0.2, u.disc.w);
+    var col = i.c.rgb * (amb + vec3<f32>(sun) * (0.6 + 1.0 * fwd * sun));
+    if (u.hl_pos.w > 0.0) {
+        let dv = i.wp - u.hl_pos.xyz;
+        let dist = length(dv);
+        let cone = smoothstep(u.hl_dir.w, u.hl_dir.w + 0.06, dot(dv / max(dist, 0.001), normalize(u.hl_dir.xyz)));
+        col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (1.6 * cone * clamp(1.0 - dist / 55.0, 0.0, 1.0));
+    }
+    let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0);
+    col = mix(col, u.sky_hor.rgb, f);
+    return vec4<f32>(finish(col), a);
+}
+
 // ---- the fluid dust as a volume: a ray per pixel through the wrap-around dust grid (see fluid.wgsl) ----
 struct VolParams {
     start: vec4<i32>,   // first cell of the window (the grid is a torus, repeat addressing does the wrap)
