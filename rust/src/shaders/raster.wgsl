@@ -190,7 +190,7 @@ fn lamp_aureole(wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
         for (var k = 0; k < 2; k++) {
             let c = u.tl_pos.xyz + vec3<f32>(0.0, 0.3, 0.0) + r * (u.tl_pos.w * select(-1.0, 1.0, k == 1));
             let d = length(wp - c);
-            g = g + u.tl_col.rgb * (1.4 * exp(-d * d / 0.09)) * (0.4 + 0.6 * max(dot(n, -f), 0.0));
+            g = g + u.tl_col.rgb * (0.5 * exp(-d * d / 0.06)) * (0.4 + 0.6 * max(dot(n, -f), 0.0));
         }
     }
     return g;
