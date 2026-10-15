@@ -8,6 +8,8 @@ struct U {
 @group(0) @binding(2) var shadow_smp: sampler_comparison;
 @group(0) @binding(5) var atlas: texture_2d<f32>;
 @group(0) @binding(6) var atlas_smp: sampler;   // height atlas (R16Float, 8x8 tiles of 64x64 texels, 2 m per texel)
+@group(0) @binding(8) var livery_tex: texture_2d<f32>;   // the rally car's livery atlas (sRGB), sampled with the vertex's UV
+@group(0) @binding(9) var livery_smp: sampler;
 @group(0) @binding(7) var dep_tex: texture_2d<f32>;   // the settled dust layer of the ground window (R = amount), 64 x 64 cells of 1 m
 @group(0) @binding(3) var mat_tex: texture_2d_array<f32>;
 @group(0) @binding(4) var mat_smp: sampler;
@@ -347,6 +349,10 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let occl = mix(1.0, i.ao, u.mode.x);
     let m = i32(i.mat + 0.5);
     own_surface = i.own;
+    // the livery (uniform control flow for the sample): a vertex with the sentinel UV (1, 1) has no texture and keeps its colour
+    let lv = textureSample(livery_tex, livery_smp, clamp(i.uv, vec2<f32>(0.0), vec2<f32>(1.0)));
+    let has_uv = i.uv.x < 0.9999;
+    let albedo = select(i.col, i.col * lv.rgb, has_uv);
     if (m == 5) { return vec4<f32>(finish(i.col * (2.2 + 2.0 * u.disc.w)), 1.0); }       // lamps
     if (m == 7 || m == 8) {   // the car's own lamps: the shape is the mesh's, the state comes from the car; the class from the colour (8: a front position lamp)
         let c = i.col;
@@ -379,11 +385,11 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
         return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0) + finish(glow * (0.45 + 0.55 * pow(facing, 2.0)) * rings), 1.0);
     }
     if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0), 1.0); }   // glass
-    if (m == 4) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.9, 60.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
+    if (m == 4) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.9, 60.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
     if (m == 6) { return vec4<f32>(shade_lite(i.col * occl, i.wp, n), 1.0); }   // foliage
-    if (m == 0) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.5, 40.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
-    if (m == 2) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.04, 8.0), 1.0); }   // rubber
-    return vec4<f32>(shade(i.col * occl, i.wp, n, 0.15, 16.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
+    if (m == 0) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.5, 40.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
+    if (m == 2) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.04, 8.0), 1.0); }   // rubber
+    return vec4<f32>(shade(albedo * occl, i.wp, n, 0.15, 16.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
 }
 
 struct IOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) emi: f32,
