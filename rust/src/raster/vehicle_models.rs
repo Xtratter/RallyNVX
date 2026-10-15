@@ -14,14 +14,17 @@ pub const MAT_FOLIAGE: u8 = 6;
 pub const MAT_CARLAMP: u8 = 7;
 /// A front position lamp of a car model (the corner piece of the headlight unit, see `rcar::position_vertices`): lit with the low beam.
 pub const MAT_CARPOS: u8 = 8;
-/// The glass cover of a headlight unit / of a tail unit of a car model: dark glass that shows the lamp's light when it is on (see `rcar::cover_vertices`).
-pub const MAT_CARHEADGLASS: u8 = 9;
-pub const MAT_CARTAILGLASS: u8 = 10;
+/// The reflector interior of a front / of a rear lamp unit of a car model (textured; lit by the car's state in the shader).
+pub const MAT_CARINT_FRONT: u8 = 11;
+pub const MAT_CARINT_REAR: u8 = 12;
 
 /// One vertex: position, normal, colour (rgb) with the material id in the alpha byte. 28 bytes.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
-pub struct Vert { pub pos: [f32; 3], pub nrm: [f32; 3], pub col: [u8; 4] }
+pub struct Vert { pub pos: [f32; 3], pub nrm: [f32; 3], pub col: [u8; 4], pub uv: [u16; 2] }
+
+/// The UV of a vertex without a texture (the shader then uses the vertex colour).
+pub const NO_UV: [u16; 2] = [0xFFFF, 0xFFFF];
 
 #[derive(Clone, Default)]
 pub struct Mesh3 { pub verts: Vec<Vert>, pub idx: Vec<u32> }
@@ -39,7 +42,7 @@ impl Mesh3 {
     }
     pub(crate) fn vert(&mut self, pos: V3, nrm: V3, col: [f32; 3], mat: u8) -> u32 {
         let c = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
-        self.verts.push(Vert { pos: [pos.x, pos.y, pos.z], nrm: [nrm.x, nrm.y, nrm.z], col: [c(col[0]), c(col[1]), c(col[2]), mat] });
+        self.verts.push(Vert { pos: [pos.x, pos.y, pos.z], nrm: [nrm.x, nrm.y, nrm.z], col: [c(col[0]), c(col[1]), c(col[2]), mat], uv: NO_UV });
         (self.verts.len() - 1) as u32
     }
 }

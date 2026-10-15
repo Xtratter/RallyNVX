@@ -56,7 +56,7 @@ fn facet(src: &Mesh3) -> Mesh3 {
         let n = n.norm();
         let col = src.verts[t[0] as usize].col;
         let base = m.verts.len() as u32;
-        for q in &p { m.verts.push(super::vehicle_models::Vert { pos: [q.x, q.y, q.z], nrm: [n.x, n.y, n.z], col }); }
+        for q in &p { m.verts.push(super::vehicle_models::Vert { pos: [q.x, q.y, q.z], nrm: [n.x, n.y, n.z], col, uv: super::vehicle_models::NO_UV }); }
         m.idx.extend_from_slice(&[base, base + 1, base + 2]);
     }
     m

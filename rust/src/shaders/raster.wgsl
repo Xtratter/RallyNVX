@@ -8,6 +8,8 @@ struct U {
 @group(0) @binding(2) var shadow_smp: sampler_comparison;
 @group(0) @binding(5) var atlas: texture_2d<f32>;
 @group(0) @binding(6) var atlas_smp: sampler;   // height atlas (R16Float, 8x8 tiles of 64x64 texels, 2 m per texel)
+@group(0) @binding(8) var livery_tex: texture_2d<f32>;   // the rally car's livery atlas (sRGB), sampled with the vertex's UV
+@group(0) @binding(9) var livery_smp: sampler;
 @group(0) @binding(7) var dep_tex: texture_2d<f32>;   // the settled dust layer of the ground window (R = amount), 64 x 64 cells of 1 m
 @group(0) @binding(3) var mat_tex: texture_2d_array<f32>;
 @group(0) @binding(4) var mat_smp: sampler;
@@ -305,7 +307,7 @@ fn sway(w: vec3<f32>, k_world: f32) -> vec3<f32> {
     return vec3<f32>(w.x + off.x, w.y, w.z + off.y);
 }
 
-struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32, @location(5) own: f32 };
+struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32, @location(5) own: f32, @location(6) uv: vec2<f32> };
 
 fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec4<f32>) -> vec3<f32> {
     return (mat4x4<f32>(m0, m1, m2, m3) * vec4<f32>(p, 1.0)).xyz;
@@ -313,7 +315,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
 
 @vertex fn vs_model(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>, @location(2) c: vec4<f32>,
     @location(3) m0: vec4<f32>, @location(4) m1: vec4<f32>, @location(5) m2: vec4<f32>, @location(6) m3: vec4<f32>,
-    @location(7) tint: vec4<f32>) -> MOut {
+    @location(7) tint: vec4<f32>, @location(8) uv: vec2<f32>) -> MOut {
     var o: MOut;
     var w = model_world(p, m0, m1, m2, m3);
     // foliage (material 6) sways in the wind, more towards the top of the model
@@ -329,6 +331,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let base = select(0.0, -0.4, tint.a > 2.5);
     let hgt = (p.y - base) * length(m1.xyz);
     o.ao = select(1.0, mix(0.55, 1.0, smoothstep(0.0, 1.8, hgt)), tint.a > 1.5);
+    o.uv = uv;
     o.own = select(0.0, 1.0, tint.a < 0.75);   // tint.a 0.5 = the player's car: its lamps do not light it
     return o;
 }
@@ -346,6 +349,10 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let occl = mix(1.0, i.ao, u.mode.x);
     let m = i32(i.mat + 0.5);
     own_surface = i.own;
+    // the livery (uniform control flow for the sample): a vertex with the sentinel UV (1, 1) has no texture and keeps its colour
+    let lv = textureSample(livery_tex, livery_smp, clamp(i.uv, vec2<f32>(0.0), vec2<f32>(1.0)));
+    let has_uv = i.uv.x < 0.9999;
+    let albedo = select(i.col, i.col * lv.rgb, has_uv);
     if (m == 5) { return vec4<f32>(finish(i.col * (2.2 + 2.0 * u.disc.w)), 1.0); }       // lamps
     if (m == 7 || m == 8) {   // the car's own lamps: the shape is the mesh's, the state comes from the car; the class from the colour (8: a front position lamp)
         let c = i.col;
@@ -368,21 +375,19 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
         let dark = (c * 0.10 + u.sky_hor.rgb * 0.45 * fr * fr * fr + vec3<f32>(sunr) * 0.6) * (1.0 - on);
         return vec4<f32>(finish(lit + dark), 1.0);
     }
-    if (m == 9 || m == 10) {   // the glass cover of a headlight / tail unit: dark glass, and the lamp behind it shows through when it is on
-        let v = normalize(u.cam.xyz - i.wp);
-        let facing = clamp(dot(n, v), 0.0, 1.0);
-        var glow = vec3<f32>(0.0);
-        if (m == 9) { glow = vec3<f32>(1.0, 0.95, 0.82) * select(0.0, 1.0, u.lamps.x > 0.5) * (2.4 + 1.6 * u.disc.w); }
-        else { glow = vec3<f32>(1.0, 0.06, 0.03) * max(select(0.0, 0.3, u.lamps.x > 0.5), select(0.0, 1.0, u.lamps.y > 0.5)) * 3.2 + vec3<f32>(1.0, 1.0, 0.95) * select(0.0, 1.2, u.lamps.z > 0.5); }
-        let rings = 0.86 + 0.14 * step(0.5, fract((1.0 - facing) * 6.0));
-        return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0) + finish(glow * (0.45 + 0.55 * pow(facing, 2.0)) * rings), 1.0);
+    if (m == 11 || m == 12) {   // the reflector interior of a lamp unit: its texture, glowing when the lamp is on (front: the headlights; rear: tail light and brake, reverse)
+        var on = 0.0;
+        if (m == 11) { on = select(0.0, 1.0, u.lamps.x > 0.5); }
+        else { on = max(select(0.0, 0.35, u.lamps.x > 0.5), max(select(0.0, 1.0, u.lamps.y > 0.5), select(0.0, 0.6, u.lamps.z > 0.5))); }
+        let tint = select(vec3<f32>(1.0, 0.45, 0.35), vec3<f32>(1.0, 0.95, 0.85), m == 11);
+        return vec4<f32>(shade(albedo * occl, i.wp, n, 0.9, 60.0) + finish(albedo * tint * on * 1.8), 1.0);
     }
     if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0), 1.0); }   // glass
-    if (m == 4) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.9, 60.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
+    if (m == 4) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.9, 60.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
     if (m == 6) { return vec4<f32>(shade_lite(i.col * occl, i.wp, n), 1.0); }   // foliage
-    if (m == 0) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.5, 40.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
-    if (m == 2) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.04, 8.0), 1.0); }   // rubber
-    return vec4<f32>(shade(i.col * occl, i.wp, n, 0.15, 16.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
+    if (m == 0) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.5, 40.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
+    if (m == 2) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.04, 8.0), 1.0); }   // rubber
+    return vec4<f32>(shade(albedo * occl, i.wp, n, 0.15, 16.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
 }
 
 struct IOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) emi: f32,
