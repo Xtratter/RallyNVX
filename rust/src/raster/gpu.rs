@@ -155,6 +155,8 @@ pub struct Raster {
     dust_buf: wgpu::Buffer,
     cache_seed: u64,
     car_key: [u32; 12],
+    /// The signed distance field of the car's body mesh (for the dust's exact-shape option), rebuilt with the model; `sdf_serial` tells the dust a new one is there.
+    car_sdf: Option<crate::game::sdf::Sdf>, sdf_serial: u32,
     atlas: HeightAtlas,
     atlas_tex: wgpu::Texture,
     hybrid: bool,
@@ -353,7 +355,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_sdf: None, sdf_serial: 0, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -378,11 +380,15 @@ impl Raster {
     /// Rebuilds the car body and wheel meshes when the car in the world is another one (garage, a bought car).
     fn ensure_car_model(&mut self, spec: &crate::game::vehicle::VehicleSpec) {
         let key = car_key(spec);
-        if key == self.car_key { return; }
+        if key == self.car_key && self.car_sdf.is_some() { return; }
         let car = vm::build_car(spec);
         self.models[0] = model_buf(&self.device, &car.body);
         self.models[1] = model_buf(&self.device, &car.wheel);
         self.car_key = key;
+        // the exact shape for the dust: the body mesh as a signed distance field (0.1 m voxels)
+        let verts: Vec<[f32; 3]> = car.body.verts.iter().map(|v| v.pos).collect();
+        self.car_sdf = Some(crate::game::sdf::build(&verts, &car.body.idx, 0.1, 0.5));
+        self.sdf_serial += 1;
     }
 
     pub fn resize(&mut self, w: u32, h: u32) {
@@ -599,6 +605,7 @@ impl Raster {
         if let Some(p) = &self.prof { p.mark(&mut enc, 1); }
         if let (Some(dg), Some(fr)) = (self.dust_gpu.as_mut(), wv.dust_gpu.as_ref()) {
             let grid = self.airflow.as_ref().filter(|_| wv.airflow.is_some()).map(|a| { let (v, s) = a.fields(); (v, s, a.box_size(), a.dens_buffer()) });
+            if dg.sdf_serial() != self.sdf_serial { if let Some(s) = self.car_sdf.as_ref() { dg.set_sdf(&self.device, &self.queue, s, self.sdf_serial); } }
             dg.update(&self.device, &self.queue, &mut enc, wv.terrain, fr, &wv.props, grid);
         }
         if let Some(p) = &self.prof { p.mark(&mut enc, 2); }

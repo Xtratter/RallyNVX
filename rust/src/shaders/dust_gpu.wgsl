@@ -20,6 +20,12 @@ struct U {
     cp: vec4<f32>,      // the dust's push, the masses of fine and coarse grit, the strength of the vortex street
     sun: vec4<f32>,     // the direction to the sun (world), the absorption of the dust per unit of mass
     body: vec4<f32>,    // the car's half width, half length, height, and the strength of its trailing vortices
+    bpos: vec4<f32>,    // where the body mesh is drawn (world) and its three axes: the mesh frame's x, y, z in the world
+    bax0: vec4<f32>,
+    bax1: vec4<f32>,
+    bax2: vec4<f32>,
+    sdf_o: vec4<f32>,   // the signed distance field of the body: its corner in the mesh frame, its voxel
+    sdf_n: vec4<f32>,   // its size in voxels, 1 when there is one
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read_write> state: array<S>;
@@ -32,6 +38,7 @@ struct U {
 @group(1) @binding(1) var grid_solid: texture_3d<f32>;
 @group(0) @binding(5) var<storage, read_write> mass: array<f32>;      // the dust mass per cell (floats)
 @group(0) @binding(6) var<storage, read_write> fld: array<vec4<f32>>;  // per cell: the mass gradient and the sun light
+@group(1) @binding(3) var sdf_tex: texture_3d<f32>;   // the body mesh's signed distance field (negative inside)
 @group(1) @binding(2) var<storage, read_write> dens: array<atomic<i32>>;   // the dust field: per cell mass and momentum x, y, z (fixed point 1024), the airflow's cell order
 
 @compute @workgroup_size(64)
@@ -319,6 +326,45 @@ fn solid_at(b: vec3<f32>) -> bool {
     if (any(c < vec3<i32>(0)) || any(c >= n)) { return false; }
     return textureLoad(grid_solid, c, 0).x > 0.5;
 }
+// ---- the exact shape of the body: the signed distance field of its mesh
+fn mesh_local(p: vec3<f32>) -> vec3<f32> {
+    let d = p - u.bpos.xyz;
+    return vec3<f32>(dot(d, u.bax0.xyz), dot(d, u.bax1.xyz), dot(d, u.bax2.xyz));
+}
+fn sdf_cell(c: vec3<i32>) -> f32 {
+    let n = vec3<i32>(u.sdf_n.xyz);
+    return textureLoad(sdf_tex, clamp(c, vec3<i32>(0), n - vec3<i32>(1)), 0).x;
+}
+fn sdf_at(pm: vec3<f32>) -> f32 {
+    let g = (pm - u.sdf_o.xyz) / u.sdf_o.w - vec3<f32>(0.5);
+    let i = floor(g);
+    let f = g - i;
+    let c = vec3<i32>(i);
+    let x00 = mix(sdf_cell(c), sdf_cell(c + vec3<i32>(1, 0, 0)), f.x);
+    let x10 = mix(sdf_cell(c + vec3<i32>(0, 1, 0)), sdf_cell(c + vec3<i32>(1, 1, 0)), f.x);
+    let x01 = mix(sdf_cell(c + vec3<i32>(0, 0, 1)), sdf_cell(c + vec3<i32>(1, 0, 1)), f.x);
+    let x11 = mix(sdf_cell(c + vec3<i32>(0, 1, 1)), sdf_cell(c + vec3<i32>(1, 1, 1)), f.x);
+    return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
+}
+// the push out of the body for a particle close to the mesh: world direction and how far (0 away from it)
+fn sdf_push(p: vec3<f32>) -> vec4<f32> {
+    if (u.sdf_n.w < 0.5) { return vec4<f32>(0.0); }
+    let pm = mesh_local(p);
+    let size = u.sdf_n.xyz * u.sdf_o.w;
+    let rel = pm - u.sdf_o.xyz;
+    if (any(rel < vec3<f32>(0.0)) || any(rel > size)) { return vec4<f32>(0.0); }
+    let d = sdf_at(pm);
+    let margin = 0.12;
+    if (d >= margin) { return vec4<f32>(0.0); }
+    let e = 0.5 * u.sdf_o.w;
+    let g = vec3<f32>(sdf_at(pm + vec3<f32>(e, 0.0, 0.0)) - sdf_at(pm - vec3<f32>(e, 0.0, 0.0)),
+                      sdf_at(pm + vec3<f32>(0.0, e, 0.0)) - sdf_at(pm - vec3<f32>(0.0, e, 0.0)),
+                      sdf_at(pm + vec3<f32>(0.0, 0.0, e)) - sdf_at(pm - vec3<f32>(0.0, 0.0, e)));
+    let l = length(g);
+    if (l < 1e-5) { return vec4<f32>(0.0, 1.0, 0.0, min(margin - d, 0.4)); }
+    let n = g / l;
+    return vec4<f32>(u.bax0.xyz * n.x + u.bax1.xyz * n.y + u.bax2.xyz * n.z, min(margin - d, 0.4));
+}
 fn body_normal(p: vec3<f32>) -> vec3<f32> {
     if (u.bx.w <= 0.0) { return vec3<f32>(0.0); }
     let b = to_box(p);
@@ -413,11 +459,20 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let before = pos;
     pos = pos + vel * dt;
     // the car's body: dust does not go through it or sit in it: out of the body, and no speed into it (the rest slides along it)
-    let bn = body_normal(pos);
-    if (dot(bn, bn) > 0.0) {
-        let nn = normalize(bn);
-        pos = pos + nn * 0.08;
-        vel = vel - nn * min(dot(vel, nn), 0.0);
+    if ((u.n.w & 2u) != 0u && u.sdf_n.w > 0.5) {
+        // the exact silhouette: out along the mesh's distance field, the speed into the body lost
+        let sp = sdf_push(pos);
+        if (sp.w > 0.0) {
+            pos = pos + sp.xyz * sp.w;
+            vel = vel - sp.xyz * min(dot(vel, sp.xyz), 0.0);
+        }
+    } else {
+        let bn = body_normal(pos);
+        if (dot(bn, bn) > 0.0) {
+            let nn = normalize(bn);
+            pos = pos + nn * 0.08;
+            vel = vel - nn * min(dot(vel, nn), 0.0);
+        }
     }
     let world_on = (u.n.w & 4u) != 0u;
     if (world_on) { world_collide(&pos, &vel); }
