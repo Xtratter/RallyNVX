@@ -39,7 +39,7 @@ Autopilot run on a gravel stage, same scene: no airflow 57 fps; 0.35 m cells (32
 What the prototype showed:
 - The ideal flow of a projected solver leaves no wake behind the car (D'Alembert), so a wake model (`Airflow::wake`) slows the air in the car's shadow; it is stable and depends on the voxel body.
 - BFECC without a limiter blew up from a cold start (220 m/s after 3 s); the limiter, an initial fill with the inflow, a smoothed inflow (0.3 s), a tilt limit and a speed limit keep it bounded on the phone, also on a rough ride.
-- Open: on the phone the slice shows slow (blue) air almost everywhere while the CPU reference at the same size keeps the field at the inflow speed (17 m/s, 18 near the body), so the GPU passes differ from the reference somewhere; to find before step 3.
+- Found and fixed: started from rest, the long box did not fill (the slice showed slow air everywhere, the CPU reference started at the inflow speed): a few Jacobi iterations cannot carry a change of the inflow from the front to the back of an 80-cell box. The car's frame accelerates, so the whole air gets the same shift when the inflow changes (`Airflow::move_inflow`, the `shift` uniform of the shader); the pressure solve then only handles the obstacles. After the fix the free stream is at the car's speed and the slow wake sits behind the body (43-49 fps on the phone).
 - The Jacobi pressure solve does not converge in a long box (the measured divergence stays about 8 1/s whatever the iteration count, the collocated stencil is the limit); fine for a picture, to be revisited before the flow drives the dust.
 
 ## Success criteria
