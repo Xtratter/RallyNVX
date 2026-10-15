@@ -217,16 +217,24 @@ pub fn body_boxes(spec: &VehicleSpec, ground_clear: f32, car_z: f32) -> Vec<([f3
     v
 }
 
-/// Marks the cells of the car's boxes solid (every box at least one cell thick, so the thin plates of the parts are not lost).
+/// The ground clearance of the body in the box, in metres.
+pub const GROUND_CLEAR: f32 = 0.15;
+
+/// The boxes for a grid of cell `dx`: every box at least one cell thick, so the thin plates of the parts are not lost.
+pub fn thick_boxes(spec: &VehicleSpec, dx: f32, car_z: f32) -> Vec<([f32; 3], [f32; 3])> {
+    body_boxes(spec, GROUND_CLEAR, car_z).into_iter().map(|(mut lo, mut hi)| {
+        for a in 0..3 { if hi[a] - lo[a] < dx { let m = (hi[a] + lo[a]) * 0.5; lo[a] = m - dx * 0.5; hi[a] = m + dx * 0.5; } }
+        (lo, hi)
+    }).collect()
+}
+
+/// Marks the cells whose centres are inside the car's boxes solid.
 pub fn voxelize(af: &mut Airflow, spec: &VehicleSpec, car_z: f32) {
     let dx = af.dx;
     let half_x = af.n[0] as f32 * dx * 0.5;
-    for (lo, hi) in body_boxes(spec, 0.15, car_z) {
-        let (mut lo, mut hi) = ([lo[0] + half_x, lo[1], lo[2]], [hi[0] + half_x, hi[1], hi[2]]);
-        for a in 0..3 { if hi[a] - lo[a] < dx { let m = (hi[a] + lo[a]) * 0.5; lo[a] = m - dx * 0.5; hi[a] = m + dx * 0.5; } }
-        // a cell belongs to the box when its centre is inside
-        let cell = |v: f32| (v / dx - 0.5).ceil() as i32;
-        af.set_solid_box([cell(lo[0]), cell(lo[1]), cell(lo[2])], [cell(hi[0]), cell(hi[1]), cell(hi[2])]);
+    let cell = |v: f32| (v / dx - 0.5).ceil() as i32;
+    for (lo, hi) in thick_boxes(spec, dx, car_z) {
+        af.set_solid_box([cell(lo[0] + half_x), cell(lo[1]), cell(lo[2])], [cell(hi[0] + half_x), cell(hi[1]), cell(hi[2])]);
     }
 }
 
