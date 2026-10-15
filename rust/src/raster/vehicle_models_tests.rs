@@ -98,3 +98,12 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
 #[test] fn the_near_plane_is_close_inside_the_car_and_normal_outside() {
     assert_eq!(near_for(0.0), 0.08); assert_eq!(near_for(2.49), 0.08); assert_eq!(near_for(2.5), 0.3); assert_eq!(near_for(100.0), 0.3);
 }
+
+#[test] fn the_steering_wheel_follows_the_steering_within_its_lock_and_the_driver_leaves_the_cockpit_view() {
+    assert_eq!(steering_wheel_angle(0.0), 0.0);
+    assert!((steering_wheel_angle(0.2) + steering_wheel_angle(-0.2)).abs() < 1e-6, "odd");
+    assert!(steering_wheel_angle(0.3).abs() > steering_wheel_angle(0.1).abs(), "more steer, more turn");
+    assert!(steering_wheel_angle(10.0).abs() <= 3.8 + 1e-6 && steering_wheel_angle(-10.0).abs() <= 3.8 + 1e-6, "bounded");
+    assert_eq!(steering_wheel_angle(f32::NAN), 0.0);
+    assert!(draw_driver(5.0) && draw_driver(1.2) && !draw_driver(0.9) && !draw_driver(0.0), "no driver with the camera inside the car");
+}

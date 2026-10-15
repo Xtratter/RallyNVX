@@ -85,3 +85,13 @@ fn check(m: &Mesh3, name: &str) {
     assert!(!std::ptr::eq(a, b) && !std::ptr::eq(b, c) && !std::ptr::eq(a, c));
     assert!(a.verts.len() != b.verts.len() || a.verts[0].pos != b.verts[0].pos);
 }
+
+#[test] fn the_rally_model_turns_its_steering_wheel_about_its_own_centre() {
+    let m = build_rally(&peugeot());
+    let st = m.steering.as_ref().expect("steering");
+    let (lo, hi) = st.mesh.bounds();
+    assert!((lo.x + hi.x).abs() < 0.16 && (lo.y + hi.y).abs() < 0.16, "the mesh is centred on the pivot: {lo:?} {hi:?}");
+    assert!((st.axis.len() - 1.0).abs() < 1e-4 && st.axis.z < 0.0, "{:?}", st.axis);
+    assert!(st.pivot.y > 0.6 && st.pivot.y < 1.2 && st.pivot.x > 0.2, "{:?}", st.pivot);
+    assert!(m.driver.is_some() && m.interior.is_some());
+}

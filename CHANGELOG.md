@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.35.0 - the cockpit
+
+- Added: a sixth camera view, **Cockpit** ("Салон"): the camera sits at the driver's eyes inside the Peugeot and you drive looking at the dashboard, the steering wheel and the road through the windscreen (the pinch zooms, the two-finger height tilts the gaze, as in the bonnet view); the driver is not drawn when the camera is inside, and the near plane goes down to 8 cm there
+- Added: the steering wheel turns with the steering (up to about 1.2 turns lock to lock), in every view
+- Changed: the model format carries up to eleven meshes (steering wheel, its pivot, the driver separately)
+
 ## 2.34.0 - transparent glass and the interior
 
 - Added: the Peugeot's windows and lamp covers are transparent glass (a blended pass with a dark tint, sky reflection and a sun glint): near the car you see through the windows into a real interior (the dashboard, seats, steering wheel, door panels and a driver from the source model, a 1024 atlas, about 17 700 triangles); from beyond 9-16 m the windows turn solid dark and the interior is not drawn; the lamp covers are clear over the reflectors
