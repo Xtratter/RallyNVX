@@ -384,7 +384,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let x = clamp(age / life, 0.0, 1.0);
     let fade_in = min(x / 0.08, 1.0);
     let size = s.a.w * (1.0 + select(0.45, 0.25, coarse) * sqrt(age) + 0.35 * x);   // small grains: they hardly grow
-    let alpha = select(0.15, 0.22, coarse) * fade_in * pow(1.0 - x, 1.4);
+    let alpha = select(0.26, 0.34, coarse) * fade_in * pow(1.0 - x, 1.4);
     render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz * shade, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), light));
 }
 

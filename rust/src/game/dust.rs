@@ -211,7 +211,7 @@ impl Dust {
             let speed = vh.len();
             if rear.grounded && speed > 3.0 && rear.speed.is_finite() {
                 let d = table.dust(rear.surface);
-                let rate = d.roll * 26.0 * (speed / 20.0).powi(2).min(2.2) * factor;
+                let rate = d.roll * 45.0 * (speed / 20.0).powi(2).min(2.2) * factor;
                 self.pick = (self.pick + rate * dt).min(8.0 * table.dust_gpu_factor);
                 let (fwd, right) = (v.forward(), v.right());
                 let (hw, hl) = (v.spec.size.x * 0.5, v.spec.size.z * 0.5);
