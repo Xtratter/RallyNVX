@@ -72,7 +72,7 @@ fn settled(spec: VehicleSpec) -> Vehicle {
     assert!((right_lamp - centre).len() < 0.05, "the lamp is {:.3} m from the asset's headlight", (right_lamp - centre).len());
 }
 
-fn flat_lamp() -> (V3, V3, V3) { (v3(0.6, 0.7, 0.0), v3(0.0, -0.05, 1.0).norm(), v3(1.0, 0.0, 0.0)) }
+fn flat_lamp() -> (V3, V3, V3) { (v3(-0.6, 0.7, 0.0), v3(0.0, -0.05, 1.0).norm(), v3(-1.0, 0.0, 0.0)) }   // the car faces +z: its right-hand side is -x (`Vehicle::right`)
 fn vulpes() -> VehicleSpec { VehicleSpec::by_id("vulpes").expect("vulpes") }
 
 #[test] fn the_beam_is_strongest_on_the_axis_and_falls_with_distance() {
@@ -127,4 +127,22 @@ fn vulpes() -> VehicleSpec { VehicleSpec::by_id("vulpes").expect("vulpes") }
     let l1 = lamps(&v);
     assert!(l1.head[0].y > l0.head[0].y + 2.5, "the lamps leave the ground with the car");
     assert!(l1.head_dir.y > l0.head_dir.y + 0.2, "the beam points up with the nose");
+}
+#[test] fn the_beam_rolls_with_a_tilted_car() {
+    let (l, f, r) = flat_lamp();
+    let q = Q::axis_angle(v3(0., 0., 1.), 0.5);   // a strong roll about the car's length
+    let (l2, f2, r2) = (q.rotate(l), q.rotate(f), q.rotate(r));
+    let p = l + f * 15.0 + v3(0.0, -0.8, 0.0) + r * 3.0;
+    let a = beam_gain(l, f, r, p);
+    let b = beam_gain(l2, f2, r2, l2 + q.rotate(p - l));
+    assert!((a - b).abs() < 1e-4 && a > 0.0, "{a} {b}");
+    // a level beam frame (the world's right) would give another answer for the rolled lamp: the roll matters
+    let level = beam_gain(l2, f2, v3(-1.0, 0.0, 0.0), l2 + q.rotate(p - l));
+    assert!((level - b).abs() > 1e-3, "{level} {b}");
+}
+#[test] fn the_lamps_carry_the_cars_own_right_axis() {
+    let mut v = settled(vulpes());
+    v.rot = Q::axis_angle(v3(0., 0., 1.), 0.4).mul(Q::axis_angle(v3(0., 1., 0.), 0.8));
+    let l = lamps(&v);
+    assert!((l.right - v.right()).len() < 1e-4 && l.right.dot(l.head_dir).abs() < 0.06, "right is across the beam axis");
 }

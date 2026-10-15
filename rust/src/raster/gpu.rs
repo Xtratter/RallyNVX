@@ -30,8 +30,10 @@ struct Uni {
     mode: [f32; 4], cam_tile: [f32; 4], moon: [f32; 4], disc: [f32; 4], hl_pos: [f32; 4], hl_dir: [f32; 4], tl_pos: [f32; 4], tl_col: [f32; 4], wind: [f32; 4],
     /// The car's lamps: headlights on, braking, reversing (the car model's lamp material shows them), 0.
     lamps: [f32; 4],
+    /// The car's right-hand axis (rolls with the body): the beam's and the lamps' sideways direction.
+    rt: [f32; 4],
 }
-const _: () = assert!(std::mem::size_of::<Uni>() == 448);
+const _: () = assert!(std::mem::size_of::<Uni>() == 464);
 
 /// One instance: model matrix, per-axis scale (for normals), colour. Matches the instance vertex layout (96 bytes).
 #[repr(C)]
@@ -442,7 +444,7 @@ impl Raster {
             tl_pos: [tc.x, tc.y, tc.z, (wv.lamps.tail[0] - wv.lamps.tail[1]).len() * 0.5],
             tl_col: tail_glow,
             wind: [wv.wind.x, wv.wind.z, wv.cloud_off.0, wv.cloud_off.1],
-            lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, (wv.lamps.head[0] - wv.lamps.head[1]).len() * 0.5] };
+            lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, (wv.lamps.head[0] - wv.lamps.head[1]).len() * 0.5], rt: [wv.lamps.right.x, wv.lamps.right.y, wv.lamps.right.z, 0.0] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // a new level invalidates every cache keyed by tile coordinates

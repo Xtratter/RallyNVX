@@ -10,7 +10,7 @@ pub const HEAD_ON_NIGHT: f32 = 0.25;
 pub struct CarLights { pub head: bool, pub brake: bool, pub reverse: bool }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Lamps { pub head: [V3; 2], pub pos: [V3; 2], pub tail: [V3; 2], pub rev: [V3; 2], pub head_dir: V3 }
+pub struct Lamps { pub head: [V3; 2], pub pos: [V3; 2], pub tail: [V3; 2], pub rev: [V3; 2], pub head_dir: V3, pub right: V3 }
 
 /// Debug/test: 0 headlights only, 1 + brake, 2 + reverse; `u8::MAX` = normal behaviour. Set over JNI only.
 static DEBUG: AtomicU8 = AtomicU8::new(u8::MAX);
@@ -43,6 +43,7 @@ pub fn lamps(v: &Vehicle) -> Lamps {
         tail: [at(-x, -half_l), at(x, -half_l)],
         rev: [at(-x * 0.55, -half_l), at(x * 0.55, -half_l)],
         head_dir: v.rot.rotate(v3(0.0, -0.05, 1.0).norm()),
+        right: v.right(),
     }
 }
 
@@ -63,6 +64,7 @@ fn rally_lamps(v: &Vehicle) -> Lamps {
         tail: [at(p.tail, -1.0), at(p.tail, 1.0)],
         rev: [at(p.rev, -1.0), at(p.rev, 1.0)],
         head_dir: v.rot.rotate(v3(0.0, -0.05, 1.0).norm()),
+        right: v.right(),
     }
 }
 
@@ -75,7 +77,7 @@ pub fn beam_gain(lamp: V3, fwd: V3, right: V3, p: V3) -> f32 {
     let l = d * (1.0 / dist);
     let (z, x) = (l.dot(fwd), l.dot(right));
     if z <= 0.05 { return 0.0; }
-    let y = l.dot(fwd.cross(right));
+    let y = l.dot(right.cross(fwd));
     let (h, v) = ((x / z).atan(), (y / z).atan());
     let cut = 0.07 * smooth(0.0, 0.25, h);
     let gv = 1.0 - smooth(cut, cut + 0.02, v);

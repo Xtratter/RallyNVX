@@ -1,7 +1,7 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
-    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>,
+    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
@@ -146,6 +146,15 @@ fn shade_lite(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return shade_with(albedo, wp, n, 0.0, 0.0, shadow_basic(wp, n));
 }
 
+// how much the tail lights light a point (0..1): only what lies behind the rear bumper, never under the car; mirrored in `carlights::tail_gain`
+fn taillight(wp: vec3<f32>) -> f32 {
+    if (u.tl_col.w <= 0.0) { return 0.0; }
+    let dv = wp - u.tl_pos.xyz;
+    let behind = smoothstep(0.3, 1.0, dot(dv, -normalize(u.hl_dir.xyz)));
+    let att = clamp(1.0 - length(dv) / u.tl_col.w, 0.0, 1.0);
+    return behind * att * att;
+}
+
 // set by the car model's fragment shader: the car is not lit by its own lamps (the beam on its bumper, the red light under it)
 var<private> own_surface: f32 = 0.0;
 
@@ -157,7 +166,7 @@ fn beam_one(lamp: vec3<f32>, fwd: vec3<f32>, right: vec3<f32>, p: vec3<f32>) -> 
     let z = dot(l, fwd);
     if (z <= 0.05) { return 0.0; }
     let h = atan(dot(l, right) / z);
-    let v = atan(dot(l, cross(fwd, right)) / z);
+    let v = atan(dot(l, cross(right, fwd)) / z);
     let cut = 0.07 * smoothstep(0.0, 0.25, h);
     let gv = 1.0 - smoothstep(cut, cut + 0.02, v);
     let gh = 1.0 - smoothstep(0.35, 0.65, abs(h));
@@ -169,7 +178,7 @@ fn beam_one(lamp: vec3<f32>, fwd: vec3<f32>, right: vec3<f32>, p: vec3<f32>) -> 
 fn headbeam(wp: vec3<f32>) -> f32 {
     if (u.hl_pos.w <= 0.0) { return 0.0; }
     let f = normalize(u.hl_dir.xyz);
-    let r = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), f));
+    let r = normalize(u.rt.xyz);   // the car's own right: the beam rolls and pitches with the body
     let s = r * u.lamps.w;
     return 0.5 * (beam_one(u.hl_pos.xyz - s, f, r, wp) + beam_one(u.hl_pos.xyz + s, f, r, wp));
 }
@@ -177,7 +186,7 @@ fn headbeam(wp: vec3<f32>) -> f32 {
 // the light of the lit lamps on the car's own body: a soft aureole hugging the bumper and the wing around each lamp unit (no billboard, so nothing shows through the car)
 fn lamp_aureole(wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     let f = normalize(u.hl_dir.xyz);
-    let r = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), f));
+    let r = normalize(u.rt.xyz);
     var g = vec3<f32>(0.0);
     if (u.hl_pos.w > 0.0) {
         for (var k = 0; k < 2; k++) {
@@ -641,7 +650,7 @@ fn dust_vertex(vi: u32, ps: vec4<f32>, c: vec4<f32>, e: vec4<f32>, size: f32) ->
     let amb = (u.sky_hor.rgb * 0.4 + vec3<f32>(0.45)) * 0.5 * mix(1.0, 0.2, u.disc.w);
     var col = i.c.rgb * (amb + vec3<f32>(sun) * (0.55 + 0.3 * shape + 1.2 * fwd * sun));
     col = col * mix(0.82, 1.0, smoothstep(0.0, 0.8, r));   // the thick middle of a puff is shaded by the rest of it
-    col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (2.6 * headbeam(wp));
+    col = col + i.c.rgb * (vec3<f32>(1.0, 0.93, 0.80) * (6.0 * headbeam(wp)) + u.tl_col.rgb * (5.0 * taillight(wp)));   // the lamps light the dust: the beam ahead, the red tail lights behind
     let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0);
     col = mix(col, u.sky_hor.rgb, f);
     return vec4<f32>(finish(col), a);
@@ -678,7 +687,7 @@ fn dust_pt(i: DOut) -> vec4<f32> {
     let ld = vec3<f32>(dot(sun_dir, vr), dot(sun_dir, vu), dot(sun_dir, vb));
     let sh = clamp(dot(n3, ld) * 0.5 + 0.5, 0.0, 1.0);
     col = col * (0.34 + 1.2 * sh);
-    col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (2.6 * headbeam(wp));
+    col = col + i.c.rgb * (vec3<f32>(1.0, 0.93, 0.80) * (6.0 * headbeam(wp)) + u.tl_col.rgb * (5.0 * taillight(wp)));   // the lamps light the dust: the beam ahead, the red tail lights behind
     let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0) * 0.6;
     col = mix(col, u.sky_hor.rgb, f);
     return vec4<f32>(finish(col), a);
