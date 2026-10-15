@@ -626,8 +626,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
         if (w > 0.0) {
             let f = fld_at(b);
             push = push_from(f.xyz, w);
-            light = mix(1.0, f.w, w);
-            shade = mix(1.0, 0.96, smoothstep(0.2, 2.0, mass_at(b)) * w);
+            // no light or shade term from the box: any such term shows the box's edge as a dark rectangle in the cloud
         }
     }
     let target_v = vec3<f32>(air.x, air.y - settle, air.z);
