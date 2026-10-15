@@ -206,3 +206,26 @@ fn the_analytic_gradient_matches_finite_differences_and_the_value() {
         assert!((g - fd).len() < 0.02 * (1.0 + fd.len()), "{g:?} vs {fd:?}");
     }
 }
+
+#[test]
+fn the_trailing_vortices_press_the_centre_down_lift_the_outside_and_fade() {
+    let (hw, hl, h) = (0.9, 2.0, 1.4);
+    // behind the car on the centre line at the height of the vortices: downwash; outboard of the left vortex: upwash
+    let mid = trailing_vortices(v3(0.0, 0.9, -hl - 2.0), hw, hl, h, 20.0, 0.3);
+    assert!(mid.y < -0.5 && mid.x.abs() < 1e-3 && mid.z == 0.0, "{mid:?}");
+    let outside = trailing_vortices(v3(hw * 0.8 + 1.5, 0.9, -hl - 2.0), hw, hl, h, 20.0, 0.3);
+    assert!(outside.y > 0.1, "{outside:?}");
+    // mirror symmetry
+    let l = trailing_vortices(v3(-0.7, 0.9, -hl - 3.0), hw, hl, h, 20.0, 0.3);
+    let r = trailing_vortices(v3(0.7, 0.9, -hl - 3.0), hw, hl, h, 20.0, 0.3);
+    assert!((l.x + r.x).abs() < 1e-5 && (l.y - r.y).abs() < 1e-5, "{l:?} {r:?}");
+    // nothing ahead of the rear, fading with the distance, bounded by the peak, finite on the core
+    assert_eq!(trailing_vortices(v3(0.0, 0.9, 0.0), hw, hl, h, 20.0, 0.3), V3::ZERO);
+    let near = trailing_vortices(v3(0.3, 0.9, -hl - 1.0), hw, hl, h, 20.0, 0.3).len();
+    let far = trailing_vortices(v3(0.3, 0.9, -hl - 20.0), hw, hl, h, 20.0, 0.3).len();
+    assert!(near > 3.0 * far, "{near} {far}");
+    for i in 0..400 { let p = v3(i as f32 * 0.02 - 4.0, 0.1 + (i % 17) as f32 * 0.15, -hl - 0.5 - (i % 23) as f32); let v = trailing_vortices(p, hw, hl, h, 20.0, 0.3); assert!(v.is_finite() && v.len() <= 2.0 * 0.3 * 20.0 + 1e-3, "{p:?} {v:?}"); }
+    let on_core = trailing_vortices(v3(hw * 0.8, 0.55 * h + 0.15, -hl - 3.0), hw, hl, h, 20.0, 0.3);
+    assert!(on_core.is_finite());
+    assert_eq!(trailing_vortices(v3(0.0, 0.9, -hl - 2.0), hw, hl, h, 0.0, 0.3), V3::ZERO);
+}

@@ -144,6 +144,30 @@ pub fn turbulence_curl(p: V3, t: f32, drift: V3, amp: f32) -> V3 {
     v
 }
 
+/// The car's trailing vortices (the C-pillar and rear-corner vortices of a hatchback or wing tips of a wing): two counter-rotating line vortices
+/// along the car behind its rear corners, rotating so that the air between them goes down and outboard of them up. In the car's frame (x across,
+/// y up from the road, z forward, origin under the car's centre): `c`, the half width `hw`, the half length `hl` and the height `h` of the body, the car's speed.
+/// The strength is the peak swirl speed as a share of the car's speed (`strength`); the core grows and the swirl fades with the distance behind the rear.
+pub fn trailing_vortices(c: V3, hw: f32, hl: f32, h: f32, speed: f32, strength: f32) -> V3 {
+    let behind = -c.z - hl;                     // metres behind the rear face
+    if behind < -1.0 { return V3::ZERO; }
+    let ramp = smooth((behind + 1.0) / 1.5);    // the vortices form over the first metres
+    let b = behind.max(0.0);
+    let fade = (-b / 7.0).exp();
+    let rc = 0.45 + 0.16 * b;                   // the core grows as the vortex ages
+    let v_peak = strength * speed * ramp * fade;
+    let mut out = V3::ZERO;
+    for s in [1.0f32, -1.0] {
+        let (cx, cy) = (s * hw * 0.8, 0.55 * h + 0.15);
+        let (rx, ry) = (c.x - cx, c.y - cy);
+        let r2 = rx * rx + ry * ry;
+        // a smooth vortex (peak v_peak at r = rc): v = 2 v_peak r rc / (r^2 + rc^2)
+        let k = 2.0 * v_peak * rc / (r2 + rc * rc);
+        out = out + v3(-s * ry * k, s * rx * k, 0.0);
+    }
+    out
+}
+
 /// The ground under the dust comes from a window of terrain heights: `WINDOW` cells of 1 m around the car, stored toroidally (a cell lives in the
 /// slot `cell mod WINDOW`), so only the cells that come into the window are measured when the car moves.
 pub const WINDOW: i32 = 64;

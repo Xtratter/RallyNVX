@@ -19,7 +19,9 @@ use super::dust_ref::{self, GP as P};
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Phys { pub tau_fine: f32, pub tau_coarse: f32, pub settle_fine: f32, pub settle_coarse: f32, pub coarse_share: f32, pub wake_gain: f32, pub wake_len: f32, pub turbulence: f32, pub throw: f32,
     /// GPU dust: the plume behind the car rises (m/s of lift per m/s of car speed), up to about `plume_height` metres.
-    pub plume_lift: f32, pub plume_height: f32 }
+    pub plume_lift: f32, pub plume_height: f32,
+    /// GPU dust: the peak swirl speed of the car's trailing vortices as a share of its speed.
+    pub vortex: f32 }
 
 impl Phys {
     pub fn from_json(text: &str) -> Result<Phys, String> {
@@ -32,7 +34,8 @@ impl Phys {
         };
         Ok(Phys { tau_fine: num("tau_fine", 0.02, 3.0)?, tau_coarse: num("tau_coarse", 0.02, 5.0)?, settle_fine: num("settle_fine", 0.0, 3.0)?, settle_coarse: num("settle_coarse", 0.0, 6.0)?,
             coarse_share: num("coarse_share", 0.0, 1.0)?, wake_gain: num("wake_gain", 0.0, 3.0)?, wake_len: num("wake_len", 1.0, 60.0)?, turbulence: num("turbulence", 0.0, 5.0)?, throw: num("throw", 0.0, 2.0)?,
-            plume_lift: f.get("plume_lift").and_then(|x| x.as_f64()).filter(|x| (0.0..=1.0).contains(x)).map_or(0.0, |x| x as f32), plume_height: f.get("plume_height").and_then(|x| x.as_f64()).filter(|x| (0.5..=20.0).contains(x)).map_or(4.0, |x| x as f32) })
+            plume_lift: f.get("plume_lift").and_then(|x| x.as_f64()).filter(|x| (0.0..=1.0).contains(x)).map_or(0.0, |x| x as f32), plume_height: f.get("plume_height").and_then(|x| x.as_f64()).filter(|x| (0.5..=20.0).contains(x)).map_or(4.0, |x| x as f32),
+            vortex: f.get("vortex").and_then(|x| x.as_f64()).filter(|x| (0.0..=1.0).contains(x)).map_or(0.0, |x| x as f32) })
     }
 }
 
@@ -178,11 +181,23 @@ impl Dust {
                 self.acc[w] -= 1.0;
                 let (a, b, c, e, f, g2, h2) = (self.rand(), self.rand(), self.rand(), self.rand(), self.rand(), self.rand(), self.rand());
                 let coarse = h2 < (ph.coarse_share + 0.3 * info.slide.min(1.0)).min(0.9);
-                let pos = v3(info.contact.x + (a - 0.5) * 0.4, info.contact.y + 0.1, info.contact.z + (b - 0.5) * 0.4);
+                let mut pos = v3(info.contact.x + (a - 0.5) * 0.4, info.contact.y + 0.1, info.contact.z + (b - 0.5) * 0.4);
+                let mut out_push = V3::ZERO;
+                if self.gpu {
+                    // the dust never starts inside the body: a wheel under the body's footprint throws it out at the side (beyond the body by a hand)
+                    let (right, hw) = (v.right(), v.spec.size.x * 0.5);
+                    let off = pos - v.pos;
+                    let lx = off.dot(right);
+                    if lx.abs() < hw + 0.25 {
+                        let s = if lx >= 0.0 { 1.0 } else { -1.0 };
+                        pos = pos + right * (s * (hw + 0.25) - lx);
+                        out_push = right * (s * 0.8);
+                    }
+                }
                 // the tyre throws the dust back and up, and away from the direction of a slide
                 let kick = if coarse { 1.35 } else { 0.8 };
                 let spray = v.right() * (-lateral * 0.5 * (info.slide.min(1.0) + 0.2));
-                let vel = v3(-vh.x * ph.throw * kick + spray.x + (c - 0.5) * 1.5, (1.0 + 3.0 * info.slide.min(1.5) + e * 1.2) * if coarse { 1.1 } else { 0.9 }, -vh.z * ph.throw * kick + spray.z + (f - 0.5) * 1.5);
+                let vel = v3(-vh.x * ph.throw * kick + spray.x + (c - 0.5) * 1.5, (1.0 + 3.0 * info.slide.min(1.5) + e * 1.2) * if coarse { 1.1 } else { 0.9 }, -vh.z * ph.throw * kick + spray.z + (f - 0.5) * 1.5) + out_push;
                 let shade = 0.9 + 0.2 * g2;
                 let tone = if coarse { 0.82 } else { 1.0 };
                 self.push(P { pos, vel, age: 0.0, life: d.life * (0.75 + 0.5 * a) * if coarse { 0.4 } else { 1.0 }, size0: d.size * if coarse { 0.55 } else { 1.0 },

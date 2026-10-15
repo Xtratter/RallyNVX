@@ -545,7 +545,7 @@ fn dust_pt(i: DOut) -> vec4<f32> {
     let fwd = pow(max(dot(view, sun_dir), 0.0), 4.0);   // forward scattering: a cloud seen against the sun glows
     let amb = (u.sky_hor.rgb * 0.4 + vec3<f32>(0.45)) * 0.5 * mix(1.0, 0.2, u.disc.w);
     let light = max(i.e.w, 0.02);
-    var col = i.c.rgb * (amb * mix(0.7, 1.0, light) + vec3<f32>(sun) * (0.5 * light + 1.6 * fwd * sun * light));
+    var col = i.c.rgb * (amb * 1.5 * mix(0.75, 1.0, light) + vec3<f32>(sun) * (0.85 * light + 1.6 * fwd * sun * light));
     col = col * mix(0.8, 1.0, smoothstep(0.0, 0.8, r));
     if (u.hl_pos.w > 0.0) {
         let dv = wp - u.hl_pos.xyz;

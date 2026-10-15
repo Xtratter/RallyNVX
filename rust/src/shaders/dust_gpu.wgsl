@@ -19,6 +19,7 @@ struct U {
     gw: vec4<i32>,      // the first cell (x, z) of the ground window
     cp: vec4<f32>,      // the dust's push, the masses of fine and coarse grit, 0
     sun: vec4<f32>,     // the direction to the sun (world), the absorption of the dust per unit of mass
+    body: vec4<f32>,    // the car's half width, half length, height, and the strength of its trailing vortices
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read_write> state: array<S>;
@@ -116,7 +117,12 @@ fn turbulence_curl(p: vec3<f32>, amp: f32) -> vec3<f32> {
     return v;
 }
 fn turbulence(p: vec3<f32>, age: f32) -> vec3<f32> {
-    let amp = u.ph2.x * (0.35 + 0.05 * u.ph2.y) * (1.0 + 0.8 * age);   // the cloud expands: older dust is churned more
+    var wake = 0.0;
+    if (u.bx.w > 0.0) {
+        let behind = -dot(p - u.car.xyz, fwd_axis()) - u.body.y;
+        wake = exp(-max(behind, 0.0) / 10.0) * smoothstep(-1.0, 1.0, behind) * box_weight(to_box(p));
+    }
+    let amp = u.ph2.x * (0.35 + 0.05 * u.ph2.y) * (1.0 + 0.8 * age) * (1.0 + 2.5 * wake);   // the wake behind the car churns the dust   // the cloud expands: older dust is churned more
     return turbulence_curl(p, amp);
 }
 // the car's axes on the ground plane: forward (sin yaw, 0, cos yaw), right (-cos yaw, 0, sin yaw)
@@ -221,6 +227,48 @@ fn dust_splat(@builtin(global_invocation_id) gid: vec3<u32>) {
     atomicAdd(&dens[k + 3], i32(m * v.z * 1024.0));
 }
 
+fn smooth01(x: f32) -> f32 { let t = clamp(x, 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }
+// the car's trailing vortices in the car's frame (game/dust_ref.rs::trailing_vortices): c = (across, up from the road, along) from the car's centre
+fn trailing_vortices(c: vec3<f32>) -> vec3<f32> {
+    let hw = u.body.x; let hl = u.body.y; let h = u.body.z;
+    let behind = -c.z - hl;
+    if (behind < -1.0) { return vec3<f32>(0.0); }
+    let ramp = smooth01((behind + 1.0) / 1.5);
+    let b = max(behind, 0.0);
+    let v_peak = u.body.w * u.ph2.y * ramp * exp(-b / 7.0);
+    let rc = 0.45 + 0.16 * b;
+    var out = vec3<f32>(0.0);
+    for (var j = 0; j < 2; j++) {
+        let s = select(1.0, -1.0, j == 1);
+        let rx = c.x - s * hw * 0.8; let ry = c.y - (0.55 * h + 0.15);
+        let k = 2.0 * v_peak * rc / (rx * rx + ry * ry + rc * rc);
+        out = out + vec3<f32>(-s * ry * k, s * rx * k, 0.0);
+    }
+    return out;
+}
+// the direction (world) away from the car's body for a particle inside it or close to it (zero in clear air): from the solid cells around it
+fn solid_at(b: vec3<f32>) -> bool {
+    let n = vec3<i32>(textureDimensions(grid_solid));
+    let c = vec3<i32>(floor(b / u.bx.w));
+    if (any(c < vec3<i32>(0)) || any(c >= n)) { return false; }
+    return textureLoad(grid_solid, c, 0).x > 0.5;
+}
+fn body_normal(p: vec3<f32>) -> vec3<f32> {
+    if (u.bx.w <= 0.0) { return vec3<f32>(0.0); }
+    let b = to_box(p);
+    let m = 0.3;
+    let inside = solid_at(b);
+    var n = vec3<f32>(0.0);
+    for (var j = 0; j < 6; j++) {
+        var d = vec3<f32>(0.0);
+        if (j == 0) { d.x = 1.0; } else if (j == 1) { d.x = -1.0; } else if (j == 2) { d.y = 1.0; } else if (j == 3) { d.y = -1.0; } else if (j == 4) { d.z = 1.0; } else { d.z = -1.0; }
+        let s = solid_at(b + d * m);
+        if (inside) { if (!s) { n = n + d; } } else if (s) { n = n - d; }
+    }
+    if (inside && dot(n, n) < 0.01) { n = vec3<f32>(0.0, 1.0, 0.0); }
+    return right_axis() * n.x + vec3<f32>(0.0, n.y, 0.0) + fwd_axis() * n.z;
+}
+
 // the world air velocity: the box's air inside (relative to the car, in the car's frame), the wind outside, blended at the faces
 fn air_at(p: vec3<f32>, age: f32) -> vec3<f32> {
     let outside = wind_at(p);
@@ -232,6 +280,9 @@ fn air_at(p: vec3<f32>, age: f32) -> vec3<f32> {
             let gv = grid_sample(b);
             let inside = u.car_vel.xyz + right_axis() * gv.x + vec3<f32>(0.0, gv.y, 0.0) + fwd_axis() * gv.z;
             air = outside + (inside - outside) * w;
+            let cc = vec3<f32>(b.x - u.bx.x * 0.5, b.y, b.z - u.bx.z * 0.5);
+            let vv = trailing_vortices(cc);
+            air = air + (right_axis() * vv.x + vec3<f32>(0.0, vv.y, 0.0) + fwd_axis() * vv.z) * w;
         }
     }
     // the plume: behind the car the turbulent wake carries the dust up, the higher the less (it hangs at about the plume's height)
@@ -278,7 +329,13 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     vel = vel + (target_v - vel) * k + push * dt;
     let before = pos;
     pos = pos + vel * dt;
-    if (in_solid(pos)) { pos = before; vel = vel * -0.2; }   // the car's body: it does not go through
+    // the car's body: dust does not go through it or sit in it: out of the body, and no speed into it (the rest slides along it)
+    let bn = body_normal(pos);
+    if (dot(bn, bn) > 0.0) {
+        let nn = normalize(bn);
+        pos = pos + nn * 0.08;
+        vel = vel - nn * min(dot(vel, nn), 0.0);
+    }
     let g = ground(pos.x, pos.z) + 0.04;
     if (pos.y < g) {
         if (coarse) { s.d.z = 0.0; state[i] = s; render[i] = dead; return; }
@@ -316,5 +373,5 @@ fn dust_field_light(@builtin(global_invocation_id) gid: vec3<u32>) {
     let step_v = sb / max(max(abs(sb.x), abs(sb.y)), max(abs(sb.z), 0.0001));
     var acc = 0.0;
     for (var j = 1; j <= 6; j++) { acc = acc + mass_cell(vec3<i32>(floor(vec3<f32>(c) + vec3<f32>(0.5) + step_v * f32(j)))); }
-    fld[id] = vec4<f32>(g, mix(0.6, 1.0, exp(-u.sun.w * acc * 0.4)));
+    fld[id] = vec4<f32>(g, mix(0.75, 1.0, exp(-u.sun.w * acc * 0.4)));
 }
