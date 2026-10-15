@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.31.0 - real wheels
+
+- Changed: the Peugeot's wheels are textured (the tyre's sidewall and tread, the rim's spokes) and more detailed (about 2 500 triangles instead of 1 500); the brake disc and the caliper are separate parts seen through the spokes; the caliper no longer spins with the wheel (it follows the steering and the suspension); the mud flaps are on the car
+- Added: the brake discs glow orange-red when hot (per wheel: hard braking heats them, the front ones more, they cool in a few seconds; strongest at night); the model format is now `RCA3` (up to four meshes), older files still load, and the atlas is 2048 x 2560
+
 ## 2.30.0 - the Peugeot's livery as a texture
 
 - Changed: the livery of the Peugeot (stickers, sponsor logos, the 206 numbers) is a real texture instead of blurred vertex colours: the model keeps its UV coordinates (new `RCA2` format, the old one still loads) and the converter packs the model's textures into a 2048 x 2048 atlas (`rally_car_livery.jpg`, about 0.6 MB); the game decodes it once and the car's shader multiplies the paint by it; lamps, glass and wheels are unchanged; a missing atlas falls back to the old vertex colours
