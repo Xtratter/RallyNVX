@@ -671,8 +671,10 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     // what the sprite needs: it grows as it spreads, fades in over the first 8 % of its life and out at the end
     let x = clamp(age / life, 0.0, 1.0);
     let fade_in = min(x / 0.08, 1.0);
-    let size = s.a.w * (1.0 + select(select(0.8, 0.25, coarse), 1.1, smoke) * sqrt(age) + 0.35 * x);   // small grains hardly grow, smoke billows out
-    let alpha = select(select(0.32, 0.38, coarse), 0.22, smoke) * fade_in * pow(1.0 - x, select(1.4, 0.8, smoke));
+    // all dust is soft smoke-like billows: fine dust and smoke spread wide (loose-soil dust stops growing after a few seconds, it only thins), the coarse part stays tighter
+    let grow = select(select(1.1 * sqrt(min(age, 5.0)), 0.6 * sqrt(min(age, 3.0)), coarse), 1.1 * sqrt(age), smoke);
+    let size = s.a.w * (1.0 + grow + 0.35 * x);
+    let alpha = select(select(0.22, 0.26, coarse), 0.22, smoke) * fade_in * pow(1.0 - x, select(select(1.0, 1.4, coarse), 0.8, smoke));
     render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz * shade, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), light));
 }
 
