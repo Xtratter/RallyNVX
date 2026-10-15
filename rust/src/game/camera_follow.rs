@@ -104,7 +104,8 @@ impl FollowCam {
     fn ride(&mut self, v: &Vehicle, dt: f32) {
         let s = &v.spec;
         let ground = s.wheels[0].y - s.rest - s.radius;   // the road, in the car's frame
-        let (ly, lz) = match self.view { CamView::Bumper => (ground + 0.30 * s.size.y, 0.5 * s.size.z + 0.05), _ => (ground + 0.66 * s.size.y, 0.12 * s.size.z) };
+        let spot = if self.view == CamView::Bumper { s.cam_bumper } else { s.cam_hood };   // fractions of the body: from the road up, from the centre forward
+        let (ly, lz) = (ground + spot[0] * s.size.y, spot[1] * s.size.z);
         self.pos = v.pos + v.rot.rotate(v3(0.0, ly, lz));
         let k = 1.0 - (-14.0 * dt).exp();
         let g = self.gaze + (v.forward() - self.gaze) * k;

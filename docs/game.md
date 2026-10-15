@@ -30,6 +30,10 @@ On Android the start screen has Quality: Low (0.5x), Medium (0.7x) and High (1.0
 
 The delivery and race missions were removed in 2.14.0: the game is a free drive for now, and a rally mode (special stages with times) is planned. The profile (`files/profile.json`, desktop: none) keeps the money and the garage; a damaged file is kept as `profile.json.bak`.
 
+## Camera
+
+The **View** button under the status line cycles the camera views: behind the car (default), on the bonnet, low on the front bumper, high behind (roof), and a free orbit (it never swings back by itself). One finger turns the camera round the car as before. **Two fingers** on free space: pinching changes the distance (spreading brings the camera closer; on the bonnet and bumper views it zooms in), moving both fingers up or down changes the height (on those views it tilts the gaze). A long press on the View button puts the current view back to its default distance and height. The view and each view's distance and height are remembered. Camera spots of a new car (bonnet and bumper, as fractions of its size) are `cameras.hood` and `cameras.bumper` in `vehicles.json`.
+
 ## Aerodynamics (dust in the airflow)
 
 With **Settings, Aerodynamics: On** (the default) the dust (levels Normal and Lots) runs on the GPU and follows a simulated airflow: a box (12 x 6 x 24 m, cells of 0.3 m, `surfaces.json` -> `airflow`) moves with the car, the body and the garage parts are solid voxels in it, and the air is stepped at 30 Hz (BFECC advection, vorticity confinement, a wake model, pressure projection). Particles inside the box take its air velocity (turned from the car's frame into the world), blend into the wind at its faces, are pushed out of the body, settle onto a 64 m window of terrain heights and keep the response times of `dust_physics`. The dust also acts back: every frame the particles are added to the grid as a mass and momentum field (`dust_air`), dense dust pushes the particles apart and drags the air along, so a thick cloud rolls as one. Off falls back to the simple CPU particles (about 9 fps cheaper on the POCO F3 in the measured scene: 47 fps against 38 with it on, never below 30). The design is in `docs/superpowers/specs/2026-10-15-airflow-dust-design.md`.
@@ -129,6 +133,10 @@ No rally mode and no NPC orders yet, and only the raster and hybrid renderers. T
 ## Миссии
 
 Миссии «доставка» и «гонка» убраны в 2.14.0: пока игра — это свободная езда, а ралли-режим (спецучастки с временем) в планах. Профиль (`files/profile.json`) хранит деньги и гараж; повреждённый файл сохраняется как `profile.json.bak`.
+
+## Камера
+
+Кнопка **«Вид»** под строкой состояния переключает виды камеры по кругу: сзади машины (по умолчанию), на капоте, низко на переднем бампере, высоко сзади (крыша) и свободный обзор (сам не возвращается за машину). Один палец, как раньше, поворачивает камеру вокруг машины. **Два пальца** на свободном месте: щипок меняет расстояние (разведение приближает камеру; на капоте и бампере это зум), движение обоих пальцев вверх или вниз меняет высоту (в тех видах это наклон взгляда). Долгое нажатие на кнопку «Вид» возвращает расстояние и высоту текущего вида по умолчанию. Вид и расстояние с высотой для каждого вида запоминаются. Места камеры новой машины (капот и бампер, в долях её размера) задаются `cameras.hood` и `cameras.bumper` в `vehicles.json`.
 
 ## Аэродинамика (пыль в потоке воздуха)
 

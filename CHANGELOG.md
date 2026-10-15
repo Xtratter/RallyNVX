@@ -2,10 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
-## 2.28.0 - dust and air act on each other
+## 2.28.0 - realistic dust, camera views, real lamps
 
-- Added: the dust cloud pushes back: the particles are added to the airflow's grid as a density and momentum field every frame; dense dust pushes the particles apart (a cheap stand-in for particle-particle pressure) and drags the air along, so a thick cloud rolls behind the car as one; numbers in `surfaces.json` -> `dust_air`
-- Changed: the airflow solver uses 12 pressure iterations instead of 20 (about the same picture, a little cheaper); on the POCO F3 in a heavy scene: CPU dust 33 fps, the airflow dust with all of this 29-30 fps (target 30)
+- Changed: the dust (Settings, Aerodynamics On, levels Normal and Lots) is tens of thousands of separate soft particles on the GPU that follow the simulated air: curl-noise turbulence (divergence-free, three scales), the car's trailing vortices and vortex street, the recirculation behind the rear face, the wake that scours the road behind the car (the garage's aero parts strengthen it), plumes that rise, particles that push each other apart and drag the air (a density field in the airflow grid), self-shadowing by the sun through the dust, warm tan colour; it never passes through the body (pushed out with a margin) and starts under the wheel arches; drawn at 1/6 resolution (soft against the ground and the car) so it fits the 30 fps target (39-48 fps measured on the POCO F3); numbers in `surfaces.json` (`dust`, `dust_physics`, `dust_air`, `airflow`)
+- Added: camera views: behind (default), bonnet, bumper, roof, orbit; the "View" button under the status line cycles them (long press: default distance and height); two fingers change the distance (pinch; zoom in the bonnet and bumper views) and the height (both fingers up or down; gaze tilt in those views); everything is remembered per view
+- Changed: the Peugeot's headlights, tail and reverse lamps keep the shape of the mesh and show the car's state (headlights, brake, reverse); their positions are found on the mesh by colour class, so the next car models get their lamps in place without extra data (docs/vehicles.md)
+- Added: the airflow around the car on the GPU (a box that moves with the car, BFECC, wake model, the body and garage parts as voxels) with a debug slice (`airflow=1`), and `gpuprof=1` for GPU stage timings in the log
 
 ## 2.27.0 - dust in the airflow
 
