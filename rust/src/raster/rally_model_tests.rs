@@ -1,6 +1,6 @@
 use super::*;
 use crate::game::{input::Input, math::v3, terrain::Terrain, vehicle::{Vehicle, VehicleSpec}};
-use crate::raster::vehicle_models::{build_car, car_body_pose, car_wheel_poses, Mesh3, MAT_CARLAMP, MAT_CHROME, MAT_GLASS, MAT_PAINT, MAT_PLASTIC, MAT_RUBBER};
+use crate::raster::vehicle_models::{build_car, car_body_pose, car_wheel_poses, Mesh3, MAT_CARLAMP, MAT_CARPOS, MAT_CHROME, MAT_GLASS, MAT_PAINT, MAT_PLASTIC, MAT_RUBBER};
 
 /// Triangles of the rally car in total (body plus four wheels): lowered step by step after phone measurements.
 const CAR_TRI_BUDGET: usize = 30_000;
@@ -52,4 +52,12 @@ fn check(m: &Mesh3, name: &str) {
 #[test] fn the_suv_model_is_untouched_by_the_rally_dispatch() {
     let o = VehicleSpec::offroader(); let m = build_car(&o);
     assert!(m.body.tris() > 0 && m.body.tris() + 4 * m.wheel.tris() <= 4000);
+}
+
+#[test] fn the_corner_pieces_of_the_front_units_are_position_lamps() {
+    let m = build_rally(&crate::game::vehicle::VehicleSpec::by_id("vulpes").unwrap());
+    let n = m.body.verts.iter().filter(|v| v.col[3] == MAT_CARPOS).count();
+    assert!(n >= 12, "{n}");
+    assert!(m.body.verts.iter().filter(|v| v.col[3] == MAT_CARPOS).all(|v| v.pos[2] > 0.5), "only at the front");
+    assert!(m.body.verts.iter().any(|v| v.col[3] == MAT_CARLAMP), "the main lenses stay lamps");
 }

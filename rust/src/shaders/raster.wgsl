@@ -288,14 +288,26 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let occl = mix(1.0, i.ao, u.mode.x);
     let m = i32(i.mat + 0.5);
     if (m == 5) { return vec4<f32>(finish(i.col * (2.2 + 2.0 * u.disc.w)), 1.0); }       // lamps
-    if (m == 7) {   // the car's own lamps: the shape is the mesh's, the state comes from the car (head, brake, reverse); the class from the colour
+    if (m == 7 || m == 8) {   // the car's own lamps: the shape is the mesh's, the state comes from the car; the class from the colour (8: a front position lamp)
         let c = i.col;
+        let v = normalize(u.cam.xyz - i.wp);
+        let facing = clamp(abs(dot(n, v)), 0.0, 1.0);
+        let fr = 1.0 - facing;                                     // 0 looking straight into the lens, 1 at the rim
         var k = 0.4;
-        if (c.r > 0.8 && c.g < 0.3) { k = select(select(0.3, 1.0, u.lamps.x > 0.5), 3.2, u.lamps.y > 0.5); }          // tail unit: brake bright, headlights dim red
-        else if (c.r > 0.8 && c.g < 0.75 && c.b < 0.4) { k = 0.5; }                                                      // indicator
-        else if (c.b > 0.93) { k = select(0.35, 3.0, u.lamps.z > 0.5); }                                               // reverse lamp
-        else { k = select(0.4, 2.8 + 2.0 * u.disc.w, u.lamps.x > 0.5); }                                               // headlight unit
-        return vec4<f32>(finish(c * k * mix(1.0, 0.8, 1.0 - u.lamps.x)), 1.0);
+        var on = 0.0;
+        if (m == 8) { on = select(0.0, 1.0, u.lamps.x > 0.5); k = 1.6 + 1.2 * u.disc.w; }                                  // position lamp: burns with the low beam
+        else if (c.r > 0.8 && c.g < 0.3) { on = max(select(0.0, 0.3, u.lamps.x > 0.5), select(0.0, 1.0, u.lamps.y > 0.5)); k = 3.2; }   // tail unit: brake bright, headlights dim red
+        else if (c.r > 0.8 && c.g < 0.75 && c.b < 0.4) { k = 0.5; }                                                         // indicator: not lit yet
+        else if (c.b > 0.93) { on = select(0.0, 1.0, u.lamps.z > 0.5); k = 3.0; }                                          // reverse lamp
+        else { on = select(0.0, 1.0, u.lamps.x > 0.5); k = 2.8 + 2.0 * u.disc.w; }                                          // headlight unit
+        // a lit lens: a hot core looking straight into it, a darker rim, a stepped reflector (rings in the angle to the view)
+        let rings = 0.86 + 0.14 * step(0.5, fract(fr * 6.0));
+        let core = mix(0.45, 1.0, pow(facing, 3.0)) * rings;
+        let lit = c * k * core * on;
+        // an unlit lens: dark glass with a rim reflection of the sky and the sun
+        let sunr = pow(max(dot(reflect(-v, n), normalize(u.sun.xyz)), 0.0), 40.0);
+        let dark = (c * 0.10 + u.sky_hor.rgb * 0.45 * fr * fr * fr + vec3<f32>(sunr) * 0.6) * (1.0 - on);
+        return vec4<f32>(finish(lit + dark), 1.0);
     }
     if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0), 1.0); }   // glass
     if (m == 4) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.9, 60.0), 1.0); }   // chrome
