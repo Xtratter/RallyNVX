@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.28.0 - dust and air act on each other
+
+- Added: the dust cloud pushes back: the particles are added to the airflow's grid as a density and momentum field every frame; dense dust pushes the particles apart (a cheap stand-in for particle-particle pressure) and drags the air along, so a thick cloud rolls behind the car as one; numbers in `surfaces.json` -> `dust_air`
+- Changed: the airflow solver uses 12 pressure iterations instead of 20 (about the same picture, a little cheaper); on the POCO F3 in a heavy scene: CPU dust 33 fps, the airflow dust with all of this 29-30 fps (target 30)
+
 ## 2.27.0 - dust in the airflow
 
 - Added: the air around the car is simulated on the GPU (a box that moves with the car, the body and the garage parts as voxels, a wake model) and the dust follows it: the particles run on the GPU, take the air's velocity inside the box and the wind outside, are pushed aside by the body, keep their inertia and settle onto a terrain height window; the Settings switch "Aerodynamics" (On by default) turns it off, then the simple CPU particles run as before; the "Fluid (test)" dust is unchanged

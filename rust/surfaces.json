@@ -12,5 +12,5 @@
   "fluid": { "cell": 1.0, "nx": 96, "ny": 16, "nz": 96, "iterations": 8, "settle": 0.35, "decay": 0.12, "inject": 5.0, "absorb": 1.5, "drag": 0.6, "steps": 32 },
   "dust_physics": { "tau_fine": 0.25, "tau_coarse": 0.8, "settle_fine": 0.06, "settle_coarse": 1.1, "coarse_share": 0.22, "wake_gain": 0.9, "wake_len": 9.0, "turbulence": 0.55, "throw": 0.5 },
   "dust_air": { "push": 2.0, "drag": 0.35, "drag_max": 0.5, "mass_fine": 1.0, "mass_coarse": 3.0 },
-  "airflow": { "cell": 0.3, "nx": 40, "ny": 20, "nz": 80, "iterations": 20, "substeps": 1, "confinement": 0.4, "debug": 0 }
+  "airflow": { "cell": 0.3, "nx": 40, "ny": 20, "nz": 80, "iterations": 12, "substeps": 1, "confinement": 0.4, "debug": 0 }
 }
