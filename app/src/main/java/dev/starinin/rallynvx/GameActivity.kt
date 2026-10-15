@@ -315,11 +315,14 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) {
         if (running) { Native.gameResize(w, hh); return }
         intent.getIntExtra("lights", -1).let { if (it >= 0) Native.gameLightsDebug(it) }   // debug/test: car lights
+        intent.getIntExtra("dustgpu", 0).let { if (it > 0) Native.gameDustGpuDebug(it) }   // debug/test: the dust on the GPU
+        intent.getIntExtra("airflow", 0).let { if (it > 0) Native.gameAirflowDebug(it) }   // debug/test: the airflow slice
         intent.getFloatExtra("tod", -1f).let { if (it >= 0f) Native.gameTimeOfDay(it) }   // debug/test: time of day
         Native.gameStart(h.surface, w, hh, seed, profile, false)
         Native.gameQuality(Quality.index(this))
         intent.getIntExtra("dust", -1).let { if (it >= 0) Controls.setDust(this, it) }   // debug/test: the dust level (3 = fluid)
         Native.gameDust(Controls.dust(this))
+        Native.gameAero(if (Controls.aero(this)) 1 else 0)
         Native.gameSigns(Controls.signs(this))
         running = true
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
@@ -360,7 +363,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun applyControls() {
         applyRender()
         Native.audioVolume(Controls.volume(this))
-        if (running) Native.gameDust(Controls.dust(this))
+        if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0) }
         val d = drive ?: return
         d.configure(Controls.mode(this), Controls.sens(this), Controls.pedalsLeft(this), Controls.pedalsAnalog(this))
         applyControlLayout()

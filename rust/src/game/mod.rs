@@ -2,6 +2,7 @@
 pub mod app;
 pub mod daylight;
 pub mod dust;
+pub mod dust_ref;
 pub mod rendermode;
 pub mod scatter;
 pub mod api;
@@ -13,6 +14,7 @@ pub mod desktop;
 pub mod garage;
 pub mod aero;
 pub mod autopilot;
+pub mod airflow;
 pub mod fluid;
 pub mod grip;
 pub mod lines;

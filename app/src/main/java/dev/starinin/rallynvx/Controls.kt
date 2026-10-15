@@ -49,6 +49,9 @@ object Controls {
     private val AP_DEFAULT = mapOf("ap_lat" to 2, "ap_brake" to 2, "ap_speed" to 5, "ap_cut" to 3, "ap_slide" to 0, "ap_edge" to 1)
     fun apStep(c: Context, key: String, size: Int): Int = p(c).getInt(key, AP_DEFAULT[key] ?: 0).coerceIn(0, size - 1)
     fun setApStep(c: Context, key: String, v: Int) = p(c).edit().putInt(key, v).apply()
+    /** Aerodynamics: the dust follows the airflow around the car (on the GPU); off = the simple CPU particles. */
+    fun aero(c: Context): Boolean = p(c).getBoolean("aero", true)
+    fun setAero(c: Context, v: Boolean) = p(c).edit().putBoolean("aero", v).apply()
     fun setDust(c: Context, v: Int) = p(c).edit().putInt("dust", v.coerceIn(0, 3)).apply()
     fun autoFallback(c: Context) = p(c).getBoolean("auto_fallback", false)
     fun setAutoFallback(c: Context, v: Boolean) = p(c).edit().putBoolean("auto_fallback", v).apply()

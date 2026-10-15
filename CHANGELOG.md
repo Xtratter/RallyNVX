@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.27.0 - dust in the airflow
+
+- Added: the air around the car is simulated on the GPU (a box that moves with the car, the body and the garage parts as voxels, a wake model) and the dust follows it: the particles run on the GPU, take the air's velocity inside the box and the wind outside, are pushed aside by the body, keep their inertia and settle onto a terrain height window; the Settings switch "Aerodynamics" (On by default) turns it off, then the simple CPU particles run as before; the "Fluid (test)" dust is unchanged
+- Added: the debug extra `airflow=1` draws a side slice of the airflow (see docs/game.md)
+
 ## 2.26.0 - physical dust
 
 - Changed: dust particles obey physics: air drag with relaxation time, fine and coarse classes (fine hangs and drifts, coarse falls), a wake behind the car, turbulence, wind that grows with height, wheel throw and settling; a nicer soft sprite lit by the sun and the headlights (numbers in `surfaces.json`, `dust_physics`)

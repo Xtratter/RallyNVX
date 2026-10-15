@@ -13,8 +13,7 @@ use super::vehicle::Vehicle;
 #[derive(Clone, Copy, Debug)]
 pub struct Particle { pub pos: V3, pub size: f32, pub color: [f32; 3], pub alpha: f32, pub seed: f32, pub age: f32, pub kind: f32 }
 
-#[derive(Clone, Copy, Debug)]
-struct P { pos: V3, vel: V3, age: f32, life: f32, size0: f32, color: [f32; 3], coarse: bool, seed: f32 }
+use super::dust_ref::{self, GP as P};
 
 /// The numbers of `surfaces.json` -> `dust_physics`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -79,7 +78,25 @@ pub fn air_velocity(p: V3, a: &Air, ground_y: f32, ph: &Phys) -> V3 {
     u + n * amp
 }
 
-pub struct Dust { seed: u64, rng: u32, parts: Vec<P>, head: usize, cap: usize, level: i32, acc: [f32; 4], wind: V3 }
+pub struct Dust { seed: u64, rng: u32, parts: Vec<P>, head: usize, cap: usize, level: i32, acc: [f32; 4], wind: V3,
+    /// GPU mode: the particles live on the GPU (`raster/dust_gpu.rs`); the wheels' new ones wait here until the renderer takes them.
+    gpu: bool, pending: std::cell::Cell<Vec<P>> }
+
+/// The most emits a frame hands to the GPU (more are dropped; one frame of the busiest slide emits far fewer).
+pub const MAX_EMITS: usize = 64;
+
+static GPU_DEBUG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Debug/test: the GPU dust without the Settings switch.
+pub fn set_gpu_debug(on: bool) { GPU_DEBUG.store(on, std::sync::atomic::Ordering::Relaxed); }
+pub fn gpu_debug() -> bool { GPU_DEBUG.load(std::sync::atomic::Ordering::Relaxed) }
+
+static AERO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The Settings switch "Aerodynamics" (the app sets it at start; the host tests leave it off, so they run the CPU particles).
+pub fn set_aero(on: bool) { AERO.store(on, std::sync::atomic::Ordering::Relaxed); }
+
+/// Whether the particles run on the GPU, driven by the airflow: the switch (or the debug flag) is on and the level is Normal or Lots.
+pub fn gpu_wanted(aero: bool, debug: bool, level: i32) -> bool { (aero || debug) && matches!(level, 1 | 2) }
+pub fn gpu_on(level: i32) -> bool { gpu_wanted(AERO.load(std::sync::atomic::Ordering::Relaxed), gpu_debug(), level) }
 
 fn caps(level: i32) -> (usize, f32) {
     let t = grip::table();
@@ -89,8 +106,17 @@ fn caps(level: i32) -> (usize, f32) {
 impl Dust {
     pub fn new(seed: u64) -> Dust {
         let (cap, _) = caps(1);
-        Dust { seed, rng: (seed as u32) ^ 0x9E37_79B9 | 1, parts: Vec::new(), head: 0, cap, level: 1, acc: [0.0; 4], wind: V3::ZERO }
+        Dust { seed, rng: (seed as u32) ^ 0x9E37_79B9 | 1, parts: Vec::new(), head: 0, cap, level: 1, acc: [0.0; 4], wind: V3::ZERO, gpu: false, pending: std::cell::Cell::new(Vec::new()) }
     }
+    /// Whether the particles are on the GPU (then `update` only emits, `particles` is empty).
+    pub fn gpu(&self) -> bool { self.gpu }
+    pub fn set_gpu(&mut self, on: bool) {
+        if on != self.gpu { self.parts.clear(); self.head = 0; self.pending.get_mut().clear(); self.acc = [0.0; 4]; }
+        self.gpu = on;
+    }
+    /// The wheels' new particles since the last call (GPU mode).
+    pub fn take_emits(&self) -> Vec<P> { self.pending.take() }
+    pub fn wind(&self) -> V3 { self.wind }
     pub fn len(&self) -> usize { self.parts.len() }
     pub fn cap(&self) -> usize { self.cap }
 
@@ -110,6 +136,7 @@ impl Dust {
     }
     fn push(&mut self, p: P) {
         if self.cap == 0 { return; }
+        if self.gpu { let q = self.pending.get_mut(); if q.len() < MAX_EMITS { q.push(p); } return; }
         if self.parts.len() < self.cap { self.parts.push(p); } else { self.parts[self.head] = p; self.head = (self.head + 1) % self.cap; }
     }
 
@@ -120,26 +147,12 @@ impl Dust {
         let table = grip::table();
         let ph = phys();
         let air = Air { wind: self.wind, car_pos: v.pos, car_vel: v.vel, fwd: v.forward(), right: v.right(), half: v3(v.spec.size.x * 0.5, v.spec.size.y * 0.5, v.spec.size.z * 0.5), time };
-        // motion and ageing
+        // motion and ageing (on the GPU in GPU mode)
         let mut i = 0;
-        while i < self.parts.len() {
+        while i < self.parts.len() && !self.gpu {
             let p = &mut self.parts[i];
-            p.age += dt;
-            if p.age >= p.life { self.parts.swap_remove(i); if self.head >= self.parts.len() { self.head = 0; } continue; }
-            let ground = t.height(p.pos.x, p.pos.z);
-            let u = air_velocity(p.pos, &air, ground, &ph);
-            let (tau, settle) = if p.coarse { (ph.tau_coarse, ph.settle_coarse) } else { (ph.tau_fine, ph.settle_fine) };
-            let target = v3(u.x, u.y - settle, u.z);
-            let k = 1.0 - (-dt / tau).exp();   // the exact relaxation of a Stokes-drag particle, stable at any step
-            p.vel = p.vel + (target - p.vel) * k;
-            p.pos = p.pos + p.vel * dt;
-            let g = t.height(p.pos.x, p.pos.z) + 0.04;
-            if p.pos.y < g {
-                if p.coarse { self.parts.swap_remove(i); if self.head >= self.parts.len() { self.head = 0; } continue; }   // grit is deposited
-                p.pos.y = g;
-                if p.vel.y < 0.0 { p.vel.y = 0.0; }
-                p.vel.x *= 1.0 - (2.5 * dt).min(1.0); p.vel.z *= 1.0 - (2.5 * dt).min(1.0);   // fine dust slides and slows on the ground
-            }
+            let u = air_velocity(p.pos, &air, t.height(p.pos.x, p.pos.z), &ph);
+            if !dust_ref::step(p, u, |x, z| t.height(x, z), &ph, dt) { self.parts.swap_remove(i); if self.head >= self.parts.len() { self.head = 0; } continue; }
             i += 1;
         }
         // emission
@@ -172,15 +185,7 @@ impl Dust {
         }
     }
 
-    pub fn particles(&self) -> Vec<Particle> {
-        self.parts.iter().map(|p| {
-            let x = (p.age / p.life).clamp(0.0, 1.0);
-            let fade_in = (x / 0.08).min(1.0);
-            // turbulent diffusion spreads a puff like the square root of its age
-            let size = p.size0 * (1.0 + if p.coarse { 0.8 } else { 1.7 } * (p.age.sqrt()) + 1.2 * x);
-            Particle { pos: p.pos, size, color: p.color, alpha: (if p.coarse { 0.6 } else { 0.55 }) * fade_in * (1.0 - x).powf(1.4), seed: p.seed, age: x, kind: if p.coarse { 1.0 } else { 0.0 } }
-        }).collect()
-    }
+    pub fn particles(&self) -> Vec<Particle> { self.parts.iter().map(dust_ref::render).collect() }
 }
 
 #[cfg(test)]

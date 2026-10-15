@@ -269,6 +269,7 @@ impl World {
         if counting { inp = Input { brake: true, handbrake: true, ..Default::default() }; }   // held at the start line until GO
         if self.autopilot.is_some() { if let Some(r) = self.rally.as_mut() { r.run.assisted = true; } }
         self.vehicle.step_with(&self.terrain, &near, &inp, dt, &mut self.loose);
+        self.dust.set_gpu(super::dust::gpu_on(self.dust.level()));
         self.dust.update(&self.vehicle, &self.terrain, self.time, dt);
         let v = &mut self.vehicle;
         v.pos.x = v.pos.x.clamp(-WORLD_LIMIT, WORLD_LIMIT);
@@ -358,9 +359,16 @@ impl World {
 }
 
 /// What a render backend may read; gameplay never touches the GPU.
+/// What the GPU dust needs of a frame: the particles the wheels emitted, the car's pose and velocity, the wind, the ground under the car.
+pub struct DustGpuIn { pub emits: Vec<super::dust_ref::GP>, pub car_pos: V3, pub yaw: f32, pub car_vel: V3, pub wind: V3, pub ground_y: f32, pub cap: usize, pub time: f32 }
+
 pub struct WorldView<'a> {
     /// The fluid dust's car and wheel data when that dust level is on.
     pub fluid: Option<super::fluid::Packed>,
+    /// The airflow debug view's input when it is on.
+    pub airflow: Option<super::airflow::FlowIn>,
+    /// The GPU dust's input of a frame when the particles live on the GPU.
+    pub dust_gpu: Option<DustGpuIn>,
     pub signs: &'a [super::signs::Sign],
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
@@ -375,7 +383,8 @@ impl World {
         let mut props = Vec::new();
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
         let dl = self.daylight();
-        WorldView { fluid: if self.dust.level() == 3 { Some(super::fluid::pack(&self.vehicle, &super::fluid::cfg(), &super::grip::table())) } else { None }, signs: if self.signs_on { self.terrain.signs() } else { &[] }, terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(), wind: self.wind(), cloud_off: self.cloud_off,
+        WorldView { dust_gpu: if self.dust.gpu() { Some(DustGpuIn { emits: self.dust.take_emits(), car_pos: self.vehicle.pos, yaw: self.vehicle.forward().x.atan2(self.vehicle.forward().z), car_vel: self.vehicle.vel, wind: self.dust.wind(), ground_y: self.terrain.height(self.vehicle.pos.x, self.vehicle.pos.z), cap: self.dust.cap(), time: self.time }) } else { None },
+            airflow: if super::airflow::debug_on() || self.dust.gpu() { Some(super::airflow::flow_in(&self.vehicle, self.wind(), &super::airflow::cfg())) } else { None }, fluid: if self.dust.level() == 3 { Some(super::fluid::pack(&self.vehicle, &super::fluid::cfg(), &super::grip::table())) } else { None }, signs: if self.signs_on { self.terrain.signs() } else { &[] }, terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(), wind: self.wind(), cloud_off: self.cloud_off,
             time: self.time, cities: &self.cities, tracks: &self.tracks }
     }
 }

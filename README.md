@@ -21,6 +21,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 - **Roads**: a random tarmac liaison and a gravel special stage in every level, carved into the terrain, with crests, ditches, a rocky edge, side roads and a city super-special loop and a Rally mode against the clock (see [docs/game.md](docs/game.md))
 - **Dust**: tyre dust and spray by surface, with an Off / Normal / Lots setting (see [docs/game.md](docs/game.md))
 - **Garage**: a second car (the Vulpes WRC, a simplified model based on "Peugeot 206 WRC" by vecarz, CC BY-NC-SA 4.0), four upgrades and three aero body parts (splitter, wing, underbody) per car and a turntable preview (see [docs/game.md](docs/game.md))
+- **Aerodynamics**: drag and downforce as physics, and dust that follows a simulated airflow around the car on the GPU (Settings, Aerodynamics; see [docs/game.md](docs/game.md))
 - **Render modes**: Raster or Hybrid (soft shadows, long hill shadows, ambient occlusion) with an optional automatic fallback (see [docs/game.md](docs/game.md))
 - **Controls**: an on-screen steering wheel (or tilt) with gas and brake pedals for the car, and a settings screen (see [docs/game.md](docs/game.md))
 - **Sound**: procedural engine, rolling, wind and event sounds, no audio files (see [docs/game.md](docs/game.md))

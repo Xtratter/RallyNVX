@@ -30,6 +30,14 @@ On Android the start screen has Quality: Low (0.5x), Medium (0.7x) and High (1.0
 
 The delivery and race missions were removed in 2.14.0: the game is a free drive for now, and a rally mode (special stages with times) is planned. The profile (`files/profile.json`, desktop: none) keeps the money and the garage; a damaged file is kept as `profile.json.bak`.
 
+## Aerodynamics (dust in the airflow)
+
+With **Settings, Aerodynamics: On** (the default) the dust (levels Normal and Lots) runs on the GPU and follows a simulated airflow: a box (12 x 6 x 24 m, cells of 0.3 m, `surfaces.json` -> `airflow`) moves with the car, the body and the garage parts are solid voxels in it, and the air is stepped at 30 Hz (BFECC advection, vorticity confinement, a wake model, pressure projection). Particles inside the box take its air velocity (turned from the car's frame into the world), blend into the wind at its faces, are pushed out of the body, settle onto a 64 m window of terrain heights and keep the response times of `dust_physics`. Off falls back to the simple CPU particles (about 9 fps cheaper on the POCO F3 in the measured scene: 47 fps against 38 with it on, never below 30). The design is in `docs/superpowers/specs/2026-10-15-airflow-dust-design.md`.
+
+## Airflow (debug)
+
+An experimental airflow around the car (step 2 of the aerodynamics plan) is computed on the GPU in a box that moves with the car and drawn as a side slice (blue = slow air, white = the speed of the car, red = faster; the car is the black block, it faces right). It is off by default and changes nothing in the game yet; the debug extra `airflow=1` of `GameActivity` (or `airflow.debug` in `surfaces.json`) switches it on. Numbers are in `surfaces.json` -> `airflow`, the design in `docs/superpowers/specs/2026-10-15-airflow-design.md`.
+
 ## Garage
 
 The main menu has a **Garage**: a turntable view of the car, arrows to switch between cars and a panel with the money, the **Buy / Select** button and four upgrades per car: Engine (+8 / +16 / +25 % thrust, a little more top speed), Tyres (+5 / +10 / +15 % grip), Suspension (+10 / +20 / +30 % stiffness and damping) and Brakes (+20 / +40 / +60 %). A level costs 1x, 2x and 4x the car's upgrade price (300 for the off-roader, 750 for the Vulpes), but everything in the garage is free for now: nothing earns money until the rally mode, so the garage shows "Free" and purchases leave the balance alone. Three aero body parts add downforce and drag (3 levels each, same price rule): **Front splitter**, **Rear wing** (plus a free angle Low / Mid / High: more downforce, more drag) and **Underbody** (diffuser, works through ground effect). The panel shows the downforce at 150 km/h, the drag change and the estimated top speed. Forces are ½ρv² times an area from `aero.json`, split between the axles. Two cars: the off-roader (yours from the start) and the **Vulpes WRC** (3000, free for now): a light rally hatchback (a simplified model based on "Peugeot 206 WRC" by vecarz, CC BY-NC-SA 4.0, see `rust/assets/ASSET-LICENSE.md`), quicker and grippier but stiffer over bumps. The car you select, with its upgrades, is used in free drive and in every mission. Cars and prices live in `vehicles.json` (see docs/vehicles.md).
@@ -121,6 +129,14 @@ No rally mode and no NPC orders yet, and only the raster and hybrid renderers. T
 ## Миссии
 
 Миссии «доставка» и «гонка» убраны в 2.14.0: пока игра — это свободная езда, а ралли-режим (спецучастки с временем) в планах. Профиль (`files/profile.json`) хранит деньги и гараж; повреждённый файл сохраняется как `profile.json.bak`.
+
+## Аэродинамика (пыль в потоке воздуха)
+
+При **«Настройки», «Аэродинамика»: Вкл** (по умолчанию) пыль (уровни «Обычная» и «Много») считается на GPU и следует за смоделированным потоком воздуха: бокс (12 x 6 x 24 м, ячейки 0,3 м, `surfaces.json` -> `airflow`) едет вместе с машиной, кузов и детали гаража в нём твёрдые воксели, воздух считается с шагом 30 Гц (перенос BFECC, вихревое усиление, модель следа, проекция давления). Частицы внутри бокса берут его скорость воздуха (из системы машины в мировую), у граней плавно переходят на ветер, выталкиваются из кузова, оседают на окно карты высот 64 м и сохраняют времена отклика из `dust_physics`. «Выкл» возвращает простые частицы на CPU (примерно на 9 fps дешевле на POCO F3 в измеренной сцене: 47 fps против 38 при включённой, не ниже 30). Замысел в `docs/superpowers/specs/2026-10-15-airflow-dust-design.md`.
+
+## Воздушный поток (отладка)
+
+Опытный воздушный поток вокруг машины (шаг 2 плана аэродинамики) считается на GPU в боксе, который едет вместе с машиной, и рисуется боковым срезом (синий = медленный воздух, белый = скорость машины, красный = быстрее; машина — чёрный блок, смотрит вправо). По умолчанию выключен и пока ничего не меняет в игре; включается отладочным параметром `airflow=1` у `GameActivity` (или `airflow.debug` в `surfaces.json`). Числа в `surfaces.json` -> `airflow`, замысел в `docs/superpowers/specs/2026-10-15-airflow-design.md`.
 
 ## Гараж
 

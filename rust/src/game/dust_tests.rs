@@ -140,3 +140,30 @@ mod physics {
         assert!(Phys::from_json("{}").unwrap_err().contains("dust_physics"));
     }
 }
+
+#[test]
+fn the_gpu_dust_is_for_normal_and_lots_with_the_switch_or_the_debug_flag() {
+    for level in 0..=3 {
+        let on = matches!(level, 1 | 2);
+        assert_eq!(gpu_wanted(true, false, level), on, "switch, level {level}");
+        assert_eq!(gpu_wanted(false, true, level), on, "debug, level {level}");
+        assert!(!gpu_wanted(false, false, level), "off, level {level}");
+    }
+}
+#[test]
+fn in_gpu_mode_the_wheels_only_emit() {
+    use crate::game::{terrain::Terrain, vehicle::{Vehicle, VehicleSpec}, math::v3};
+    let t = Terrain::new(7);
+    let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0.0, 40.0, 0.0), 0.0);
+    v.vel = v3(0.0, 0.0, 25.0);
+    let mut d = Dust::new(7);
+    d.set_gpu(true);
+    for i in 0..60 { v.pos = v3(0.0, t.height(0.0, 0.0) + 1.0, 0.0); d.update(&v, &t, i as f32 / 60.0, 1.0 / 60.0); }
+    assert_eq!(d.len(), 0, "no CPU particles in GPU mode");
+    assert!(d.particles().is_empty());
+    let n = d.take_emits().len();
+    assert!(n <= MAX_EMITS);
+    assert!(d.take_emits().is_empty(), "taking empties the queue");
+    d.set_gpu(false);
+    assert_eq!(d.len(), 0);
+}
