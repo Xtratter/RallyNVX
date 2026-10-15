@@ -248,7 +248,7 @@ pub struct DustRender {
     low: Option<((u32, u32), wgpu::TextureView)>,
 }
 
-const LOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const LOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;   // 16-bit: soft gradients do not band
 /// The dust target is 1/DUST_DIV of the screen in each direction (= DUST_DIV in raster.wgsl).
 const DUST_DIV: u32 = 6;
 

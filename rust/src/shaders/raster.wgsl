@@ -585,10 +585,14 @@ fn dust_vertex(vi: u32, ps: vec4<f32>, c: vec4<f32>, e: vec4<f32>, size: f32) ->
 // The GPU dust: tens of thousands of soft, rotating, noisy-edged particles whose overlap builds the cloud. `e.w` is the light of the particle
 // (the dust above it towards the sun shades it, computed by the step pass); the puff is soft against the terrain and fades near the camera.
 fn dust_pt(i: DOut) -> vec4<f32> {
+    // a soft puff, not a disc and not grains: a smooth falloff whose radius wobbles slowly (low-frequency noise), so overlapping puffs blend into one smooth cloud
     let r = length(i.uv);
-    let n = vnoise2(i.uv * 2.2 + vec2<f32>(i.e.x * 31.0, i.e.x * 17.0));
-    let edge = mix(0.45, 1.0, n);
-    let shape = 1.0 - smoothstep(0.3, edge, r);   // a firmer edge: the billows of a real cloud are defined
+    let n = vnoise2(i.uv * 0.9 + vec2<f32>(i.e.x * 31.0, i.e.x * 17.0));
+    let rr = r / (0.78 + 0.34 * n);
+    let body = 1.0 - smoothstep(0.0, 1.0, clamp(rr, 0.0, 1.0));
+    // inside the puff a second, finer layer of soft noise gives the cloud its billowing structure (smooth, never grainy)
+    let n2 = vnoise2(i.uv * 2.3 + vec2<f32>(i.e.x * 7.0 + i.e.y * 3.0, i.e.x * 13.0));
+    let shape = body * body * (0.55 + 0.45 * body) * (0.62 + 0.76 * n2);
     let wp = i.wp;
     let dcam = length(wp - u.cam.xyz);
     let near = smoothstep(3.0, 10.0, dcam);   // dust right at the camera fades, so the picture does not fill with a veil
@@ -600,8 +604,15 @@ fn dust_pt(i: DOut) -> vec4<f32> {
     let fwd = pow(max(dot(view, sun_dir), 0.0), 4.0);   // forward scattering: a cloud seen against the sun glows
     let amb = (u.sky_hor.rgb * 0.15 + vec3<f32>(0.62, 0.55, 0.45)) * 0.55 * mix(1.0, 0.2, u.disc.w);   // warm skylight: dust is tan, not grey
     let light = max(i.e.w, 0.02);
-    var col = i.c.rgb * (amb * 2.1 * mix(0.55, 1.0, light) + vec3<f32>(sun) * (1.35 * light) + vec3<f32>(1.0, 0.72, 0.4) * (3.2 * fwd * sun * light));   // thin lit dust glows amber against the sun, the thick core is dark
-    col = col * mix(0.8, 1.0, smoothstep(0.0, 0.8, r));
+    var col = i.c.rgb * (amb * 2.5 * mix(0.55, 1.0, light) + vec3<f32>(sun) * (1.35 * light) + vec3<f32>(1.0, 0.72, 0.4) * (3.2 * fwd * sun * light));   // thin lit dust glows amber against the sun, the thick core is dark
+    // every puff is shaded like a soft sphere (the sun in the view's frame): bright on the sunny side, a soft grey underside, so the cloud has a volume
+    let vr = normalize(vec3<f32>(u.vp[0].x, u.vp[1].x, u.vp[2].x));
+    let vu = normalize(vec3<f32>(u.vp[0].y, u.vp[1].y, u.vp[2].y));
+    let vb = normalize(cross(vr, vu));
+    let n3 = vec3<f32>(i.uv, sqrt(max(1.0 - r * r, 0.0)));
+    let ld = vec3<f32>(dot(sun_dir, vr), dot(sun_dir, vu), dot(sun_dir, vb));
+    let sh = clamp(dot(n3, ld) * 0.5 + 0.5, 0.0, 1.0);
+    col = col * (0.34 + 1.2 * sh);
     if (u.hl_pos.w > 0.0) {
         let dv = wp - u.hl_pos.xyz;
         let dist = length(dv);
@@ -624,6 +635,7 @@ const DUST_DIV: f32 = 6.0;   // the low-resolution dust target is 1/DUST_DIV of 
 @fragment fn fs_dust_lo(i: DOut) -> @location(0) vec4<f32> {
     var c = dust_pt(i);
     if (c.a < 0.003) { discard; }
+    c = vec4<f32>(c.rgb + vec3<f32>(fract(52.9829189 * fract(dot(i.pos.xy, vec2<f32>(0.06711056, 0.00583715)))) - 0.5) * (1.5 / 255.0), c.a);   // a little dither against the banding of soft gradients in the 8-bit target
     let dims = textureDimensions(vol_depth);
     let px = clamp(vec2<i32>(i.pos.xy * DUST_DIV), vec2<i32>(0), vec2<i32>(dims) - vec2<i32>(1));
     let d = textureLoad(vol_depth, px, 0);
@@ -631,7 +643,7 @@ const DUST_DIV: f32 = 6.0;   // the low-resolution dust target is 1/DUST_DIV of 
         let ndc = vec2<f32>((f32(px.x) + 0.5) / f32(dims.x) * 2.0 - 1.0, 1.0 - (f32(px.y) + 0.5) / f32(dims.y) * 2.0);
         let ws = u.inv_vp * vec4<f32>(ndc, d, 1.0);
         let t_scene = length(ws.xyz / ws.w - u.cam.xyz);
-        c.a = c.a * clamp((t_scene - length(i.wp - u.cam.xyz)) / 0.6, 0.0, 1.0);
+        c.a = c.a * clamp((t_scene - length(i.wp - u.cam.xyz)) / 1.2, 0.0, 1.0);
     }
     if (c.a < 0.003) { discard; }
     return vec4<f32>(c.rgb * c.a, c.a);

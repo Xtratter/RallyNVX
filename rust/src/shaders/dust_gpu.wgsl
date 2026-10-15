@@ -672,7 +672,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let x = clamp(age / life, 0.0, 1.0);
     let fade_in = min(x / 0.08, 1.0);
     let size = s.a.w * (1.0 + select(select(0.8, 0.25, coarse), 1.1, smoke) * sqrt(age) + 0.35 * x);   // small grains hardly grow, smoke billows out
-    let alpha = select(select(0.38, 0.46, coarse), 0.3, smoke) * fade_in * pow(1.0 - x, select(1.4, 0.8, smoke));
+    let alpha = select(select(0.32, 0.38, coarse), 0.22, smoke) * fade_in * pow(1.0 - x, select(1.4, 0.8, smoke));
     render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz * shade, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), light));
 }
 
@@ -695,5 +695,5 @@ fn dust_field_light(@builtin(global_invocation_id) gid: vec3<u32>) {
     let step_v = sb / max(max(abs(sb.x), abs(sb.y)), max(abs(sb.z), 0.0001));
     var acc = 0.0;
     for (var j = 1; j <= 6; j++) { acc = acc + mass_cell(vec3<i32>(floor(vec3<f32>(c) + vec3<f32>(0.5) + step_v * f32(j)))); }
-    fld[id] = vec4<f32>(g, mix(0.68, 1.0, exp(-u.sun.w * acc * 0.4)));
+    fld[id] = vec4<f32>(g, mix(0.5, 1.0, exp(-u.sun.w * acc * 0.4)));
 }
