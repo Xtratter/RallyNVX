@@ -26,6 +26,8 @@ object Native {
     @JvmStatic external fun garageSelect(path: String, index: Int): Boolean
     /** upgrade 0 engine, 1 tyres, 2 suspension, 3 brakes */
     @JvmStatic external fun garageBuyUpgrade(path: String, index: Int, upgrade: Int): Boolean
+    /** Sets the wing angle of car [index]: 0 low drag, 1 mid, 2 high downforce. */
+    @JvmStatic external fun garageWingAngle(path: String, index: Int, angle: Int): Boolean
     /** 0 raster, 1 hybrid (PCSS soft shadows, terrain ray shadows, ambient occlusion). */
     @JvmStatic external fun gameRenderMode(mode: Int)
     /** With it on, the game drops from hybrid to raster after four slow seconds (see game::rendermode). */
