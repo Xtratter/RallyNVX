@@ -1,6 +1,6 @@
 use super::*;
 use crate::game::{input::Input, math::v3, terrain::Terrain, vehicle::{Vehicle, VehicleSpec}};
-use crate::raster::vehicle_models::{build_car, car_body_pose, car_wheel_poses, Mesh3, MAT_CHROME, MAT_EMISSIVE, MAT_GLASS, MAT_PAINT, MAT_PLASTIC, MAT_RUBBER};
+use crate::raster::vehicle_models::{build_car, car_body_pose, car_wheel_poses, Mesh3, MAT_CARLAMP, MAT_CHROME, MAT_GLASS, MAT_PAINT, MAT_PLASTIC, MAT_RUBBER};
 
 /// Triangles of the rally car in total (body plus four wheels): lowered step by step after phone measurements.
 const CAR_TRI_BUDGET: usize = 30_000;
@@ -20,7 +20,7 @@ fn check(m: &Mesh3, name: &str) {
     assert!(((hi.z - lo.z) - s.size.z).abs() <= s.size.z * 0.06, "length {} vs {}", hi.z - lo.z, s.size.z);
     assert!(lo.y >= -0.01 && hi.y <= s.size.y * 1.08 && hi.y >= s.size.y * 0.95, "height {}..{} vs {}", lo.y, hi.y, s.size.y);
     let mats: std::collections::HashSet<u8> = m.body.verts.iter().map(|v| v.col[3]).collect();
-    for want in [MAT_PAINT, MAT_GLASS, MAT_PLASTIC, MAT_CHROME, MAT_EMISSIVE] { assert!(mats.contains(&want), "missing material {want}"); }
+    for want in [MAT_PAINT, MAT_GLASS, MAT_PLASTIC, MAT_CHROME, MAT_CARLAMP] { assert!(mats.contains(&want), "missing material {want}"); }
     assert!(m.wheel.verts.iter().any(|v| v.col[3] == MAT_RUBBER) && m.wheel.verts.iter().any(|v| v.col[3] == MAT_CHROME));
     let (wlo, whi) = m.wheel.bounds();
     assert!(((whi.y - wlo.y) / 2.0 - s.radius).abs() < s.radius * 0.08, "wheel radius {}", (whi.y - wlo.y) / 2.0);
@@ -29,8 +29,8 @@ fn check(m: &Mesh3, name: &str) {
     let s = peugeot(); let m = build_car(&s);
     let wing = m.body.verts.iter().filter(|v| v.pos[1] > 1.1 && v.pos[2] < s.wheels[2].z - 0.2).count();
     assert!(wing >= 30, "a rear wing above 1.1 m behind the rear axle: {wing} vertices");
-    let front_lamps = m.body.verts.iter().filter(|v| v.col[3] == MAT_EMISSIVE && v.pos[2] > 1.4).count();
-    let rear_lamps = m.body.verts.iter().filter(|v| v.col[3] == MAT_EMISSIVE && v.pos[2] < -1.5).count();
+    let front_lamps = m.body.verts.iter().filter(|v| v.col[3] == MAT_CARLAMP && v.pos[2] > 1.4).count();
+    let rear_lamps = m.body.verts.iter().filter(|v| v.col[3] == MAT_CARLAMP && v.pos[2] < -1.5).count();
     assert!(front_lamps >= 20 && rear_lamps >= 6, "lamps: {front_lamps} front, {rear_lamps} rear vertices");
     // both sides are modelled (mirrors reach beyond the doors on each side)
     let (lo, hi) = m.body.bounds(); assert!(hi.x > 0.85 && lo.x < -0.85, "{lo:?} {hi:?}");
