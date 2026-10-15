@@ -15,6 +15,7 @@
 - Added: quick settings in the drive: the gear button next to the View button opens a panel (dust level, aerodynamics, the four options, motion blur, camera view) that applies at once
 - Changed: the Peugeot's headlights, tail and reverse lamps keep the shape of the mesh and show the car's state (headlights, brake, reverse); their positions are found on the mesh by colour class, so the next car models get their lamps in place without extra data (docs/vehicles.md)
 - Added: the airflow around the car on the GPU (a box that moves with the car, BFECC, wake model, the body and garage parts as voxels) with a debug slice (`airflow=1`), and `gpuprof=1` for GPU stage timings in the log
+- Changed: the dust of gravel, sand, dirt and grass is as soft as the asphalt smoke (billowing puffs, coarse grit larger and softer); only gravel throws flying stones; grass raises a quarter of the dust (a turf holds the soil, per EPA/Arizona DEQ/Washington Ecology guidance); the cloud no longer darkens near the car (weaker self-shadow)
 
 ## 2.27.0 - dust in the airflow
 
