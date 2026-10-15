@@ -245,7 +245,7 @@ impl Dust {
                 let vel = v3(-vh.x * ph.throw * kick + spray.x + (c - 0.5) * 1.5, (1.0 + 3.0 * info.slide.min(1.5) + e * 1.2) * if coarse { 1.1 } else { 0.9 }, -vh.z * ph.throw * kick + spray.z + (f - 0.5) * 1.5) + out_push;
                 let shade = 0.9 + 0.2 * g2;
                 let tone = if coarse { 0.82 } else { 1.0 };
-                self.push(P { pos, vel, age: 0.0, life: d.life * (0.75 + 0.5 * a) * if coarse { 0.4 } else { 1.0 }, size0: d.size * if coarse { 0.8 } else { 1.0 },
+                self.push(P { pos, vel, age: 0.0, life: d.life * (0.75 + 0.5 * a) * if coarse { 0.4 } else { 1.0 }, size0: d.size * if coarse { 1.0 } else { 1.3 },
                     color: [d.color[0] * shade * tone, d.color[1] * shade * tone, d.color[2] * shade * tone], coarse, seed: g2, speck: false, smoke: false });
             }
         }
@@ -304,8 +304,8 @@ impl Dust {
         let r = v3(a - 0.5, (b - 0.5) * 0.8, c - 0.5) * 0.9;
         let coarse = h2 < (ph.coarse_share + 0.3 * info.slide.min(1.0)).min(0.9);
         let vel = puff.vel + puff.axis.cross(r) * puff.omega + v3(e - 0.5, (g2 - 0.5) * 0.6, self.rand() - 0.5) * 3.0;
-        let shade = 0.9 + 0.2 * g2;
-        let tone = if coarse { 0.82 } else { 1.0 };
+        let shade = 0.96 + 0.08 * g2;
+        let tone = if coarse { 0.92 } else { 1.0 };
         let pos = puff.centre + r;
         let look = gpu_look(info.surface);
         if look.amount < 1.0 && self.rand() > look.amount { return; }   // turf holds the soil: little dust rises
@@ -315,7 +315,7 @@ impl Dust {
             self.push(P { pos, vel: vel * 0.8, age: 0.0, life: look.life * (0.6 + 0.8 * a), size0: d.size * 1.3, color: [base[0] * shade, base[1] * shade, base[2] * shade], coarse: false, seed: g2, speck: false, smoke: true });
             return;
         }
-        self.push(P { pos, vel, age: 0.0, life: look.life * (0.7 + 0.6 * a) * if coarse { 0.2 } else { 1.0 }, size0: d.size * if coarse { 0.8 } else { 1.0 },
+        self.push(P { pos, vel, age: 0.0, life: look.life * (0.7 + 0.6 * a) * if coarse { 0.2 } else { 1.0 }, size0: d.size * if coarse { 1.0 } else { 1.3 },
             color: [base[0] * shade * tone, base[1] * shade * tone, base[2] * shade * tone], coarse, seed: g2, speck: false, smoke: false });
         // grit flung by the tyre: tiny dark flecks that fly in arcs and bounce
         if info.surface == super::surface::Surface::Gravel && self.rand() < t.dust_gpu_specks * (0.4 + slide) {

@@ -592,7 +592,7 @@ fn dust_pt(i: DOut) -> vec4<f32> {
     let body = 1.0 - smoothstep(0.0, 1.0, clamp(rr, 0.0, 1.0));
     // inside the puff a second, finer layer of soft noise gives the cloud its billowing structure (smooth, never grainy)
     let n2 = vnoise2(i.uv * 2.3 + vec2<f32>(i.e.x * 7.0 + i.e.y * 3.0, i.e.x * 13.0));
-    let shape = body * body * (0.55 + 0.45 * body) * (0.62 + 0.76 * n2);
+    let shape = body * body * (0.55 + 0.45 * body) * (0.84 + 0.32 * n2);
     let wp = i.wp;
     let dcam = length(wp - u.cam.xyz);
     let near = smoothstep(3.0, 10.0, dcam);   // dust right at the camera fades, so the picture does not fill with a veil
