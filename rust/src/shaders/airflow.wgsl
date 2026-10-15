@@ -5,6 +5,7 @@ struct A {
     n: vec4<i32>,        // nx, ny, nz, number of boxes
     g: vec4<f32>,        // dx, dt, confinement, wake length in cells
     inflow: vec4<f32>,
+    dust: vec4<f32>,     // the dust's drag on the air per unit of mass, its cap
     shift: vec4<f32>,    // the change of the inflow this step: added to every fluid cell (the car's frame accelerates)
     boxes: array<vec4<f32>, 16>,   // (min.xyz, 0), (max.xyz, 0) per box, x measured from the box's centre line
 };
@@ -16,6 +17,7 @@ struct A {
 @group(0) @binding(5) var solid_src: texture_3d<f32>;
 @group(0) @binding(6) var dst_v: texture_storage_3d<rgba16float, write>;
 @group(0) @binding(7) var dst_s: texture_storage_3d<r32float, write>;
+@group(0) @binding(8) var<storage, read> dens: array<i32>;   // the dust field of the last frame: per cell mass and momentum x, y, z (fixed point, 1024)
 
 const WAKE_RATE: f32 = 10.0;
 const WAKE_FLOOR: f32 = 0.2;
@@ -118,6 +120,13 @@ fn adv_fin(@builtin(global_invocation_id) gid: vec3<u32>) {
     var v = sample(t_src, q);
     let r = range_lo_hi(vel_src, q);
     v = clamp(v, r[0], r[1]) + a.shift.xyz;
+    // the dust drags the air along: where it is dense the air takes its mean velocity
+    let di = ((c.z * a.n.y + c.y) * a.n.x + c.x) * 4;
+    if (dens[di] > 0) {
+        let k = clamp(f32(dens[di]) / 1024.0 * a.dust.x, 0.0, a.dust.y);
+        let vd = vec3<f32>(f32(dens[di + 1]), f32(dens[di + 2]), f32(dens[di + 3])) / f32(dens[di]);
+        v = v + (vd - v) * k;
+    }
     // the wake: a solid up to the wake length upstream in the same column slows the air down, most right behind it
     let len = i32(a.g.w);
     for (var d = 1; d <= len; d++) {

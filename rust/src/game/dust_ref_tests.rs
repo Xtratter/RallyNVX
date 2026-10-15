@@ -113,3 +113,45 @@ fn the_ground_window_is_toroidal_and_interpolates() {
     assert!((g - (0.5 * 100.3 + 0.2 * -40.8)).abs() < 1e-3, "{g}");
     assert_eq!(ground_height(500.0, 0.0, base, h, 7.0), 7.0);   // outside the window: the fallback
 }
+
+#[test]
+fn the_coupling_config_parses_and_errors_are_clear() {
+    let c = coupling();
+    assert!(c.push > 0.0 && c.drag_max <= 1.0 && c.mass_coarse > c.mass_fine);
+    assert!(Coupling::from_json("{}").unwrap_err().contains("dust_air"));
+    assert!(Coupling::from_json(r#"{"dust_air":{"push":-1,"drag":0.3,"drag_max":0.5,"mass_fine":1,"mass_coarse":3}}"#).unwrap_err().contains("push"));
+}
+#[test]
+fn the_field_adds_up_mass_and_momentum_and_ignores_particles_outside() {
+    let mut f = Field::new([8, 6, 10], 0.5);
+    f.splat([1.2, 1.2, 2.2], v3(2.0, 0.0, -4.0), 1.0);
+    f.splat([1.3, 1.3, 2.3], v3(4.0, 0.0, -2.0), 3.0);   // the same cell
+    f.splat([99.0, 1.0, 1.0], v3(1.0, 1.0, 1.0), 5.0);   // outside
+    f.splat([1.0, -0.1, 1.0], v3(1.0, 1.0, 1.0), 5.0);   // below the road
+    let c = [2, 2, 4];
+    assert!((f.mass(c) - 4.0).abs() < 1e-2, "{}", f.mass(c));
+    let v = f.mean_velocity(c);
+    assert!((v.x - 3.5).abs() < 0.02 && (v.z + 2.5).abs() < 0.02, "{v:?}");
+    let total: f32 = (0..8).flat_map(|x| (0..6).flat_map(move |y| (0..10).map(move |z| [x, y, z]))).map(|c| f.mass(c)).sum();
+    assert!((total - 4.0).abs() < 1e-2, "{total}");
+    assert_eq!(f.mean_velocity([0, 0, 0]), V3::ZERO);
+}
+#[test]
+fn dust_pushes_away_from_dense_dust_and_not_in_a_uniform_field() {
+    let mut f = Field::new([12, 12, 12], 0.5);
+    for _ in 0..20 { f.splat([3.0, 3.0, 3.0], V3::ZERO, 1.0); }   // a blob
+    let right = f.push([3.7, 3.25, 3.25], 2.0);   // on the +x side of the blob: pushed towards +x
+    let left = f.push([2.3, 3.25, 3.25], 2.0);
+    assert!(right.x > 0.0 && left.x < 0.0, "{right:?} {left:?}");
+    assert!(f.push([5.5, 5.5, 5.5], 2.0).len() < 1e-6, "far from the blob nothing pushes");
+    let mut u = Field::new([8, 8, 8], 0.5);
+    for x in 0..8 { for y in 0..8 { for z in 0..8 { u.splat([x as f32 * 0.5 + 0.25, y as f32 * 0.5 + 0.25, z as f32 * 0.5 + 0.25], V3::ZERO, 1.0); } } }
+    assert!(u.push([2.0, 2.0, 2.0], 2.0).len() < 1e-4, "a uniform field has no gradient");
+}
+#[test]
+fn the_air_drag_grows_with_the_mass_and_saturates() {
+    let c = coupling();
+    assert_eq!(air_drag(0.0, &c), 0.0);
+    assert!(air_drag(0.5, &c) < air_drag(1.0, &c) || air_drag(1.0, &c) == c.drag_max);
+    assert_eq!(air_drag(1000.0, &c), c.drag_max);
+}

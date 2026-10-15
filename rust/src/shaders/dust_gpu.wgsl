@@ -17,6 +17,7 @@ struct U {
     car_vel: vec4<f32>,
     bx: vec4<f32>,      // the airflow box in metres (x, y, z) and its cell; cell 0 = no airflow
     gw: vec4<i32>,      // the first cell (x, z) of the ground window
+    cp: vec4<f32>,      // the dust's push, the masses of fine and coarse grit, 0
     emits: array<S, 64>,
 };
 @group(0) @binding(0) var<uniform> u: U;
@@ -25,6 +26,7 @@ struct U {
 @group(0) @binding(3) var ground_tex: texture_2d<f32>;   // terrain heights of the window, toroidal (cell mod 64)
 @group(1) @binding(0) var grid_vel: texture_3d<f32>;     // the airflow's velocity relative to the car, in the car's frame
 @group(1) @binding(1) var grid_solid: texture_3d<f32>;
+@group(1) @binding(2) var<storage, read_write> dens: array<atomic<i32>>;   // the dust field: per cell mass and momentum x, y, z (fixed point 1024), the airflow's cell order
 
 @compute @workgroup_size(64)
 fn emit(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -99,6 +101,67 @@ fn in_solid(p: vec3<f32>) -> bool {
     if (any(c < vec3<i32>(0)) || any(c >= n)) { return false; }
     return textureLoad(grid_solid, c, 0).x > 0.5;
 }
+// ---- the dust field: the density pushes the particles apart, the momentum drags the air (in the airflow's solver)
+fn box_cells() -> vec3<i32> { return vec3<i32>(round(u.bx.xyz / u.bx.w)); }
+fn dens_index(c: vec3<i32>) -> i32 { let n = box_cells(); return ((c.z * n.y + c.y) * n.x + c.x) * 4; }
+fn mass_cell(c: vec3<i32>) -> f32 {
+    let n = box_cells();
+    if (any(c < vec3<i32>(0)) || any(c >= n)) { return 0.0; }
+    return f32(atomicLoad(&dens[dens_index(c)])) / 1024.0;
+}
+fn mass_at(b: vec3<f32>) -> f32 {
+    let g = b / u.bx.w - vec3<f32>(0.5);
+    let i = floor(g);
+    let f = g - i;
+    let c = vec3<i32>(i);
+    let x00 = mix(mass_cell(c), mass_cell(c + vec3<i32>(1, 0, 0)), f.x);
+    let x10 = mix(mass_cell(c + vec3<i32>(0, 1, 0)), mass_cell(c + vec3<i32>(1, 1, 0)), f.x);
+    let x01 = mix(mass_cell(c + vec3<i32>(0, 0, 1)), mass_cell(c + vec3<i32>(1, 0, 1)), f.x);
+    let x11 = mix(mass_cell(c + vec3<i32>(0, 1, 1)), mass_cell(c + vec3<i32>(1, 1, 1)), f.x);
+    return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
+}
+// the acceleration (world) that pushes a particle away from denser dust (game/dust_ref.rs::Field::push)
+fn push_at(p: vec3<f32>) -> vec3<f32> {
+    if (u.bx.w <= 0.0) { return vec3<f32>(0.0); }
+    let b = to_box(p);
+    let w = box_weight(b);
+    if (w <= 0.0) { return vec3<f32>(0.0); }
+    let d = u.bx.w;
+    let gx = (mass_at(b + vec3<f32>(d, 0.0, 0.0)) - mass_at(b - vec3<f32>(d, 0.0, 0.0))) * 0.5;
+    let gy = (mass_at(b + vec3<f32>(0.0, d, 0.0)) - mass_at(b - vec3<f32>(0.0, d, 0.0))) * 0.5;
+    let gz = (mass_at(b + vec3<f32>(0.0, 0.0, d)) - mass_at(b - vec3<f32>(0.0, 0.0, d))) * 0.5;
+    let a = -u.cp.x * vec3<f32>(gx, gy, gz) * w;
+    return right_axis() * a.x + vec3<f32>(0.0, a.y, 0.0) + fwd_axis() * a.z;
+}
+
+@compute @workgroup_size(64)
+fn dust_clear(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let n = box_cells();
+    let total = u32(n.x * n.y * n.z * 4);
+    if (gid.x < total) { atomicStore(&dens[gid.x], 0); }
+}
+
+// every live particle adds its mass and momentum (relative to the car, in the car's frame) to its cell
+@compute @workgroup_size(64)
+fn dust_splat(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= u.n.z || u.bx.w <= 0.0) { return; }
+    let s = state[i];
+    if (s.d.z < 0.5) { return; }
+    let b = to_box(s.a.xyz);
+    let c = vec3<i32>(floor(b / u.bx.w));
+    let n = box_cells();
+    if (any(b < vec3<f32>(0.0)) || any(c >= n)) { return; }
+    let m = select(u.cp.y, u.cp.z, s.d.x > 0.5);
+    let rel = s.b.xyz - u.car_vel.xyz;
+    let v = vec3<f32>(dot(rel, right_axis()), rel.y, dot(rel, fwd_axis()));
+    let k = dens_index(c);
+    atomicAdd(&dens[k], i32(m * 1024.0));
+    atomicAdd(&dens[k + 1], i32(m * v.x * 1024.0));
+    atomicAdd(&dens[k + 2], i32(m * v.y * 1024.0));
+    atomicAdd(&dens[k + 3], i32(m * v.z * 1024.0));
+}
+
 // the world air velocity: the box's air inside (relative to the car, in the car's frame), the wind outside, blended at the faces
 fn air_at(p: vec3<f32>) -> vec3<f32> {
     let outside = wind_at(p);
@@ -134,6 +197,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let target_v = vec3<f32>(air.x, air.y - settle, air.z);
     let k = 1.0 - exp(-dt / tau);
     vel = vel + (target_v - vel) * k;
+    vel = vel + push_at(pos) * dt;   // pushed away from the dust around it
     let before = pos;
     pos = pos + vel * dt;
     if (in_solid(pos)) { pos = before; vel = vel * -0.2; }   // the car's body: it does not go through

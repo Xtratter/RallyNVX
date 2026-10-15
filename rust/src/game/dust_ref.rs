@@ -103,6 +103,75 @@ pub fn ground_height(x: f32, z: f32, base: [i32; 2], height: impl Fn(usize) -> f
     a + (b - a) * fz
 }
 
+/// The coupling of the dust and the air (`surfaces.json` -> `dust_air`): the particles are splatted into the airflow's grid as a density and a momentum
+/// field; the density pushes the particles apart (a stand-in for the particle-particle pressure) and drags the air along (a thick cloud rolls as one).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Coupling { pub push: f32, pub drag: f32, pub drag_max: f32, pub mass_fine: f32, pub mass_coarse: f32 }
+
+impl Coupling {
+    pub fn from_json(text: &str) -> Result<Coupling, String> {
+        let v: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("surfaces file is not valid JSON: {e}"))?;
+        let f = v.get("dust_air").filter(|o| o.is_object()).ok_or("surfaces: missing object \"dust_air\"")?;
+        let num = |key: &str, lo: f64, hi: f64| -> Result<f32, String> {
+            let x = f.get(key).and_then(|k| k.as_f64()).filter(|x| x.is_finite()).ok_or_else(|| format!("dust_air: missing or non-numeric \"{key}\""))?;
+            if x < lo || x > hi { return Err(format!("dust_air: \"{key}\" must be between {lo} and {hi} (got {x})")); }
+            Ok(x as f32)
+        };
+        Ok(Coupling { push: num("push", 0.0, 50.0)?, drag: num("drag", 0.0, 5.0)?, drag_max: num("drag_max", 0.0, 1.0)?, mass_fine: num("mass_fine", 0.01, 20.0)?, mass_coarse: num("mass_coarse", 0.01, 20.0)? })
+    }
+}
+pub fn coupling() -> Coupling {
+    static CELL: std::sync::OnceLock<Coupling> = std::sync::OnceLock::new();
+    *CELL.get_or_init(|| Coupling::from_json(super::grip::EMBEDDED).expect("the embedded surfaces.json has a bad dust_air block"))
+}
+
+/// Fixed point of the atomic counters of the GPU field.
+pub const FP: f32 = 1024.0;
+
+/// The dust field on the airflow's grid: per cell the mass, and the momentum (mass times velocity relative to the car, in the car's frame), in fixed point
+/// (the GPU adds them with integer atomics). Cell (x, y, z) is at `(z * ny + y) * nx + x`, as in the airflow.
+pub struct Field { pub n: [usize; 3], pub cell: f32, pub data: Vec<i32> }
+
+impl Field {
+    pub fn new(n: [usize; 3], cell: f32) -> Field { Field { n, cell, data: vec![0; n[0] * n[1] * n[2] * 4] } }
+    pub fn index(&self, c: [i32; 3]) -> Option<usize> {
+        if (0..3).any(|a| c[a] < 0 || c[a] >= self.n[a] as i32) { return None; }
+        Some(((c[2] as usize * self.n[1] + c[1] as usize) * self.n[0] + c[0] as usize) * 4)
+    }
+    /// Adds a particle at `b` (box coordinates, metres) with mass `w` and velocity `v` (relative to the car, in its frame); outside the box it is ignored.
+    pub fn splat(&mut self, b: [f32; 3], v: V3, w: f32) {
+        let c = b.map(|x| (x / self.cell).floor() as i32);
+        let Some(i) = self.index(c) else { return };
+        self.data[i] += (w * FP) as i32;
+        self.data[i + 1] += (w * v.x * FP) as i32; self.data[i + 2] += (w * v.y * FP) as i32; self.data[i + 3] += (w * v.z * FP) as i32;
+    }
+    pub fn mass(&self, c: [i32; 3]) -> f32 { self.index(c).map_or(0.0, |i| self.data[i] as f32 / FP) }
+    /// The mean velocity of the dust in a cell (zero when empty).
+    pub fn mean_velocity(&self, c: [i32; 3]) -> V3 {
+        match self.index(c) { Some(i) if self.data[i] > 0 => { let m = self.data[i] as f32; v3(self.data[i + 1] as f32 / m, self.data[i + 2] as f32 / m, self.data[i + 3] as f32 / m) } _ => V3::ZERO }
+    }
+    /// The mass at a box position, trilinear between the cell centres.
+    pub fn mass_at(&self, b: [f32; 3]) -> f32 {
+        let g = b.map(|x| x / self.cell - 0.5);
+        let i = g.map(|x| x.floor());
+        let f = [g[0] - i[0], g[1] - i[1], g[2] - i[2]];
+        let c0 = [i[0] as i32, i[1] as i32, i[2] as i32];
+        let m = |dx: i32, dy: i32, dz: i32| self.mass([c0[0] + dx, c0[1] + dy, c0[2] + dz]);
+        let l = |a: f32, b: f32, t: f32| a + (b - a) * t;
+        let x00 = l(m(0, 0, 0), m(1, 0, 0), f[0]); let x10 = l(m(0, 1, 0), m(1, 1, 0), f[0]);
+        let x01 = l(m(0, 0, 1), m(1, 0, 1), f[0]); let x11 = l(m(0, 1, 1), m(1, 1, 1), f[0]);
+        l(l(x00, x10, f[1]), l(x01, x11, f[1]), f[2])
+    }
+    /// The acceleration (box frame) that pushes a particle at `b` away from denser dust: minus `push` times the mass gradient (per cell).
+    pub fn push(&self, b: [f32; 3], push: f32) -> V3 {
+        let d = |a: usize| { let (mut p, mut m) = (b, b); p[a] += self.cell; m[a] -= self.cell; (self.mass_at(p) - self.mass_at(m)) * 0.5 };
+        v3(-d(0), -d(1), -d(2)) * push
+    }
+}
+
+/// How strongly the dust drags the air in a cell holding `mass`: `drag` per unit of mass, at most `drag_max`.
+pub fn air_drag(mass: f32, c: &Coupling) -> f32 { (mass * c.drag).clamp(0.0, c.drag_max) }
+
 #[cfg(test)]
 #[path = "dust_ref_tests.rs"]
 mod tests;
