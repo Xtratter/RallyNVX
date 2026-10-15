@@ -32,10 +32,19 @@ Fallback if the quality is poor: a lattice Boltzmann (D3Q19) solver in the same 
 - `shaders_validate` includes the new WGSL.
 - Phone measurement (debug extra `airflow=1`): fps with the airflow on at 0.25 m cells and at 0.35 m; the numbers go into this spec.
 
+## Measurements (POCO F3, 15.10.2026)
+
+Autopilot run on a gravel stage, same scene: no airflow 57 fps; 0.35 m cells (32x16x64, 33 000 cells) 46-49 fps; 0.25 m cells (48x24x96, 110 000 cells) about 31 fps. The 50 fps goal is not met even at 0.35 m (about -10 fps), so the default is 0.35 m and the airflow stays a debug view; for step 3 the solver needs to be cheaper (fewer Jacobi iterations with a better solver, or half the update rate).
+
+What the prototype showed:
+- The ideal flow of a projected solver leaves no wake behind the car (D'Alembert), so a wake model (`Airflow::wake`) slows the air in the car's shadow; it is stable and depends on the voxel body.
+- BFECC without a limiter blew up from a cold start (220 m/s after 3 s); the limiter, an initial fill with the inflow, a smoothed inflow (0.3 s), a tilt limit and a speed limit keep it bounded on the phone, also on a rough ride.
+- The Jacobi pressure solve does not converge in a long box (the measured divergence stays about 8 1/s whatever the iteration count, the collocated stencil is the limit); fine for a picture, to be revisited before the flow drives the dust.
+
 ## Success criteria
 
 - Wake behind the car is visible in the slice and grows with speed.
-- fps stays above 50 at 0.25 m, otherwise a coarser cell is chosen and noted here.
+- fps stays above 50 at 0.25 m, otherwise a coarser cell is chosen and noted here (see Measurements: 0.35 m, still below 50).
 - Existing tests stay green; with `airflow.debug` off nothing is allocated.
 
 ## Out of scope

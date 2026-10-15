@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.27.0 - airflow (debug)
+
+- Added: an experimental airflow around the car on the GPU (a box moving with the car, BFECC advection, vorticity confinement, a wake model, the car's body and garage parts as voxels), shown as a side slice with the debug extra `airflow=1`; off by default and not yet connected to forces or dust (see docs/game.md)
+
 ## 2.26.0 - physical dust
 
 - Changed: dust particles obey physics: air drag with relaxation time, fine and coarse classes (fine hangs and drifts, coarse falls), a wake behind the car, turbulence, wind that grows with height, wheel throw and settling; a nicer soft sprite lit by the sun and the headlights (numbers in `surfaces.json`, `dust_physics`)
