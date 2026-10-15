@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn embedded_config_parses() {
     let c = cfg();
-    assert_eq!(c.n, [32, 16, 64]); assert!((c.cell - 0.35).abs() < 1e-6); assert!(!c.debug);
+    assert_eq!(c.n, [40, 20, 80]); assert!((c.cell - 0.3).abs() < 1e-6); assert!(!c.debug);
 }
 #[test]
 fn bad_or_missing_block_is_a_clear_error() {
