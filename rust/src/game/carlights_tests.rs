@@ -1,5 +1,5 @@
 use super::*;
-use crate::game::{input::Input, math::{v3, Q}, terrain::Terrain, vehicle::{Vehicle, VehicleSpec}};
+use crate::game::{input::Input, math::{v3, V3, Q}, terrain::Terrain, vehicle::{Vehicle, VehicleSpec}};
 
 fn cars() -> Vec<VehicleSpec> { VehicleSpec::all().into_iter().map(|(_, s)| s).collect() }
 fn settled(spec: VehicleSpec) -> Vehicle {
@@ -70,4 +70,63 @@ fn settled(spec: VehicleSpec) -> Vehicle {
     let centre = origin + rot.rotate(v3(head[0] / n * k[0], head[1] / n * k[1], head[2] / n * k[2]));
     let right_lamp = lamps(&v).head.iter().copied().min_by(|a, b| (*a - centre).len().total_cmp(&(*b - centre).len())).unwrap();
     assert!((right_lamp - centre).len() < 0.05, "the lamp is {:.3} m from the asset's headlight", (right_lamp - centre).len());
+}
+
+fn flat_lamp() -> (V3, V3, V3) { (v3(0.6, 0.7, 0.0), v3(0.0, -0.05, 1.0).norm(), v3(1.0, 0.0, 0.0)) }
+fn vulpes() -> VehicleSpec { VehicleSpec::by_id("vulpes").expect("vulpes") }
+
+#[test] fn the_beam_is_strongest_on_the_axis_and_falls_with_distance() {
+    let (l, f, r) = flat_lamp();
+    let near = beam_gain(l, f, r, l + f * 8.0 + v3(0.0, -0.4, 0.0));
+    let far = beam_gain(l, f, r, l + f * 60.0 + v3(0.0, -3.0, 0.0));
+    assert!(near > 0.5 && far < near * 0.5 && far > 0.0, "{near} {far}");
+}
+#[test] fn the_beam_has_a_sharp_upper_cut_off_that_is_higher_on_the_right() {
+    let (l, f, r) = flat_lamp();
+    let below = beam_gain(l, f, r, l + f * 20.0 + v3(0.0, -0.5, 0.0));
+    let above = beam_gain(l, f, r, l + f * 20.0 + v3(0.0, 3.0, 0.0));
+    assert!(below > 0.3 && above < 0.02, "{below} {above}");
+    let cut = |x: f32| beam_gain(l, f, r, l + f * 20.0 + r * x + v3(0.0, 0.55, 0.0));
+    assert!(cut(5.0) > cut(-5.0) * 2.0, "right {} left {}", cut(5.0), cut(-5.0));
+}
+#[test] fn the_beam_ignores_what_is_behind_or_far_to_the_side_and_never_gives_nan() {
+    let (l, f, r) = flat_lamp();
+    assert_eq!(beam_gain(l, f, r, l - f * 5.0), 0.0);
+    assert!(beam_gain(l, f, r, l + r * 20.0 + f * 2.0) < 0.01);
+    for p in [l, l + f * 1e-6] { assert!(beam_gain(l, f, r, p).is_finite()); }
+}
+#[test] fn the_beam_follows_a_turned_and_pitched_body() {
+    let (l, f, r) = flat_lamp();
+    let q = Q::axis_angle(v3(0., 1., 0.), 1.1).mul(Q::axis_angle(v3(1., 0., 0.), 0.2));
+    let (l2, f2, r2) = (q.rotate(l), q.rotate(f), q.rotate(r));
+    let a = beam_gain(l, f, r, l + f * 12.0 + v3(0.0, -0.4, 0.0));
+    let b = beam_gain(l2, f2, r2, l2 + q.rotate(f * 12.0 + v3(0.0, -0.4, 0.0)));
+    assert!((a - b).abs() < 1e-4, "{a} {b}");
+}
+#[test] fn the_glow_needs_a_view_along_the_lamp() {
+    let axis = v3(0.0, 0.0, 1.0);
+    assert!(glow_factor(axis, v3(0.0, 0.0, 1.0)) > 0.95);
+    assert!(glow_factor(axis, v3(1.0, 0.0, 0.2).norm()) < 0.25, "from the side");
+    assert_eq!(glow_factor(axis, v3(0.0, 0.0, -1.0)), 0.0, "from behind the lamp");
+}
+#[test] fn rally_cars_have_position_lamps_beside_the_headlights_at_the_front() {
+    let v = settled(vulpes());
+    let l = lamps(&v);
+    for p in l.pos { assert!((p - v.pos).dot(v.forward()) > v.spec.size.z * 0.35); }
+    assert!(((l.pos[0] - v.pos).dot(v.right()) + (l.pos[1] - v.pos).dot(v.right())).abs() < 1e-3);
+}
+
+#[test] fn lit_lamps_glow_only_towards_the_viewer() {
+    let v = settled(vulpes()); let lm = lamps(&v);
+    let on = CarLights { head: true, brake: true, reverse: false };
+    let front_cam = v.pos + v.forward() * 20.0 + v3(0.0, 1.0, 0.0);
+    let g = glows(&on, &lm, front_cam, v.forward());
+    let front: Vec<_> = g.iter().filter(|g| (g.0 - v.pos).dot(v.forward()) > 0.0).collect();
+    let rear: Vec<_> = g.iter().filter(|g| (g.0 - v.pos).dot(v.forward()) < 0.0).collect();
+    assert!(front.len() == 4 && front.iter().all(|g| g.2 > 0.3), "two headlights and two position lamps");
+    assert!(rear.iter().all(|g| g.2 == 0.0), "tail glow is not seen from the front");
+    let rear_cam = v.pos - v.forward() * 20.0 + v3(0.0, 1.0, 0.0);
+    let g = glows(&on, &lm, rear_cam, v.forward());
+    assert!(g.iter().filter(|g| (g.0 - v.pos).dot(v.forward()) < 0.0).all(|g| g.2 > 0.5 && g.1[0] > g.1[2]), "red brake lights from behind");
+    assert!(glows(&CarLights::default(), &lm, front_cam, v.forward()).is_empty(), "lamps off: no glow");
 }

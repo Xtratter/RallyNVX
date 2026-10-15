@@ -2,6 +2,14 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.29.0 - lamp optics
+
+- Changed: the car's headlights are lenses: unlit they are dark glass with a rim reflection of the sky and the sun, lit they have a hot core when seen head-on, a darker rim and a stepped reflector
+- Changed: a real low beam from the two headlights (wide, a sharp upper cut-off that rises on the right, falling off with distance) lights the ground, the haze and the dust, instead of one cone
+- Added: a soft halo around every lit lamp (headlights, position, tail, reverse) that follows the viewing angle, also on the Peugeot
+- Added: position lamps: the corner pieces of the front lamp units are found on the mesh (any new model gets them from its colours) and burn with the low beam; a mesh without a corner piece falls back to the headlight
+- Added: a quick time-of-day switch in the drive (the "Time" button next to the gear): Auto (the level's own clock), Day, Evening, Night; it applies at once and freezes the sky at that phase, so the night lamps can be checked in free ride
+
 ## 2.28.1 - dust fixes
 
 - Fixed: a dark rectangle in the dust cloud around the car (the airflow box's edge showed through the lighting); the dust no longer takes a light or shade term from the box

@@ -53,6 +53,9 @@ fn inst_facade(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = in
 /// A street strip: even asphalt with lane marks drawn by the shader (colour alpha 4).
 fn inst_street(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = inst(rot, pos, s, color); i.color[3] = 4.0; i }
 
+/// The most halos a frame draws (head, position, tail and reverse lamps of the car).
+const HALO_MAX: usize = 16;
+
 struct MeshBuf { vb: wgpu::Buffer, ib: wgpu::Buffer, n: u32, wb: Option<wgpu::Buffer> }
 
 /// A vehicle model mesh in the model pipeline's vertex format (28 bytes).
@@ -143,7 +146,7 @@ pub struct Raster {
     mbuf: wgpu::Buffer,
     pl_water: wgpu::RenderPipeline,
     pl_road: wgpu::RenderPipeline,
-    pl_dust: wgpu::RenderPipeline, pl_dust_pt: wgpu::RenderPipeline, pl_dust_specks: wgpu::RenderPipeline,
+    pl_dust: wgpu::RenderPipeline, pl_dust_pt: wgpu::RenderPipeline, pl_dust_specks: wgpu::RenderPipeline, pl_halo: wgpu::RenderPipeline, halo_buf: wgpu::Buffer, halo_n: u32,
     fluid: Option<fluid_gpu::FluidGpu>,
     /// The airflow debug view: made on first use (`airflow_tried`), so nothing is allocated while it is off.
     airflow: Option<airflow_gpu::AirflowGpu>, airflow_tried: bool, adapter: wgpu::Adapter,
@@ -342,6 +345,16 @@ impl Raster {
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_dust_speck"), compilation_options: Default::default(), targets: &target_blend }),
             primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
         });
+        // the glow around lit lamps: soft additive billboards (the instances of the CPU dust layout), tested against the scene's depth
+        let add = wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add };
+        let target_add = [Some(wgpu::ColorTargetState { format, blend: Some(wgpu::BlendState { color: add, alpha: add }), write_mask: wgpu::ColorWrites::ALL })];
+        let pl_halo = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("halo"), layout: Some(&lay_main),
+            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_halo"), compilation_options: Default::default(), buffers: &[wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<dustgen::DustInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &DUST_ATTRS }] },
+            fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_halo"), compilation_options: Default::default(), targets: &target_add }),
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+        });
+        let halo_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("halo_inst"), size: (HALO_MAX * std::mem::size_of::<dustgen::DustInst>()) as u64, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let fluid = fluid_gpu::FluidGpu::new(&adapter, &device, &queue, &bgl_main, &module, format);
         let dust_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_inst"), size: (dustgen::MAX_INST * std::mem::size_of::<dustgen::DustInst>()) as u64, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let pl_terrain_sh = mk("terrain_sh", &lay_shadow, "vs_terrain_shadow", None, &[mesh_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
@@ -363,7 +376,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, pl_dust_specks, pl_halo, halo_buf, halo_n: 0, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -442,7 +455,7 @@ impl Raster {
             tl_pos: [tc.x, tc.y, tc.z, 0.],
             tl_col: tail_glow,
             wind: [wv.wind.x, wv.wind.z, wv.cloud_off.0, wv.cloud_off.1],
-            lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, 0.0] };
+            lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, (wv.lamps.head[0] - wv.lamps.head[1]).len() * 0.5] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // a new level invalidates every cache keyed by tile coordinates
@@ -487,15 +500,28 @@ impl Raster {
         let (bq, bp) = vm::car_body_pose(veh);
         ml[0].push(MInst { m: mmat(bq, bp), tint: [1.0; 4] });
         for p in vm::car_wheel_poses(veh, self.wheel_spin) { ml[1].push(MInst { m: mmat(p.0, p.1), tint: [1.0; 4] }); }
+        let mut halos: Vec<dustgen::DustInst> = Vec::new();
         {
             let (lights, lamps, rot) = (&wv.lights, &wv.lamps, wv.vehicle.rot);
             let mut glow = |p: V3, s: V3, col: [f32; 3]| lists[0].push(inst_glow(rot, p, s, col));
             let own_lamps = veh.spec.style == crate::game::vehicle::CarStyle::Rally;   // the rally car's mesh has real lamp shapes that show their own state
+            if own_lamps {
+                // the rally car's lamps glow as soft halos that follow the viewing angle (night strong, day faint)
+                let night = 0.3 + 0.7 * wv.daylight.night.clamp(0.0, 1.0);
+                for (p, col, k) in crate::game::carlights::glows(lights, lamps, wv.cam_pos, veh.forward()) {
+                    if k < 0.02 || halos.len() >= HALO_MAX { continue; }
+                    let dist = (wv.cam_pos - p).len();
+                    let q = p + (wv.cam_pos - p).norm() * 0.08;   // a little towards the camera, so the body does not cut the halo
+                    halos.push(dustgen::DustInst { p: [q.x, q.y, q.z, (0.14 + 0.014 * dist) * (0.6 + 0.8 * k)], c: [col[0], col[1], col[2], 1.1 * k * night], e: [0.0; 4] });
+                }
+            }
             if own_lamps {} else if lights.head { for p in lamps.head { glow(p, v3(0.24, 0.13, 0.08), [1.0, 0.97, 0.85]); } }
             let tail_col = if lights.brake { [1.0, 0.05, 0.03] } else if lights.head { [0.35, 0.02, 0.01] } else { [0.0; 3] };
             if own_lamps {} else if tail_col[0] > 0.0 { for p in lamps.tail { glow(p, v3(0.28, 0.1, 0.06), tail_col); } }
             if !own_lamps && lights.reverse { for p in lamps.rev { glow(p, v3(0.16, 0.1, 0.06), [1.0, 1.0, 0.95]); } }
         }
+        self.halo_n = halos.len() as u32;
+        if !halos.is_empty() { self.queue.write_buffer(&self.halo_buf, 0, bytemuck::cast_slice(&halos)); }
         if let Some(level) = wv.terrain.water_level() {
             if veh.speed().abs() > 2.0 {
                 let tick = (wv.time * 16.0) as i32;
@@ -711,6 +737,11 @@ impl Raster {
                 rp.set_pipeline(&self.pl_dust);
                 rp.set_vertex_buffer(0, self.dust_buf.slice(..));
                 rp.draw(0..6, 0..dust_n);
+            }
+            if self.halo_n > 0 {
+                rp.set_pipeline(&self.pl_halo);
+                rp.set_vertex_buffer(0, self.halo_buf.slice(..));
+                rp.draw(0..6, 0..self.halo_n);
             }
         }
         if let (true, Some(fl)) = (fluid_on, self.fluid.as_mut()) {

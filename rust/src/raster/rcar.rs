@@ -34,16 +34,36 @@ pub fn parse(d: &[u8]) -> Result<(Mesh3, Mesh3), String> {
 /// lamps (white at the rear). Metres in the mesh's frame, for the car's right-hand side (the cars are symmetric): the units' centres. A new car model only has to colour
 /// its lamp meshes this way (the converter does) and its lamps sit on the mesh, wherever the designer put them.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct LampPoints { pub head: [f32; 3], pub tail: [f32; 3], pub rev: [f32; 3] }
+pub struct LampPoints { pub head: [f32; 3], pub tail: [f32; 3], pub rev: [f32; 3], pub pos: [f32; 3] }
+
+fn is_cream_front(v: &Vert) -> bool { (v.col[3] == 5 || v.col[3] == 7) && v.col[0] > 200 && v.col[1] > 200 && v.col[2] > 140 && v.pos[2] > 0.0 }
+
+/// The cream front vertices (right side) split in two: the main lens and the outboard corner piece (within 6 cm of the outermost x, at least 6 vertices each),
+/// which is the car's position lamp. The centre sliver (x near 0) is no lamp unit.
+fn front_split(body: &Mesh3) -> (Vec<usize>, Vec<usize>) {
+    let right: Vec<usize> = (0..body.verts.len()).filter(|&i| is_cream_front(&body.verts[i]) && body.verts[i].pos[0] > 0.3).collect();
+    let Some(max_x) = right.iter().map(|&i| body.verts[i].pos[0]).max_by(f32::total_cmp) else { return (vec![], vec![]) };
+    let (corner, main): (Vec<usize>, Vec<usize>) = right.into_iter().partition(|&i| body.verts[i].pos[0] > max_x - 0.06);
+    if corner.len() >= 6 && main.len() >= 6 { (main, corner) } else { (main.into_iter().chain(corner).collect(), vec![]) }
+}
+
+/// Indices of the vertices of the front corner (position-lamp) pieces, both sides; the car model gives them their own lamp material.
+pub fn position_vertices(body: &Mesh3) -> Vec<usize> {
+    let (_, corner) = front_split(body);
+    if corner.is_empty() { return vec![]; }
+    let lo = corner.iter().map(|&i| body.verts[i].pos[0]).fold(f32::MAX, f32::min) - 1e-4;
+    (0..body.verts.len()).filter(|&i| { let v = &body.verts[i]; is_cream_front(v) && v.pos[0].abs() >= lo }).collect()
+}
 
 pub fn lamp_points(body: &Mesh3) -> Option<LampPoints> {
-    let mut head = Vec::new(); let mut tail = Vec::new(); let mut rev = Vec::new();
+    let (main, corner) = front_split(body);
+    let mut tail = Vec::new(); let mut rev = Vec::new();
     for v in &body.verts {
         if v.col[3] != 5 && v.col[3] != 7 { continue; }
-        let (r, g, b) = (v.col[0], v.col[1], v.col[2]);
         if v.pos[0] <= 0.0 { continue; }   // the right-hand side
+        let (r, g, b) = (v.col[0], v.col[1], v.col[2]);
         if r > 200 && g < 70 && b < 70 { if v.pos[2] < 0.0 { tail.push(v.pos); } }
-        else if r > 200 && g > 200 && b > 140 { if v.pos[2] > 0.0 { head.push(v.pos); } else { rev.push(v.pos); } }
+        else if r > 200 && g > 200 && b > 140 && v.pos[2] < 0.0 { rev.push(v.pos); }
     }
     // the outermost cluster of at least a few vertices: the main unit, not a centre brake light or a fog lamp sliver
     let pick = |pts: &[[f32; 3]]| -> Option<[f32; 3]> {
@@ -54,7 +74,9 @@ pub fn lamp_points(body: &Mesh3) -> Option<LampPoints> {
         clusters.into_iter().filter(|c| c.len() >= 6).map(|c| { let n = c.len() as f32; [0, 1, 2].map(|a| c.iter().map(|p| p[a]).sum::<f32>() / n) })
             .max_by(|a, b| a[0].total_cmp(&b[0]))
     };
-    Some(LampPoints { head: pick(&head)?, tail: pick(&tail)?, rev: pick(&rev)? })
+    let centre = |idx: &[usize]| -> Option<[f32; 3]> { if idx.len() < 6 { None } else { let n = idx.len() as f32; Some([0, 1, 2].map(|a| idx.iter().map(|&i| body.verts[i].pos[a]).sum::<f32>() / n)) } };
+    let head = centre(&main)?;
+    Some(LampPoints { head, tail: pick(&tail)?, rev: pick(&rev)?, pos: centre(&corner).unwrap_or(head) })
 }
 
 #[cfg(test)]
@@ -88,9 +110,28 @@ mod tests {
         let (b, _) = parse(PEUGEOT).unwrap();
         let l = lamp_points(&b).expect("lamps");
         // the headlight unit at the front corner, the tail unit at the rear corner, the reverse lamp beside it (measured on the lamp vertices)
-        assert!((l.head[0] - 0.569).abs() < 0.03 && (l.head[1] - 0.634).abs() < 0.03 && (l.head[2] - 1.693).abs() < 0.03, "{:?}", l.head);
+        assert!((l.head[0] - 0.53).abs() < 0.05 && (l.head[1] - 0.62).abs() < 0.05 && (l.head[2] - 1.72).abs() < 0.05, "{:?}", l.head);
         assert!((l.tail[0] - 0.611).abs() < 0.03 && l.tail[2] < -1.6, "{:?}", l.tail);
         assert!(l.rev[2] < -1.6 && l.rev[0] > 0.5, "{:?}", l.rev);
+    }
+    #[test] fn the_front_unit_splits_into_main_lamp_and_corner_position_piece() {
+        let (b, _) = parse(PEUGEOT).unwrap();
+        let l = lamp_points(&b).expect("lamps");
+        assert!((l.head[0] - 0.53).abs() < 0.05 && (l.head[2] - 1.72).abs() < 0.05, "main {:?}", l.head);
+        assert!(l.pos[0] > l.head[0] + 0.08 && l.pos[2] < l.head[2], "the corner piece is outboard and behind the lens: {:?}", l.pos);
+        let idx = position_vertices(&b);
+        assert!(idx.len() >= 12 && idx.iter().all(|&i| b.verts[i].pos[2] > 1.0), "{}", idx.len());
+        assert!(idx.iter().any(|&i| b.verts[i].pos[0] < 0.0) && idx.iter().any(|&i| b.verts[i].pos[0] > 0.0), "both sides");
+    }
+    #[test] fn a_mesh_without_a_corner_piece_uses_the_head_point_for_the_position_lamp() {
+        let mut m = Mesh3::default();
+        let mut vert = |x: f32, z: f32, c: [u8; 4]| m.verts.push(Vert { pos: [x, 0.6, z], nrm: [0.0, 1.0, 0.0], col: c });
+        for i in 0..8 { vert(0.5 + 0.005 * i as f32, 1.7, [255, 242, 204, 7]); }
+        for i in 0..8 { vert(0.6 + 0.005 * i as f32, -1.6, [242, 13, 8, 7]); }
+        for i in 0..8 { vert(0.5 + 0.005 * i as f32, -1.65, [255, 255, 255, 7]); }
+        let l = lamp_points(&m).expect("lamps");
+        assert_eq!(l.pos, l.head);
+        assert!(position_vertices(&m).is_empty());
     }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());
