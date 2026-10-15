@@ -201,6 +201,20 @@ mod tests {
         assert!(parse_all(&rca3(2)).is_ok() && parse_all(&rca3(1)).is_err() && parse_all(&rca3(5)).is_err(), "2 to 4 meshes");
         let t = rca3(4); assert!(parse_all(&t[..t.len() - 9]).is_err(), "truncated");
     }
+    #[test] fn the_embedded_peugeot_has_four_meshes_with_textured_wheel_parts() {
+        let p = parse_all(PEUGEOT).unwrap();
+        let (disc, caliper) = (p.disc.expect("disc"), p.caliper.expect("caliper"));
+        let tris = |m: &Mesh3| m.idx.len() / 3;
+        assert!(tris(&p.wheel) > 2000 && tris(&disc) > 100 && tris(&caliper) > 200, "{} {} {}", tris(&p.wheel), tris(&disc), tris(&caliper));
+        let textured = p.wheel.verts.iter().filter(|v| v.uv != NO_UV).count();
+        assert!(textured * 10 > p.wheel.verts.len() * 7, "{textured} of {} wheel vertices have a UV", p.wheel.verts.len());
+        assert!(disc.verts.iter().all(|v| v.col[3] == 13), "the disc is class 13");
+        assert!(caliper.verts.iter().any(|v| v.uv != NO_UV));
+        let (lo, hi) = p.wheel.bounds();
+        assert!(((hi.y - lo.y) / 2.0 - 0.326).abs() < 0.01 && (lo.y + hi.y).abs() < 0.02 && (lo.z + hi.z).abs() < 0.02, "wheel {lo:?} {hi:?}");
+        let (dl, dh) = disc.bounds();
+        assert!(dh.y - dl.y > 0.3 && dh.y - dl.y < 0.5, "the disc fits inside the rim: {dl:?} {dh:?}");
+    }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());
     }

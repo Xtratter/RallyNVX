@@ -61,3 +61,12 @@ fn check(m: &Mesh3, name: &str) {
     assert!(m.body.verts.iter().filter(|v| v.col[3] == MAT_CARPOS).all(|v| v.pos[2] > 0.5), "only at the front");
     assert!(m.body.verts.iter().any(|v| v.col[3] == MAT_CARLAMP), "the main lenses stay lamps");
 }
+
+#[test] fn the_rally_model_has_a_disc_and_a_caliper_that_follow_the_wheel_radius() {
+    let spec = crate::game::vehicle::VehicleSpec::by_id("vulpes").unwrap();
+    let m = build_rally(&spec);
+    let (disc, caliper) = (m.disc.as_ref().expect("disc"), m.caliper.as_ref().expect("caliper"));
+    let (lo, hi) = disc.bounds();
+    assert!((hi.y - lo.y) / 2.0 < spec.radius * 0.8 && (hi.y - lo.y) / 2.0 > spec.radius * 0.4, "{lo:?} {hi:?}");
+    assert!(!caliper.verts.is_empty());
+}

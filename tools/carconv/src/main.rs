@@ -25,6 +25,7 @@ fn keep_body(n: &str) -> bool {
     // the underbody and inner arches close the shell, so nothing is seen through it
     let closers = ["x0_under_f", "x0_under_b", "x0_main_body_undercarriage", "x0_wing_fl_int", "x0_wing_fr_int", "x0_bumper_fm_int", "x0_bumper_bm_int"];
     if closers.iter().any(|c| n == *c) { return true; }
+    if n.starts_with("x0_mud_flap_") { return true; }   // the mud flaps behind the wheels
     // the lamp units: the reflector interiors and the plastics are kept; the clear glass covers are left out (a cover is opaque here and would hide the reflector)
     let lamp_unit = ["Light_front", "Ligth_front", "Ligth_rear", "Light_bar", "Light_2_brake", "Ligth_2_brake"].iter().any(|p| n.starts_with(p));
     if lamp_unit {
@@ -46,6 +47,7 @@ fn class_of(mat: &str, node: &str) -> (u8, bool) {
     let m = mat.to_lowercase();
     if m == "lamps" || node.ends_with("_lamp") || node.contains("_lamp.") || node == "Light_bar_lamps" { return (EMISSIVE, true); }
     if m.contains("glass") || m == "rearglass" { return (GLASS, true); }
+    if m == "discs" { return (13, false); }   // the brake discs: textured metal that glows when hot (MAT_CARDISC)
     if m == "ligths_ints" { return (if node.contains("front") || node.starts_with("Light_bar") { INT_FRONT } else { INT_REAR }, false); }
     if m == "crapaint_ext" { return (PAINT, false); }
     if m.contains("chrome") || m == "mirrors" || m == "rims_paint" || m == "tarmac_wheel" || m == "rim_gravel" { return (CHROME, false); }
@@ -193,8 +195,19 @@ fn main() {
     eprintln!("levelled by {:.4} rad; wheel centres after levelling: front y {:.3}, rear y {:.3} (radius {:.3})", th, cr[1], cr[1], 0.326);
     eprintln!("body parts {} with {} vertices, {} triangles", parts.len(), bv.len(), bi.len() / 3);
     let (lo, hi) = bounds(&bv); eprintln!("body bounds: x {:.3}..{:.3} y {:.3}..{:.3} z {:.3}..{:.3}", lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]);
+    // the wheel (left front): tyre + rim, the brake disc and the caliper as three meshes centred on the same point; their textures join the atlas
+    let wheel_names: [&[&str]; 3] = [&["tyre_tarmac_lf", "x0_wheel_fl_5radios"], &["x0_disc_fl"], &["x0_hub_caliper_fl"]];
+    let mut groups: Vec<(Vec<V>, Vec<u32>)> = wheel_names.iter().map(|names| {
+        let ps = collect(doc, &buffers, &mut tex, &|n| names.contains(&n), true);
+        eprintln!("wheel group {:?}: {} parts", names, ps.len());
+        merge(&ps)
+    }).collect();
+    let (wl, wh) = { let all: Vec<V> = groups.iter().flat_map(|g| g.0.iter().copied()).collect(); bounds(&all) };
+    let wc = [(wl[0] + wh[0]) / 2.0, (wl[1] + wh[1]) / 2.0, (wl[2] + wh[2]) / 2.0];
+    for g in &mut groups { for v in &mut g.0 { for k in 0..3 { v.p[k] -= wc[k]; } } }
+    eprintln!("wheel: centre ({:.3}, {:.3}, {:.3}) radius {:.3}", wc[0], wc[1] - ground, wc[2], (wh[1] - wl[1]) / 2.0);
     // the livery atlas: the body's textures packed into one square, the vertices' UVs remapped into their tiles
-    const ATLAS: u32 = 2048;
+    const ATLAS_W: u32 = 2048; const ATLAS_H: u32 = 2560;   // a tall atlas: the livery takes the whole width (1366 rows), the lamps, wheels and details the rest
     // textures used by only a few vertices (a roof light bar, small details) are not worth an atlas tile: they keep a baked colour
     {
         let mut count: HashMap<usize, usize> = HashMap::new();
@@ -221,20 +234,25 @@ fn main() {
         }
     }
     for v in &mut bv { if let Some(t) = v.tex { v.tex = Some(*alias.get(&t).unwrap_or(&t)); } }
-    let mut used: Vec<usize> = bv.iter().filter_map(|v| v.tex).collect(); used.sort(); used.dedup();
-    let sizes: Vec<(usize, u32, u32)> = used.iter().filter_map(|&i| tex.get(i).map(|im| (i, im.width(), im.height()))).collect();
-    let rects = atlas::pack(&sizes, ATLAS);
-    let mut atlas_img = image::RgbImage::from_pixel(ATLAS, ATLAS, image::Rgb([128, 128, 128]));
+    let wheel_tex: std::collections::HashSet<usize> = groups.iter().flat_map(|g| g.0.iter().filter_map(|v| v.tex)).collect();
+    let mut used: Vec<usize> = bv.iter().filter_map(|v| v.tex).chain(wheel_tex.iter().copied()).collect(); used.sort(); used.dedup();
+    // the wheel's textures are tiled at 512 pixels at most (the livery keeps the whole width); the others as they are
+    let sizes: Vec<(usize, u32, u32)> = used.iter().filter_map(|&i| tex.get(i).map(|im| {
+        let (w, h) = (im.width(), im.height());
+        if wheel_tex.contains(&i) && w.max(h) > 512 { let k = 512.0 / w.max(h) as f32; (i, ((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1)) } else { (i, w, h) }
+    })).collect();
+    let rects = atlas::pack(&sizes, ATLAS_W, ATLAS_H);
+    let mut atlas_img = image::RgbImage::from_pixel(ATLAS_W, ATLAS_H, image::Rgb([128, 128, 128]));
     for r in &rects {
         let src = tex.get(r.id).unwrap();
         let small = image::imageops::resize(src, r.w, r.h, image::imageops::FilterType::Lanczos3);
         for y in 0..r.h { for x in 0..r.w { let p = small.get_pixel(x, y).0; atlas_img.put_pixel(r.x + x, r.y + y, image::Rgb([p[0], p[1], p[2]])); } }
         eprintln!("  atlas: image {} -> {}x{} at ({}, {})", r.id, r.w, r.h, r.x, r.y);
     }
-    for v in &mut bv {
+    for v in bv.iter_mut().chain(groups.iter_mut().flat_map(|g| g.0.iter_mut())) {
         if let Some(r) = v.tex.and_then(|t| rects.iter().find(|r| r.id == t)) {
             let (iw, ih) = (r.w.saturating_sub(2).max(1) as f32, r.h.saturating_sub(2).max(1) as f32);
-            v.uv = [(r.x as f32 + 1.0 + v.uv[0] * iw) / ATLAS as f32, (r.y as f32 + 1.0 + v.uv[1] * ih) / ATLAS as f32];
+            v.uv = [(r.x as f32 + 1.0 + v.uv[0] * iw) / ATLAS_W as f32, (r.y as f32 + 1.0 + v.uv[1] * ih) / ATLAS_H as f32];
         }
     }
     {
@@ -242,15 +260,12 @@ fn main() {
         image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::BufWriter::new(f), 90).encode_image(&atlas_img).expect("write jpg");
     }
     let (sv, si) = simplify(&bv, &bi, body_t);
-    // one wheel (left front): tyre + rim, centred
-    let wparts = collect(doc, &buffers, &mut tex, &|n| n == "tyre_tarmac_lf" || n == "x0_wheel_fl_5radios" || n == "x0_disc_fl" || n == "x0_hub_caliper_fl", false);
-    let (mut wv, wi) = merge(&wparts);
-    let (wl, wh) = bounds(&wv); let c = [(wl[0] + wh[0]) / 2.0, (wl[1] + wh[1]) / 2.0, (wl[2] + wh[2]) / 2.0];
-    for v in &mut wv { for k in 0..3 { v.p[k] -= c[k]; } }
-    eprintln!("wheel: {} parts, {} tris, centre ({:.3}, {:.3}, {:.3}) radius {:.3}", wparts.len(), wi.len() / 3, c[0], c[1] - ground, c[2], (wh[1] - wl[1]) / 2.0);
-    let (swv, swi) = simplify(&wv, &wi, wheel_t);
-    let mut out = b"RCA2".to_vec();
-    write(&mut out, &sv, &si); write(&mut out, &swv, &swi);
+    let budgets = [wheel_t, 300, 500];
+    let simplified: Vec<(Vec<V>, Vec<u32>)> = groups.iter().zip(budgets).map(|(g, t)| simplify(&g.0, &g.1, t)).collect();
+    let mut out = b"RCA3".to_vec();
+    out.extend_from_slice(&4u32.to_le_bytes());
+    write(&mut out, &sv, &si);
+    for (v, i) in &simplified { write(&mut out, v, i); }
     std::fs::write(&a[2], &out).unwrap();
-    eprintln!("wrote {} bytes: body {} tris / {} verts, wheel {} tris / {} verts", out.len(), si.len() / 3, sv.len(), swi.len() / 3, swv.len());
+    eprintln!("wrote {} bytes: body {} tris / {} verts; wheel {} tris, disc {} tris, caliper {} tris", out.len(), si.len() / 3, sv.len(), simplified[0].1.len() / 3, simplified[1].1.len() / 3, simplified[2].1.len() / 3);
 }
