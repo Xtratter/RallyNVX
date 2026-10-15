@@ -97,7 +97,9 @@ const SLOT_GRASS: usize = 11;
 const SLOT_SIGN: usize = 12;   // one slot per `SignKind`
 const SLOT_DISC: usize = SLOT_SIGN + 17;      // the car's brake discs (spin with the wheel)
 const SLOT_CALIPER: usize = SLOT_SIGN + 18;   // the car's brake calipers (steer and follow the suspension, no spin)
-const MODEL_SLOTS: usize = SLOT_SIGN + 19;
+const SLOT_INTERIOR: usize = SLOT_SIGN + 19;  // the car's interior and driver (opaque, drawn near the car only)
+const SLOT_GLASS: usize = SLOT_SIGN + 20;     // the car's transparent glass (its own blended pass)
+const MODEL_SLOTS: usize = SLOT_SIGN + 21;
 const MAX_MODEL_INST: usize = 6144;
 const SIGN_SCALE: f32 = 2.2;   // the signs are drawn bigger than real ones so they read from a moving car
 const NEAR_SHADOW: f32 = 90.0;   // plants within this distance of the car cast shadows
@@ -155,7 +157,7 @@ pub struct Raster {
     mbuf: wgpu::Buffer,
     pl_water: wgpu::RenderPipeline,
     pl_road: wgpu::RenderPipeline,
-    pl_dust: wgpu::RenderPipeline, pl_dust_pt: wgpu::RenderPipeline, pl_dust_specks: wgpu::RenderPipeline,
+    pl_glass: wgpu::RenderPipeline, pl_dust: wgpu::RenderPipeline, pl_dust_pt: wgpu::RenderPipeline, pl_dust_specks: wgpu::RenderPipeline,
     fluid: Option<fluid_gpu::FluidGpu>,
     /// The airflow debug view: made on first use (`airflow_tried`), so nothing is allocated while it is off.
     airflow: Option<airflow_gpu::AirflowGpu>, airflow_tried: bool, adapter: wgpu::Adapter,
@@ -167,7 +169,7 @@ pub struct Raster {
     dust_buf: wgpu::Buffer,
     cache_seed: u64,
     car_key: [u32; 13],
-    car_parts: (bool, bool),   // whether the car model has brake discs / calipers
+    car_parts: (bool, bool, bool, bool),   // whether the car model has brake discs / calipers / an interior / glass
     /// The signed distance field of the car's body mesh (for the dust's exact-shape option), rebuilt with the model; `sdf_serial` tells the dust a new one is there.
     car_sdf: Option<crate::game::sdf::Sdf>, sdf_serial: u32,
     /// The settled dust layer the dust compute writes (R = amount) and the terrain and road shaders tint the ground by.
@@ -286,21 +288,29 @@ impl Raster {
                 ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false } },
             wgpu::BindGroupLayoutEntry { binding: 9, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering) },
+            wgpu::BindGroupLayoutEntry { binding: 10, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
+                ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false } },
+            wgpu::BindGroupLayoutEntry { binding: 11, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering) },
         ] });
-        // the rally car's livery atlas (a JPEG in the assets, mips built here); a missing or broken file leaves a white texel and the car keeps its vertex colours
-        let (lw, lh, lmips) = match livery::decode(livery::LIVERY) {
-            Some((w, h, px)) => (w, h, livery::mips(&px, w, h)),
-            None => { log::warn!("rally_car_livery.jpg unusable; the car keeps its vertex colours"); (1, 1, vec![(1, 1, vec![255u8; 4])]) }
+        // the rally car's atlases (JPEGs in the assets, mips built here): the livery and the interior; a missing or broken file leaves a white texel (the car keeps its vertex colours)
+        let atlas_texture = |label: &str, jpeg: &[u8]| -> (wgpu::TextureView, wgpu::Sampler) {
+            let (lw, lh, lmips) = match livery::decode(jpeg) {
+                Some((w, h, px)) => (w, h, livery::mips(&px, w, h)),
+                None => { log::warn!("{label} atlas unusable; the car keeps its vertex colours"); (1, 1, vec![(1, 1, vec![255u8; 4])]) }
+            };
+            let tex = device.create_texture(&wgpu::TextureDescriptor { label: Some(label), size: wgpu::Extent3d { width: lw, height: lh, depth_or_array_layers: 1 }, mip_level_count: lmips.len() as u32, sample_count: 1,
+                dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8UnormSrgb, usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, view_formats: &[] });
+            for (level, (w, h, px)) in lmips.iter().enumerate() {
+                queue.write_texture(wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: level as u32, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                    px, wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(*h) }, wgpu::Extent3d { width: *w, height: *h, depth_or_array_layers: 1 });
+            }
+            let smp = device.create_sampler(&wgpu::SamplerDescriptor { label: Some(label), mag_filter: wgpu::FilterMode::Linear, min_filter: wgpu::FilterMode::Linear, mipmap_filter: wgpu::FilterMode::Linear,
+                address_mode_u: wgpu::AddressMode::ClampToEdge, address_mode_v: wgpu::AddressMode::ClampToEdge, anisotropy_clamp: 4, ..Default::default() });
+            (tex.create_view(&Default::default()), smp)
         };
-        let livery_tex = device.create_texture(&wgpu::TextureDescriptor { label: Some("livery"), size: wgpu::Extent3d { width: lw, height: lh, depth_or_array_layers: 1 }, mip_level_count: lmips.len() as u32, sample_count: 1,
-            dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8UnormSrgb, usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, view_formats: &[] });
-        for (level, (w, h, px)) in lmips.iter().enumerate() {
-            queue.write_texture(wgpu::TexelCopyTextureInfo { texture: &livery_tex, mip_level: level as u32, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                px, wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(*h) }, wgpu::Extent3d { width: *w, height: *h, depth_or_array_layers: 1 });
-        }
-        let livery_view = livery_tex.create_view(&Default::default());
-        let livery_smp = device.create_sampler(&wgpu::SamplerDescriptor { label: Some("livery"), mag_filter: wgpu::FilterMode::Linear, min_filter: wgpu::FilterMode::Linear, mipmap_filter: wgpu::FilterMode::Linear,
-            address_mode_u: wgpu::AddressMode::ClampToEdge, address_mode_v: wgpu::AddressMode::ClampToEdge, anisotropy_clamp: 4, ..Default::default() });
+        let (livery_view, livery_smp) = atlas_texture("livery", livery::LIVERY);
+        let (interior_view, interior_smp) = atlas_texture("interior", livery::INTERIOR);
         let dep_tex = device.create_texture(&wgpu::TextureDescriptor { label: Some("dust_layer"), size: wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1,
             dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8Unorm, usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING, view_formats: &[] });
         let dep_view = dep_tex.create_view(&Default::default());
@@ -316,6 +326,8 @@ impl Raster {
             wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(&dep_view) },
             wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::TextureView(&livery_view) },
             wgpu::BindGroupEntry { binding: 9, resource: wgpu::BindingResource::Sampler(&livery_smp) },
+            wgpu::BindGroupEntry { binding: 10, resource: wgpu::BindingResource::TextureView(&interior_view) },
+            wgpu::BindGroupEntry { binding: 11, resource: wgpu::BindingResource::Sampler(&interior_smp) },
         ] });
         let bg_shadow = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("raster_shadow"), layout: &bgl_shadow,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() }] });
@@ -383,6 +395,12 @@ impl Raster {
         let model_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<vm::Vert>() as u64, step_mode: wgpu::VertexStepMode::Vertex, attributes: &MODEL_ATTRS };
         let minst_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<MInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &MINST_ATTRS };
         let pl_model = mk("model", &lay_main, "vs_model", Some("fs_model"), &[model_layout.clone(), minst_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
+        let pl_glass = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("glass"), layout: Some(&lay_main),
+            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_model"), compilation_options: Default::default(), buffers: &[model_layout.clone(), minst_layout.clone()] },
+            fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_glass"), compilation_options: Default::default(), targets: &target_blend }),
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+        });
         let pl_model_sh = mk("model_sh", &lay_shadow, "vs_model_shadow", None, &[model_layout, minst_layout], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
         let pl_sky = mk("sky", &lay_main, "vs_sky", Some("fs_sky"), &[], depth_state(false, wgpu::CompareFunction::Always, no_bias));
 
@@ -390,13 +408,13 @@ impl Raster {
         let nat = nature_models::build_all();
         let signs_meshes = sign_models::build_all();
         let models: Vec<ModelBuf> = [&car.body, &car.wheel].into_iter()
-            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass]).chain(signs_meshes.iter()).chain([&car.disc.clone().unwrap_or_else(placeholder_mesh), &car.caliper.clone().unwrap_or_else(placeholder_mesh)]).map(|m| model_buf(&device, m)).collect();
+            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass]).chain(signs_meshes.iter()).chain([&car.disc.clone().unwrap_or_else(placeholder_mesh), &car.caliper.clone().unwrap_or_else(placeholder_mesh), &car.interior.clone().unwrap_or_else(placeholder_mesh), &car.glass.clone().unwrap_or_else(placeholder_mesh)]).map(|m| model_buf(&device, m)).collect();
         assert_eq!(models.len(), MODEL_SLOTS);
         let mbuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("model_inst"), size: (MAX_MODEL_INST * std::mem::size_of::<MInst>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_parts: (car.disc.is_some(), car.caliper.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -427,11 +445,13 @@ impl Raster {
         self.models[1] = model_buf(&self.device, car.wheel_for(spec.wheel_set));
         self.models[SLOT_DISC] = model_buf(&self.device, &car.disc.clone().unwrap_or_else(placeholder_mesh));
         self.models[SLOT_CALIPER] = model_buf(&self.device, &car.caliper.clone().unwrap_or_else(placeholder_mesh));
-        self.car_parts = (car.disc.is_some(), car.caliper.is_some());
+        self.models[SLOT_INTERIOR] = model_buf(&self.device, &car.interior.clone().unwrap_or_else(placeholder_mesh));
+        self.models[SLOT_GLASS] = model_buf(&self.device, &car.glass.clone().unwrap_or_else(placeholder_mesh));
+        self.car_parts = (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some());
         self.car_key = key;
         // the exact shape for the dust: the body mesh as a signed distance field (0.1 m voxels)
-        let verts: Vec<[f32; 3]> = car.body.verts.iter().map(|v| v.pos).collect();
-        self.car_sdf = Some(crate::game::sdf::build(&verts, &car.body.idx, 0.1, 0.5));
+        let (verts, idx) = vm::sdf_input(&car);
+        self.car_sdf = Some(crate::game::sdf::build(&verts, &idx, 0.1, 0.5));
         self.sdf_serial += 1;
     }
 
@@ -514,7 +534,7 @@ impl Raster {
         // instances: cube, cylinder, cone, sphere
         let mut lists: [Vec<Inst>; 4] = Default::default();
         // vehicle models: per slot lists of (rotation, position)
-        let mut ml: [Vec<MInst>; MODEL_SLOTS] = Default::default();
+        let mut ml: [Vec<MInst>; MODEL_SLOTS] = std::array::from_fn(|_| Vec::new());
         let dt = (wv.time - self.last_time).clamp(0.0, 0.1);
         self.last_time = wv.time;
         let veh = wv.vehicle;
@@ -522,6 +542,9 @@ impl Raster {
         self.wheel_spin %= std::f32::consts::TAU;
         let (bq, bp) = vm::car_body_pose(veh);
         ml[0].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] });   // alpha 0.5: the player's car (not lit by its own lamps)
+        // the glass (always) and the interior (near the car only) share the body's pose
+        if self.car_parts.3 { ml[SLOT_GLASS].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] }); }
+        if self.car_parts.2 && vm::draw_interior((wv.cam_pos - veh.pos).len()) { ml[SLOT_INTERIOR].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] }); }
         for (w, p) in vm::car_wheel_poses(veh, self.wheel_spin).iter().enumerate() {
             ml[1].push(MInst { m: mmat(p.0, p.1), tint: [1.0, 1.0, 1.0, 0.5] });
             // the disc turns with the wheel; its tint alpha carries the brake heat (0.1 .. 0.5), see `fs_model`
@@ -557,7 +580,7 @@ impl Raster {
         // plants and rocks: generated models, the ones near the car first (they cast shadows)
         let vpos = wv.vehicle.pos;
         let draw_r = self.city_radius;
-        let mut far: [Vec<MInst>; MODEL_SLOTS] = Default::default();
+        let mut far: [Vec<MInst>; MODEL_SLOTS] = std::array::from_fn(|_| Vec::new());
         let mut put = |ml: &mut [Vec<MInst>; MODEL_SLOTS], slot: usize, p: V3, m: MInst| {
             let d = (p.x - vpos.x).hypot(p.z - vpos.z);
             if d < NEAR_SHADOW { ml[slot].push(m); } else if d < draw_r { far[slot].push(m); }
@@ -674,6 +697,7 @@ impl Raster {
             rp.set_pipeline(&self.pl_model_sh);
             rp.set_vertex_buffer(1, self.mbuf.slice(..));
             for k in 0..MODEL_SLOTS {
+                if k == SLOT_GLASS || k == SLOT_INTERIOR { continue; }   // the glass and the interior cast no shadows
                 let (a, mut b) = mranges[k];
                 if k >= SLOT_TREE { b = if k == SLOT_GRASS { a } else { a + mnear[k].min(b - a) }; }
                 if b == a { continue; }
@@ -715,6 +739,7 @@ impl Raster {
             rp.set_pipeline(&self.pl_model);
             rp.set_vertex_buffer(1, self.mbuf.slice(..));
             for k in 0..MODEL_SLOTS {
+                if k == SLOT_GLASS { continue; }   // drawn blended, after everything opaque
                 let (a, b) = mranges[k]; if b == a { continue; }
                 let m = &self.models[k];
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
@@ -742,6 +767,16 @@ impl Raster {
             for m in self.water.values().flatten() {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, 0..1);
+            }
+            {   // the car's glass: blended over the opaque scene, no depth write (see `fs_glass`)
+                let (a, b) = mranges[SLOT_GLASS];
+                if b > a {
+                    let m = &self.models[SLOT_GLASS];
+                    rp.set_pipeline(&self.pl_glass);
+                    rp.set_vertex_buffer(1, self.mbuf.slice(..));
+                    rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
+                    rp.draw_indexed(0..m.n, 0, a..b);
+                }
             }
             if let (Some(dg), true) = (self.dust_gpu.as_ref(), wv.dust_gpu.is_some()) {
                 // the specks of grit at full resolution with the scene's depth test; the cloud itself follows after the pass at low resolution

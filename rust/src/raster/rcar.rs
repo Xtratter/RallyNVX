@@ -23,18 +23,18 @@ fn mesh(d: &[u8], o: &mut usize, stride: usize) -> Result<Mesh3, String> {
 }
 
 /// The meshes of an `.rcar` file: the body and one wheel (tyre and rim), and in `RCA3` files the brake disc and the brake caliper (the caliper does not spin with the wheel)
-/// and the gravel and the snow wheel sets (`alt_wheels`).
-pub struct Parts { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2] }
+/// the gravel and the snow wheel sets (`alt_wheels`), the transparent glass (windows and lamp covers) and the interior (cabin and driver).
+pub struct Parts { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2], pub glass: Option<Mesh3>, pub interior: Option<Mesh3> }
 
 /// All the meshes of an `.rcar` file: `RCAR` (28-byte vertices), `RCA2` (32 bytes with a `u16x2` UV after the colour), `RCA3` (a `u32` mesh count of 2 to 4, then the meshes in
-/// the order body, wheel, disc, caliper, gravel wheel, snow wheel; 32-byte vertices).
+/// the order body, wheel, disc, caliper, gravel wheel, snow wheel, glass, interior; 32-byte vertices).
 pub fn parse_all(d: &[u8]) -> Result<Parts, String> {
     let (stride, count) = match d.get(..4) {
         Some(b"RCAR") => (28, 2usize),
         Some(b"RCA2") => (32, 2),
         Some(b"RCA3") => {
             let n = d.get(4..8).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).ok_or("truncated")? as usize;
-            if !(2..=6).contains(&n) { return Err(format!("bad mesh count {n}")); }
+            if !(2..=8).contains(&n) { return Err(format!("bad mesh count {n}")); }
             (32, n)
         }
         _ => return Err("not an RCAR/RCA2/RCA3 file".into()),
@@ -43,7 +43,7 @@ pub fn parse_all(d: &[u8]) -> Result<Parts, String> {
     let mut meshes = Vec::new();
     for _ in 0..count { meshes.push(mesh(d, &mut o, stride)?); }
     let mut it = meshes.into_iter();
-    Ok(Parts { body: it.next().unwrap(), wheel: it.next().unwrap(), disc: it.next(), caliper: it.next(), alt_wheels: [it.next(), it.next()] })
+    Ok(Parts { body: it.next().unwrap(), wheel: it.next().unwrap(), disc: it.next(), caliper: it.next(), alt_wheels: [it.next(), it.next()], glass: it.next(), interior: it.next() })
 }
 
 /// `(body, wheel)` from the bytes of an `.rcar` file.
@@ -110,14 +110,14 @@ mod tests {
         assert!(b.tris() > 3000 && w.tris() > 200, "{} / {} triangles", b.tris(), w.tris());
         for m in [&b, &w] {
             assert!(m.idx.iter().all(|&i| (i as usize) < m.verts.len()));
-            for v in &m.verts { let l = (v.nrm[0].powi(2) + v.nrm[1].powi(2) + v.nrm[2].powi(2)).sqrt(); assert!((l - 1.0).abs() < 0.02, "normal {l}"); assert!(v.col[3] <= 5 || (11..=14).contains(&v.col[3]), "material id {}", v.col[3]); }
+            for v in &m.verts { let l = (v.nrm[0].powi(2) + v.nrm[1].powi(2) + v.nrm[2].powi(2)).sqrt(); assert!((l - 1.0).abs() < 0.02, "normal {l}"); assert!(v.col[3] <= 5 || (11..=15).contains(&v.col[3]), "material id {}", v.col[3]); }
         }
         let (lo, hi) = b.bounds();
         assert!(lo.y > -0.02 && hi.y < 1.6 && hi.z - lo.z > 3.8 && hi.z - lo.z < 4.2 && hi.x > 0.8 && lo.x < -0.8, "{lo:?} {hi:?}");
         let (wl, wh) = w.bounds();
         assert!(((wh.y - wl.y) / 2.0 - 0.326).abs() < 0.01 && (wl.y + wh.y).abs() < 0.02 && (wl.z + wh.z).abs() < 0.02, "wheel {wl:?} {wh:?}");
         let mats: std::collections::HashSet<u8> = b.verts.iter().map(|v| v.col[3]).collect();
-        for want in [0u8, 1, 3, 5] { assert!(mats.contains(&want), "missing material {want}"); }
+        for want in [0u8, 3, 5] { assert!(mats.contains(&want), "missing material {want}"); }   // the glass is its own mesh now
     }
     #[test] fn broken_files_are_errors_not_panics() {
         assert!(parse(b"").is_err() && parse(b"NOPE").is_err() && parse(b"RCAR").is_err());
@@ -199,7 +199,10 @@ mod tests {
         assert_eq!(p.body.verts[0].pos[1], 0.0); assert_eq!(p.wheel.verts[0].pos[1], 1.0); assert_eq!(p.disc.unwrap().verts[0].pos[1], 2.0); assert_eq!(p.caliper.unwrap().verts[0].uv, [7, 9]);
         let p3 = parse_all(&rca3(3)).unwrap(); assert!(p3.disc.is_some() && p3.caliper.is_none());
         let old = parse_all(PEUGEOT_V1).unwrap(); assert!(old.disc.is_none() && old.caliper.is_none());
-        assert!(parse_all(&rca3(2)).is_ok() && parse_all(&rca3(1)).is_err() && parse_all(&rca3(7)).is_err(), "2 to 6 meshes");
+        assert!(parse_all(&rca3(2)).is_ok() && parse_all(&rca3(1)).is_err() && parse_all(&rca3(9)).is_err(), "2 to 8 meshes");
+        let p8 = parse_all(&rca3(8)).unwrap(); assert_eq!(p8.glass.as_ref().unwrap().verts[0].pos[1], 6.0); assert_eq!(p8.interior.as_ref().unwrap().verts[0].pos[1], 7.0);
+        let p7 = parse_all(&rca3(7)).unwrap(); assert!(p7.glass.is_some() && p7.interior.is_none(), "glass without an interior");
+        assert!(parse_all(&rca3(6)).unwrap().glass.is_none());
         let p6 = parse_all(&rca3(6)).unwrap(); assert_eq!(p6.alt_wheels[0].as_ref().unwrap().verts[0].pos[1], 4.0); assert_eq!(p6.alt_wheels[1].as_ref().unwrap().verts[0].pos[1], 5.0);
         let p5 = parse_all(&rca3(5)).unwrap(); assert!(p5.alt_wheels[0].is_some() && p5.alt_wheels[1].is_none(), "only the gravel wheel");
         assert!(p.alt_wheels.iter().all(Option::is_none) && parse_all(&rca3(4)).unwrap().alt_wheels.iter().all(Option::is_none));
@@ -246,6 +249,22 @@ mod tests {
         }
         let textured = susp.iter().filter(|v| v.uv != NO_UV).count();
         assert!(textured * 10 > susp.len() * 9, "{textured} of {} suspension vertices have a UV", susp.len());
+    }
+    #[test] fn the_embedded_peugeot_has_glass_and_an_interior() {
+        let p = parse_all(PEUGEOT).unwrap();
+        let glass = p.glass.expect("glass"); let interior = p.interior.expect("interior");
+        assert!(glass.verts.iter().all(|v| v.col[3] == 1 && v.uv == NO_UV), "glass is class 1 and untextured");
+        assert!(glass.verts.iter().any(|v| v.col[0] == 0) && glass.verts.iter().any(|v| v.col[0] == 255), "windows (red 0) and clear lamp covers (red 255)");
+        assert!(glass.idx.len() / 3 > 2500 && glass.idx.len() / 3 < 5000, "{} glass triangles", glass.idx.len() / 3);
+        assert!(p.body.verts.iter().all(|v| v.col[3] != 1), "the body has no glass of its own any more");
+        let t = interior.idx.len() / 3;
+        assert!((12_000..=20_000).contains(&t), "{t} interior triangles");
+        assert!(interior.verts.iter().all(|v| v.col[3] == 15), "interior is class 15");
+        let textured = interior.verts.iter().filter(|v| v.uv != NO_UV).count();
+        assert!(textured * 10 > interior.verts.len() * 9, "{textured} of {} interior vertices have a UV", interior.verts.len());
+        // the interior sits inside the body's envelope
+        let ((blo, bhi), (ilo, ihi)) = (p.body.bounds(), interior.bounds());
+        assert!(ilo.x >= blo.x - 0.05 && ihi.x <= bhi.x + 0.05 && ilo.z >= blo.z - 0.1 && ihi.z <= bhi.z + 0.1 && ihi.y <= bhi.y + 0.05, "{ilo:?} {ihi:?} vs {blo:?} {bhi:?}");
     }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());

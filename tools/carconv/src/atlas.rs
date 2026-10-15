@@ -6,9 +6,9 @@ pub struct Rect { pub id: usize, pub x: u32, pub y: u32, pub w: u32, pub h: u32 
 
 const GUTTER: u32 = 2;
 
-fn shelf(sizes: &[(usize, u32, u32)], s: f64, aw: u32, ah: u32) -> Option<Vec<Rect>> {
+fn shelf(sizes: &[(usize, u32, u32)], s: f64, small_k: f64, aw: u32, ah: u32) -> Option<Vec<Rect>> {
     // small textures (flat colours, details) are keep their size (at most 512 pixels); only the large ones (the livery) take the global scale that fits
-    let mut tiles: Vec<(usize, u32, u32)> = sizes.iter().map(|&(id, w, h)| { let k = if w.max(h) <= 512 { 1.0 } else { s }; (id, ((w as f64 * k).round() as u32).max(1), ((h as f64 * k).round() as u32).max(1)) }).collect();
+    let mut tiles: Vec<(usize, u32, u32)> = sizes.iter().map(|&(id, w, h)| { let k = if w.max(h) <= 512 { small_k } else { s }; (id, ((w as f64 * k).round() as u32).max(1), ((h as f64 * k).round() as u32).max(1)) }).collect();
     tiles.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.cmp(&a.1)));
     let (mut x, mut y, mut row_h) = (0u32, 0u32, 0u32);
     let mut out = Vec::new();
@@ -25,9 +25,13 @@ fn shelf(sizes: &[(usize, u32, u32)], s: f64, aw: u32, ah: u32) -> Option<Vec<Re
 /// Rectangles in the `aw` x `ah` atlas for the textures `(id, width, height)`; always returns every tile (at the smallest scale if nothing larger fits).
 pub fn pack(sizes: &[(usize, u32, u32)], aw: u32, ah: u32) -> Vec<Rect> {
     let (mut lo, mut hi) = (0.0f64, 1.0f64);
-    if let Some(r) = shelf(sizes, 1.0, aw, ah) { return r; }
-    for _ in 0..24 { let mid = (lo + hi) / 2.0; if shelf(sizes, mid, aw, ah).is_some() { lo = mid } else { hi = mid } }
-    shelf(sizes, lo, aw, ah).or_else(|| shelf(sizes, 1.0 / 4096.0, aw, ah)).unwrap_or_default()
+    if let Some(r) = shelf(sizes, 1.0, 1.0, aw, ah) { return r; }
+    for _ in 0..24 { let mid = (lo + hi) / 2.0; if shelf(sizes, mid, 1.0, aw, ah).is_some() { lo = mid } else { hi = mid } }
+    if lo > 0.0 { if let Some(r) = shelf(sizes, lo, 1.0, aw, ah) { return r; } }
+    // not even the small tiles at full size fit with the big ones at their smallest: shrink the small ones too
+    let mut k = 1.0;
+    while k > 1.0 / 4096.0 { if let Some(r) = shelf(sizes, 1.0 / 4096.0, k, aw, ah) { return r; } k *= 0.9; }
+    Vec::new()
 }
 
 #[cfg(test)]
@@ -48,6 +52,12 @@ mod tests {
         let r = pack(&[(0, 6144, 4096), (55, 512, 512), (47, 512, 512), (57, 256, 256), (41, 64, 64), (2, 256, 256)], 2048, 2048);
         assert_eq!(r.len(), 6);
         assert!(r.iter().find(|t| t.id == 0).unwrap().w >= 1900, "{:?}", r);
+    }
+    #[test] fn many_small_tiles_that_do_not_fit_at_full_size_are_shrunk_not_dropped() {
+        let sizes: Vec<(usize, u32, u32)> = (0..12).map(|i| (i, 512, 512)).collect();
+        let r = pack(&sizes, 1024, 1024);
+        assert_eq!(r.len(), 12);
+        for a in &r { assert!(a.x + a.w <= 1024 && a.y + a.h <= 1024); }
     }
     #[test] fn an_impossible_request_still_returns_tiles_that_fit() {
         let r = pack(&[(0, 8192, 8192), (1, 8192, 8192), (2, 8192, 8192)], 256, 256);

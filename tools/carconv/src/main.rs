@@ -34,8 +34,32 @@ fn keep_body(n: &str) -> bool {
     }
     let bad = ["_int", "int_", "lock", "under", "engine", "snow", "gravel", "spare", "suspension", "wishbone", "disc", "caliper", "mud", "CO_DRIVER", "Wipers", "LED", "notes", "Sabo", "INT_", "boot_int", "undercarriage", "standard_pbr", "anagram", "exhaust_cardan", "_ints", "Light_bar_ints", "tow_hook"];
     if bad.iter().any(|b| n.contains(b)) { return false; }
-    let good = ["x0_main_body", "x0_bonnet", "x0_boot", "x0_bumper_fm", "x0_bumper_bm", "x0_spoiler_b", "x0_door_f", "x0_wing_f", "x0_wing_mirror", "x0_window_", "Light_front", "Ligth_front", "Ligth_rear", "Light_bar", "Light_2_brake", "Ligth_2_brake", "x0_exhaust_bl", "x0_f_body_part", "x0_front_anagram"];
+    let good = ["x0_main_body", "x0_bonnet", "x0_boot", "x0_bumper_fm", "x0_bumper_bm", "x0_spoiler_b", "x0_door_f", "x0_wing_f", "x0_wing_mirror", "Light_front", "Ligth_front", "Ligth_rear", "Light_bar", "Light_2_brake", "Ligth_2_brake", "x0_exhaust_bl", "x0_f_body_part", "x0_front_anagram"];
     good.iter().any(|g| n.starts_with(g))
+}
+
+/// The transparent glass: the windows and the clear lamp covers (the covers have `clear` 1 in the glass mesh).
+fn is_window(n: &str) -> bool { n.starts_with("x0_window_") }
+fn is_cover(n: &str) -> bool {
+    let lamp = ["Light_front", "Ligth_front", "Ligth_rear", "Light_bar", "Light_2_brake", "Ligth_2_brake"].iter().any(|p| n.starts_with(p));
+    lamp && (n.ends_with("_glass") || (n.starts_with("Light_front") && n.ends_with("_turn")) || n.contains("Light_bar_glass"))
+}
+
+/// The cabin parts and the driver of the source model (the windows, wipers, dials, LEDs and indicators are left out).
+fn is_cabin(n: &str) -> bool {
+    let cabin = n.starts_with("int_") || n.starts_with("Int_");
+    cabin && !["window", "wiper", "dials", "LED", "INDICATOR", "glasspart", "notes"].iter().any(|b| n.contains(b))
+}
+fn is_driver(n: &str) -> bool { n.starts_with("CO_DRIVER") }
+
+/// The body's transform for parts: down to the ground, levelled about the rear axle (`cr`, `st`, `ct` as in `main`).
+fn body_xf(vs: &mut [V], ground: f32, cr: [f32; 3], st: f32, ct: f32) {
+    for v in vs {
+        v.p[1] -= ground;
+        let (y, z) = (v.p[1] - cr[1], v.p[2] - cr[2]);
+        v.p[1] = y * ct - z * st + cr[1]; v.p[2] = y * st + z * ct + cr[2];
+        let (ny, nz) = (v.n[1], v.n[2]); v.n[1] = ny * ct - nz * st; v.n[2] = ny * st + nz * ct;
+    }
 }
 
 /// The suspension parts of a corner: wishbones and the struts and springs (`x0_wishbone_fl`, `x0_suspension3_bl`, ...).
@@ -177,7 +201,7 @@ fn write(out: &mut Vec<u8>, v: &[V], idx: &[u32]) {
 
 fn main() {
     let a: Vec<String> = std::env::args().collect();
-    if a.len() < 6 { eprintln!("usage: carconv <in.glb> <out.rcar> <body_tris> <wheel_tris> <livery.jpg>"); std::process::exit(2); }
+    if a.len() < 7 { eprintln!("usage: carconv <in.glb> <out.rcar> <body_tris> <wheel_tris> <livery.jpg> <interior.jpg>"); std::process::exit(2); }
     let (body_t, wheel_t): (usize, usize) = (a[3].parse().unwrap(), a[4].parse().unwrap());
     let gltf = gltf::Gltf::open(&a[1]).expect("open glb");
     let buffers = gltf::import_buffers(&gltf.document, None, gltf.blob.clone()).expect("buffers");
@@ -227,6 +251,57 @@ fn main() {
             bv.extend(pv); bi.extend(pi.iter().map(|x| x + base));
         }
         eprintln!("suspension: {added} triangles added to the body");
+    }
+    // the glass (windows and clear lamp covers): its own mesh, the body's transform, a plain tint; red 255 marks a clear lamp cover
+    let (gv, gi) = {
+        let gp = collect(doc, &buffers, &mut tex, &|n| is_window(n) || is_cover(n), false);
+        let (mut gv, mut gi) = (Vec::new(), Vec::new());
+        for (name, mut pv, pi) in gp {
+            body_xf(&mut pv, ground, cr, st, ct);
+            let clear = if is_window(&name) { 0 } else { 255 };
+            for v in &mut pv { v.c = [clear, 0, 0, 1]; v.tex = None; }
+            let base = gv.len() as u32; gi.extend(pi.iter().map(|x| x + base)); gv.extend(pv);
+        }
+        eprintln!("glass: {} triangles", gi.len() / 3);
+        (gv, gi)
+    };
+    // the interior and the driver: class 15, textured from their own 1024 x 1024 atlas, simplified (the cabin and the driver separately)
+    const IATLAS: u32 = 1024;
+    let cabin_t: usize = a.get(7).and_then(|x| x.parse().ok()).unwrap_or(13000);
+    let driver_t: usize = a.get(8).and_then(|x| x.parse().ok()).unwrap_or(3000);
+    let mut interior: Vec<(Vec<V>, Vec<u32>, usize)> = Vec::new();   // (vertices, indices, budget)
+    for (want, budget) in [(is_cabin as fn(&str) -> bool, cabin_t), (is_driver as fn(&str) -> bool, driver_t)] {
+        let ps = collect(doc, &buffers, &mut tex, &|n| want(n), true);
+        let (mut v, i) = merge(&ps);
+        body_xf(&mut v, ground, cr, st, ct);
+        for x in &mut v { x.c[3] = 15; }
+        eprintln!("interior group: {} parts, {} triangles, {} of {} vertices textured", ps.len(), i.len() / 3, v.iter().filter(|x| x.tex.is_some()).count(), v.len());
+        interior.push((v, i, budget));
+    }
+    {
+        let mut used: Vec<usize> = interior.iter().flat_map(|g| g.0.iter().filter_map(|v| v.tex)).collect(); used.sort(); used.dedup();
+        // the cabin's main bake (2048 x 1024) keeps 512 pixels, everything else at most 256
+        let sizes: Vec<(usize, u32, u32)> = used.iter().filter_map(|&i| tex.get(i).map(|im| {
+            let (w, h) = (im.width(), im.height());
+            let cap = if w == 2048 && h == 1024 { 512 } else { 256 };
+            if w.max(h) > cap { let k = cap as f32 / w.max(h) as f32; (i, ((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1)) } else { (i, w, h) }
+        })).collect();
+        let rects = atlas::pack(&sizes, IATLAS, IATLAS);
+        let mut img = image::RgbImage::from_pixel(IATLAS, IATLAS, image::Rgb([40, 40, 40]));
+        for r in &rects {
+            let src = tex.get(r.id).unwrap();
+            let small = image::imageops::resize(src, r.w, r.h, image::imageops::FilterType::Lanczos3);
+            for y in 0..r.h { for x in 0..r.w { let p = small.get_pixel(x, y).0; img.put_pixel(r.x + x, r.y + y, image::Rgb([p[0], p[1], p[2]])); } }
+            eprintln!("  interior atlas: image {} -> {}x{} at ({}, {})", r.id, r.w, r.h, r.x, r.y);
+        }
+        for g in &mut interior { for v in &mut g.0 {
+            if let Some(r) = v.tex.and_then(|t| rects.iter().find(|r| r.id == t)) {
+                let (iw, ih) = (r.w.saturating_sub(2).max(1) as f32, r.h.saturating_sub(2).max(1) as f32);
+                v.uv = [(r.x as f32 + 1.0 + v.uv[0] * iw) / IATLAS as f32, (r.y as f32 + 1.0 + v.uv[1] * ih) / IATLAS as f32];
+            }
+        } }
+        let f = std::fs::File::create(&a[6]).expect("create interior jpg");
+        image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::BufWriter::new(f), 88).encode_image(&img).expect("write jpg");
     }
     eprintln!("levelled by {:.4} rad; wheel centres after levelling: front y {:.3}, rear y {:.3} (radius {:.3})", th, cr[1], cr[1], 0.326);
     eprintln!("body parts {} with {} vertices, {} triangles", parts.len(), bv.len(), bi.len() / 3);
@@ -310,10 +385,17 @@ fn main() {
     let (sv, si) = simplify(&bv, &bi, body_t);
     let budgets = [wheel_t, 300, 500, wheel_t, wheel_t];
     let simplified: Vec<(Vec<V>, Vec<u32>)> = groups.iter().zip(budgets).map(|(g, t)| simplify(&g.0, &g.1, t)).collect();
+    let (cgv, cgi) = compact(&gv, &gi);
+    // the interior: both groups simplified to their budgets and joined into one mesh
+    let (mut iv, mut ii): (Vec<V>, Vec<u32>) = (Vec::new(), Vec::new());
+    for (v, i, t) in &interior { let (sv2, si2) = simplify(v, i, *t); let base = iv.len() as u32; ii.extend(si2.iter().map(|x| x + base)); iv.extend(sv2); }
     let mut out = b"RCA3".to_vec();
-    out.extend_from_slice(&6u32.to_le_bytes());
+    out.extend_from_slice(&8u32.to_le_bytes());
     write(&mut out, &sv, &si);
     for (v, i) in &simplified { write(&mut out, v, i); }
+    write(&mut out, &cgv, &cgi);
+    write(&mut out, &iv, &ii);
+    eprintln!("glass {} tris, interior {} tris", cgi.len() / 3, ii.len() / 3);
     std::fs::write(&a[2], &out).unwrap();
     eprintln!("wrote {} bytes: body {} tris / {} verts; wheel {} tris, disc {} tris, caliper {} tris, gravel wheel {} tris, snow wheel {} tris", out.len(), si.len() / 3, sv.len(), simplified[0].1.len() / 3, simplified[1].1.len() / 3, simplified[2].1.len() / 3, simplified[3].1.len() / 3, simplified[4].1.len() / 3);
 }
@@ -331,5 +413,13 @@ mod tests {
         assert_eq!(corner_of("x0_wishbone_fl"), Some(0)); assert_eq!(corner_of("x0_suspension3_fr"), Some(1));
         assert_eq!(corner_of("x0_suspension_bl"), Some(2)); assert_eq!(corner_of("x0_suspension5_br"), Some(3)); assert_eq!(corner_of("x0_suspension"), None);
         assert!(is_susp("x0_wishbone_fl") && is_susp("x0_suspension2_bl") && !is_susp("x0_main_body"));
+    }
+    #[test] fn glass_cabin_and_driver_parts_are_told_apart() {
+        assert!(is_window("x0_window_f") && !is_window("int_window_f") && !is_window("x0_door_fl"));
+        assert!(is_cover("Light_front_left_glass") && is_cover("Light_front_right_turn") && is_cover("Ligth_rear_glass") && is_cover("Light_bar_glass"));
+        assert!(!is_cover("Ligth_rear_left_turn") && !is_cover("Light_front_left_plastics") && !is_cover("x0_window_b"), "the rear turn lens is an opaque lamp part");
+        assert!(is_cabin("int_main_SUB0") && is_cabin("int_seat_l_alcantara") && is_cabin("Int_doors_rebajos") && is_cabin("int_steering_wheel_SUB1"));
+        assert!(!is_cabin("int_window_f") && !is_cabin("int_wiper_fl") && !is_cabin("int_boot_glasspart") && !is_cabin("x0_main_body") && !is_cabin("INT_INDICATOR_GEAR"));
+        assert!(is_driver("CO_DRIVER:suit") && !is_driver("int_seat_l"));
     }
 }

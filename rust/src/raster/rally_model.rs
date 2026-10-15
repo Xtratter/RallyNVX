@@ -19,7 +19,7 @@ pub fn lamp_points() -> Option<super::rcar::LampPoints> {
 
 pub fn build_rally(spec: &VehicleSpec) -> CarModel {
     match super::rcar::parse_all(ASSET) {
-        Ok(super::rcar::Parts { mut body, mut wheel, mut disc, mut caliper, mut alt_wheels }) => {
+        Ok(super::rcar::Parts { mut body, mut wheel, mut disc, mut caliper, mut alt_wheels, mut glass, mut interior }) => {
             // the lamp units show the car's lamp state in the shader: their own material
             for v in &mut body.verts { if v.col[3] == super::vehicle_models::MAT_EMISSIVE { v.col[3] = super::vehicle_models::MAT_CARLAMP; } }
             for i in super::rcar::position_vertices(&body) { body.verts[i].col[3] = super::vehicle_models::MAT_CARPOS; }
@@ -31,7 +31,11 @@ pub fn build_rally(spec: &VehicleSpec) -> CarModel {
             for m in [Some(&mut wheel), disc.as_mut(), caliper.as_mut(), gravel.as_mut(), snow.as_mut()].into_iter().flatten() {
                 for v in &mut m.verts { v.pos = [v.pos[0] * spec.look.wheel_width / 0.226, v.pos[1] * k, v.pos[2] * k]; }
             }
-            CarModel { body, wheel, disc, caliper, alt_wheels }
+            // the glass and the interior sit in the body's frame: they scale like the body
+            for m in [glass.as_mut(), interior.as_mut()].into_iter().flatten() {
+                for v in &mut m.verts { v.pos = [v.pos[0] * sx, v.pos[1] * sy, v.pos[2] * sz]; }
+            }
+            CarModel { body, wheel, disc, caliper, alt_wheels, glass, interior }
         }
         Err(e) => { log::error!("rally_car.rcar unusable ({e}); using the generated hatchback"); build_generated(spec) }
     }

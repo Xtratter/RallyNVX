@@ -20,7 +20,8 @@ fn check(m: &Mesh3, name: &str) {
     assert!(((hi.z - lo.z) - s.size.z).abs() <= s.size.z * 0.06, "length {} vs {}", hi.z - lo.z, s.size.z);
     assert!(lo.y >= -0.01 && hi.y <= s.size.y * 1.08 && hi.y >= s.size.y * 0.95, "height {}..{} vs {}", lo.y, hi.y, s.size.y);
     let mats: std::collections::HashSet<u8> = m.body.verts.iter().map(|v| v.col[3]).collect();
-    for want in [MAT_PAINT, MAT_GLASS, MAT_PLASTIC, MAT_CHROME, MAT_CARLAMP] { assert!(mats.contains(&want), "missing material {want}"); }
+    for want in [MAT_PAINT, MAT_PLASTIC, MAT_CHROME, MAT_CARLAMP] {   // the glass is its own mesh (`CarModel::glass`)
+         assert!(mats.contains(&want), "missing material {want}"); }
     assert!(m.wheel.verts.iter().any(|v| v.col[3] == MAT_RUBBER) && m.wheel.verts.iter().any(|v| v.col[3] == MAT_CHROME));
     let (wlo, whi) = m.wheel.bounds();
     assert!(((whi.y - wlo.y) / 2.0 - s.radius).abs() < s.radius * 0.08, "wheel radius {}", (whi.y - wlo.y) / 2.0);
