@@ -12,6 +12,8 @@ fn tn(m: &M4, v: [f32; 3]) -> [f32; 3] {
 }
 
 const PAINT: u8 = 0; const GLASS: u8 = 1; const RUBBER: u8 = 2; const PLASTIC: u8 = 3; const CHROME: u8 = 4; const EMISSIVE: u8 = 5;
+// the reflector interiors of the lamp units: lit by the car's state in the shader (8 = position lamp and 9, 10 = covers are made in the game); 11 = front, 12 = rear
+const INT_FRONT: u8 = 11; const INT_REAR: u8 = 12;
 
 #[derive(Clone, Copy)]
 struct V { p: [f32; 3], n: [f32; 3], c: [u8; 4], uv: [f32; 2], tex: Option<usize> }
@@ -23,6 +25,12 @@ fn keep_body(n: &str) -> bool {
     // the underbody and inner arches close the shell, so nothing is seen through it
     let closers = ["x0_under_f", "x0_under_b", "x0_main_body_undercarriage", "x0_wing_fl_int", "x0_wing_fr_int", "x0_bumper_fm_int", "x0_bumper_bm_int"];
     if closers.iter().any(|c| n == *c) { return true; }
+    // the lamp units: the reflector interiors and the plastics are kept; the clear glass covers are left out (a cover is opaque here and would hide the reflector)
+    let lamp_unit = ["Light_front", "Ligth_front", "Ligth_rear", "Light_bar", "Light_2_brake", "Ligth_2_brake"].iter().any(|p| n.starts_with(p));
+    if lamp_unit {
+        let glass = n.ends_with("_glass") || (n.starts_with("Light_front") && n.ends_with("_turn")) || n.contains("Light_bar_glass");
+        return !glass;
+    }
     let bad = ["_int", "int_", "lock", "under", "engine", "snow", "gravel", "spare", "suspension", "wishbone", "disc", "caliper", "mud", "CO_DRIVER", "Wipers", "LED", "notes", "Sabo", "INT_", "boot_int", "undercarriage", "standard_pbr", "anagram", "exhaust_cardan", "_ints", "Light_bar_ints", "tow_hook"];
     if bad.iter().any(|b| n.contains(b)) { return false; }
     let good = ["x0_main_body", "x0_bonnet", "x0_boot", "x0_bumper_fm", "x0_bumper_bm", "x0_spoiler_b", "x0_door_f", "x0_wing_f", "x0_wing_mirror", "x0_window_", "Light_front", "Ligth_front", "Ligth_rear", "Light_bar", "Light_2_brake", "Ligth_2_brake", "x0_exhaust_bl", "x0_f_body_part", "x0_front_anagram"];
@@ -38,6 +46,7 @@ fn class_of(mat: &str, node: &str) -> (u8, bool) {
     let m = mat.to_lowercase();
     if m == "lamps" || node.ends_with("_lamp") || node.contains("_lamp.") || node == "Light_bar_lamps" { return (EMISSIVE, true); }
     if m.contains("glass") || m == "rearglass" { return (GLASS, true); }
+    if m == "ligths_ints" { return (if node.contains("front") || node.starts_with("Light_bar") { INT_FRONT } else { INT_REAR }, false); }
     if m == "crapaint_ext" { return (PAINT, false); }
     if m.contains("chrome") || m == "mirrors" || m == "rims_paint" || m == "tarmac_wheel" || m == "rim_gravel" { return (CHROME, false); }
     if m == "rubbers" || m.starts_with("mud") || m.starts_with("ext_tyre") { return (RUBBER, false); }

@@ -14,9 +14,9 @@ pub const MAT_FOLIAGE: u8 = 6;
 pub const MAT_CARLAMP: u8 = 7;
 /// A front position lamp of a car model (the corner piece of the headlight unit, see `rcar::position_vertices`): lit with the low beam.
 pub const MAT_CARPOS: u8 = 8;
-/// The glass cover of a headlight unit / of a tail unit of a car model: dark glass that shows the lamp's light when it is on (see `rcar::cover_vertices`).
-pub const MAT_CARHEADGLASS: u8 = 9;
-pub const MAT_CARTAILGLASS: u8 = 10;
+/// The reflector interior of a front / of a rear lamp unit of a car model (textured; lit by the car's state in the shader).
+pub const MAT_CARINT_FRONT: u8 = 11;
+pub const MAT_CARINT_REAR: u8 = 12;
 
 /// One vertex: position, normal, colour (rgb) with the material id in the alpha byte. 28 bytes.
 #[repr(C)]

@@ -7,8 +7,8 @@ pub struct Rect { pub id: usize, pub x: u32, pub y: u32, pub w: u32, pub h: u32 
 const GUTTER: u32 = 2;
 
 fn shelf(sizes: &[(usize, u32, u32)], s: f64, atlas: u32) -> Option<Vec<Rect>> {
-    // small textures (flat colours, details) are capped at 256 pixels; only the large ones (the livery) take the global scale that fits
-    let mut tiles: Vec<(usize, u32, u32)> = sizes.iter().map(|&(id, w, h)| { let k = if w.max(h) <= 512 { (256.0 / w.max(h) as f64).min(1.0) } else { s }; (id, ((w as f64 * k).round() as u32).max(1), ((h as f64 * k).round() as u32).max(1)) }).collect();
+    // small textures (flat colours, details) are keep their size (at most 512 pixels); only the large ones (the livery) take the global scale that fits
+    let mut tiles: Vec<(usize, u32, u32)> = sizes.iter().map(|&(id, w, h)| { let k = if w.max(h) <= 512 { 1.0 } else { s }; (id, ((w as f64 * k).round() as u32).max(1), ((h as f64 * k).round() as u32).max(1)) }).collect();
     tiles.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.cmp(&a.1)));
     let (mut x, mut y, mut row_h) = (0u32, 0u32, 0u32);
     let mut out = Vec::new();
