@@ -5,7 +5,7 @@ use crate::game::airflow::{self, AirflowCfg, WAKE_LEN};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct AUni { n: [i32; 4], g: [f32; 4], inflow: [f32; 4], boxes: [[f32; 4]; 16] }
+struct AUni { n: [i32; 4], g: [f32; 4], inflow: [f32; 4], shift: [f32; 4], boxes: [[f32; 4]; 16] }
 
 const STEP: f32 = 1.0 / 60.0;
 const MAX_BOXES: usize = 8;
@@ -97,10 +97,15 @@ impl AirflowGpu {
         self.acc -= steps as f32 * STEP;
         if self.acc > STEP { self.acc = 0.0; }
         let first = self.inflow.is_none();
-        let inflow = if first { inflow } else { airflow::smooth_inflow(self.inflow.unwrap(), inflow, dt_frame) };
+        let prev = self.inflow.unwrap_or(inflow);
+        // the inflow only moves on frames that step (the shift below is applied by the steps)
+        let inflow = if first { inflow } else if steps > 0 { airflow::smooth_inflow(prev, inflow, steps as f32 * STEP) } else { prev };
         self.inflow = Some(inflow);
+        // the whole air follows the car's change of speed; split over the steps of this frame
+        let per = 1.0 / steps.max(1) as f32;
+        let shift = [0, 1, 2].map(|a| (inflow[a] - prev[a]) * per);
         let mut u = AUni { n: [self.n[0] as i32, self.n[1] as i32, self.n[2] as i32, boxes.len().min(MAX_BOXES) as i32], g: [self.cfg.cell, STEP, self.cfg.confinement, (WAKE_LEN / self.cfg.cell).max(1.0).floor()],
-            inflow: [inflow[0], inflow[1], inflow[2], 0.0], boxes: [[0.0; 4]; 16] };
+            inflow: [inflow[0], inflow[1], inflow[2], 0.0], shift: [shift[0], shift[1], shift[2], 0.0], boxes: [[0.0; 4]; 16] };
         for (i, (lo, hi)) in boxes.iter().take(MAX_BOXES).enumerate() { u.boxes[2 * i] = [lo[0], lo[1], lo[2], 0.0]; u.boxes[2 * i + 1] = [hi[0], hi[1], hi[2], 0.0]; }
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
         if steps == 0 && !first { return; }

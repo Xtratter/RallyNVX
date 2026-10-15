@@ -5,6 +5,7 @@ struct A {
     n: vec4<i32>,        // nx, ny, nz, number of boxes
     g: vec4<f32>,        // dx, dt, confinement, wake length in cells
     inflow: vec4<f32>,
+    shift: vec4<f32>,    // the change of the inflow this step: added to every fluid cell (the car's frame accelerates)
     boxes: array<vec4<f32>, 16>,   // (min.xyz, 0), (max.xyz, 0) per box, x measured from the box's centre line
 };
 @group(0) @binding(0) var<uniform> a: A;
@@ -116,7 +117,7 @@ fn adv_fin(@builtin(global_invocation_id) gid: vec3<u32>) {
     let q = trace(centre(c), v0, a.g.y);
     var v = sample(t_src, q);
     let r = range_lo_hi(vel_src, q);
-    v = clamp(v, r[0], r[1]);
+    v = clamp(v, r[0], r[1]) + a.shift.xyz;
     // the wake: a solid up to the wake length upstream in the same column slows the air down, most right behind it
     let len = i32(a.g.w);
     for (var d = 1; d <= len; d++) {

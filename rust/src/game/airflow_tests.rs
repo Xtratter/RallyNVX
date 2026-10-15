@@ -131,3 +131,19 @@ fn speed_limiter_keeps_the_air_near_the_inflow() {
     let m = a.vel.iter().map(|v| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()).fold(0.0, f32::max);
     assert!(m <= SPEED_LIMIT * 10.0 + 1.0 + 1e-3, "{m}");
 }
+
+#[test]
+fn a_change_of_the_cars_speed_reaches_the_whole_box_at_once() {
+    // the air at rest, then the car is suddenly doing 17 m/s: with the shift the middle of a long box is at 17 m/s straight away, without it the
+    // few Jacobi iterations leave it far behind
+    let run = |moved: bool| -> f32 {
+        let mut a = Airflow::new([8, 6, 80], 0.5);
+        a.set_inflow([0.0, 0.0, 0.0]);
+        if moved { a.move_inflow([0.0, 0.0, -17.0]); } else { a.inflow = [0.0, 0.0, -17.0]; }
+        for _ in 0..10 { a.step(1.0 / 60.0, 20, 0.0); }
+        a.speed_at([4, 3, 40])
+    };
+    let (with, without) = (run(true), run(false));
+    assert!(with > 15.0, "with {with}");
+    assert!(without < 8.0, "without {without}");
+}

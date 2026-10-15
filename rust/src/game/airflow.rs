@@ -70,6 +70,14 @@ impl Airflow {
         self.inflow = v;
         for i in 0..self.vel.len() { if self.solid[i].is_none() { self.vel[i] = v; } }
     }
+    /// The car's velocity changed, so the whole air in the box changes with it (the car's frame is not inertial): every fluid cell gets the same
+    /// shift and the front takes the new inflow. This keeps the pressure solve local; a long box could not carry the change from the front to the
+    /// back with a few Jacobi iterations.
+    pub fn move_inflow(&mut self, new: [f32; 3]) {
+        let d = [0, 1, 2].map(|a| new[a] - self.inflow[a]);
+        self.inflow = new;
+        for i in 0..self.vel.len() { if self.solid[i].is_none() { for a in 0..3 { self.vel[i][a] += d[a]; } } }
+    }
     /// A solid box of cells `lo..hi` (the car; it does not move in its own frame).
     pub fn set_solid_box(&mut self, lo: [i32; 3], hi: [i32; 3]) {
         for c in self.cells() {
