@@ -103,12 +103,6 @@ fn vulpes() -> VehicleSpec { VehicleSpec::by_id("vulpes").expect("vulpes") }
     let b = beam_gain(l2, f2, r2, l2 + q.rotate(f * 12.0 + v3(0.0, -0.4, 0.0)));
     assert!((a - b).abs() < 1e-4, "{a} {b}");
 }
-#[test] fn the_glow_needs_a_view_along_the_lamp() {
-    let axis = v3(0.0, 0.0, 1.0);
-    assert!(glow_factor(axis, v3(0.0, 0.0, 1.0)) > 0.95);
-    assert!(glow_factor(axis, v3(1.0, 0.0, 0.2).norm()) < 0.25, "from the side");
-    assert_eq!(glow_factor(axis, v3(0.0, 0.0, -1.0)), 0.0, "from behind the lamp");
-}
 #[test] fn rally_cars_have_position_lamps_beside_the_headlights_at_the_front() {
     let v = settled(vulpes());
     let l = lamps(&v);
@@ -116,17 +110,21 @@ fn vulpes() -> VehicleSpec { VehicleSpec::by_id("vulpes").expect("vulpes") }
     assert!(((l.pos[0] - v.pos).dot(v.right()) + (l.pos[1] - v.pos).dot(v.right())).abs() < 1e-3);
 }
 
-#[test] fn lit_lamps_glow_only_towards_the_viewer() {
-    let v = settled(vulpes()); let lm = lamps(&v);
-    let on = CarLights { head: true, brake: true, reverse: false };
-    let front_cam = v.pos + v.forward() * 20.0 + v3(0.0, 1.0, 0.0);
-    let g = glows(&on, &lm, front_cam, v.forward());
-    let front: Vec<_> = g.iter().filter(|g| (g.0 - v.pos).dot(v.forward()) > 0.0).collect();
-    let rear: Vec<_> = g.iter().filter(|g| (g.0 - v.pos).dot(v.forward()) < 0.0).collect();
-    assert!(front.len() == 4 && front.iter().all(|g| g.2 > 0.3), "two headlights and two position lamps");
-    assert!(rear.iter().all(|g| g.2 == 0.0), "tail glow is not seen from the front");
-    let rear_cam = v.pos - v.forward() * 20.0 + v3(0.0, 1.0, 0.0);
-    let g = glows(&on, &lm, rear_cam, v.forward());
-    assert!(g.iter().filter(|g| (g.0 - v.pos).dot(v.forward()) < 0.0).all(|g| g.2 > 0.5 && g.1[0] > g.1[2]), "red brake lights from behind");
-    assert!(glows(&CarLights::default(), &lm, front_cam, v.forward()).is_empty(), "lamps off: no glow");
+#[test] fn the_tail_lights_do_not_light_the_ground_under_the_car_and_the_beam_not_its_bumper() {
+    let (l, f, r) = flat_lamp();
+    let tail = v3(0.0, 0.7, -1.7);
+    assert_eq!(tail_gain(tail, f, v3(0.0, 0.0, -0.5)), 0.0, "under the car");
+    assert_eq!(tail_gain(tail, f, v3(0.0, 0.0, -1.8)), 0.0, "right at the rear plane");
+    assert!(tail_gain(tail, f, v3(0.0, 0.0, -3.0)) > 0.99, "behind the bumper");
+    assert!(beam_gain(l, f, r, l + f * 0.4 + v3(0.0, -0.3, 0.0)) < 0.02, "the beam does not light the car's own bumper at close range");
+}
+#[test] fn the_lamps_rise_and_tilt_with_a_car_in_the_air() {
+    let spec = vulpes();
+    let mut v = settled(spec);
+    let l0 = lamps(&v);
+    v.pos = v.pos + v3(0.0, 3.0, 0.0);
+    v.rot = Q::axis_angle(v3(1., 0., 0.), -0.3).mul(v.rot);   // nose up in a jump
+    let l1 = lamps(&v);
+    assert!(l1.head[0].y > l0.head[0].y + 2.5, "the lamps leave the ground with the car");
+    assert!(l1.head_dir.y > l0.head_dir.y + 0.2, "the beam points up with the nose");
 }

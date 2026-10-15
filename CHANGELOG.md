@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.29.1 - lamps fixes
+
+- Fixed: the car is no longer lit by its own lamps (the beam on its bumper, the red tail light on the ground under it); the tail lights light only what lies behind the rear bumper and the beam starts a little way ahead of the lamps
+- Changed: the lamp halo is no longer a floating ball: a soft aureole hugs the bumper and wing around each lit lamp, so nothing shows through the car
+- Fixed: the lamps of the Peugeot light up: the dark glass covers of the headlight and tail units now show the lamp behind them when it is on (found on the mesh next to the lamp points)
+
 ## 2.29.0 - lamp optics
 
 - Changed: the car's headlights are lenses: unlit they are dark glass with a rim reflection of the sky and the sun, lit they have a hot core when seen head-on, a darker rim and a stepped reflector
