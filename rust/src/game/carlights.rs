@@ -46,7 +46,7 @@ pub fn lamps(v: &Vehicle) -> Lamps {
 }
 
 /// Fallback lamp points (the Peugeot asset, measured once) in case the asset cannot be read: body frame, metres from the ground under the car, x across, z forward.
-const RALLY_FALLBACK: crate::raster::rcar::LampPoints = crate::raster::rcar::LampPoints { head: [0.569, 0.634, 1.693], tail: [0.611, 0.747, -1.654], rev: [0.584, 0.818, -1.651] };
+const RALLY_FALLBACK: crate::raster::rcar::LampPoints = crate::raster::rcar::LampPoints { head: [0.53, 0.62, 1.72], pos: [0.68, 0.68, 1.61], tail: [0.611, 0.747, -1.654], rev: [0.584, 0.818, -1.651] };
 
 /// The lamps of a rally-style car: the lamp units found on the car's mesh (`rcar::lamp_points`; the asset is 1.91 x 1.50 x 3.97 m and the points scale with the spec's
 /// size like the mesh), placed on the body where it is drawn. The next car model brings its own mesh and its lamps follow it.
