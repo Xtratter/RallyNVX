@@ -565,11 +565,11 @@ fn dust_vertex(vi: u32, ps: vec4<f32>, c: vec4<f32>, e: vec4<f32>, size: f32) ->
 fn dust_pt(i: DOut) -> vec4<f32> {
     let r = length(i.uv);
     let n = vnoise2(i.uv * 2.2 + vec2<f32>(i.e.x * 31.0, i.e.x * 17.0));
-    let edge = mix(0.5, 1.05, n);
-    let shape = 1.0 - smoothstep(0.05, edge, r);
+    let edge = mix(0.45, 1.0, n);
+    let shape = 1.0 - smoothstep(0.3, edge, r);   // a firmer edge: the billows of a real cloud are defined
     let wp = i.wp;
     let dcam = length(wp - u.cam.xyz);
-    let near = smoothstep(1.5, 6.0, dcam);
+    let near = smoothstep(3.0, 10.0, dcam);   // dust right at the camera fades, so the picture does not fill with a veil
     if (i.c.a * shape * near < 0.003) { return vec4<f32>(0.0); }
     let a = i.c.a * shape * near;   // softness against the terrain and the car comes from the sampled depth of the low-resolution pass
     let sun_dir = normalize(u.sun.xyz);
@@ -578,7 +578,7 @@ fn dust_pt(i: DOut) -> vec4<f32> {
     let fwd = pow(max(dot(view, sun_dir), 0.0), 4.0);   // forward scattering: a cloud seen against the sun glows
     let amb = (u.sky_hor.rgb * 0.15 + vec3<f32>(0.62, 0.55, 0.45)) * 0.55 * mix(1.0, 0.2, u.disc.w);   // warm skylight: dust is tan, not grey
     let light = max(i.e.w, 0.02);
-    var col = i.c.rgb * (amb * 1.4 * mix(0.45, 1.0, light) + vec3<f32>(sun) * (0.9 * light) + vec3<f32>(1.0, 0.72, 0.4) * (3.2 * fwd * sun * light));   // thin lit dust glows amber against the sun, the thick core is dark
+    var col = i.c.rgb * (amb * 1.7 * mix(0.5, 1.0, light) + vec3<f32>(sun) * (1.15 * light) + vec3<f32>(1.0, 0.72, 0.4) * (3.2 * fwd * sun * light));   // thin lit dust glows amber against the sun, the thick core is dark
     col = col * mix(0.8, 1.0, smoothstep(0.0, 0.8, r));
     if (u.hl_pos.w > 0.0) {
         let dv = wp - u.hl_pos.xyz;
