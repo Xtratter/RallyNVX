@@ -14,6 +14,8 @@ pub enum CarStyle { Suv, Rally }
 pub struct VehicleSpec {
     /// Body style, price in the garage (0 = owned from the start) and the base price of one upgrade level.
     pub style: CarStyle, pub price: u32, pub upgrade_cost: u32,
+    /// The wheel set shown (0 tarmac, 1 gravel, 2 snow): set from the garage, read by the renderer only (the grip effect is a later stage).
+    pub wheel_set: u8,
     pub mass: f32,
     /// Body box (width, height, length) in metres and the renderer's colours.
     pub size: V3, pub look: super::params::Look,

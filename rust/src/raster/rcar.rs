@@ -22,18 +22,19 @@ fn mesh(d: &[u8], o: &mut usize, stride: usize) -> Result<Mesh3, String> {
     Ok(m)
 }
 
-/// The meshes of an `.rcar` file: the body and one wheel (tyre and rim), and in `RCA3` files the brake disc and the brake caliper (the caliper does not spin with the wheel).
-pub struct Parts { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3> }
+/// The meshes of an `.rcar` file: the body and one wheel (tyre and rim), and in `RCA3` files the brake disc and the brake caliper (the caliper does not spin with the wheel)
+/// and the gravel and the snow wheel sets (`alt_wheels`).
+pub struct Parts { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2] }
 
 /// All the meshes of an `.rcar` file: `RCAR` (28-byte vertices), `RCA2` (32 bytes with a `u16x2` UV after the colour), `RCA3` (a `u32` mesh count of 2 to 4, then the meshes in
-/// the order body, wheel, disc, caliper, 32-byte vertices).
+/// the order body, wheel, disc, caliper, gravel wheel, snow wheel; 32-byte vertices).
 pub fn parse_all(d: &[u8]) -> Result<Parts, String> {
     let (stride, count) = match d.get(..4) {
         Some(b"RCAR") => (28, 2usize),
         Some(b"RCA2") => (32, 2),
         Some(b"RCA3") => {
             let n = d.get(4..8).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).ok_or("truncated")? as usize;
-            if !(2..=4).contains(&n) { return Err(format!("bad mesh count {n}")); }
+            if !(2..=6).contains(&n) { return Err(format!("bad mesh count {n}")); }
             (32, n)
         }
         _ => return Err("not an RCAR/RCA2/RCA3 file".into()),
@@ -42,7 +43,7 @@ pub fn parse_all(d: &[u8]) -> Result<Parts, String> {
     let mut meshes = Vec::new();
     for _ in 0..count { meshes.push(mesh(d, &mut o, stride)?); }
     let mut it = meshes.into_iter();
-    Ok(Parts { body: it.next().unwrap(), wheel: it.next().unwrap(), disc: it.next(), caliper: it.next() })
+    Ok(Parts { body: it.next().unwrap(), wheel: it.next().unwrap(), disc: it.next(), caliper: it.next(), alt_wheels: [it.next(), it.next()] })
 }
 
 /// `(body, wheel)` from the bytes of an `.rcar` file.
@@ -198,7 +199,10 @@ mod tests {
         assert_eq!(p.body.verts[0].pos[1], 0.0); assert_eq!(p.wheel.verts[0].pos[1], 1.0); assert_eq!(p.disc.unwrap().verts[0].pos[1], 2.0); assert_eq!(p.caliper.unwrap().verts[0].uv, [7, 9]);
         let p3 = parse_all(&rca3(3)).unwrap(); assert!(p3.disc.is_some() && p3.caliper.is_none());
         let old = parse_all(PEUGEOT_V1).unwrap(); assert!(old.disc.is_none() && old.caliper.is_none());
-        assert!(parse_all(&rca3(2)).is_ok() && parse_all(&rca3(1)).is_err() && parse_all(&rca3(5)).is_err(), "2 to 4 meshes");
+        assert!(parse_all(&rca3(2)).is_ok() && parse_all(&rca3(1)).is_err() && parse_all(&rca3(7)).is_err(), "2 to 6 meshes");
+        let p6 = parse_all(&rca3(6)).unwrap(); assert_eq!(p6.alt_wheels[0].as_ref().unwrap().verts[0].pos[1], 4.0); assert_eq!(p6.alt_wheels[1].as_ref().unwrap().verts[0].pos[1], 5.0);
+        let p5 = parse_all(&rca3(5)).unwrap(); assert!(p5.alt_wheels[0].is_some() && p5.alt_wheels[1].is_none(), "only the gravel wheel");
+        assert!(p.alt_wheels.iter().all(Option::is_none) && parse_all(&rca3(4)).unwrap().alt_wheels.iter().all(Option::is_none));
         let t = rca3(4); assert!(parse_all(&t[..t.len() - 9]).is_err(), "truncated");
     }
     #[test] fn the_embedded_peugeot_has_four_meshes_with_textured_wheel_parts() {
@@ -214,6 +218,19 @@ mod tests {
         assert!(((hi.y - lo.y) / 2.0 - 0.326).abs() < 0.01 && (lo.y + hi.y).abs() < 0.02 && (lo.z + hi.z).abs() < 0.02, "wheel {lo:?} {hi:?}");
         let (dl, dh) = disc.bounds();
         assert!(dh.y - dl.y > 0.3 && dh.y - dl.y < 0.5, "the disc fits inside the rim: {dl:?} {dh:?}");
+    }
+    #[test] fn the_embedded_peugeot_has_three_wheel_sets() {
+        let p = parse_all(PEUGEOT).unwrap();
+        let sets = [Some(&p.wheel), p.alt_wheels[0].as_ref(), p.alt_wheels[1].as_ref()];
+        for (i, m) in sets.iter().enumerate() {
+            let m = m.unwrap_or_else(|| panic!("wheel set {i} is missing"));
+            assert!(m.idx.len() / 3 > 2000, "set {i}: {} triangles", m.idx.len() / 3);
+            let textured = m.verts.iter().filter(|v| v.uv != NO_UV).count();
+            assert!(textured * 10 > m.verts.len() * 7, "set {i}: {textured} of {} vertices have a UV", m.verts.len());
+            let (lo, hi) = m.bounds();
+            assert!(((hi.y - lo.y) / 2.0 - 0.326).abs() < 0.01 && (lo.y + hi.y).abs() < 0.02 && (lo.z + hi.z).abs() < 0.02, "set {i}: {lo:?} {hi:?}");
+        }
+        assert!(p.wheel.verts[0].pos != p.alt_wheels[0].as_ref().unwrap().verts[0].pos && p.alt_wheels[0].as_ref().unwrap().verts[0].pos != p.alt_wheels[1].as_ref().unwrap().verts[0].pos, "the sets differ");
     }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());

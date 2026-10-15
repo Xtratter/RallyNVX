@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.32.0 - wheel sets
+
+- Added: the Vulpes has three wheel sets from the source model, tarmac, gravel and snow (different tyres and rims); a free **Wheel set** button in the garage cycles them, the preview shows the choice at once, it is saved per car in the profile (old profiles load as tarmac); for now it changes the look only, the grip effect is planned
+- Changed: the model format `RCA3` carries up to six meshes and the livery atlas is 2048 x 2688
+- Fixed: the garage turntable shows the car with the profile's upgrades and wheel set (it showed the base car and ignored the saved profile after a change)
+
 ## 2.31.0 - real wheels
 
 - Changed: the Peugeot's wheels are textured (the tyre's sidewall and tread, the rim's spokes) and more detailed (about 2 500 triangles instead of 1 500); the brake disc and the caliper are separate parts seen through the spokes; the caliper no longer spins with the wheel (it follows the steering and the suspension); the mud flaps are on the car

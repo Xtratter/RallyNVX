@@ -6,10 +6,10 @@ fn tmp(name: &str) -> std::path::PathBuf {
 #[test] fn json_roundtrip_keeps_money_and_the_garage() {
     let mut p = Profile::new();
     p.money = 1234;
-    p.garage.cars.push(("vulpes".to_string(), [1, 2, 3, 0, 0, 0, 0, 1]));
+    p.garage.cars.push(("vulpes".to_string(), [1, 2, 3, 0, 0, 0, 0, 1, 0]));
     let q = Profile::from_json(&p.to_json()).unwrap();
     assert_eq!((q.money, q.version), (1234, PROFILE_VERSION));
-    assert_eq!(q.levels("vulpes"), [1, 2, 3, 0, 0, 0, 0, 1]);
+    assert_eq!(q.levels("vulpes"), [1, 2, 3, 0, 0, 0, 0, 1, 0]);
 }
 #[test] fn save_is_atomic_and_load_reads_it_back() {
     let path = tmp("save");
@@ -69,9 +69,9 @@ mod garage_profile {
     #[test] fn upgrades_are_atomic_capped_and_need_ownership() {
         let mut p = rich();
         assert!(!p.buy_upgrade("vulpes", Upgrade::Engine), "not owned");
-        assert!(p.buy_upgrade("offroader", Upgrade::Engine) && p.money == 19_700 && p.levels("offroader") == [1, 0, 0, 0, 0, 0, 0, 1]);
+        assert!(p.buy_upgrade("offroader", Upgrade::Engine) && p.money == 19_700 && p.levels("offroader") == [1, 0, 0, 0, 0, 0, 0, 1, 0]);
         assert!(p.buy_upgrade("offroader", Upgrade::Engine) && p.buy_upgrade("offroader", Upgrade::Engine));
-        assert_eq!((p.money, p.levels("offroader")), (20_000 - 300 - 600 - 1200, [3, 0, 0, 0, 0, 0, 0, 1]));
+        assert_eq!((p.money, p.levels("offroader")), (20_000 - 300 - 600 - 1200, [3, 0, 0, 0, 0, 0, 0, 1, 0]));
         let m = p.money; assert!(!p.buy_upgrade("offroader", Upgrade::Engine) && p.money == m, "capped at level 3");
         let mut poor = Profile::new(); poor.money = 299;
         assert!(!poor.buy_upgrade("offroader", Upgrade::Tyres) && poor.money == 299 && poor.levels("offroader") == default_levels());
@@ -81,7 +81,7 @@ mod garage_profile {
     #[test] fn the_garage_survives_a_json_round_trip() {
         let mut p = rich(); p.buy_car("vulpes"); p.select("vulpes"); p.buy_upgrade("vulpes", Upgrade::Brakes); p.buy_upgrade("offroader", Upgrade::Suspension);
         let q = Profile::from_json(&p.to_json()).unwrap();
-        assert_eq!((q.garage.selected.as_str(), q.levels("vulpes"), q.levels("offroader"), q.money), ("vulpes", [0, 0, 0, 1, 0, 0, 0, 1], [0, 0, 1, 0, 0, 0, 0, 1], p.money));
+        assert_eq!((q.garage.selected.as_str(), q.levels("vulpes"), q.levels("offroader"), q.money), ("vulpes", [0, 0, 0, 1, 0, 0, 0, 1, 0], [0, 0, 1, 0, 0, 0, 0, 1, 0], p.money));
         assert!(q.owns("vulpes"));
     }
     #[test] fn old_files_unknown_ids_and_unowned_selection_are_handled() {
@@ -89,7 +89,7 @@ mod garage_profile {
         assert!(old.owns("offroader") && !old.owns("vulpes") && old.garage.selected == "offroader");
         let odd = Profile::from_json("{\"version\":1,\"money\":10,\"profile_seed\":5,\"round\":0,\"results\":[],\"garage\":{\"selected\":\"vulpes\",\"cars\":{\"offroader\":{\"engine\":9,\"tyres\":1},\"ghost\":{\"engine\":2}}}}").unwrap();
         assert_eq!(odd.garage.selected, "offroader", "not owned: falls back");
-        assert_eq!(odd.levels("offroader"), [3, 1, 0, 0, 0, 0, 0, 1], "levels clamp to the cap, missing ones are 0");
+        assert_eq!(odd.levels("offroader"), [3, 1, 0, 0, 0, 0, 0, 1, 0], "levels clamp to the cap, missing ones are 0");
         assert!(!odd.owns("ghost"));
         let mut text: serde_json::Value = serde_json::from_str(&odd.to_json()).unwrap();
         assert!(text["garage"]["cars"].get("ghost").is_none()); text["version"] = serde_json::json!(1);
@@ -134,14 +134,33 @@ mod aero_parts {
     }
     #[test] fn profiles_round_trip_the_new_levels_and_an_old_profile_loads_with_defaults() {
         let mut p = Profile::new();
-        p.garage.cars[0].1 = [1, 2, 3, 0, 1, 2, 3, 0];
+        p.garage.cars[0].1 = [1, 2, 3, 0, 1, 2, 3, 0, 0];
         let q = Profile::from_json(&p.to_json()).unwrap();
-        assert_eq!(q.levels("offroader"), [1, 2, 3, 0, 1, 2, 3, 0]);
+        assert_eq!(q.levels("offroader"), [1, 2, 3, 0, 1, 2, 3, 0, 0]);
         let old = r#"{"version":1,"money":5,"garage":{"selected":"offroader","cars":{"offroader":{"engine":2,"tyres":1,"suspension":0,"brakes":3}}}}"#;
         let o = Profile::from_json(old).unwrap();
-        assert_eq!(o.levels("offroader"), [2, 1, 0, 3, 0, 0, 0, 1], "the new parts are 0 and the wing angle is in the middle");
+        assert_eq!(o.levels("offroader"), [2, 1, 0, 3, 0, 0, 0, 1, 0], "the new parts are 0 and the wing angle is in the middle");
         let odd = Profile::from_json(r#"{"version":1,"money":0,"garage":{"cars":{"offroader":{"wing":9,"wing_angle":7,"splitter":-1}}}}"#).unwrap();
-        assert_eq!(odd.levels("offroader"), [0, 0, 0, 0, 0, 3, 0, 2], "clamped");
+        assert_eq!(odd.levels("offroader"), [0, 0, 0, 0, 0, 3, 0, 2, 0], "clamped");
         assert_eq!(default_levels()[7], 1);
+    }
+
+    #[test] fn the_wheel_set_loads_clamps_and_round_trips() {
+        let none = Profile::from_json(r#"{"version":1,"money":0,"garage":{"cars":{"offroader":{"engine":1}}}}"#).unwrap();
+        assert_eq!(none.levels("offroader")[8], 0, "an old profile: tarmac");
+        let wild = Profile::from_json(r#"{"version":1,"money":0,"garage":{"cars":{"offroader":{"wheel_set":7}}}}"#).unwrap();
+        assert_eq!(wild.levels("offroader")[8], 2, "clamped");
+        let mut p = Profile::new();
+        assert!(p.set_wheel_set("offroader", 1) && !p.set_wheel_set("offroader", 3) && !p.set_wheel_set("nobody", 1));
+        let q = Profile::from_json(&p.to_json()).unwrap();
+        assert_eq!(q.levels("offroader")[8], 1);
+    }
+
+    #[test] fn the_garage_preview_spec_carries_the_wheel_set_and_unknown_cars_have_none() {
+        let mut p = Profile::new();
+        p.garage.cars.push(("vulpes".to_string(), [0, 0, 0, 0, 0, 0, 0, 1, 2]));
+        assert_eq!(p.spec_of("vulpes").unwrap().wheel_set, 2);
+        assert_eq!(p.spec_of("offroader").unwrap().wheel_set, 0);
+        assert!(p.spec_of("nobody").is_none());
     }
 }

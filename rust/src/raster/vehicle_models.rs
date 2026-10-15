@@ -125,9 +125,15 @@ pub(crate) fn loft(stations: &[(f32, f32, f32, f32)], ring: usize, exp: f32, col
 
 pub(crate) fn scaled(st: &[(f32, f32, f32, f32)], sx: f32, sy: f32, sz: f32) -> Vec<(f32, f32, f32, f32)> { st.iter().map(|&(z, w, a, b)| (z * sz, (w * sx).max(0.06), a * sy, b * sy)).collect() }
 
-pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3> }
+pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2] }
 
-impl CarModel { pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None } } }
+impl CarModel {
+    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None] } }
+    /// The wheel mesh of a wheel set (0 tarmac, 1 gravel, 2 snow); a set the model does not have shows the tarmac wheel.
+    pub fn wheel_for(&self, set: u8) -> &Mesh3 {
+        match set { 1 | 2 => self.alt_wheels[set as usize - 1].as_ref().unwrap_or(&self.wheel), _ => &self.wheel }
+    }
+}
 
 pub(crate) const CHROME: [f32; 3] = [0.75, 0.77, 0.80];
 pub(crate) const RUBBER: [f32; 3] = [0.04, 0.04, 0.045];

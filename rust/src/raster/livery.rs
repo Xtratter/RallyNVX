@@ -40,9 +40,9 @@ pub fn mips(rgba: &[u8], w: u32, h: u32) -> Vec<(u32, u32, Vec<u8>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test] fn the_embedded_atlas_decodes_to_2048_by_2560_rgba() {
+    #[test] fn the_embedded_atlas_decodes_to_2048_by_2688_rgba() {
         let (w, h, px) = decode(LIVERY).expect("livery decodes");
-        assert_eq!((w, h), (2048, 2560)); assert_eq!(px.len(), 2048 * 2560 * 4); assert!(px.chunks(4).step_by(997).all(|p| p[3] == 255));
+        assert_eq!((w, h), (2048, 2688)); assert_eq!(px.len(), 2048 * 2688 * 4); assert!(px.chunks(4).step_by(997).all(|p| p[3] == 255));
     }
     #[test] fn garbage_is_none_not_a_panic() { assert!(decode(b"").is_none() && decode(b"not a jpeg").is_none() && decode(&LIVERY[..100]).is_none()); }
     #[test] fn the_mip_chain_halves_down_to_one_pixel_and_averages() {

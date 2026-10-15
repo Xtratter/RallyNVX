@@ -115,9 +115,9 @@ const MESH_ATTRS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0 => Flo
 const INST_ATTRS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4];
 
 /// Everything the car meshes depend on; the renderer rebuilds them when it changes (another car, size or paint).
-fn car_key(s: &crate::game::vehicle::VehicleSpec) -> [u32; 12] {
+fn car_key(s: &crate::game::vehicle::VehicleSpec) -> [u32; 13] {
     let b = |f: f32| f.to_bits();
-    [s.style as u32, b(s.size.x), b(s.size.y), b(s.size.z), b(s.radius), b(s.look.wheel_width), b(s.look.body[0]), b(s.look.body[1]), b(s.look.body[2]), b(s.look.accent[0]), b(s.look.accent[1]), b(s.look.accent[2])]
+    [s.style as u32, b(s.size.x), b(s.size.y), b(s.size.z), b(s.radius), b(s.look.wheel_width), b(s.look.body[0]), b(s.look.body[1]), b(s.look.body[2]), b(s.look.accent[0]), b(s.look.accent[1]), b(s.look.accent[2]), s.wheel_set as u32]
 }
 
 fn depth_tex(dev: &wgpu::Device, w: u32, h: u32, sampled: bool) -> (wgpu::Texture, wgpu::TextureView) {
@@ -164,7 +164,7 @@ pub struct Raster {
     dust_gpu: Option<dust_gpu::DustGpu>, dust_render: Option<dust_gpu::DustRender>, bgl_main_keep: wgpu::BindGroupLayout, module_keep: wgpu::ShaderModule,
     dust_buf: wgpu::Buffer,
     cache_seed: u64,
-    car_key: [u32; 12],
+    car_key: [u32; 13],
     car_parts: (bool, bool),   // whether the car model has brake discs / calipers
     /// The signed distance field of the car's body mesh (for the dust's exact-shape option), rebuilt with the model; `sdf_serial` tells the dust a new one is there.
     car_sdf: Option<crate::game::sdf::Sdf>, sdf_serial: u32,
@@ -422,7 +422,7 @@ impl Raster {
         if key == self.car_key && self.car_sdf.is_some() { return; }
         let car = vm::build_car(spec);
         self.models[0] = model_buf(&self.device, &car.body);
-        self.models[1] = model_buf(&self.device, &car.wheel);
+        self.models[1] = model_buf(&self.device, car.wheel_for(spec.wheel_set));
         self.models[SLOT_DISC] = model_buf(&self.device, &car.disc.clone().unwrap_or_else(placeholder_mesh));
         self.models[SLOT_CALIPER] = model_buf(&self.device, &car.caliper.clone().unwrap_or_else(placeholder_mesh));
         self.car_parts = (car.disc.is_some(), car.caliper.is_some());

@@ -69,7 +69,7 @@ fn parse_car(id: &str, v: &Value) -> Result<VehicleSpec, String> {
     let style = match v.get("model") { None => CarStyle::Suv, Some(m) => match m.as_str() { Some("suv") => CarStyle::Suv, Some("rally") => CarStyle::Rally, _ => return Err(format!("{ctx}: \"model\" must be \"suv\" or \"rally\"")) } };
     let whole = |key: &str, default: u32| -> Result<u32, String> { match v.get(key) { None => Ok(default), Some(x) => x.as_u64().filter(|n| *n <= 1_000_000).map(|n| n as u32).ok_or_else(|| format!("{ctx}: \"{key}\" must be a whole number from 0 to 1000000")) } };
     let (price, upgrade_cost) = (whole("price", 0)?, whole("upgrade_cost", 300)?);
-    Ok(VehicleSpec {
+    Ok(VehicleSpec { wheel_set: 0,
         style, price, upgrade_cost,
         mass, size: v3(w, h, l), look,
         inertia: v3(mass / 12.0 * (h * h + l * l), mass / 12.0 * (w * w + l * l), mass / 12.0 * (w * w + h * h)),
