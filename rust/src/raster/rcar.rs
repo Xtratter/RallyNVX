@@ -1,20 +1,21 @@
 //! Reader of the `.rcar` car asset written by `tools/carconv`: a body mesh and one wheel mesh in the renderer's vertex
 //! format (little endian: `RCAR`, then per mesh `u32 vertex count`, `u32 index count`, 28-byte vertices, `u32` indices).
-use super::vehicle_models::{Mesh3, Vert};
+use super::vehicle_models::{Mesh3, Vert, NO_UV};
 
 const MAX_VERTS: usize = 400_000;
 
-fn mesh(d: &[u8], o: &mut usize) -> Result<Mesh3, String> {
+fn mesh(d: &[u8], o: &mut usize, stride: usize) -> Result<Mesh3, String> {
     let rd = |o: &mut usize| -> Result<u32, String> { let b = d.get(*o..*o + 4).ok_or("truncated")?; *o += 4; Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]])) };
     let (nv, ni) = (rd(o)? as usize, rd(o)? as usize);
     if nv == 0 || nv > MAX_VERTS || ni == 0 || ni % 3 != 0 || ni > MAX_VERTS * 6 { return Err(format!("bad counts {nv}/{ni}")); }
-    if d.len() < *o + nv * 28 + ni * 4 { return Err("truncated".into()); }
+    if d.len() < *o + nv * stride + ni * 4 { return Err("truncated".into()); }
     let f = |at: usize| f32::from_le_bytes([d[at], d[at + 1], d[at + 2], d[at + 3]]);
     let mut m = Mesh3::default();
     for _ in 0..nv {
         let a = *o;
-        m.verts.push(Vert { pos: [f(a), f(a + 4), f(a + 8)], nrm: [f(a + 12), f(a + 16), f(a + 20)], col: [d[a + 24], d[a + 25], d[a + 26], d[a + 27]] });
-        *o += 28;
+        m.verts.push(Vert { pos: [f(a), f(a + 4), f(a + 8)], nrm: [f(a + 12), f(a + 16), f(a + 20)], col: [d[a + 24], d[a + 25], d[a + 26], d[a + 27]],
+            uv: if stride == 32 { [u16::from_le_bytes([d[a + 28], d[a + 29]]), u16::from_le_bytes([d[a + 30], d[a + 31]])] } else { NO_UV } });
+        *o += stride;
     }
     for _ in 0..ni { let i = rd(o)?; if i as usize >= nv { return Err("index out of range".into()); } m.idx.push(i); }
     if m.verts.iter().any(|v| v.pos.iter().chain(v.nrm.iter()).any(|c| !c.is_finite())) { return Err("non-finite vertex".into()); }
@@ -23,10 +24,11 @@ fn mesh(d: &[u8], o: &mut usize) -> Result<Mesh3, String> {
 
 /// `(body, wheel)` from the bytes of an `.rcar` file.
 pub fn parse(d: &[u8]) -> Result<(Mesh3, Mesh3), String> {
-    if d.len() < 4 || &d[..4] != b"RCAR" { return Err("not an RCAR file".into()); }
+    // RCAR: 28-byte vertices (position, normal, colour); RCA2: 32 bytes, with a u16x2 UV after the colour
+    let stride = match d.get(..4) { Some(b"RCAR") => 28, Some(b"RCA2") => 32, _ => return Err("not an RCAR/RCA2 file".into()) };
     let mut o = 4;
-    let body = mesh(d, &mut o)?;
-    let wheel = mesh(d, &mut o)?;
+    let body = mesh(d, &mut o, stride)?;
+    let wheel = mesh(d, &mut o, stride)?;
     Ok((body, wheel))
 }
 
@@ -97,6 +99,7 @@ pub fn cover_vertices(body: &Mesh3, l: &LampPoints) -> (Vec<usize>, Vec<usize>) 
 mod tests {
     use super::*;
     const PEUGEOT: &[u8] = include_bytes!("../../assets/rally_car.rcar");
+    const PEUGEOT_V1: &[u8] = include_bytes!("../../assets/rally_car_v1.rcar");
 
     #[test] fn the_embedded_peugeot_parses_and_is_sane() {
         let (b, w) = parse(PEUGEOT).expect("rally_car.rcar must parse");
@@ -139,7 +142,7 @@ mod tests {
     }
     #[test] fn a_mesh_without_a_corner_piece_uses_the_head_point_for_the_position_lamp() {
         let mut m = Mesh3::default();
-        let mut vert = |x: f32, z: f32, c: [u8; 4]| m.verts.push(Vert { pos: [x, 0.6, z], nrm: [0.0, 1.0, 0.0], col: c });
+        let mut vert = |x: f32, z: f32, c: [u8; 4]| m.verts.push(Vert { pos: [x, 0.6, z], nrm: [0.0, 1.0, 0.0], col: c, uv: NO_UV });
         for i in 0..8 { vert(0.5 + 0.005 * i as f32, 1.7, [255, 242, 204, 7]); }
         for i in 0..8 { vert(0.6 + 0.005 * i as f32, -1.6, [242, 13, 8, 7]); }
         for i in 0..8 { vert(0.5 + 0.005 * i as f32, -1.65, [255, 255, 255, 7]); }
@@ -154,6 +157,27 @@ mod tests {
         assert!(head.len() >= 20 && head.iter().all(|&i| b.verts[i].pos[2] > 1.4 && b.verts[i].pos[1] < 0.9), "{}", head.len());
         assert!(tail.len() >= 8 && tail.iter().all(|&i| b.verts[i].pos[2] < -1.4), "{}", tail.len());
         assert!(head.iter().any(|&i| b.verts[i].pos[0] < 0.0) && tail.iter().any(|&i| b.verts[i].pos[0] < 0.0), "both sides");
+    }
+    fn rca2(verts: &[([f32; 3], [u16; 2])]) -> Vec<u8> {
+        let mut d = b"RCA2".to_vec();
+        for _ in 0..2 {
+            d.extend_from_slice(&(verts.len() as u32).to_le_bytes()); d.extend_from_slice(&3u32.to_le_bytes());
+            for (p, uv) in verts { for f in p.iter().chain([0.0f32, 1.0, 0.0].iter()) { d.extend_from_slice(&f.to_le_bytes()); } d.extend_from_slice(&[10, 20, 30, 0]); d.extend_from_slice(&uv[0].to_le_bytes()); d.extend_from_slice(&uv[1].to_le_bytes()); }
+            for i in 0..3u32 { d.extend_from_slice(&i.to_le_bytes()); }
+        }
+        d
+    }
+    #[test] fn rca2_files_carry_uvs_and_the_sentinel() {
+        let (b, _) = parse(&rca2(&[([0.0, 0.0, 0.0], [100, 200]), ([1.0, 0.0, 0.0], [0xFFFF, 0xFFFF]), ([0.0, 1.0, 0.0], [0, 65534])])).unwrap();
+        assert_eq!(b.verts[0].uv, [100, 200]); assert_eq!(b.verts[1].uv, NO_UV); assert_eq!(b.verts[2].uv, [0, 65534]);
+        assert_eq!(b.verts[0].col, [10, 20, 30, 0]);
+    }
+    #[test] fn rcar_v1_still_parses_with_no_uv_and_rca2_garbage_is_an_error() {
+        let (b, _) = parse(PEUGEOT_V1).unwrap();
+        assert!(b.verts.iter().all(|v| v.uv == NO_UV));
+        let good = rca2(&[([0.0; 3], [1, 2]), ([1.0, 0.0, 0.0], [3, 4]), ([0.0, 1.0, 0.0], [5, 6])]);
+        assert!(parse(&good[..good.len() - 5]).is_err(), "truncated");
+        assert!(parse(b"RCA3").is_err());
     }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());

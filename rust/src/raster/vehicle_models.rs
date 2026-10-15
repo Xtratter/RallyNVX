@@ -21,7 +21,10 @@ pub const MAT_CARTAILGLASS: u8 = 10;
 /// One vertex: position, normal, colour (rgb) with the material id in the alpha byte. 28 bytes.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
-pub struct Vert { pub pos: [f32; 3], pub nrm: [f32; 3], pub col: [u8; 4] }
+pub struct Vert { pub pos: [f32; 3], pub nrm: [f32; 3], pub col: [u8; 4], pub uv: [u16; 2] }
+
+/// The UV of a vertex without a texture (the shader then uses the vertex colour).
+pub const NO_UV: [u16; 2] = [0xFFFF, 0xFFFF];
 
 #[derive(Clone, Default)]
 pub struct Mesh3 { pub verts: Vec<Vert>, pub idx: Vec<u32> }
@@ -39,7 +42,7 @@ impl Mesh3 {
     }
     pub(crate) fn vert(&mut self, pos: V3, nrm: V3, col: [f32; 3], mat: u8) -> u32 {
         let c = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
-        self.verts.push(Vert { pos: [pos.x, pos.y, pos.z], nrm: [nrm.x, nrm.y, nrm.z], col: [c(col[0]), c(col[1]), c(col[2]), mat] });
+        self.verts.push(Vert { pos: [pos.x, pos.y, pos.z], nrm: [nrm.x, nrm.y, nrm.z], col: [c(col[0]), c(col[1]), c(col[2]), mat], uv: NO_UV });
         (self.verts.len() - 1) as u32
     }
 }
