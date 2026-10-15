@@ -54,6 +54,7 @@ object Native {
     @JvmStatic external fun gameLightsDebug(mode: Int)
     @JvmStatic external fun gameAirflowDebug(on: Int)
     @JvmStatic external fun gameDustGpuDebug(on: Int)
+    @JvmStatic external fun gameAero(on: Int)
     @JvmStatic external fun gamePause(p: Boolean)
     @JvmStatic external fun gameStop()
     @JvmStatic external fun gameResize(w: Int, h: Int)

@@ -120,6 +120,10 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAirflowDebug(_e: JNIEnv, _c: JClass, on: jint) {
         crate::game::airflow::set_debug(on > 0);
     }
+    /// The Settings switch "Aerodynamics" (0 off, 1 on): the dust follows the airflow.
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAero(_e: JNIEnv, _c: JClass, on: jint) {
+        crate::game::dust::set_aero(on > 0);
+    }
     /// Debug/test: the dust on the GPU (0 off, 1 on).
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameDustGpuDebug(_e: JNIEnv, _c: JClass, on: jint) {
         crate::game::dust::set_gpu_debug(on > 0);

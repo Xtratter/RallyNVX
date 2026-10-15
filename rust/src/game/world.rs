@@ -269,7 +269,7 @@ impl World {
         if counting { inp = Input { brake: true, handbrake: true, ..Default::default() }; }   // held at the start line until GO
         if self.autopilot.is_some() { if let Some(r) = self.rally.as_mut() { r.run.assisted = true; } }
         self.vehicle.step_with(&self.terrain, &near, &inp, dt, &mut self.loose);
-        self.dust.set_gpu(super::dust::gpu_debug() && matches!(self.dust.level(), 1 | 2));
+        self.dust.set_gpu(super::dust::gpu_on(self.dust.level()));
         self.dust.update(&self.vehicle, &self.terrain, self.time, dt);
         let v = &mut self.vehicle;
         v.pos.x = v.pos.x.clamp(-WORLD_LIMIT, WORLD_LIMIT);

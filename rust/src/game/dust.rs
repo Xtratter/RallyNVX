@@ -90,6 +90,14 @@ static GPU_DEBUG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 pub fn set_gpu_debug(on: bool) { GPU_DEBUG.store(on, std::sync::atomic::Ordering::Relaxed); }
 pub fn gpu_debug() -> bool { GPU_DEBUG.load(std::sync::atomic::Ordering::Relaxed) }
 
+static AERO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The Settings switch "Aerodynamics" (the app sets it at start; the host tests leave it off, so they run the CPU particles).
+pub fn set_aero(on: bool) { AERO.store(on, std::sync::atomic::Ordering::Relaxed); }
+
+/// Whether the particles run on the GPU, driven by the airflow: the switch (or the debug flag) is on and the level is Normal or Lots.
+pub fn gpu_wanted(aero: bool, debug: bool, level: i32) -> bool { (aero || debug) && matches!(level, 1 | 2) }
+pub fn gpu_on(level: i32) -> bool { gpu_wanted(AERO.load(std::sync::atomic::Ordering::Relaxed), gpu_debug(), level) }
+
 fn caps(level: i32) -> (usize, f32) {
     let t = grip::table();
     match level { 0 | 3 => (0, 0.0), 2 => (t.dust_cap_lots, 1.5), _ => (t.dust_cap_normal, 1.0) }   // 3: the fluid dust (no particles)
