@@ -68,3 +68,17 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
     v.comp = [9.0, -9.0, f32::NAN, 0.0];
     assert!(susp_offsets(&v).iter().all(|o| o.is_finite() && o.abs() <= 0.25), "clamped and finite");
 }
+
+#[test] fn the_glass_is_see_through_near_solid_far_and_covers_are_clearer() {
+    let near = glass_alpha(3.0, 0.0, 0.0);
+    assert!(near > 0.15 && near < 0.3, "{near}");
+    assert!(glass_alpha(3.0, 1.0, 0.0) > near, "fresnel makes it more opaque");
+    let far = glass_alpha(30.0, 0.0, 0.0);
+    assert!(far > 0.9 && far <= 1.0, "{far}");
+    assert!(glass_alpha(5.0, 0.3, 0.0) <= glass_alpha(12.0, 0.3, 0.0) && glass_alpha(12.0, 0.3, 0.0) <= glass_alpha(20.0, 0.3, 0.0), "rises with distance");
+    assert!(glass_alpha(3.0, 0.3, 1.0) < glass_alpha(3.0, 0.3, 0.0) * 0.5, "a lamp cover is clear");
+    for d in [0.0, 5.0, 9.0, 12.0, 16.0, 100.0] { for f in [0.0, 0.5, 1.0] { for c in [0.0, 1.0] { let a = glass_alpha(d, f, c); assert!((0.0..=1.0).contains(&a)); } } }
+}
+#[test] fn the_interior_is_drawn_only_near_the_car() {
+    assert!(draw_interior(0.0) && draw_interior(15.9) && !draw_interior(16.0) && !draw_interior(500.0));
+}

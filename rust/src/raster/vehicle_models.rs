@@ -21,6 +21,21 @@ pub const MAT_CARINT_REAR: u8 = 12;
 pub const MAT_CARDISC: u8 = 13;
 /// A suspension part of a car model: textured; the vertex colour carries its weight (red: 1 at the hub, 0 at the far end) and its corner (green: 0 front-left (+x), 1 front-right, 2 rear-left, 3 rear-right); the shader lifts it by the hub's offset times the weight.
 pub const MAT_CARSUSP: u8 = 14;
+/// The interior and the driver of a car model: textured from the interior atlas, darkened by a cabin factor, drawn only near the car (see `draw_interior`).
+pub const MAT_CARINT: u8 = 15;
+
+/// Beyond this camera distance (metres) the car's windows are solid dark glass and the interior is not drawn.
+pub const INTERIOR_RANGE: f32 = 16.0;
+/// Whether the interior is drawn for a camera `dist` metres from the car.
+pub fn draw_interior(dist: f32) -> bool { dist < INTERIOR_RANGE }
+
+/// The alpha of the car's glass: 0.2 + 0.5 fresnel near the car, rising to 0.95 between 9 and 16 m of camera distance (the cabin must not show through from afar);
+/// a clear lamp cover (`clear` 1) is a quarter as strong. Mirrored in `raster.wgsl::fs_glass`.
+pub fn glass_alpha(dist: f32, fresnel: f32, clear: f32) -> f32 {
+    let t = ((dist - 9.0) / 7.0).clamp(0.0, 1.0); let t = t * t * (3.0 - 2.0 * t);
+    let near = (0.2 + 0.5 * fresnel.clamp(0.0, 1.0)) * (1.0 - 0.75 * clear.clamp(0.0, 1.0));
+    (near + (0.95 - near) * t * (1.0 - 0.75 * clear.clamp(0.0, 1.0))).clamp(0.0, 1.0)
+}
 
 /// One vertex: position, normal, colour (rgb) with the material id in the alpha byte. 28 bytes.
 #[repr(C)]
@@ -127,10 +142,10 @@ pub(crate) fn loft(stations: &[(f32, f32, f32, f32)], ring: usize, exp: f32, col
 
 pub(crate) fn scaled(st: &[(f32, f32, f32, f32)], sx: f32, sy: f32, sz: f32) -> Vec<(f32, f32, f32, f32)> { st.iter().map(|&(z, w, a, b)| (z * sz, (w * sx).max(0.06), a * sy, b * sy)).collect() }
 
-pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2] }
+pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2], pub glass: Option<Mesh3>, pub interior: Option<Mesh3> }
 
 impl CarModel {
-    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None] } }
+    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None], glass: None, interior: None } }
     /// The wheel mesh of a wheel set (0 tarmac, 1 gravel, 2 snow); a set the model does not have shows the tarmac wheel.
     pub fn wheel_for(&self, set: u8) -> &Mesh3 {
         match set { 1 | 2 => self.alt_wheels[set as usize - 1].as_ref().unwrap_or(&self.wheel), _ => &self.wheel }
