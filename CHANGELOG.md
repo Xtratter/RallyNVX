@@ -3,6 +3,7 @@
 [Русский](CHANGELOG.ru.md) · **English**
 
 ## 2.29.0 - lamp optics
+- Added: a quick time-of-day switch in the drive (the "Time" button next to the gear): Auto (the level's own clock), Day, Evening, Night; it applies at once and freezes the sky at that phase, so the night lamps can be checked in free ride
 
 - Changed: the car's headlights are lenses: unlit they are dark glass with a rim reflection of the sky and the sun, lit they have a hot core when seen head-on, a darker rim and a stepped reflector
 - Changed: a real low beam from the two headlights (wide, a sharp upper cut-off that rises on the right, falling off with distance) lights the ground, the haze and the dust, instead of one cone

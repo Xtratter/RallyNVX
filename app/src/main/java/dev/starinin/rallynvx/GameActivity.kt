@@ -35,6 +35,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var autopilotBtn: View? = null
     private var settingsPanel: View? = null
     private var camBtn: View? = null
+    private var todMode = 0   // the quick time-of-day switch (see TimeOfDay); every launch starts on Auto
+    private var todBtn: View? = null
     private var camView = 0; private var camDist = 1f; private var camHeight = 0f
     private var seed = 0L
     private lateinit var audio: AudioEngine
@@ -116,6 +118,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         M3Widgets.button(this, "⚙", M3Widgets.ButtonKind.TONAL) { showSettingsPanel() }.also {
             root.addView(it, FrameLayout.LayoutParams(px(56f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(174f), px(88f), 0, 0) })
         }
+        // the time of day: a tap cycles Auto, Day, Evening, Night at once (it freezes the sky at that phase; Auto gives the level's own clock back)
+        todBtn = M3Widgets.button(this, todLabel(), M3Widgets.ButtonKind.TONAL) {
+            todMode = TimeOfDay.next(todMode); Native.gameTimeOfDay(TimeOfDay.phase(todMode)); (todBtn as? android.widget.TextView)?.text = todLabel()
+        }.also { root.addView(it, FrameLayout.LayoutParams(px(150f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(240f), px(88f), 0, 0) }) }
         button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
             handbrakeBtn = this
             applyControlLayout()
@@ -334,7 +340,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         intent.getIntExtra("gpuprof", 0).let { if (it > 0) Native.gameGpuProf(it) }   // debug/test: GPU stage timings in the log
         intent.getIntExtra("dustgpu", 0).let { if (it > 0) Native.gameDustGpuDebug(it) }   // debug/test: the dust on the GPU
         intent.getIntExtra("airflow", 0).let { if (it > 0) Native.gameAirflowDebug(it) }   // debug/test: the airflow slice
-        intent.getFloatExtra("tod", -1f).let { if (it >= 0f) Native.gameTimeOfDay(it) }   // debug/test: time of day
+        Native.gameTimeOfDay(intent.getFloatExtra("tod", -1f))   // debug/test: time of day; a launch without it clears the previous freeze (the switch starts on Auto)
         Native.gameStart(h.surface, w, hh, seed, profile, false)
         Native.gameQuality(Quality.index(this))
         intent.getIntExtra("dust", -1).let { if (it >= 0) Controls.setDust(this, it) }   // debug/test: the dust level (3 = fluid)
@@ -424,6 +430,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         settingsPanel = p
     }
 
+    private fun todLabel() = t("Time: ", "Время: ") + TimeOfDay.name(todMode, java.util.Locale.getDefault().language != "ru")
     private fun camLabel() = t("View: ", "Вид: ") + CamMath.name(camView, java.util.Locale.getDefault().language != "ru")
 
     /** Takes the distance (zoom) and height (tilt) of the current view, keeps them for next time and sends them to the game. */
