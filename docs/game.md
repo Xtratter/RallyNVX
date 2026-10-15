@@ -30,6 +30,10 @@ On Android the start screen has Quality: Low (0.5x), Medium (0.7x) and High (1.0
 
 The delivery and race missions were removed in 2.14.0: the game is a free drive for now, and a rally mode (special stages with times) is planned. The profile (`files/profile.json`, desktop: none) keeps the money and the garage; a damaged file is kept as `profile.json.bak`.
 
+## Aerodynamics (dust in the airflow)
+
+With **Settings, Aerodynamics: On** (the default) the dust (levels Normal and Lots) runs on the GPU and follows a simulated airflow: a box (12 x 6 x 24 m, cells of 0.3 m, `surfaces.json` -> `airflow`) moves with the car, the body and the garage parts are solid voxels in it, and the air is stepped at 30 Hz (BFECC advection, vorticity confinement, a wake model, pressure projection). Particles inside the box take its air velocity (turned from the car's frame into the world), blend into the wind at its faces, are pushed out of the body, settle onto a 64 m window of terrain heights and keep the response times of `dust_physics`. Off falls back to the simple CPU particles (about 9 fps cheaper on the POCO F3 in the measured scene: 47 fps against 38 with it on, never below 30). The design is in `docs/superpowers/specs/2026-10-15-airflow-dust-design.md`.
+
 ## Airflow (debug)
 
 An experimental airflow around the car (step 2 of the aerodynamics plan) is computed on the GPU in a box that moves with the car and drawn as a side slice (blue = slow air, white = the speed of the car, red = faster; the car is the black block, it faces right). It is off by default and changes nothing in the game yet; the debug extra `airflow=1` of `GameActivity` (or `airflow.debug` in `surfaces.json`) switches it on. Numbers are in `surfaces.json` -> `airflow`, the design in `docs/superpowers/specs/2026-10-15-airflow-design.md`.
@@ -125,6 +129,10 @@ No rally mode and no NPC orders yet, and only the raster and hybrid renderers. T
 ## Миссии
 
 Миссии «доставка» и «гонка» убраны в 2.14.0: пока игра — это свободная езда, а ралли-режим (спецучастки с временем) в планах. Профиль (`files/profile.json`) хранит деньги и гараж; повреждённый файл сохраняется как `profile.json.bak`.
+
+## Аэродинамика (пыль в потоке воздуха)
+
+При **«Настройки», «Аэродинамика»: Вкл** (по умолчанию) пыль (уровни «Обычная» и «Много») считается на GPU и следует за смоделированным потоком воздуха: бокс (12 x 6 x 24 м, ячейки 0,3 м, `surfaces.json` -> `airflow`) едет вместе с машиной, кузов и детали гаража в нём твёрдые воксели, воздух считается с шагом 30 Гц (перенос BFECC, вихревое усиление, модель следа, проекция давления). Частицы внутри бокса берут его скорость воздуха (из системы машины в мировую), у граней плавно переходят на ветер, выталкиваются из кузова, оседают на окно карты высот 64 м и сохраняют времена отклика из `dust_physics`. «Выкл» возвращает простые частицы на CPU (примерно на 9 fps дешевле на POCO F3 в измеренной сцене: 47 fps против 38 при включённой, не ниже 30). Замысел в `docs/superpowers/specs/2026-10-15-airflow-dust-design.md`.
 
 ## Воздушный поток (отладка)
 

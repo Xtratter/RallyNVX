@@ -2,9 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
-## 2.27.0 - airflow (debug)
+## 2.27.0 - dust in the airflow
 
-- Added: an experimental airflow around the car on the GPU (a box moving with the car, BFECC advection, vorticity confinement, a wake model, the car's body and garage parts as voxels), shown as a side slice with the debug extra `airflow=1`; off by default and not yet connected to forces or dust (see docs/game.md)
+- Added: the air around the car is simulated on the GPU (a box that moves with the car, the body and the garage parts as voxels, a wake model) and the dust follows it: the particles run on the GPU, take the air's velocity inside the box and the wind outside, are pushed aside by the body, keep their inertia and settle onto a terrain height window; the Settings switch "Aerodynamics" (On by default) turns it off, then the simple CPU particles run as before; the "Fluid (test)" dust is unchanged
+- Added: the debug extra `airflow=1` draws a side slice of the airflow (see docs/game.md)
 
 ## 2.26.0 - physical dust
 
