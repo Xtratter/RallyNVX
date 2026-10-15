@@ -18,6 +18,7 @@ struct U {
     bx: vec4<f32>,      // the airflow box in metres (x, y, z) and its cell; cell 0 = no airflow
     gw: vec4<i32>,      // the first cell (x, z) of the ground window
     cp: vec4<f32>,      // the dust's push, the masses of fine and coarse grit, 0
+    sun: vec4<f32>,     // the direction to the sun (world), the absorption of the dust per unit of mass
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read_write> state: array<S>;
@@ -56,14 +57,53 @@ fn wind_at(p: vec3<f32>) -> vec3<f32> {
     let h = max(p.y - u.g.z, 0.0);
     return u.wind.xyz * (0.35 + 0.65 * min(h / 4.0, 1.0));
 }
-// the small-scale turbulence the grid cannot carry
-fn turbulence(p: vec3<f32>) -> vec3<f32> {
+// ---- curl noise (game/dust_ref.rs::curl_noise, the host-tested twin): divergence-free turbulence, particles swirl without clumping
+fn pcg(v: u32) -> u32 {
+    let s = v * 747796405u + 2891336453u;
+    let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+    return (w >> 22u) ^ w;
+}
+fn hash3(c: vec3<i32>, k: u32) -> f32 {
+    let h = pcg(u32(c.x) ^ pcg(u32(c.y) ^ pcg(u32(c.z) ^ pcg(k))));
+    return f32(h) / 4294967295.0 * 2.0 - 1.0;
+}
+fn fade(t: f32) -> f32 { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+fn vnoise3(p: vec3<f32>, k: u32) -> f32 {
+    let i = floor(p);
+    let f = fade(p.x - i.x); let g = fade(p.y - i.y); let h = fade(p.z - i.z);
+    let c = vec3<i32>(i);
+    let x00 = mix(hash3(c, k), hash3(c + vec3<i32>(1, 0, 0), k), f);
+    let x10 = mix(hash3(c + vec3<i32>(0, 1, 0), k), hash3(c + vec3<i32>(1, 1, 0), k), f);
+    let x01 = mix(hash3(c + vec3<i32>(0, 0, 1), k), hash3(c + vec3<i32>(1, 0, 1), k), f);
+    let x11 = mix(hash3(c + vec3<i32>(0, 1, 1), k), hash3(c + vec3<i32>(1, 1, 1), k), f);
+    return mix(mix(x00, x10, g), mix(x01, x11, g), h);
+}
+fn dnoise(q: vec3<f32>, k: u32, a: i32) -> f32 {
+    let e = 0.1;
+    var d = vec3<f32>(0.0);
+    if (a == 0) { d.x = e; } else if (a == 1) { d.y = e; } else { d.z = e; }
+    return (vnoise3(q + d, k) - vnoise3(q - d, k)) / (2.0 * e);
+}
+fn curl_noise(q: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(dnoise(q, 2u, 1) - dnoise(q, 1u, 2), dnoise(q, 0u, 2) - dnoise(q, 2u, 0), dnoise(q, 1u, 0) - dnoise(q, 0u, 1));
+}
+// three octaves (6, 2.5, 1 m), carried along by the wind and evolving in time; `amp` is the speed of the largest octave
+fn turbulence_curl(p: vec3<f32>, amp: f32) -> vec3<f32> {
     let t = u.g.y;
-    let amp = u.ph2.x * (0.35 + 0.05 * u.ph2.y);
-    let n = vec3<f32>(sin(p.y * 0.9 + t * 1.7 + p.z * 0.35) + 0.5 * sin(p.z * 1.9 - t * 2.3),
-        0.6 * sin(p.x * 0.8 + t * 1.1 + p.z * 0.5),
-        sin(p.y * 1.1 - t * 1.5 + p.x * 0.4) + 0.5 * sin(p.x * 2.1 + t * 2.9));
-    return n * amp;
+    let q = p - u.wind.xyz * t;
+    var v = vec3<f32>(0.0);
+    for (var i = 0; i < 3; i++) {
+        let fi = f32(i);
+        let lambda = select(select(6.0, 2.5, i == 1), 1.0, i == 2);
+        let w = select(select(1.0, 0.55, i == 1), 0.3, i == 2);
+        let shift = vec3<f32>(0.0, 0.0, t * 0.35 * (fi + 1.0)) + vec3<f32>(17.0 * fi, 31.0 * fi, 7.0 * fi);
+        v = v + curl_noise(q / lambda + shift) * (amp * w * 0.35);
+    }
+    return v;
+}
+fn turbulence(p: vec3<f32>, age: f32) -> vec3<f32> {
+    let amp = u.ph2.x * (0.35 + 0.05 * u.ph2.y) * (1.0 + 0.8 * age);   // the cloud expands: older dust is churned more
+    return turbulence_curl(p, amp);
 }
 // the car's axes on the ground plane: forward (sin yaw, 0, cos yaw), right (-cos yaw, 0, sin yaw)
 fn fwd_axis() -> vec3<f32> { return vec3<f32>(sin(u.car.w), 0.0, cos(u.car.w)); }
@@ -163,7 +203,7 @@ fn dust_splat(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 
 // the world air velocity: the box's air inside (relative to the car, in the car's frame), the wind outside, blended at the faces
-fn air_at(p: vec3<f32>) -> vec3<f32> {
+fn air_at(p: vec3<f32>, age: f32) -> vec3<f32> {
     let outside = wind_at(p);
     var air = outside;
     if (u.bx.w > 0.0) {
@@ -181,7 +221,7 @@ fn air_at(p: vec3<f32>) -> vec3<f32> {
         let h = max(p.y - u.g.z, 0.0);
         air.y = air.y + u.ph2.z * u.ph2.y * exp(-behind / 12.0) * (1.0 - smoothstep(0.4 * u.ph2.w, u.ph2.w, h));
     }
-    return air + turbulence(p);
+    return air + turbulence(p, age);
 }
 
 @compute @workgroup_size(64)
@@ -196,9 +236,9 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let life = s.c.w;
     if (age >= life) { s.d.z = 0.0; state[i] = s; render[i] = dead; return; }
     let coarse = s.d.x > 0.5;
-    let tau = select(u.ph.x, u.ph.y, coarse);
+    let tau = select(u.ph.x, u.ph.y, coarse) * (0.6 + 0.8 * fract(s.d.y * 7.31));   // every grain answers the air a little differently
     let settle = select(u.ph.z, u.ph.w, coarse);
-    var air = air_at(pos);
+    var air = air_at(pos, age / life);
     if (any(air != air)) { air = vec3<f32>(0.0); }
     let target_v = vec3<f32>(air.x, air.y - settle, air.z);
     let k = 1.0 - exp(-dt / tau);
@@ -221,9 +261,17 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let x = clamp(age / life, 0.0, 1.0);
     let fade_in = min(x / 0.08, 1.0);
     let size = s.a.w * (1.0 + select(0.45, 0.25, coarse) * sqrt(age) + 0.35 * x);   // small grains: they hardly grow
-    let alpha = select(0.5, 0.6, coarse) * fade_in * pow(1.0 - x, 1.4);
-    // the thick middle of a cloud is darker: the denser the dust around a particle, the darker it is
+    let alpha = select(0.14, 0.2, coarse) * fade_in * pow(1.0 - x, 1.4);
+    // the light of a particle: the dust above it towards the sun shades it (6 samples through the dust field), the dense middle is darker
+    var light = 1.0;
     var shade = 1.0;
-    if (u.bx.w > 0.0) { shade = mix(1.0, 0.5, smoothstep(0.3, 3.0, mass_at(to_box(pos)))); }
-    render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz * shade, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), 0.0));
+    if (u.bx.w > 0.0) {
+        let b = to_box(pos);
+        let sb = vec3<f32>(dot(u.sun.xyz, right_axis()), u.sun.y, dot(u.sun.xyz, fwd_axis())) * 0.7;
+        var acc = 0.0;
+        for (var j = 1; j <= 6; j++) { acc = acc + mass_at(b + sb * f32(j)); }
+        light = mix(0.25, 1.0, exp(-u.sun.w * acc * 0.7));
+        shade = mix(1.0, 0.7, smoothstep(0.3, 3.0, mass_at(b)));
+    }
+    render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz * shade, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), light));
 }

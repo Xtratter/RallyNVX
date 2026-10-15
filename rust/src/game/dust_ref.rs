@@ -81,6 +81,51 @@ pub fn turbulence(p: V3, t: f32, speed: f32, ph: &Phys) -> V3 {
     n * amp
 }
 
+// ---- curl noise: the divergence-free turbulence of the GPU dust (Bridson, Hourihan, Nordenstam, "Curl-Noise for Procedural Fluid Flow", 2007).
+// The potential is three decorrelated value noises; the velocity is its curl, so it has no sinks or sources and particles swirl without clumping.
+// The hash and the noise are written with integer ops so the shader can repeat them exactly (`dust_gpu.wgsl`).
+
+fn pcg(v: u32) -> u32 {
+    let s = v.wrapping_mul(747796405).wrapping_add(2891336453);
+    let w = ((s >> ((s >> 28) + 4)) ^ s).wrapping_mul(277803737);
+    (w >> 22) ^ w
+}
+/// A random number in [-1, 1] for an integer lattice point and a channel.
+pub fn hash3(x: i32, y: i32, z: i32, k: u32) -> f32 {
+    let h = pcg((x as u32) ^ pcg((y as u32) ^ pcg((z as u32) ^ pcg(k))));
+    h as f32 / 4294967295.0 * 2.0 - 1.0
+}
+fn fade(t: f32) -> f32 { t * t * t * (t * (t * 6.0 - 15.0) + 10.0) }
+/// Smooth value noise in [-1, 1] at `p` for channel `k`.
+pub fn vnoise3(p: V3, k: u32) -> f32 {
+    let (ix, iy, iz) = (p.x.floor(), p.y.floor(), p.z.floor());
+    let (f, g, h) = (fade(p.x - ix), fade(p.y - iy), fade(p.z - iz));
+    let (x, y, z) = (ix as i32, iy as i32, iz as i32);
+    let l = |a: f32, b: f32, t: f32| a + (b - a) * t;
+    let c = |dx: i32, dy: i32, dz: i32| hash3(x + dx, y + dy, z + dz, k);
+    let x00 = l(c(0, 0, 0), c(1, 0, 0), f); let x10 = l(c(0, 1, 0), c(1, 1, 0), f);
+    let x01 = l(c(0, 0, 1), c(1, 0, 1), f); let x11 = l(c(0, 1, 1), c(1, 1, 1), f);
+    l(l(x00, x10, g), l(x01, x11, g), h)
+}
+/// The curl of the noise potential at `q` (noise-space coordinates; the result is of the order of 1 whatever the scale): central differences of three noises.
+pub fn curl_noise(q: V3) -> V3 {
+    let e = 0.1;
+    let d = |k: u32, a: usize| { let (mut p, mut m) = (q, q); match a { 0 => { p.x += e; m.x -= e; } 1 => { p.y += e; m.y -= e; } _ => { p.z += e; m.z -= e; } } (vnoise3(p, k) - vnoise3(m, k)) / (2.0 * e) };
+    // curl of (psi0, psi1, psi2) = (d psi2/dy - d psi1/dz, d psi0/dz - d psi2/dx, d psi1/dx - d psi0/dy)
+    v3(d(2, 1) - d(1, 2), d(0, 2) - d(2, 0), d(1, 0) - d(0, 1))
+}
+/// Three octaves of curl noise as a velocity (m/s): wavelengths 6, 2.5 and 1 m with weights 1, 0.55 and 0.3, the pattern carried along by `drift`
+/// (the wind) and slowly evolving in time `t`; `amp` is the speed of the largest octave.
+pub fn turbulence_curl(p: V3, t: f32, drift: V3, amp: f32) -> V3 {
+    let q = p - drift * t;
+    let mut v = V3::ZERO;
+    for (i, (lambda, w)) in [(6.0f32, 1.0f32), (2.5, 0.55), (1.0, 0.3)].iter().enumerate() {
+        let shift = v3(0.0, 0.0, t * 0.35 * (i as f32 + 1.0)) + v3(17.0 * i as f32, 31.0 * i as f32, 7.0 * i as f32);
+        v = v + curl_noise(q * (1.0 / lambda) + shift) * (amp * w * 0.35);
+    }
+    v
+}
+
 /// The ground under the dust comes from a window of terrain heights: `WINDOW` cells of 1 m around the car, stored toroidally (a cell lives in the
 /// slot `cell mod WINDOW`), so only the cells that come into the window are measured when the car moves.
 pub const WINDOW: i32 = 64;
@@ -106,7 +151,7 @@ pub fn ground_height(x: f32, z: f32, base: [i32; 2], height: impl Fn(usize) -> f
 /// The coupling of the dust and the air (`surfaces.json` -> `dust_air`): the particles are splatted into the airflow's grid as a density and a momentum
 /// field; the density pushes the particles apart (a stand-in for the particle-particle pressure) and drags the air along (a thick cloud rolls as one).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Coupling { pub push: f32, pub drag: f32, pub drag_max: f32, pub mass_fine: f32, pub mass_coarse: f32 }
+pub struct Coupling { pub push: f32, pub drag: f32, pub drag_max: f32, pub mass_fine: f32, pub mass_coarse: f32, pub shadow_k: f32 }
 
 impl Coupling {
     pub fn from_json(text: &str) -> Result<Coupling, String> {
@@ -117,7 +162,8 @@ impl Coupling {
             if x < lo || x > hi { return Err(format!("dust_air: \"{key}\" must be between {lo} and {hi} (got {x})")); }
             Ok(x as f32)
         };
-        Ok(Coupling { push: num("push", 0.0, 50.0)?, drag: num("drag", 0.0, 5.0)?, drag_max: num("drag_max", 0.0, 1.0)?, mass_fine: num("mass_fine", 0.01, 20.0)?, mass_coarse: num("mass_coarse", 0.01, 20.0)? })
+        Ok(Coupling { push: num("push", 0.0, 50.0)?, drag: num("drag", 0.0, 5.0)?, drag_max: num("drag_max", 0.0, 1.0)?, mass_fine: num("mass_fine", 0.01, 20.0)?, mass_coarse: num("mass_coarse", 0.01, 20.0)?,
+            shadow_k: f.get("shadow_k").and_then(|x| x.as_f64()).filter(|x| (0.0..=10.0).contains(x)).map_or(0.8, |x| x as f32) })
     }
 }
 pub fn coupling() -> Coupling {

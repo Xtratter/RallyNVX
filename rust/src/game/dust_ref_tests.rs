@@ -155,3 +155,42 @@ fn the_air_drag_grows_with_the_mass_and_saturates() {
     assert!(air_drag(0.5, &c) < air_drag(1.0, &c) || air_drag(1.0, &c) == c.drag_max);
     assert_eq!(air_drag(1000.0, &c), c.drag_max);
 }
+
+#[test]
+fn the_noise_is_deterministic_bounded_and_smooth() {
+    let p = v3(1.3, -4.7, 9.1);
+    assert_eq!(vnoise3(p, 0), vnoise3(p, 0));
+    assert_ne!(vnoise3(p, 0), vnoise3(p, 1));
+    let mut m = 0.0f32; let mut sum = 0.0f32;
+    for i in 0..2000 { let q = v3(i as f32 * 0.37, i as f32 * 0.11 - 50.0, (i % 17) as f32 * 0.9); let n = vnoise3(q, 1); assert!(n.abs() <= 1.0001, "{n}"); m = m.max(n.abs()); sum += n; }
+    assert!(m > 0.6, "uses the range: {m}");
+    assert!((sum / 2000.0).abs() < 0.1, "mean {}", sum / 2000.0);
+    // smooth: a step of 1/1000 changes little
+    assert!((vnoise3(p + v3(0.001, 0.0, 0.0), 2) - vnoise3(p, 2)).abs() < 0.01);
+}
+#[test]
+fn curl_noise_has_no_sinks_or_sources() {
+    // the divergence of a curl is zero; with finite differences it is small against the field's own variation
+    let e = 0.05;
+    let (mut div_sum, mut mag_sum) = (0.0f32, 0.0f32);
+    for i in 0..200 {
+        let q = v3(i as f32 * 0.173, (i as f32 * 0.071).sin() * 5.0, i as f32 * 0.093 - 8.0);
+        let d = (curl_noise(q + v3(e, 0.0, 0.0)).x - curl_noise(q - v3(e, 0.0, 0.0)).x + curl_noise(q + v3(0.0, e, 0.0)).y - curl_noise(q - v3(0.0, e, 0.0)).y
+            + curl_noise(q + v3(0.0, 0.0, e)).z - curl_noise(q - v3(0.0, 0.0, e)).z) / (2.0 * e);
+        div_sum += d.abs(); mag_sum += curl_noise(q).len();
+    }
+    assert!(mag_sum / 200.0 > 0.3, "the field is not empty: {}", mag_sum / 200.0);
+    assert!(div_sum / 200.0 < 0.25 * mag_sum / 200.0 + 0.05, "divergence {} against magnitude {}", div_sum / 200.0, mag_sum / 200.0);
+}
+#[test]
+fn turbulence_scales_with_amplitude_and_moves_with_the_drift() {
+    let p = v3(3.0, 1.0, -2.0);
+    let a = turbulence_curl(p, 1.0, V3::ZERO, 2.0);
+    let b = turbulence_curl(p, 1.0, V3::ZERO, 4.0);
+    assert!(a.is_finite() && ((b - a * 2.0).len() < 1e-4), "{a:?} {b:?}");
+    assert_eq!(turbulence_curl(p, 0.0, V3::ZERO, 0.0), V3::ZERO);
+    // the pattern is carried by the drift: the same feature one second later sits `drift` further on (the slow evolution aside, which is small for the first octave)
+    let drift = v3(2.0, 0.0, 0.0);
+    let (v0, v1) = (turbulence_curl(p, 0.0, drift, 1.0), turbulence_curl(p + drift, 1.0, drift, 1.0));
+    assert!((v0 - v1).len() < 0.6 * v0.len().max(0.05) + 0.2, "{v0:?} {v1:?}");
+}

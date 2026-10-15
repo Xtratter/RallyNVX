@@ -527,22 +527,30 @@ struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @lo
     return vec4<f32>(finish(col), a);
 }
 
-// The GPU dust: tens of thousands of small separate particles, each a soft dot; the cloud is what the density of them makes. No noise, no
-// ground fade (the depth test hides a particle behind the car and the terrain), only the light of the puff and the fog.
+// The GPU dust: tens of thousands of soft, rotating, noisy-edged particles whose overlap builds the cloud. `e.w` is the light of the particle
+// (the dust above it towards the sun shades it, computed by the step pass); the puff is soft against the terrain and fades near the camera.
 @fragment fn fs_dust_pt(i: DOut) -> @location(0) vec4<f32> {
     let r = length(i.uv);
-    let dcam = length(i.wp - u.cam.xyz);
-    let near = smoothstep(1.5, 5.0, dcam);   // a particle close to the camera fades out
-    let a = i.c.a * (1.0 - smoothstep(0.25, 1.0, r)) * near;
-    if (a < 0.003) { discard; }
+    let n = vnoise2(i.uv * 2.2 + vec2<f32>(i.e.x * 31.0, i.e.x * 17.0));
+    let edge = mix(0.5, 1.05, n);
+    let shape = 1.0 - smoothstep(0.05, edge, r);
+    let wp = i.wp;
+    let dcam = length(wp - u.cam.xyz);
+    let near = smoothstep(1.5, 6.0, dcam);
+    if (i.c.a * shape * near < 0.003) { discard; }
+    let above = wp.y - terrain_h(wp.x, wp.z);
+    let soft = mix(0.3, 1.0, smoothstep(0.0, 0.5, above));
+    let a = i.c.a * shape * near * soft;
     let sun_dir = normalize(u.sun.xyz);
-    let view = normalize(i.wp - u.cam.xyz);
+    let view = normalize(wp - u.cam.xyz);
     let sun = clamp(length(u.sun_col.rgb) / 2.6, 0.06, 1.0);
-    let fwd = pow(max(dot(view, sun_dir), 0.0), 5.0);
+    let fwd = pow(max(dot(view, sun_dir), 0.0), 4.0);   // forward scattering: a cloud seen against the sun glows
     let amb = (u.sky_hor.rgb * 0.4 + vec3<f32>(0.45)) * 0.5 * mix(1.0, 0.2, u.disc.w);
-    var col = i.c.rgb * (amb + vec3<f32>(sun) * (0.6 + 1.0 * fwd * sun));
+    let light = max(i.e.w, 0.02);
+    var col = i.c.rgb * (amb * mix(0.7, 1.0, light) + vec3<f32>(sun) * (0.5 * light + 1.6 * fwd * sun * light));
+    col = col * mix(0.8, 1.0, smoothstep(0.0, 0.8, r));
     if (u.hl_pos.w > 0.0) {
-        let dv = i.wp - u.hl_pos.xyz;
+        let dv = wp - u.hl_pos.xyz;
         let dist = length(dv);
         let cone = smoothstep(u.hl_dir.w, u.hl_dir.w + 0.06, dot(dv / max(dist, 0.001), normalize(u.hl_dir.xyz)));
         col = col + i.c.rgb * vec3<f32>(1.0, 0.93, 0.80) * (1.6 * cone * clamp(1.0 - dist / 55.0, 0.0, 1.0));
