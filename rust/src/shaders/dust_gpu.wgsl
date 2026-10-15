@@ -340,6 +340,23 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let life = s.c.w;
     if (age >= life) { s.d.z = 0.0; state[i] = s; render[i] = dead; return; }
     let coarse = s.d.x > 0.5;
+    if (s.d.x > 1.5) {   // a speck of grit: ballistic (gravity, a little drag), bounces and slides on the ground, never part of the dust field
+        var sv = vel;
+        sv.y = sv.y - 9.8 * dt;
+        sv = sv + (u.wind.xyz - sv) * (1.0 - exp(-dt / 2.5));
+        var sp = pos + sv * dt;
+        let sg = ground(sp.x, sp.z) + 0.02;
+        if (sp.y < sg) {
+            sp.y = sg;
+            if (sv.y < 0.0) { sv.y = -sv.y * 0.35; }
+            sv.x = sv.x * 0.6; sv.z = sv.z * 0.6;
+        }
+        s.a = vec4<f32>(sp, s.a.w); s.b = vec4<f32>(sv, age);
+        state[i] = s;
+        let sx = clamp(age / life, 0.0, 1.0);
+        render[i] = DI(vec4<f32>(sp, s.a.w), vec4<f32>(s.c.xyz, 0.95 * min(sx / 0.05, 1.0) * (1.0 - sx * sx)), vec4<f32>(s.d.y, sx, 2.0, 1.0));
+        return;
+    }
     let tau = select(u.ph.x, u.ph.y, coarse) * (0.6 + 0.8 * fract(s.d.y * 7.31));   // every grain answers the air a little differently
     let settle = select(u.ph.z, u.ph.w, coarse);
     var air = air_at(pos, age / life);
@@ -355,7 +372,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
             let f = fld_at(b);
             push = push_from(f.xyz, w);
             light = mix(1.0, f.w, w);
-            shade = mix(1.0, 0.85, smoothstep(0.3, 3.0, mass_at(b)) * w);
+            shade = mix(1.0, 0.75, smoothstep(0.3, 3.0, mass_at(b)) * w);
         }
     }
     let target_v = vec3<f32>(air.x, air.y - settle, air.z);
@@ -384,7 +401,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let x = clamp(age / life, 0.0, 1.0);
     let fade_in = min(x / 0.08, 1.0);
     let size = s.a.w * (1.0 + select(0.45, 0.25, coarse) * sqrt(age) + 0.35 * x);   // small grains: they hardly grow
-    let alpha = select(0.26, 0.34, coarse) * fade_in * pow(1.0 - x, 1.4);
+    let alpha = select(0.34, 0.42, coarse) * fade_in * pow(1.0 - x, 1.4);
     render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz * shade, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), light));
 }
 
@@ -407,5 +424,5 @@ fn dust_field_light(@builtin(global_invocation_id) gid: vec3<u32>) {
     let step_v = sb / max(max(abs(sb.x), abs(sb.y)), max(abs(sb.z), 0.0001));
     var acc = 0.0;
     for (var j = 1; j <= 6; j++) { acc = acc + mass_cell(vec3<i32>(floor(vec3<f32>(c) + vec3<f32>(0.5) + step_v * f32(j)))); }
-    fld[id] = vec4<f32>(g, mix(0.75, 1.0, exp(-u.sun.w * acc * 0.4)));
+    fld[id] = vec4<f32>(g, mix(0.45, 1.0, exp(-u.sun.w * acc * 0.4)));
 }

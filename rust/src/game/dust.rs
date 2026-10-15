@@ -91,7 +91,12 @@ pub struct Dust { seed: u64, rng: u32, parts: Vec<P>, head: usize, cap: usize, l
     /// GPU mode: the particles live on the GPU (`raster/dust_gpu.rs`); the wheels' new ones wait here until the renderer takes them.
     gpu: bool, pending: std::cell::Cell<Vec<P>>,
     /// The road pickup behind the car (GPU dust): how many particles the car's wake owes the road.
-    pick: f32 }
+    pick: f32,
+    /// The puffs the wheels shed (GPU dust): a cluster of particles that share a throw and a roll, so the cloud billows in lumps.
+    puffs: [Puff; 4] }
+
+#[derive(Clone, Copy, Default)]
+struct Puff { centre: V3, vel: V3, axis: V3, omega: f32, left: u32 }
 
 /// The most emits a frame hands to the GPU (more are dropped; one frame of the busiest slide emits far fewer).
 pub const MAX_EMITS: usize = 4096;
@@ -117,12 +122,12 @@ fn caps(level: i32) -> (usize, f32) {
 impl Dust {
     pub fn new(seed: u64) -> Dust {
         let (cap, _) = caps(1);
-        Dust { seed, rng: (seed as u32) ^ 0x9E37_79B9 | 1, parts: Vec::new(), head: 0, cap, level: 1, acc: [0.0; 4], wind: V3::ZERO, gpu: false, pending: std::cell::Cell::new(Vec::new()), pick: 0.0 }
+        Dust { seed, rng: (seed as u32) ^ 0x9E37_79B9 | 1, parts: Vec::new(), head: 0, cap, level: 1, acc: [0.0; 4], wind: V3::ZERO, gpu: false, pending: std::cell::Cell::new(Vec::new()), pick: 0.0, puffs: [Puff::default(); 4] }
     }
     /// Whether the particles are on the GPU (then `update` only emits, `particles` is empty).
     pub fn gpu(&self) -> bool { self.gpu }
     pub fn set_gpu(&mut self, on: bool) {
-        if on != self.gpu { self.parts.clear(); self.head = 0; self.pending.get_mut().clear(); self.acc = [0.0; 4]; self.pick = 0.0; }
+        if on != self.gpu { self.parts.clear(); self.head = 0; self.pending.get_mut().clear(); self.acc = [0.0; 4]; self.pick = 0.0; self.puffs = [Puff::default(); 4]; }
         self.gpu = on;
     }
     /// The wheels' new particles since the last call (GPU mode).
@@ -184,6 +189,7 @@ impl Dust {
             self.acc[w] = (self.acc[w] + rate * dt).min(8.0 * if self.gpu { table.dust_gpu_factor } else { 1.0 });
             while self.acc[w] >= 1.0 {
                 self.acc[w] -= 1.0;
+                if self.gpu { self.gpu_emit(v, w, &info, &d, &ph, vh, lateral); continue; }
                 let (a, b, c, e, f, g2, h2) = (self.rand(), self.rand(), self.rand(), self.rand(), self.rand(), self.rand(), self.rand());
                 let coarse = h2 < (ph.coarse_share + 0.3 * info.slide.min(1.0)).min(0.9);
                 let mut pos = v3(info.contact.x + (a - 0.5) * 0.4, info.contact.y + 0.1, info.contact.z + (b - 0.5) * 0.4);
@@ -201,7 +207,7 @@ impl Dust {
                 let shade = 0.9 + 0.2 * g2;
                 let tone = if coarse { 0.82 } else { 1.0 };
                 self.push(P { pos, vel, age: 0.0, life: d.life * (0.75 + 0.5 * a) * if coarse { 0.4 } else { 1.0 }, size0: d.size * if coarse { 0.55 } else { 1.0 },
-                    color: [d.color[0] * shade * tone, d.color[1] * shade * tone, d.color[2] * shade * tone], coarse, seed: g2 });
+                    color: [d.color[0] * shade * tone, d.color[1] * shade * tone, d.color[2] * shade * tone], coarse, seed: g2, speck: false });
             }
         }
         // the car's own aerodynamics raises dust too: its wake (the recirculation, the trailing vortices) scours the loose surface behind it, in proportion to
@@ -224,9 +230,51 @@ impl Dust {
                     pos.y = rear.contact.y + 0.05 + c * 0.15;
                     let vel = vh * 0.12 + v3(0.0, 0.3 + e * 0.8, 0.0);
                     let shade = 0.9 + 0.2 * g2;
-                    self.push(P { pos, vel, age: 0.0, life: d.life * (0.7 + 0.6 * a), size0: d.size, color: [d.color[0] * shade, d.color[1] * shade, d.color[2] * shade], coarse: false, seed: g2 });
+                    self.push(P { pos, vel, age: 0.0, life: d.life * (0.7 + 0.6 * a), size0: d.size, color: [d.color[0] * shade, d.color[1] * shade, d.color[2] * shade], coarse: false, seed: g2, speck: false });
                 }
             }
+        }
+    }
+
+    /// One particle of the GPU dust from wheel `w`: it belongs to the wheel's current puff (a cluster sharing a throw and a roll about a horizontal axis across it, so
+    /// the cloud rolls in lumps like a real one), and now and then a speck of grit goes with it. The CPU particles never come here.
+    #[allow(clippy::too_many_arguments)]
+    fn gpu_emit(&mut self, v: &Vehicle, w: usize, info: &super::vehicle::WheelInfo, d: &super::grip::DustSpec, ph: &Phys, vh: V3, lateral: f32) {
+        let t = grip::table();
+        let slide = info.slide.min(1.5);
+        if self.puffs[w].left == 0 {
+            let (a, b, e, f, g) = (self.rand(), self.rand(), self.rand(), self.rand(), self.rand());
+            let (fwd, right) = (v.forward(), v.right());
+            let mut centre = v3(info.contact.x, info.contact.y + 0.1 + 0.15 * b, info.contact.z) - fwd * 0.3 + right * ((a - 0.5) * 0.3);
+            let lx = (centre - v.pos).dot(right);
+            let spray = right * (-lateral * 0.5 * (slide.min(1.0) + 0.2));
+            let out = right * (if lx >= 0.0 { 1.0 } else { -1.0 });
+            let base = v3((-vh.x * ph.throw * 0.8 + spray.x) * t.dust_gpu_kick + out.x, (1.0 + 3.0 * slide + e * 1.2) * 0.9 * t.dust_gpu_kick * 0.9, (-vh.z * ph.throw * 0.8 + spray.z) * t.dust_gpu_kick + out.z);
+            let dir = v3(base.x, 0.0, base.z).norm();
+            // the roll: about the horizontal axis across the throw, the top of the puff moving away from the car
+            let axis = v3(-dir.z, 0.0, dir.x) * (if g < 0.5 { 1.0 } else { -1.0 });
+            centre.y = centre.y.max(info.contact.y + 0.08);
+            self.puffs[w] = Puff { centre, vel: base, axis, omega: (2.0 + 4.0 * slide) * (0.7 + 0.6 * f), left: 40 + (slide * 80.0) as u32 };
+        }
+        self.puffs[w].left -= 1;
+        let puff = self.puffs[w];
+        let (a, b, c, e, g2, h2) = (self.rand(), self.rand(), self.rand(), self.rand(), self.rand(), self.rand());
+        // a point in a ball of 0.3 m round the puff's centre
+        let r = v3(a - 0.5, (b - 0.5) * 0.8, c - 0.5) * 0.9;
+        let coarse = h2 < (ph.coarse_share + 0.3 * info.slide.min(1.0)).min(0.9);
+        let vel = puff.vel + puff.axis.cross(r) * puff.omega + v3(e - 0.5, (g2 - 0.5) * 0.6, self.rand() - 0.5) * 3.0;
+        let shade = 0.9 + 0.2 * g2;
+        let tone = if coarse { 0.82 } else { 1.0 };
+        let pos = puff.centre + r;
+        self.push(P { pos, vel, age: 0.0, life: d.life * (0.75 + 0.5 * a) * if coarse { 0.4 } else { 1.0 }, size0: d.size * if coarse { 0.55 } else { 1.0 },
+            color: [d.color[0] * shade * tone, d.color[1] * shade * tone, d.color[2] * shade * tone], coarse, seed: g2, speck: false });
+        // grit flung by the tyre: tiny dark flecks that fly in arcs and bounce
+        if self.rand() < t.dust_gpu_specks * (0.4 + slide) {
+            let (sa, sb, sc, sd) = (self.rand(), self.rand(), self.rand(), self.rand());
+            let sp = puff.vel * (0.7 + 0.6 * sa) + v3(sb - 0.5, 0.0, sc - 0.5) * 5.0 + v3(0.0, 1.0 + 3.0 * sd * (0.5 + slide), 0.0);
+            let bright = 0.5 + 0.9 * self.rand();
+            self.push(P { pos: puff.centre + r * 0.5, vel: sp, age: 0.0, life: 1.6 + 1.6 * sa, size0: 0.012 + 0.02 * sd,
+                color: [(d.color[0] * 0.6 * bright).min(1.0), (d.color[1] * 0.55 * bright).min(1.0), (d.color[2] * 0.5 * bright).min(1.0)], coarse: true, seed: sb, speck: true });
         }
     }
 

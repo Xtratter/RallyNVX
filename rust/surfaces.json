@@ -7,10 +7,10 @@
   "rock":    { "mu": 0.80, "lateral": 0.9,  "rolling": 1.0, "dust": { "color": [0.62, 0.60, 0.58], "roll": 0.30, "slide": 0.6, "size": 0.8, "life": 1.8 } },
   "water":   { "mu": 0.55, "lateral": 0.7,  "rolling": 1.0, "dust": { "color": [0.85, 0.90, 0.95], "roll": 0.60, "slide": 0.8, "size": 0.7, "life": 1.2 } },
   "loose_layer": { "wear_per_metre": 0.5 },
-  "dust": { "cap_normal": 400, "cap_lots": 800, "gpu_factor": 100, "gpu_size": 0.3, "gpu_life": 1.8, "gpu_kick": 1.8, "gpu_lift": 0.3, "gpu_tint": [1.15, 0.92, 0.7] },
+  "dust": { "cap_normal": 400, "cap_lots": 800, "gpu_factor": 100, "gpu_size": 0.3, "gpu_life": 1.8, "gpu_kick": 1.8, "gpu_specks": 0.06, "gpu_lift": 0.3, "gpu_tint": [1.15, 0.92, 0.7] },
   "wind": { "speed": 2.5, "gust": 0.35 },
   "fluid": { "cell": 1.0, "nx": 96, "ny": 16, "nz": 96, "iterations": 8, "settle": 0.35, "decay": 0.12, "inject": 5.0, "absorb": 1.5, "drag": 0.6, "steps": 32 },
   "dust_physics": { "tau_fine": 0.25, "tau_coarse": 0.8, "settle_fine": 0.06, "settle_coarse": 1.1, "coarse_share": 0.22, "wake_gain": 0.9, "wake_len": 9.0, "turbulence": 0.55, "throw": 0.5, "vortex": 0.35, "street": 0.16, "plume_lift": 0.28, "plume_height": 6.5 },
-  "dust_air": { "push": 12.0, "drag": 0.35, "drag_max": 0.5, "mass_fine": 0.05, "mass_coarse": 0.15, "shadow_k": 0.5 },
+  "dust_air": { "push": 12.0, "drag": 0.35, "drag_max": 0.5, "mass_fine": 0.05, "mass_coarse": 0.15, "shadow_k": 0.7 },
   "airflow": { "cell": 0.3, "nx": 40, "ny": 20, "nz": 80, "iterations": 12, "substeps": 1, "confinement": 0.4, "debug": 0 }
 }

@@ -1,7 +1,7 @@
 use super::*;
 use crate::game::dust::phys;
 
-fn gp(coarse: bool) -> GP { GP { pos: v3(0.0, 5.0, 0.0), vel: V3::ZERO, age: 0.0, life: 10.0, size0: 0.5, color: [0.7, 0.6, 0.5], coarse, seed: 0.3 } }
+fn gp(coarse: bool) -> GP { GP { pos: v3(0.0, 5.0, 0.0), vel: V3::ZERO, age: 0.0, life: 10.0, size0: 0.5, color: [0.7, 0.6, 0.5], coarse, seed: 0.3, speck: false } }
 fn flat(_: f32, _: f32) -> f32 { 0.0 }
 
 #[test]

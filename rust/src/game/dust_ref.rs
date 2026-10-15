@@ -5,7 +5,9 @@ use super::math::{v3, V3};
 
 /// A dust particle: `life` in seconds, `size0` the size when it is born, `coarse` heavy grit (else fine dust), `seed` a stable random number.
 #[derive(Clone, Copy, Debug)]
-pub struct GP { pub pos: V3, pub vel: V3, pub age: f32, pub life: f32, pub size0: f32, pub color: [f32; 3], pub coarse: bool, pub seed: f32 }
+pub struct GP { pub pos: V3, pub vel: V3, pub age: f32, pub life: f32, pub size0: f32, pub color: [f32; 3], pub coarse: bool, pub seed: f32,
+    /// A flying speck of grit or soil (the GPU dust): tiny, dark, ballistic; it bounces and slides on the ground. Only the GPU path makes them.
+    pub speck: bool }
 
 /// Moves `p` for `dt` seconds in the air velocity `air` (Stokes drag: the exact relaxation towards it with the response time of its class, the settling
 /// speed of its class on top) and meets the ground (`ground(x, z)`): grit is deposited, fine dust slides and slows. False when the particle is gone

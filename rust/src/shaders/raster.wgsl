@@ -489,7 +489,7 @@ struct RIn { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @loc
 }
 
 struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) c: vec4<f32>, @location(2) wp: vec3<f32>, @location(3) e: vec4<f32> };
-@vertex fn vs_dust(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>, @location(2) e: vec4<f32>) -> DOut {
+fn dust_vertex(vi: u32, ps: vec4<f32>, c: vec4<f32>, e: vec4<f32>, size: f32) -> DOut {
     var q = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0));
     let right = normalize(vec3<f32>(u.vp[0].x, u.vp[1].x, u.vp[2].x));
     let up = normalize(vec3<f32>(u.vp[0].y, u.vp[1].y, u.vp[2].y));
@@ -497,10 +497,34 @@ struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @lo
     // every puff turns slowly about its own axis, so the noise of the sprite does not look the same twice
     let ang = e.x * 6.2831 + e.y * 1.5;
     let rc = vec2<f32>(corner.x * cos(ang) - corner.y * sin(ang), corner.x * sin(ang) + corner.y * cos(ang));
-    let wp = ps.xyz + (right * rc.x + up * rc.y) * ps.w;
+    let wp = ps.xyz + (right * rc.x + up * rc.y) * size;
     var o: DOut;
-    o.pos = u.vp * vec4<f32>(wp, 1.0); o.uv = rc; o.c = c; o.wp = wp; o.e = e;
+    o.pos = u.vp * vec4<f32>(wp, 1.0); o.uv = rc; o.c = c; o.wp = wp; o.e = vec4<f32>(e.x, e.y, e.z, e.w);
     return o;
+}
+@vertex fn vs_dust(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>, @location(2) e: vec4<f32>) -> DOut {
+    var o = dust_vertex(vi, ps, c, e, ps.w);
+    if (e.z > 1.5) { o.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0); }   // the specks are drawn by their own pass at full resolution
+    return o;
+}
+// the flying specks of grit: tiny, so never smaller than a pixel or two on the screen
+@vertex fn vs_dust_specks(@builtin(vertex_index) vi: u32, @location(0) ps: vec4<f32>, @location(1) c: vec4<f32>, @location(2) e: vec4<f32>) -> DOut {
+    let size = max(ps.w, 0.0013 * length(ps.xyz - u.cam.xyz));
+    var o = dust_vertex(vi, ps, c, e, size);
+    if (e.z < 1.5 || c.a < 0.02) { o.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0); }
+    return o;
+}
+@fragment fn fs_dust_speck(i: DOut) -> @location(0) vec4<f32> {
+    let r = length(i.uv);
+    let a = i.c.a * (1.0 - smoothstep(0.5, 1.0, r));
+    if (a < 0.03) { discard; }
+    let sun = clamp(length(u.sun_col.rgb) / 2.6, 0.06, 1.0);
+    let amb = (u.sky_hor.rgb * 0.15 + vec3<f32>(0.62, 0.55, 0.45)) * 0.55 * mix(1.0, 0.2, u.disc.w);
+    var col = i.c.rgb * (amb * 1.6 + vec3<f32>(sun) * 1.1);
+    let dcam = length(i.wp - u.cam.xyz);
+    let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0) * 0.6;
+    col = mix(col, u.sky_hor.rgb, f);
+    return vec4<f32>(finish(col), a);
 }
 @fragment fn fs_dust(i: DOut) -> @location(0) vec4<f32> {
     let r = length(i.uv);
@@ -554,7 +578,7 @@ fn dust_pt(i: DOut) -> vec4<f32> {
     let fwd = pow(max(dot(view, sun_dir), 0.0), 4.0);   // forward scattering: a cloud seen against the sun glows
     let amb = (u.sky_hor.rgb * 0.15 + vec3<f32>(0.62, 0.55, 0.45)) * 0.55 * mix(1.0, 0.2, u.disc.w);   // warm skylight: dust is tan, not grey
     let light = max(i.e.w, 0.02);
-    var col = i.c.rgb * (amb * 1.5 * mix(0.75, 1.0, light) + vec3<f32>(sun) * (0.85 * light + 1.6 * fwd * sun * light));
+    var col = i.c.rgb * (amb * 1.4 * mix(0.45, 1.0, light) + vec3<f32>(sun) * (0.9 * light) + vec3<f32>(1.0, 0.72, 0.4) * (3.2 * fwd * sun * light));   // thin lit dust glows amber against the sun, the thick core is dark
     col = col * mix(0.8, 1.0, smoothstep(0.0, 0.8, r));
     if (u.hl_pos.w > 0.0) {
         let dv = wp - u.hl_pos.xyz;
