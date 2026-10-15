@@ -179,6 +179,14 @@ mod tests {
         assert!(parse(&good[..good.len() - 5]).is_err(), "truncated");
         assert!(parse(b"RCA3").is_err());
     }
+    #[test] fn the_embedded_peugeot_has_uvs_on_the_paint_and_none_on_lamps() {
+        let (b, _) = parse(PEUGEOT).unwrap();
+        let paint: Vec<_> = b.verts.iter().filter(|v| v.col[3] == 0).collect();
+        let textured = paint.iter().filter(|v| v.uv != NO_UV).count();
+        assert!(textured * 10 > paint.len() * 7, "{textured} of {} paint vertices have a UV", paint.len());
+        assert!(b.verts.iter().filter(|v| v.col[3] == 5).all(|v| v.uv == NO_UV), "lamps keep their colour");
+        assert!(b.verts.iter().all(|v| v.uv == NO_UV || (v.uv[0] < 0xFFFF && v.uv[1] < 0xFFFF)), "a real UV never equals the sentinel");
+    }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());
     }

@@ -54,13 +54,10 @@ fn settled(spec: VehicleSpec) -> Vehicle {
 
 #[test] fn the_rally_lamps_sit_on_the_lamp_vertices_of_the_asset() {
     // the lamp vertices (material 5) of the embedded Peugeot asset: the headlight units are light cream, the tail units red
-    let d = include_bytes!("../../assets/rally_car.rcar");
-    let nv = u32::from_le_bytes([d[4], d[5], d[6], d[7]]) as usize;
-    let f = |at: usize| f32::from_le_bytes([d[at], d[at + 1], d[at + 2], d[at + 3]]);
+    let (body, _) = crate::raster::rcar::parse(include_bytes!("../../assets/rally_car.rcar")).unwrap();
     let (mut head, mut n) = ([0.0f32; 3], 0.0f32);
-    for i in 0..nv {
-        let a = 12 + i * 28;
-        if d[a + 24..a + 28] == [255, 242, 204, 5] && f(a) > 0.45 && f(a + 8) > 1.5 { for k in 0..3 { head[k] += f(a + 4 * k); } n += 1.0; }
+    for v in &body.verts {
+        if v.col == [255, 242, 204, 5] && v.pos[0] > 0.45 && v.pos[2] > 1.5 { for k in 0..3 { head[k] += v.pos[k]; } n += 1.0; }
     }
     assert!(n > 20.0, "the asset has headlight vertices");
     let spec = VehicleSpec::by_id("vulpes").unwrap();
