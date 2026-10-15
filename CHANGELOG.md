@@ -7,6 +7,7 @@
 - Fixed: the car is no longer lit by its own lamps (the beam on its bumper, the red tail light on the ground under it); the tail lights light only what lies behind the rear bumper and the beam starts a little way ahead of the lamps
 - Changed: the lamp halo is no longer a floating ball: a soft aureole hugs the bumper and wing around each lit lamp, so nothing shows through the car
 - Fixed: the lamps of the Peugeot light up: the dark glass covers of the headlight and tail units now show the lamp behind them when it is on (found on the mesh next to the lamp points)
+- Fixed: the beam rolls and pitches with the body (it used a level sideways axis), the cut-off rises on the car's right, and the dust is lit by the beam ahead and by the red tail lights behind; the lamp aureole on the bodywork is only a thin rim round the lamp
 
 ## 2.29.0 - lamp optics
 
