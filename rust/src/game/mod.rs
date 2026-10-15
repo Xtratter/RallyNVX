@@ -13,6 +13,7 @@ pub mod desktop;
 pub mod garage;
 pub mod aero;
 pub mod autopilot;
+pub mod fluid;
 pub mod grip;
 pub mod lines;
 pub mod input;

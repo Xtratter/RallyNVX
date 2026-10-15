@@ -318,6 +318,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         intent.getFloatExtra("tod", -1f).let { if (it >= 0f) Native.gameTimeOfDay(it) }   // debug/test: time of day
         Native.gameStart(h.surface, w, hh, seed, profile, false)
         Native.gameQuality(Quality.index(this))
+        intent.getIntExtra("dust", -1).let { if (it >= 0) Controls.setDust(this, it) }   // debug/test: the dust level (3 = fluid)
         Native.gameDust(Controls.dust(this))
         Native.gameSigns(Controls.signs(this))
         running = true
