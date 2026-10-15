@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{airflow_gpu, fluid_gpu, sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
+use super::{airflow_gpu, dust_gpu, fluid_gpu, sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::scatter::{self, Bush};
@@ -145,6 +145,8 @@ pub struct Raster {
     fluid: Option<fluid_gpu::FluidGpu>,
     /// The airflow debug view: made on first use (`airflow_tried`), so nothing is allocated while it is off.
     airflow: Option<airflow_gpu::AirflowGpu>, airflow_tried: bool, adapter: wgpu::Adapter,
+    /// The dust on the GPU, made on first use.
+    dust_gpu: Option<dust_gpu::DustGpu>,
     dust_buf: wgpu::Buffer,
     cache_seed: u64,
     car_key: [u32; 12],
@@ -333,7 +335,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_dust, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), dust_gpu: None, dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -538,6 +540,7 @@ impl Raster {
             self.airflow_tried = true;
             self.airflow = airflow_gpu::AirflowGpu::new(&self.adapter, &self.device, self.config.format);
         }
+        if wv.dust_gpu.is_some() && self.dust_gpu.is_none() { self.dust_gpu = Some(dust_gpu::DustGpu::new(&self.device)); }
         let fluid_on = wv.fluid.is_some() && self.fluid.is_some();
         let dust_n = if fluid_on { 0 } else { dinst.len() as u32 };
         let mut all: Vec<Inst> = Vec::new();
@@ -562,6 +565,7 @@ impl Raster {
         if let (true, Some(fl), Some(pk)) = (fluid_on, self.fluid.as_mut(), wv.fluid.as_ref()) {
             fl.update(&self.device, &self.queue, &mut enc, wv.terrain, [wv.vehicle.pos.x, wv.vehicle.pos.y, wv.vehicle.pos.z], [wv.wind.x, wv.wind.y, wv.wind.z], pk, wv.time);
         }
+        if let (Some(dg), Some(fr)) = (self.dust_gpu.as_mut(), wv.dust_gpu.as_ref()) { dg.update(&self.queue, &mut enc, fr); }
         if let (Some(af), Some(fi)) = (self.airflow.as_mut(), wv.airflow.as_ref()) {
             af.update(&self.device, &self.queue, &mut enc, fi.inflow, &fi.boxes, wv.time);
         }
@@ -650,7 +654,11 @@ impl Raster {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, 0..1);
             }
-            if dust_n > 0 {
+            if let (Some(dg), true) = (self.dust_gpu.as_ref(), wv.dust_gpu.is_some()) {
+                rp.set_pipeline(&self.pl_dust);
+                rp.set_vertex_buffer(0, dg.render_buffer().slice(..));
+                rp.draw(0..6, 0..dg.count());
+            } else if dust_n > 0 {
                 rp.set_pipeline(&self.pl_dust);
                 rp.set_vertex_buffer(0, self.dust_buf.slice(..));
                 rp.draw(0..6, 0..dust_n);

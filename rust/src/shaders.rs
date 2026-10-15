@@ -29,6 +29,7 @@ pub fn composite() -> String { join(include_str!("shaders/composite.wgsl")) }
 pub fn raster() -> String { include_str!("shaders/raster.wgsl").to_string() }
 pub fn fluid() -> String { include_str!("shaders/fluid.wgsl").to_string() }
 pub fn airflow() -> String { include_str!("shaders/airflow.wgsl").to_string() }
+pub fn dust_gpu() -> String { include_str!("shaders/dust_gpu.wgsl").to_string() }
 pub fn present() -> String { join(include_str!("shaders/present.wgsl")) }
 
 /// Parses and validates WGSL with naga (host tests; no GPU needed).
@@ -61,5 +62,6 @@ mod tests {
         validate("raster", raster());
         validate("fluid", fluid());
         validate("airflow", airflow());
+        validate("dust_gpu", dust_gpu());
     }
 }
