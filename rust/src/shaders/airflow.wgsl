@@ -18,6 +18,7 @@ struct A {
 
 const WAKE_RATE: f32 = 10.0;
 const WAKE_FLOOR: f32 = 0.2;
+const SPEED_LIMIT: f32 = 2.2;
 
 fn outside(c: vec3<i32>) -> bool { return c.z >= a.n.z || c.y < 0; }
 fn outside_vel(c: vec3<i32>) -> vec3<f32> {
@@ -49,6 +50,16 @@ fn sample(t: texture_3d<f32>, p: vec3<f32>) -> vec3<f32> {
     let x11 = mix(vload(t, c0 + vec3<i32>(0, 1, 1)), vload(t, c0 + vec3<i32>(1, 1, 1)), f.x);
     return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
 }
+// the componentwise range of the eight cells around a position (the BFECC limiter)
+fn range_lo_hi(t: texture_3d<f32>, p: vec3<f32>) -> array<vec3<f32>, 2> {
+    let c0 = vec3<i32>(floor(p / a.g.x - vec3<f32>(0.5)));
+    var lo = vec3<f32>(1e30); var hi = vec3<f32>(-1e30);
+    for (var d = 0; d < 8; d++) {
+        let v = vload(t, c0 + vec3<i32>(d & 1, (d >> 1) & 1, (d >> 2) & 1));
+        lo = min(lo, v); hi = max(hi, v);
+    }
+    return array<vec3<f32>, 2>(lo, hi);
+}
 fn trace(p: vec3<f32>, v: vec3<f32>, dt: f32) -> vec3<f32> {
     let m = 4.0 * a.g.x;
     return p - clamp(v * dt, vec3<f32>(-m), vec3<f32>(m));
@@ -66,6 +77,14 @@ fn solids(@builtin(global_invocation_id) gid: vec3<u32>) {
         if (all(p >= lo) && all(p < hi)) { s = 1.0; }
     }
     textureStore(dst_s, c, vec4<f32>(s, 0.0, 0.0, 0.0));
+}
+
+// the first frame: the air in the box starts at the incoming velocity
+@compute @workgroup_size(4, 4, 4)
+fn init(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let c = vec3<i32>(gid);
+    if (any(c >= a.n.xyz)) { return; }
+    textureStore(dst_v, c, vec4<f32>(a.inflow.xyz, 0.0));
 }
 
 // BFECC, 1: forward
@@ -95,10 +114,9 @@ fn adv_fin(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (c.z == a.n.z - 1) { textureStore(dst_v, c, vec4<f32>(a.inflow.xyz, 0.0)); return; }
     let v0 = textureLoad(vel_src, c, 0).xyz;
     let q = trace(centre(c), v0, a.g.y);
-    let plain = sample(vel_src, q);
     var v = sample(t_src, q);
-    let m = 0.5 * max(abs(v0), abs(plain)) + vec3<f32>(1.0);
-    v = clamp(v, plain - m, plain + m);
+    let r = range_lo_hi(vel_src, q);
+    v = clamp(v, r[0], r[1]);
     // the wake: a solid up to the wake length upstream in the same column slows the air down, most right behind it
     let len = i32(a.g.w);
     for (var d = 1; d <= len; d++) {
@@ -190,6 +208,8 @@ fn project(@builtin(global_invocation_id) gid: vec3<u32>) {
                           pres_nb(c, c + vec3<i32>(0, 0, 1), me) - pres_nb(c, c - vec3<i32>(0, 0, 1), me));
         v = v - g / (2.0 * a.g.x);
     }
+    let cap = SPEED_LIMIT * length(a.inflow.xyz) + 1.0;
+    if (length(v) > cap) { v = v * (cap / length(v)); }
     textureStore(dst_v, c, vec4<f32>(v, 0.0));
 }
 
@@ -209,6 +229,8 @@ fn fs_slice(in: SOut) -> @location(0) vec4<f32> {
     let c = vec3<i32>(n.x / 2, i32((1.0 - in.uv.y) * f32(n.y)), i32(in.uv.x * f32(n.z)));
     if (textureLoad(solid_src, clamp(c, vec3<i32>(0), n - vec3<i32>(1)), 0).x > 0.5) { return vec4<f32>(0.05, 0.05, 0.05, 1.0); }
     let v = textureLoad(vel_src, clamp(c, vec3<i32>(0), n - vec3<i32>(1)), 0).xyz;
+    if (any(v != v)) { return vec4<f32>(1.0, 0.0, 1.0, 1.0); }   // not a number: magenta
+    if (length(v) > 3.0 * max(length(a.inflow.xyz), 1.0)) { return vec4<f32>(1.0, 1.0, 0.0, 1.0); }   // more than three times the inflow: yellow
     let r = clamp(length(v) / max(length(a.inflow.xyz), 1.0), 0.0, 1.6);
     var col = mix(vec3<f32>(0.1, 0.2, 0.9), vec3<f32>(0.95, 0.95, 0.95), clamp(r, 0.0, 1.0));   // slow blue .. free-stream white
     col = mix(col, vec3<f32>(0.95, 0.3, 0.1), clamp((r - 1.0) / 0.6, 0.0, 1.0));              // faster than the inflow: red

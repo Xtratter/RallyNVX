@@ -20,10 +20,12 @@ pub struct AirflowGpu {
     cur: usize,
     ubuf: wgpu::Buffer,
     c_bgl: wgpu::BindGroupLayout,
-    pl_solids: wgpu::ComputePipeline, pl_fwd: wgpu::ComputePipeline, pl_corr: wgpu::ComputePipeline, pl_fin: wgpu::ComputePipeline, pl_vort: wgpu::ComputePipeline,
+    pl_init: wgpu::ComputePipeline, pl_solids: wgpu::ComputePipeline, pl_fwd: wgpu::ComputePipeline, pl_corr: wgpu::ComputePipeline, pl_fin: wgpu::ComputePipeline, pl_vort: wgpu::ComputePipeline,
     pl_confine: wgpu::ComputePipeline, pl_div: wgpu::ComputePipeline, pl_jacobi: wgpu::ComputePipeline, pl_project: wgpu::ComputePipeline,
     s_bgl: wgpu::BindGroupLayout, pl_slice: wgpu::RenderPipeline,
     acc: f32, last_time: f32,
+    /// The smoothed inflow the solver uses; `None` until the first frame (then the box is filled with it).
+    inflow: Option<[f32; 3]>,
 }
 
 fn tex3d(dev: &wgpu::Device, label: &str, n: [u32; 3], format: wgpu::TextureFormat) -> wgpu::TextureView {
@@ -58,6 +60,7 @@ impl AirflowGpu {
         let module = dev.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("airflow"), source: wgpu::ShaderSource::Wgsl(crate::shaders::airflow().into()) });
         let c_lay = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[&c_bgl], push_constant_ranges: &[] });
         let cp = |entry: &str| dev.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(entry), layout: Some(&c_lay), module: &module, entry_point: Some(entry), compilation_options: Default::default(), cache: None });
+        let pl_init = cp("init");
         let (pl_solids, pl_fwd, pl_corr, pl_fin, pl_vort) = (cp("solids"), cp("adv_fwd"), cp("adv_corr"), cp("adv_fin"), cp("vort"));
         let (pl_confine, pl_div, pl_jacobi, pl_project) = (cp("confine"), cp("divergence"), cp("jacobi"), cp("project"));
 
@@ -72,8 +75,8 @@ impl AirflowGpu {
                 targets: &[Some(wgpu::ColorTargetState { format: surface_format, blend: None, write_mask: wgpu::ColorWrites::ALL })] }),
             primitive: wgpu::PrimitiveState::default(), depth_stencil: None, multisample: wgpu::MultisampleState::default(), multiview: None, cache: None });
         log::info!("airflow: {}x{}x{} cells of {} m", n[0], n[1], n[2], cfg.cell);
-        Some(AirflowGpu { cfg, n, v, t1, t2, zv, p, div, solid, zs, zr, cur: 0, ubuf, c_bgl, pl_solids, pl_fwd, pl_corr, pl_fin, pl_vort, pl_confine, pl_div, pl_jacobi, pl_project,
-            s_bgl, pl_slice, acc: 0.0, last_time: 0.0 })
+        Some(AirflowGpu { cfg, n, v, t1, t2, zv, p, div, solid, zs, zr, cur: 0, ubuf, c_bgl, pl_init, pl_solids, pl_fwd, pl_corr, pl_fin, pl_vort, pl_confine, pl_div, pl_jacobi, pl_project,
+            s_bgl, pl_slice, acc: 0.0, last_time: 0.0, inflow: None })
     }
 
     /// One bind group: the reads (`vel`, `t`, `pres`, `div`, `solid`) and the writes (`dv` to a vec4 field, `ds` to a scalar field).
@@ -93,13 +96,19 @@ impl AirflowGpu {
         let steps = ((self.acc / STEP) as u32).min(2 * self.cfg.substeps);
         self.acc -= steps as f32 * STEP;
         if self.acc > STEP { self.acc = 0.0; }
+        let first = self.inflow.is_none();
+        let inflow = if first { inflow } else { airflow::smooth_inflow(self.inflow.unwrap(), inflow, dt_frame) };
+        self.inflow = Some(inflow);
         let mut u = AUni { n: [self.n[0] as i32, self.n[1] as i32, self.n[2] as i32, boxes.len().min(MAX_BOXES) as i32], g: [self.cfg.cell, STEP, self.cfg.confinement, (WAKE_LEN / self.cfg.cell).max(1.0).floor()],
             inflow: [inflow[0], inflow[1], inflow[2], 0.0], boxes: [[0.0; 4]; 16] };
         for (i, (lo, hi)) in boxes.iter().take(MAX_BOXES).enumerate() { u.boxes[2 * i] = [lo[0], lo[1], lo[2], 0.0]; u.boxes[2 * i + 1] = [hi[0], hi[1], hi[2], 0.0]; }
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
-        if steps == 0 { return; }
+        if steps == 0 && !first { return; }
         let (gx, gy, gz) = ((self.n[0] + 3) / 4, (self.n[1] + 3) / 4, (self.n[2] + 3) / 4);
         let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("airflow"), timestamp_writes: None });
+        if first {
+            for t in [&self.v[0], &self.v[1]] { cp.set_pipeline(&self.pl_init); cp.set_bind_group(0, &self.bind(dev, &self.t1, &self.t2, &self.p[0], &self.div, &self.solid, t, &self.zs), &[]); cp.dispatch_workgroups(gx, gy, gz); }
+        }
         let (zv, zs, zr) = (&self.zv, &self.zs, &self.zr);   // zv, zs: unused write targets; zr: an unused scalar to read
         for _ in 0..steps {
             let (a, b) = (&self.v[self.cur], &self.v[1 - self.cur]);
@@ -123,9 +132,9 @@ impl AirflowGpu {
         }
     }
 
-    /// Draws the slice in the bottom-left corner (a third of the screen's width).
+    /// Draws the slice at the left, above the touch controls (half of the screen's width).
     pub fn draw(&self, dev: &wgpu::Device, enc: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, size: (u32, u32)) {
-        let w = (size.0 as f32 * 0.33).max(64.0);
+        let w = (size.0 as f32 * 0.5).max(64.0);
         let h = (w * self.n[1] as f32 / self.n[2] as f32).max(16.0);
         let bg = dev.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("airflow_slice_bg"), layout: &self.s_bgl, entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: self.ubuf.as_entire_binding() },
@@ -135,7 +144,7 @@ impl AirflowGpu {
         let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor { label: Some("airflow_slice"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: color, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],
             depth_stencil_attachment: None, timestamp_writes: None, occlusion_query_set: None });
-        rp.set_viewport(8.0, size.1 as f32 - h - 8.0, w, h, 0.0, 1.0);
+        rp.set_viewport(8.0, size.1 as f32 * 0.22, w, h, 0.0, 1.0);
         rp.set_pipeline(&self.pl_slice);
         rp.set_bind_group(0, &bg, &[]);
         rp.draw(0..3, 0..1);

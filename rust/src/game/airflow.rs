@@ -27,6 +27,12 @@ impl AirflowCfg {
 pub const WAKE_LEN: f32 = 6.0;
 pub const WAKE_RATE: f32 = 10.0;
 pub const WAKE_FLOOR: f32 = 0.2;
+/// No cell may be faster than this many times the inflow (plus 1 m/s): a safety net against the solver blowing up on a rough ride.
+pub const SPEED_LIMIT: f32 = 2.2;
+/// How fast the air follows the car's velocity (time constant, s): the air in the box has inertia, the car's frame is not inertial.
+pub const INFLOW_TAU: f32 = 0.3;
+/// The most the inflow may tilt up or down, relative to its horizontal part (a hard landing is not a headwind).
+pub const MAX_TILT: f32 = 0.25;
 
 static DEBUG: AtomicBool = AtomicBool::new(false);
 /// Debug/test: switches the airflow view on without editing `surfaces.json`.
@@ -92,6 +98,17 @@ impl Airflow {
         let x01 = l(at(0, 0, 1), at(1, 0, 1), t[0]); let x11 = l(at(0, 1, 1), at(1, 1, 1), t[0]);
         l(l(x00, x10, t[1]), l(x01, x11, t[1]), t[2])
     }
+    /// The componentwise range of the eight cells around a position (the same cells `sample` blends).
+    fn range(&self, f: &[[f32; 3]], p: [f32; 3]) -> ([f32; 3], [f32; 3]) {
+        let c0 = p.map(|v| (v / self.dx - 0.5).floor() as i32);
+        let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+        for d in 0..8 {
+            let c = [c0[0] + (d & 1), c0[1] + ((d >> 1) & 1), c0[2] + ((d >> 2) & 1)];
+            let v = self.outside(c).unwrap_or_else(|| f[self.idx(c)]);
+            for k in 0..3 { lo[k] = lo[k].min(v[k]); hi[k] = hi[k].max(v[k]); }
+        }
+        (lo, hi)
+    }
     fn centre(&self, c: [i32; 3]) -> [f32; 3] { c.map(|v| (v as f32 + 0.5) * self.dx) }
     /// Back-trace of at most a few cells (a large dt or speed must not throw the sample out of the box).
     fn trace(&self, p: [f32; 3], v: [f32; 3], dt: f32) -> [f32; 3] {
@@ -109,10 +126,10 @@ impl Airflow {
             let i = self.idx(c);
             if let Some(s) = self.solid[i] { self.vel[i] = s; continue; }
             let q = self.trace(self.centre(c), old[i], dt);
-            let plain = self.sample(&old, q);
             let mut v = self.sample(&corrected, q);
-            // the correction may only move the plain result a little, which keeps it stable
-            for k in 0..3 { let m = 0.5 * old[i][k].abs().max(plain[k].abs()) + 1.0; v[k] = v[k].clamp(plain[k] - m, plain[k] + m); }
+            // the limiter of BFECC: the result stays within the range of the old values around the traced position, so it cannot grow
+            let (lo, hi) = self.range(&old, q);
+            for k in 0..3 { v[k] = v[k].clamp(lo[k], hi[k]); }
             self.vel[i] = v;
         }
     }
@@ -191,6 +208,11 @@ impl Airflow {
             [0, 1, 2].map(|a| self.vel[i][a] - g[a] / (2.0 * self.dx))
         }).collect();
         self.vel = next;
+        let cap = SPEED_LIMIT * (self.inflow[0] * self.inflow[0] + self.inflow[1] * self.inflow[1] + self.inflow[2] * self.inflow[2]).sqrt() + 1.0;
+        for v in self.vel.iter_mut() {
+            let m = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            if m > cap { for k in 0..3 { v[k] *= cap / m; } }
+        }
     }
     /// One step: advect, confine, hold the incoming air at the front, project.
     pub fn step(&mut self, dt: f32, iterations: u32, confinement: f32) {
@@ -252,11 +274,19 @@ pub fn voxelize(af: &mut Airflow, spec: &VehicleSpec, car_z: f32) {
 /// What the GPU solver needs of a frame: the air's velocity relative to the car in the car's frame, and the car's boxes in the grid.
 pub struct FlowIn { pub inflow: [f32; 3], pub boxes: Vec<([f32; 3], [f32; 3])> }
 
+/// The inflow the solver follows: the target approached with the time constant `INFLOW_TAU`.
+pub fn smooth_inflow(now: [f32; 3], target: [f32; 3], dt: f32) -> [f32; 3] {
+    let k = 1.0 - (-dt / INFLOW_TAU).exp();
+    [0, 1, 2].map(|a| now[a] + (target[a] - now[a]) * k)
+}
+
 pub fn flow_in(v: &Vehicle, wind: V3, cfg: &AirflowCfg) -> FlowIn {
     let rel = v.vel - wind;
     let (fwd, right) = (v.forward(), v.right());
     // the air moves against the car's motion; the vertical part is the world's, so pitch and roll do not tilt the wind
-    let inflow = [-rel.dot(right), -rel.y, -rel.dot(fwd)];
+    let (ix, iz) = (-rel.dot(right), -rel.dot(fwd));
+    let tilt = (ix * ix + iz * iz).sqrt() * MAX_TILT;
+    let inflow = [ix, (-rel.y).clamp(-tilt, tilt), iz];
     FlowIn { inflow, boxes: thick_boxes(&v.spec, cfg.cell, cfg.n[2] as f32 * cfg.cell * 0.5) }
 }
 

@@ -101,3 +101,33 @@ fn inflow_is_against_the_cars_motion() {
     let tail = flow_in(&v, v.forward() * 10.0, &cfg());   // a tailwind of 10 m/s
     assert!((tail.inflow[2] + 20.0).abs() < 1e-3, "{:?}", tail.inflow);
 }
+#[test]
+fn starting_from_rest_stays_bounded() {
+    let mut a = Airflow::new([12, 8, 48], 0.5);
+    a.inflow = [0.0, 0.0, -17.0];   // the air at rest, only the front face moves
+    a.set_solid_box([4, 0, 20], [8, 3, 26]);
+    for _ in 0..180 { a.step(1.0 / 60.0, 20, 0.3); }
+    let max = a.vel.iter().map(|v| v[0].abs().max(v[1].abs()).max(v[2].abs())).fold(0.0, f32::max);
+    assert!(max < 25.0, "{max}");   // it blew up (to 220) once the BFECC result was not limited
+}
+#[test]
+fn inflow_is_smoothed_and_tilts_little() {
+    let a = smooth_inflow([0.0, 0.0, -17.0], [0.0, 0.0, -5.0], 1.0 / 60.0);
+    assert!(a[2] < -16.0 && a[2] > -17.0, "{a:?}");   // moves towards the target, slowly (time constant 0.3 s)
+    let mut x = [0.0, 0.0, -17.0];
+    for _ in 0..600 { x = smooth_inflow(x, [0.0, 0.0, -5.0], 1.0 / 60.0); }
+    assert!((x[2] + 5.0).abs() < 0.01, "{x:?}");
+    let mut v = Vehicle::new(vulpes(), crate::game::math::v3(0.0, 1.0, 0.0), 0.0);
+    v.vel = v.forward() * 10.0 + crate::game::math::v3(0.0, -8.0, 0.0);   // a hard landing
+    let f = flow_in(&v, crate::game::math::v3(0.0, 0.0, 0.0), &cfg());
+    assert!(f.inflow[1].abs() <= 0.25 * f.inflow[2].abs() + 1e-3, "{:?}", f.inflow);
+}
+#[test]
+fn speed_limiter_keeps_the_air_near_the_inflow() {
+    let mut a = Airflow::new([8, 8, 16], 0.5);
+    a.set_inflow([0.0, 0.0, -10.0]);
+    let i = a.idx([4, 4, 8]); a.vel[i] = [90.0, 90.0, 90.0];
+    a.step(1.0 / 60.0, 10, 0.0);
+    let m = a.vel.iter().map(|v| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()).fold(0.0, f32::max);
+    assert!(m <= SPEED_LIMIT * 10.0 + 1.0 + 1e-3, "{m}");
+}
