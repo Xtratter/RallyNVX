@@ -37,6 +37,10 @@ class SettingsActivity : Activity() {
         row(t("Auto fallback to Raster", "Откат на Растр"), { if (Controls.autoFallback(this)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.setAutoFallback(this, !Controls.autoFallback(this)) }
         row(t("Dust", "Пыль"), { arrayOf(t("Off", "Выкл"), t("Normal", "Обычная"), t("Lots", "Много"), t("Fluid (test)", "Жидкая (опыт)"))[Controls.dust(this)] }) { Controls.setDust(this, DriveMath.cycle(Controls.dust(this), 4)) }
         row(t("Motion blur", "Размытие в движении"), { arrayOf(t("Off", "Выкл"), t("Low", "Слабое"), t("High", "Сильное"))[Controls.motionBlur(this)] }) { Controls.setMotionBlur(this, DriveMath.cycle(Controls.motionBlur(this), 3)) }
+        row(t("Dust: particle pressure", "Пыль: давление частиц"), { if (Controls.dustOpt(this, 1)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.toggleDustOpt(this, 1) }
+        row(t("Dust: exact car shape", "Пыль: точная форма кузова"), { if (Controls.dustOpt(this, 2)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.toggleDustOpt(this, 2) }
+        row(t("Dust: world collisions", "Пыль: столкновения с миром"), { if (Controls.dustOpt(this, 4)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.toggleDustOpt(this, 4) }
+        row(t("Dust: settled layer", "Пыль: слой осевшей пыли"), { if (Controls.dustOpt(this, 8)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.toggleDustOpt(this, 8) }
         row(t("Aerodynamics", "Аэродинамика"), { if (Controls.aero(this)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.setAero(this, !Controls.aero(this)) }
         row(t("Signs on the stage", "Таблички на трассе"), { if (Controls.signs(this)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.setSigns(this, !Controls.signs(this)) }
         row(t("Co-driver", "Штурман"), { arrayOf(t("Off", "Выкл"), t("Icons", "Значки"), t("Icons and voice", "Значки и голос"))[Controls.paceMode(this)] }) { Controls.setPaceMode(this, DriveMath.cycle(Controls.paceMode(this), 3)) }

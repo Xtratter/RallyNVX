@@ -60,6 +60,12 @@ object Controls {
     /** Motion blur (the sense of speed): 0 off (the default), 1 low, 2 high. */
     fun motionBlur(c: Context): Int = p(c).getInt("motion_blur", 0).coerceIn(0, 2)
     fun setMotionBlur(c: Context, v: Int) = p(c).edit().putInt("motion_blur", v.coerceIn(0, 2)).apply()
+    /** The GPU dust options (bits: 1 particle pressure, 2 the car's exact shape, 4 collisions with the world, 8 the settled layer); all but the pressure by default. */
+    const val DUST_OPTS_DEFAULT = 14
+    fun dustOpts(c: Context): Int = p(c).getInt("dust_opts", DUST_OPTS_DEFAULT) and 15
+    fun setDustOpts(c: Context, v: Int) = p(c).edit().putInt("dust_opts", v and 15).apply()
+    fun dustOpt(c: Context, bit: Int): Boolean = dustOpts(c) and bit != 0
+    fun toggleDustOpt(c: Context, bit: Int) = setDustOpts(c, dustOpts(c) xor bit)
     fun setDust(c: Context, v: Int) = p(c).edit().putInt("dust", v.coerceIn(0, 3)).apply()
     fun autoFallback(c: Context) = p(c).getBoolean("auto_fallback", false)
     fun setAutoFallback(c: Context, v: Boolean) = p(c).edit().putBoolean("auto_fallback", v).apply()

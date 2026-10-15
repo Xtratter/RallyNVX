@@ -27,6 +27,7 @@ struct U {
     sdf_o: vec4<f32>,   // the signed distance field of the body: its corner in the mesh frame, its voxel
     sdf_n: vec4<f32>,   // its size in voxels, 1 when there is one
     rs: vec4<u32>,      // the reserved ring of lifted particles: its start (= the main ring's size), its size, the frame number, 0
+    pb: vec4<f32>,      // the particle pressure: the kernel radius, the rest density, the relaxation, the viscosity
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read_write> state: array<S>;
@@ -37,6 +38,8 @@ struct U {
 @group(0) @binding(9) var<storage, read_write> dep: array<atomic<u32>>;       // the settled layer per cell of the ground window (fixed point, 256 = one unit); the last element is the reserved ring's head
 @group(0) @binding(10) var<storage, read_write> dep_cell: array<vec2<i32>>;   // the world cell each slot holds now
 @group(0) @binding(11) var dep_img: texture_storage_2d<rgba8unorm, write>;      // the layer as a texture for the terrain and road shaders
+@group(0) @binding(12) var<storage, read_write> pbd_grid: array<atomic<u32>>;   // the pressure's cell lists: a count per cell, then 8 slots (particle index + 1) per cell
+@group(0) @binding(13) var<storage, read_write> pbd_dat: array<vec4<f32>>;      // per taking part particle two vec4: (correction, lambda) and (velocity change, 0)
 @group(0) @binding(3) var ground_tex: texture_2d<f32>;   // terrain heights of the window, toroidal (cell mod 64)
 @group(1) @binding(0) var grid_vel: texture_3d<f32>;     // the airflow's velocity relative to the car, in the car's frame
 @group(1) @binding(1) var grid_solid: texture_3d<f32>;
@@ -294,6 +297,118 @@ fn dust_deposit(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
     }
     textureStore(dep_img, sl, vec4<f32>(clamp(f32(v) / 1024.0, 0.0, 1.0), 0.0, 0.0, 1.0));
+}
+
+// ---- particle pressure (position based fluids; game/dust_ref.rs::poly6, spiky_grad and pbd_corrections are the host-tested twins)
+const PBD_K = 8u;
+const PBD_STRIDE = 8u;
+fn poly6(r2: f32) -> f32 {
+    let h = u.pb.x; let h2 = h * h;
+    if (r2 >= h2) { return 0.0; }
+    let d = h2 - r2;
+    return 315.0 / (64.0 * 3.14159265 * pow(h, 9.0)) * d * d * d;
+}
+fn spiky_grad(r: vec3<f32>) -> vec3<f32> {
+    let h = u.pb.x; let l = length(r);
+    if (l >= h || l < 1e-6) { return vec3<f32>(0.0); }
+    return r * (-45.0 / (3.14159265 * pow(h, 6.0)) * (h - l) * (h - l) / l);
+}
+fn pbd_total_cells() -> u32 { let n = box_cells(); return u32(n.x * n.y * n.z); }
+fn pbd_cell(p: vec3<f32>) -> i32 {
+    if (u.bx.w <= 0.0) { return -1; }
+    let c = vec3<i32>(floor(to_box(p) / u.bx.w));
+    if (!cell_ok(c)) { return -1; }
+    return cell_index(c);
+}
+// the particle a taking-part thread stands for (-1: none)
+fn pbd_particle(tid: u32) -> i32 {
+    let i = tid * PBD_STRIDE;
+    if (i >= u.n.z + u.rs.y) { return -1; }
+    let s = state[i];
+    if (s.d.z < 0.5 || s.d.x > 1.5) { return -1; }
+    return i32(i);
+}
+@compute @workgroup_size(64)
+fn pbd_clear(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x < pbd_total_cells()) { atomicStore(&pbd_grid[gid.x], 0u); }
+}
+@compute @workgroup_size(64)
+fn pbd_bin(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let p = pbd_particle(gid.x);
+    if (p < 0) { return; }
+    let ci = pbd_cell(state[p].a.xyz);
+    if (ci < 0) { return; }
+    let k = atomicAdd(&pbd_grid[ci], 1u);
+    if (k < PBD_K) { atomicStore(&pbd_grid[pbd_total_cells() + u32(ci) * PBD_K + k], u32(p) + 1u); }
+}
+// the constraint multiplier of every particle: lambda = -C / (sum of the squared gradients + eps), C = density / rest density - 1 (only compression is resisted)
+@compute @workgroup_size(64)
+fn pbd_lambda(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let p = pbd_particle(gid.x);
+    if (p < 0) { return; }
+    let pos = state[p].a.xyz;
+    let b = to_box(pos);
+    let c0 = vec3<i32>(floor(b / u.bx.w));
+    let total = pbd_total_cells();
+    var rho = 0.0; var gsum = vec3<f32>(0.0); var sq = 0.0;
+    for (var dz = -1; dz <= 1; dz++) { for (var dy = -1; dy <= 1; dy++) { for (var dx = -1; dx <= 1; dx++) {
+        let c = c0 + vec3<i32>(dx, dy, dz);
+        if (!cell_ok(c)) { continue; }
+        let ci = u32(cell_index(c));
+        let cnt = min(atomicLoad(&pbd_grid[ci]), PBD_K);
+        for (var k = 0u; k < cnt; k++) {
+            let j = i32(atomicLoad(&pbd_grid[total + ci * PBD_K + k])) - 1;
+            if (j < 0) { continue; }
+            let r = pos - state[j].a.xyz;
+            rho = rho + poly6(dot(r, r));
+            if (j != p) { let g = spiky_grad(r) / u.pb.y; gsum = gsum + g; sq = sq + dot(g, g); }
+        }
+    } } }
+    let cc = rho / u.pb.y - 1.0;
+    var lam = 0.0;
+    if (cc > 0.0) { lam = -cc / (sq + dot(gsum, gsum) + u.pb.z); }
+    pbd_dat[gid.x * 2u] = vec4<f32>(0.0, 0.0, 0.0, lam);
+}
+// the position correction, with the artificial pressure against clumping, and the XSPH velocity smoothing
+@compute @workgroup_size(64)
+fn pbd_delta(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let p = pbd_particle(gid.x);
+    if (p < 0) { return; }
+    let pos = state[p].a.xyz; let vel = state[p].b.xyz;
+    let lam_i = pbd_dat[gid.x * 2u].w;
+    let c0 = vec3<i32>(floor(to_box(pos) / u.bx.w));
+    let total = pbd_total_cells();
+    let w_dq = max(poly6(0.04 * u.pb.x * u.pb.x), 1e-12);
+    var d = vec3<f32>(0.0); var dv = vec3<f32>(0.0);
+    for (var dz = -1; dz <= 1; dz++) { for (var dy = -1; dy <= 1; dy++) { for (var dx = -1; dx <= 1; dx++) {
+        let c = c0 + vec3<i32>(dx, dy, dz);
+        if (!cell_ok(c)) { continue; }
+        let ci = u32(cell_index(c));
+        let cnt = min(atomicLoad(&pbd_grid[ci]), PBD_K);
+        for (var k = 0u; k < cnt; k++) {
+            let j = i32(atomicLoad(&pbd_grid[total + ci * PBD_K + k])) - 1;
+            if (j < 0 || j == p) { continue; }
+            let r = pos - state[j].a.xyz;
+            let lam_j = pbd_dat[(u32(j) / PBD_STRIDE) * 2u].w;
+            let s_corr = -0.1 * pow(poly6(dot(r, r)) / w_dq, 4.0);
+            d = d + spiky_grad(r) * (lam_i + lam_j + s_corr);
+            dv = dv + (state[j].b.xyz - vel) * (poly6(dot(r, r)) / u.pb.y);
+        }
+    } } }
+    pbd_dat[gid.x * 2u] = vec4<f32>(d / u.pb.y, lam_i);
+    pbd_dat[gid.x * 2u + 1u] = vec4<f32>(dv, 0.0);
+}
+@compute @workgroup_size(64)
+fn pbd_apply(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let p = pbd_particle(gid.x);
+    if (p < 0) { return; }
+    var s = state[p];
+    var d = pbd_dat[gid.x * 2u].xyz;
+    let l = length(d);
+    if (l > 0.12) { d = d * (0.12 / l); }
+    s.a = vec4<f32>(max(s.a.xyz + d, vec3<f32>(-1.0e6, ground(s.a.x + d.x, s.a.z + d.z) + 0.04, -1.0e6)), s.a.w);
+    s.b = vec4<f32>(s.b.xyz + d / max(u.g.x, 0.008) * 0.25 + pbd_dat[gid.x * 2u + 1u].xyz * u.pb.w, s.b.w);
+    state[p] = s;
 }
 
 @compute @workgroup_size(64)

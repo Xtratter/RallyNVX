@@ -30,6 +30,10 @@ On Android the start screen has Quality: Low (0.5x), Medium (0.7x) and High (1.0
 
 The delivery and race missions were removed in 2.14.0: the game is a free drive for now, and a rally mode (special stages with times) is planned. The profile (`files/profile.json`, desktop: none) keeps the money and the garage; a damaged file is kept as `profile.json.bak`.
 
+## Dust physics options and quick settings
+
+The GPU dust (Aerodynamics On, levels Normal and Lots) has four options, each on its own switch in Settings and in the in-drive **quick settings** (the gear button next to the View button; every change applies at once and is kept): **Particle pressure** (position based fluids as in PhysX 5 / Flex: every 8th particle near the car is binned into the airflow's cells, the density constraint with the poly6 and spiky kernels pushes the compressed puffs apart, XSPH viscosity keeps them rolling together; off by default, `dust_air.pbd_*` in `surfaces.json`), **Exact car shape** (the body mesh as a signed distance field of 0.1 m voxels, built when the model loads: the dust wraps wheels, wing and mirrors of any car model), **World collisions** (trunks of trees and rocks from the props near the car, and sliding along slopes and walls by the terrain normal) and **Settled dust layer** (fine dust that lands adds to a 64 m window of 1 m cells that tints the ground; the wake of the car lifts it again). The quick settings also have the dust level, aerodynamics, motion blur and the camera view. Design: `docs/superpowers/specs/2026-10-15-dust-physx-options-design.md`.
+
 ## Camera
 
 The **View** button under the status line cycles the camera views: behind the car (default), on the bonnet, low on the front bumper, high behind (roof), and a free orbit (it never swings back by itself). One finger turns the camera round the car as before. **Two fingers** on free space: pinching changes the distance (spreading brings the camera closer; on the bonnet and bumper views it zooms in), moving both fingers up or down changes the height (on those views it tilts the gaze). A long press on the View button puts the current view back to its default distance and height. The view and each view's distance and height are remembered. Camera spots of a new car (bonnet and bumper, as fractions of its size) are `cameras.hood` and `cameras.bumper` in `vehicles.json`.
@@ -133,6 +137,10 @@ No rally mode and no NPC orders yet, and only the raster and hybrid renderers. T
 ## Миссии
 
 Миссии «доставка» и «гонка» убраны в 2.14.0: пока игра — это свободная езда, а ралли-режим (спецучастки с временем) в планах. Профиль (`files/profile.json`) хранит деньги и гараж; повреждённый файл сохраняется как `profile.json.bak`.
+
+## Опции физики пыли и быстрые настройки
+
+У пыли на GPU («Аэродинамика» вкл., уровни «Обычная» и «Много») четыре опции, каждая со своим переключателем в настройках и в **быстрых настройках** в поездке (кнопка с шестерёнкой рядом с «Вид»; каждое изменение применяется сразу и запоминается): **Давление частиц** (position based fluids как в PhysX 5 / Flex: каждая 8-я частица рядом с машиной раскладывается по ячейкам потока, ограничение плотности с ядрами poly6 и spiky расталкивает сжатые комки, вязкость XSPH держит их катящимися вместе; по умолчанию выкл., `dust_air.pbd_*` в `surfaces.json`), **Точная форма кузова** (меш кузова как поле расстояний из вокселей 0,1 м, строится при загрузке модели: пыль обтекает колёса, крыло и зеркала любой модели машины), **Столкновения с миром** (стволы деревьев и камни из объектов рядом с машиной и скольжение по склонам и стенам по нормали рельефа) и **Слой осевшей пыли** (осевшая мелкая пыль добавляется в окно 64 м из ячеек по 1 м, которое окрашивает землю; след машины снова поднимает её). В быстрых настройках также уровень пыли, аэродинамика, размытие в движении и вид камеры. Замысел: `docs/superpowers/specs/2026-10-15-dust-physx-options-design.md`.
 
 ## Камера
 

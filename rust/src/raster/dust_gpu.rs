@@ -16,7 +16,9 @@ struct DUni { n: [u32; 4], g: [f32; 4], wind: [f32; 4], ph: [f32; 4], ph2: [f32;
     /// The body mesh's origin and axes in the world, the signed distance field's corner and cell, its size and whether there is one.
     bpos: [f32; 4], bax0: [f32; 4], bax1: [f32; 4], bax2: [f32; 4], sdf_o: [f32; 4], sdf_n: [f32; 4],
     /// The reserved ring (start, size), the frame number, 0.
-    rs: [u32; 4] }
+    rs: [u32; 4],
+    /// The particle pressure: the kernel radius, the rest density, the relaxation, the viscosity.
+    pb: [f32; 4] }
 
 /// The buffer holds this many particles; the level's cap is how many the ring uses.
 pub const CAPACITY: usize = 65536;
@@ -24,6 +26,8 @@ pub const CAPACITY: usize = 65536;
 pub const RS_N: usize = 4096;
 /// The most cells of the airflow's box the per-cell dust field has room for.
 const MAX_CELLS: usize = 262144;
+/// Every this-many-th particle takes part in the pressure.
+pub const PBD_STRIDE: usize = 8;
 const DUST_INST_BYTES: u64 = 48;
 
 pub struct DustGpu {
@@ -34,16 +38,22 @@ pub struct DustGpu {
     head: usize, cap: usize, last_time: f32, frame: u32,
     /// The settled layer: counters per cell of the ground window (and one for the reserved ring's head), each slot's cell, and the texture the ground shaders read.
     dep_buf: wgpu::Buffer, dep_cells: wgpu::Buffer, pl_dep: wgpu::ComputePipeline,
+    /// The particle pressure: the cell lists (counts then 8 slots per cell), the per-particle corrections, and the passes.
+    pbd_grid: wgpu::Buffer, pbd_dat: wgpu::Buffer, pl_pbd: [wgpu::ComputePipeline; 5],
+    /// GPU timings of the four compute passes (the extra `gpuprof=1`), read back every 90 frames.
+    qs: Option<(wgpu::QuerySet, wgpu::Buffer, wgpu::Buffer, f32)>, prof_frame: u32,
     /// The terrain heights of the ground window (cell mod 64) and the cell each slot holds now.
     ground_tex: wgpu::Texture, heights: Vec<f32>, cells: Vec<[i32; 2]>,
 }
 
 impl DustGpu {
-    pub fn new(dev: &wgpu::Device, dep_tex: &wgpu::Texture) -> DustGpu {
+    pub fn new(dev: &wgpu::Device, queue: &wgpu::Queue, dep_tex: &wgpu::Texture) -> DustGpu {
         let ubuf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_u"), size: std::mem::size_of::<DUni>() as u64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let dep_buf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_dep"), size: ((WINDOW * WINDOW + 1) * 4) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let dep_cells = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_dep_cells"), size: (WINDOW * WINDOW * 8) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let dep_view = dep_tex.create_view(&Default::default());
+        let pbd_grid = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_pbd_grid"), size: (MAX_CELLS * 9 * 4) as u64, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
+        let pbd_dat = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_pbd_dat"), size: (((CAPACITY + RS_N) / PBD_STRIDE + 1) * 32) as u64, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
         let coll_buf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_colliders"), size: (MAX_COLLIDERS * 32) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let cell_buf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_ccells"), size: (WINDOW * WINDOW * 16) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let emit_buf = dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_emits"), size: (MAX_EMITS * std::mem::size_of::<S>()) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
@@ -58,6 +68,7 @@ impl DustGpu {
             entry(5, wgpu::BufferBindingType::Storage { read_only: false }), entry(6, wgpu::BufferBindingType::Storage { read_only: false }),
             entry(7, wgpu::BufferBindingType::Storage { read_only: true }), entry(8, wgpu::BufferBindingType::Storage { read_only: true }),
             entry(9, wgpu::BufferBindingType::Storage { read_only: false }), entry(10, wgpu::BufferBindingType::Storage { read_only: false }),
+            entry(12, wgpu::BufferBindingType::Storage { read_only: false }), entry(13, wgpu::BufferBindingType::Storage { read_only: false }),
             wgpu::BindGroupLayoutEntry { binding: 11, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::StorageTexture { access: wgpu::StorageTextureAccess::WriteOnly, format: wgpu::TextureFormat::Rgba8Unorm, view_dimension: wgpu::TextureViewDimension::D2 }, count: None },
             wgpu::BindGroupLayoutEntry { binding: 3, visibility: wgpu::ShaderStages::COMPUTE, ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }, count: None }] });
         let ground_tex = dev.create_texture(&wgpu::TextureDescriptor { label: Some("dust_ground"), size: wgpu::Extent3d { width: WINDOW as u32, height: WINDOW as u32, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1,
@@ -67,7 +78,8 @@ impl DustGpu {
             wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: state.as_entire_binding() }, wgpu::BindGroupEntry { binding: 2, resource: render.as_entire_binding() }, wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&ground_view) }, wgpu::BindGroupEntry { binding: 4, resource: emit_buf.as_entire_binding() },
             wgpu::BindGroupEntry { binding: 5, resource: mass_buf.as_entire_binding() }, wgpu::BindGroupEntry { binding: 6, resource: fld_buf.as_entire_binding() },
             wgpu::BindGroupEntry { binding: 7, resource: coll_buf.as_entire_binding() }, wgpu::BindGroupEntry { binding: 8, resource: cell_buf.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 9, resource: dep_buf.as_entire_binding() }, wgpu::BindGroupEntry { binding: 10, resource: dep_cells.as_entire_binding() }, wgpu::BindGroupEntry { binding: 11, resource: wgpu::BindingResource::TextureView(&dep_view) }] });
+            wgpu::BindGroupEntry { binding: 9, resource: dep_buf.as_entire_binding() }, wgpu::BindGroupEntry { binding: 10, resource: dep_cells.as_entire_binding() }, wgpu::BindGroupEntry { binding: 11, resource: wgpu::BindingResource::TextureView(&dep_view) },
+            wgpu::BindGroupEntry { binding: 12, resource: pbd_grid.as_entire_binding() }, wgpu::BindGroupEntry { binding: 13, resource: pbd_dat.as_entire_binding() }] });
         let tex = |binding: u32| wgpu::BindGroupLayoutEntry { binding, visibility: wgpu::ShaderStages::COMPUTE,
             ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D3, multisampled: false }, count: None };
         let bgl_grid = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("dust_grid_bgl"), entries: &[tex(0), tex(1), entry(2, wgpu::BufferBindingType::Storage { read_only: false }), tex(3)] });
@@ -80,8 +92,14 @@ impl DustGpu {
         let (pl_emit, pl_step, pl_clear, pl_splat) = (cp("emit"), cp("dust_step"), cp("dust_clear"), cp("dust_splat"));
         let (pl_fmass, pl_flight) = (cp("dust_field_mass"), cp("dust_field_light"));
         let pl_dep = cp("dust_deposit");
-        log::info!("dust gpu: {CAPACITY} particles");
-        DustGpu { sdf: None, sdf_serial: 0, ubuf, coll_buf, cell_buf, emit_buf, state, mass_buf, fld_buf, render, bg, bgl_grid, dummy, pl_emit, pl_step, pl_clear, pl_splat, pl_fmass, pl_flight, dummy_buf, head: 0, cap: 0, last_time: -1.0, frame: 0, dep_buf, dep_cells, pl_dep, ground_tex, heights: vec![0.0; (WINDOW * WINDOW) as usize], cells: vec![[i32::MIN; 2]; (WINDOW * WINDOW) as usize] }
+        let pl_pbd = [cp("pbd_clear"), cp("pbd_bin"), cp("pbd_lambda"), cp("pbd_delta"), cp("pbd_apply")];
+        let qs = if dev.features().contains(wgpu::Features::TIMESTAMP_QUERY) {
+            Some((dev.create_query_set(&wgpu::QuerySetDescriptor { label: Some("dust_prof"), ty: wgpu::QueryType::Timestamp, count: 8 }),
+                dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_prof_r"), size: 64, usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false }),
+                dev.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_prof_m"), size: 64, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }), queue.get_timestamp_period()))
+        } else { None };
+        log::info!("dust gpu: {CAPACITY} particles, timestamps {}", qs.is_some());
+        DustGpu { sdf: None, sdf_serial: 0, ubuf, coll_buf, cell_buf, emit_buf, state, mass_buf, fld_buf, render, bg, bgl_grid, dummy, pl_emit, pl_step, pl_clear, pl_splat, pl_fmass, pl_flight, dummy_buf, head: 0, cap: 0, last_time: -1.0, frame: 0, dep_buf, dep_cells, pl_dep, pbd_grid, pbd_dat, pl_pbd, qs: None, prof_frame: 0, ground_tex, heights: vec![0.0; (WINDOW * WINDOW) as usize], cells: vec![[i32::MIN; 2]; (WINDOW * WINDOW) as usize] }
     }
 
     pub fn sdf_serial(&self) -> u32 { self.sdf_serial }
@@ -135,30 +153,57 @@ impl DustGpu {
             wind: [frame.wind.x, frame.wind.y, frame.wind.z, 0.0], ph: [ph.tau_fine, ph.tau_coarse, ph.settle_fine, ph.settle_coarse], ph2: [ph.turbulence * 1.5, (frame.car_vel.x * frame.car_vel.x + frame.car_vel.z * frame.car_vel.z).sqrt(), ph.plume_lift, ph.plume_height],
             car: [frame.car_pos.x, frame.car_pos.y, frame.car_pos.z, frame.yaw], car_vel: [frame.car_vel.x, frame.car_vel.y, frame.car_vel.z, 0.0], bx: grid.map_or([0.0; 4], |g| g.2), bpos: [frame.body_pose.0.x, frame.body_pose.0.y, frame.body_pose.0.z, 0.0],
             bax0: [frame.body_pose.1[0].x, frame.body_pose.1[0].y, frame.body_pose.1[0].z, 0.0], bax1: [frame.body_pose.1[1].x, frame.body_pose.1[1].y, frame.body_pose.1[1].z, 0.0], bax2: [frame.body_pose.1[2].x, frame.body_pose.1[2].y, frame.body_pose.1[2].z, 0.0],
-            sdf_o: self.sdf.as_ref().map_or([0.0; 4], |s| s.1), sdf_n: self.sdf.as_ref().map_or([0.0; 4], |s| s.2), rs: [cap as u32, RS_N as u32, self.frame, 0], gw: [base[0], base[1], 0, 0], cp: { let c = dust_ref::coupling(); [c.push, c.mass_fine, c.mass_coarse, ph.street] }, sun: [frame.sun.x, frame.sun.y, frame.sun.z, dust_ref::coupling().shadow_k], body: [frame.body[0], frame.body[1], frame.body[2], ph.vortex * frame.vortex_scale] };
+            sdf_o: self.sdf.as_ref().map_or([0.0; 4], |s| s.1), sdf_n: self.sdf.as_ref().map_or([0.0; 4], |s| s.2), rs: [cap as u32, RS_N as u32, self.frame, 0], pb: { let c = dust_ref::coupling(); [c.pbd_h, dust_ref::rest_density(c.pbd_spacing, c.pbd_h), 100.0, c.pbd_visc] }, gw: [base[0], base[1], 0, 0], cp: { let c = dust_ref::coupling(); [c.push, c.mass_fine, c.mass_coarse, ph.street] }, sun: [frame.sun.x, frame.sun.y, frame.sun.z, dust_ref::coupling().shadow_k], body: [frame.body[0], frame.body[1], frame.body[2], ph.vortex * frame.vortex_scale] };
         let emits: Vec<S> = frame.emits.iter().take(MAX_EMITS).map(|p| S { a: [p.pos.x, p.pos.y, p.pos.z, p.size0], b: [p.vel.x, p.vel.y, p.vel.z, p.age], c: [p.color[0], p.color[1], p.color[2], p.life], d: [if p.speck { 2.0 } else if p.coarse { 1.0 } else { 0.0 }, p.seed, 1.0, 0.0] }).collect();
         if !emits.is_empty() { queue.write_buffer(&self.emit_buf, 0, bytemuck::cast_slice(&emits)); }
         self.head = (self.head + u.n[0] as usize) % cap;
         self.frame = self.frame.wrapping_add(1);
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
-        let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("dust_gpu"), timestamp_writes: None });
+        let prof = self.qs.is_some() && crate::raster::prof_on();
+        let tw = |k: u32| -> Option<wgpu::ComputePassTimestampWrites> { self.qs.as_ref().filter(|_| prof).map(|q| wgpu::ComputePassTimestampWrites { query_set: &q.0, beginning_of_pass_write_index: Some(2 * k), end_of_pass_write_index: Some(2 * k + 1) }) };
         let (vel, solid) = grid.map_or((&self.dummy, &self.dummy), |g| (g.0, g.1));
         let sdf_view = self.sdf.as_ref().map_or(&self.dummy, |s| &s.0);
         let dens = grid.map_or(&self.dummy_buf, |g| g.3);
         let gbg = dev.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("dust_grid_bg"), layout: &self.bgl_grid, entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(vel) }, wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(solid) }, wgpu::BindGroupEntry { binding: 2, resource: dens.as_entire_binding() }, wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(sdf_view) }] });
+        let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("dust_emit_pbd"), timestamp_writes: tw(0) });
         cp.set_bind_group(0, &self.bg, &[]);
         cp.set_bind_group(1, &gbg, &[]);
         cp.set_pipeline(&self.pl_emit);
         cp.dispatch_workgroups(((u.n[0] + 63) / 64).max(1), 1, 1);
+        // the particle pressure: the near particles (every 8th) are binned into the box's cells and pushed apart by the density constraint, a few iterations
+        if frame.opts & crate::game::dust::OPT_PBD != 0 && grid.is_some() {
+            let g = grid.as_ref().unwrap();
+            let cells = ((g.2[0] / g.2[3]).round() as u32 * (g.2[1] / g.2[3]).round() as u32 * (g.2[2] / g.2[3]).round() as u32).min(MAX_CELLS as u32);
+            let parts = (((cap + RS_N) / PBD_STRIDE + 1) as u32 + 63) / 64;
+            for _ in 0..dust_ref::coupling().pbd_iters {
+                cp.set_pipeline(&self.pl_pbd[0]); cp.dispatch_workgroups((cells + 63) / 64, 1, 1);
+                cp.set_pipeline(&self.pl_pbd[1]); cp.dispatch_workgroups(parts, 1, 1);
+                cp.set_pipeline(&self.pl_pbd[2]); cp.dispatch_workgroups(parts, 1, 1);
+                cp.set_pipeline(&self.pl_pbd[3]); cp.dispatch_workgroups(parts, 1, 1);
+                cp.set_pipeline(&self.pl_pbd[4]); cp.dispatch_workgroups(parts, 1, 1);
+            }
+        }
+        drop(cp);
+        let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("dust_step"), timestamp_writes: tw(1) });
+        cp.set_bind_group(0, &self.bg, &[]);
+        cp.set_bind_group(1, &gbg, &[]);
         cp.set_pipeline(&self.pl_step);
         cp.dispatch_workgroups((((cap + RS_N) as u32) + 63) / 64, 1, 1);
+        drop(cp);
+        let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("dust_deposit"), timestamp_writes: tw(2) });
+        cp.set_bind_group(0, &self.bg, &[]);
+        cp.set_bind_group(1, &gbg, &[]);
         // the dust field of this frame (read by the next frame's step and by the airflow solver): clear, then every particle adds itself
         // the settled layer: the cells decay, hand over, show on the ground and give back to the wake
         if frame.opts & crate::game::dust::OPT_DEPOSIT != 0 {
             cp.set_pipeline(&self.pl_dep);
             cp.dispatch_workgroups((WINDOW * WINDOW / 64) as u32, 1, 1);
         }
+        drop(cp);
+        let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("dust_field"), timestamp_writes: tw(3) });
+        cp.set_bind_group(0, &self.bg, &[]);
+        cp.set_bind_group(1, &gbg, &[]);
         if let Some(g) = grid {
             let cells = (g.2[0] / g.2[3]).round() as u32 * (g.2[1] / g.2[3]).round() as u32 * (g.2[2] / g.2[3]).round() as u32;
             cp.set_pipeline(&self.pl_clear);
@@ -171,6 +216,23 @@ impl DustGpu {
             cp.set_pipeline(&self.pl_flight);
             cp.dispatch_workgroups(groups, 1, 1);
         }
+        drop(cp);
+        if let (true, Some(q)) = (prof, self.qs.as_ref()) { enc.resolve_query_set(&q.0, 0..8, &q.1, 0); enc.copy_buffer_to_buffer(&q.1, 0, &q.2, 0, 64); }
+    }
+
+    /// After the submit: every 90th frame wait and log the four passes' GPU times.
+    pub fn prof_report(&mut self, dev: &wgpu::Device) {
+        let Some(q) = self.qs.as_ref() else { return };
+        if !crate::raster::prof_on() { return; }
+        self.prof_frame += 1;
+        if self.prof_frame % 90 != 0 { return; }
+        let slice = q.2.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        dev.poll(wgpu::Maintain::Wait);
+        let ts: Vec<u64> = bytemuck::cast_slice(&slice.get_mapped_range()).to_vec();
+        q.2.unmap();
+        let ms = |k: usize| ts[2 * k + 1].wrapping_sub(ts[2 * k]) as f32 * q.3 / 1.0e6;
+        log::info!("dustprof ms: emit+pbd {:.2}, step {:.2}, deposit {:.2}, field {:.2}", ms(0), ms(1), ms(2), ms(3));
     }
 }
 

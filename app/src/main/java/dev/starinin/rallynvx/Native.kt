@@ -59,6 +59,8 @@ object Native {
     @JvmStatic external fun gameAero(on: Int)
     /** Motion blur: 0 off, 1 low, 2 high. */
     @JvmStatic external fun gameMotionBlur(level: Int)
+    /** The GPU dust options as bits: 1 particle pressure, 2 the car's exact shape, 4 world collisions, 8 the settled layer. */
+    @JvmStatic external fun gameDustOpts(mask: Int)
     @JvmStatic external fun gameGpuProf(on: Int)
     @JvmStatic external fun gamePause(p: Boolean)
     @JvmStatic external fun gameStop()

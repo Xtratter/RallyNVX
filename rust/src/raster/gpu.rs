@@ -575,7 +575,7 @@ impl Raster {
             self.airflow = airflow_gpu::AirflowGpu::new(&self.adapter, &self.device, self.config.format);
         }
         if wv.dust_gpu.is_some() && self.dust_gpu.is_none() {
-            self.dust_gpu = Some(dust_gpu::DustGpu::new(&self.device, &self.dep_tex));
+            self.dust_gpu = Some(dust_gpu::DustGpu::new(&self.device, &self.queue, &self.dep_tex));
             self.dust_render = Some(dust_gpu::DustRender::new(&self.device, &self.bgl_main_keep, &self.module_keep, self.config.format));
         }
         let dust_low = wv.dust_gpu.is_some() && self.dust_render.is_some();
@@ -741,6 +741,7 @@ impl Raster {
         if let Some(p) = &self.prof { p.mark(&mut enc, 5); p.resolve(&mut enc); }
         self.queue.submit([enc.finish()]);
         if let Some(p) = self.prof.as_mut() { p.report(&self.device); }
+        if let Some(dg) = self.dust_gpu.as_mut() { dg.prof_report(&self.device); }
         frame.present();
     }
 }
@@ -753,6 +754,7 @@ pub fn set_blur(level: i32) { BLUR_LEVEL.store(level.clamp(0, 2), std::sync::ato
 
 static PROF_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub fn set_prof(on: bool) { PROF_ON.store(on, std::sync::atomic::Ordering::Relaxed); }
+pub fn prof_on() -> bool { PROF_ON.load(std::sync::atomic::Ordering::Relaxed) }
 const PROF_N: u32 = 6;
 const PROF_NAMES: [&str; 5] = ["fluid+airflow", "dust compute", "shadow+main", "dust low+comp", "rest"];
 

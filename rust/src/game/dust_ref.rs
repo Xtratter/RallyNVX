@@ -274,6 +274,56 @@ pub fn slide_response(vel: V3, n: V3, bounce: f32, friction: f32) -> V3 {
     tangent * (1.0 - friction) - n * (vn * bounce)
 }
 
+// ---- position based fluids (the particle pressure option): Macklin and Mueller's density constraint, the poly6 kernel for the density, the spiky kernel's gradient for
+// the correction (the same maths as PhysX 5's PBD particles and Flex), with the tensile-instability term and XSPH viscosity.
+
+/// The poly6 kernel: 315 / (64 pi h^9) * (h^2 - r^2)^3 for r < h.
+pub fn poly6(r2: f32, h: f32) -> f32 {
+    let h2 = h * h;
+    if r2 >= h2 { return 0.0; }
+    let d = h2 - r2;
+    315.0 / (64.0 * std::f32::consts::PI * h.powi(9)) * d * d * d
+}
+/// The gradient of the spiky kernel at the offset `r` (from the neighbour to the particle): -45 / (pi h^6) (h - |r|)^2 r / |r| for |r| < h; zero at the centre.
+pub fn spiky_grad(r: V3, h: f32) -> V3 {
+    let l = r.len();
+    if l >= h || l < 1e-6 { return V3::ZERO; }
+    r * (-45.0 / (std::f32::consts::PI * h.powi(6)) * (h - l) * (h - l) / l)
+}
+/// The density (poly6 sum with unit masses) of a particle in a cubic lattice of `spacing`: the rest density the constraint holds.
+pub fn rest_density(spacing: f32, h: f32) -> f32 {
+    let n = (h / spacing).ceil() as i32;
+    let mut s = 0.0;
+    for i in -n..=n { for j in -n..=n { for k in -n..=n { s += poly6(((i * i + j * j + k * k) as f32) * spacing * spacing, h); } } }
+    s
+}
+/// One iteration of the density constraint over `pos` (all neighbours, a plain reference of what the GPU does with its cell lists): returns the position corrections.
+/// `eps` relaxes the constraint, `k_corr` the artificial pressure that stops particles from clumping.
+pub fn pbd_corrections(pos: &[V3], h: f32, rho0: f32, eps: f32, k_corr: f32) -> Vec<V3> {
+    let n = pos.len();
+    let mut lam = vec![0.0f32; n];
+    for i in 0..n {
+        let (mut rho, mut gsum, mut sq) = (0.0f32, V3::ZERO, 0.0f32);
+        for j in 0..n {
+            rho += poly6((pos[i] - pos[j]).dot(pos[i] - pos[j]), h);
+            if i != j { let g = spiky_grad(pos[i] - pos[j], h) * (1.0 / rho0); gsum = gsum + g; sq += g.dot(g); }
+        }
+        let c = rho / rho0 - 1.0;
+        lam[i] = if c > 0.0 { -c / (sq + gsum.dot(gsum) + eps) } else { 0.0 };   // only compression is resisted (dust has no cohesion)
+    }
+    let w_dq = poly6(0.04 * h * h, h).max(1e-12);
+    (0..n).map(|i| {
+        let mut d = V3::ZERO;
+        for j in 0..n {
+            if i == j { continue; }
+            let r = pos[i] - pos[j];
+            let s_corr = -k_corr * (poly6(r.dot(r), h) / w_dq).powi(4);
+            d = d + spiky_grad(r, h) * (lam[i] + lam[j] + s_corr);
+        }
+        d * (1.0 / rho0)
+    }).collect()
+}
+
 /// The ground under the dust comes from a window of terrain heights: `WINDOW` cells of 1 m around the car, stored toroidally (a cell lives in the
 /// slot `cell mod WINDOW`), so only the cells that come into the window are measured when the car moves.
 pub const WINDOW: i32 = 64;
@@ -299,7 +349,9 @@ pub fn ground_height(x: f32, z: f32, base: [i32; 2], height: impl Fn(usize) -> f
 /// The coupling of the dust and the air (`surfaces.json` -> `dust_air`): the particles are splatted into the airflow's grid as a density and a momentum
 /// field; the density pushes the particles apart (a stand-in for the particle-particle pressure) and drags the air along (a thick cloud rolls as one).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Coupling { pub push: f32, pub drag: f32, pub drag_max: f32, pub mass_fine: f32, pub mass_coarse: f32, pub shadow_k: f32 }
+pub struct Coupling { pub push: f32, pub drag: f32, pub drag_max: f32, pub mass_fine: f32, pub mass_coarse: f32, pub shadow_k: f32,
+    /// The particle pressure option: the kernel radius, the rest spacing of the dust, the XSPH viscosity and the iterations per frame.
+    pub pbd_h: f32, pub pbd_spacing: f32, pub pbd_visc: f32, pub pbd_iters: u32 }
 
 impl Coupling {
     pub fn from_json(text: &str) -> Result<Coupling, String> {
@@ -311,7 +363,11 @@ impl Coupling {
             Ok(x as f32)
         };
         Ok(Coupling { push: num("push", 0.0, 50.0)?, drag: num("drag", 0.0, 5.0)?, drag_max: num("drag_max", 0.0, 1.0)?, mass_fine: num("mass_fine", 0.01, 20.0)?, mass_coarse: num("mass_coarse", 0.01, 20.0)?,
-            shadow_k: f.get("shadow_k").and_then(|x| x.as_f64()).filter(|x| (0.0..=10.0).contains(x)).map_or(0.8, |x| x as f32) })
+            shadow_k: f.get("shadow_k").and_then(|x| x.as_f64()).filter(|x| (0.0..=10.0).contains(x)).map_or(0.8, |x| x as f32),
+            pbd_h: f.get("pbd_h").and_then(|x| x.as_f64()).filter(|x| (0.15..=1.2).contains(x)).map_or(0.45, |x| x as f32),
+            pbd_spacing: f.get("pbd_spacing").and_then(|x| x.as_f64()).filter(|x| (0.05..=1.5).contains(x)).map_or(0.35, |x| x as f32),
+            pbd_visc: f.get("pbd_visc").and_then(|x| x.as_f64()).filter(|x| (0.0..=1.0).contains(x)).map_or(0.05, |x| x as f32),
+            pbd_iters: f.get("pbd_iters").and_then(|x| x.as_f64()).filter(|x| (1.0..=4.0).contains(x)).map_or(2, |x| x as u32) })
     }
 }
 pub fn coupling() -> Coupling {

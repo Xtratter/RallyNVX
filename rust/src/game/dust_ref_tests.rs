@@ -314,3 +314,41 @@ fn the_ground_normal_leans_with_the_slope_and_the_response_slides_it_off() {
     let b = slide_response(v3(2.0, -3.0, 0.0), v3(0.0, 1.0, 0.0), 0.5, 0.5);
     assert!((b.y - 1.5).abs() < 1e-5 && (b.x - 1.0).abs() < 1e-5, "{b:?}");
 }
+
+#[test]
+fn the_kernels_are_smooth_normalised_and_point_outwards() {
+    let h = 0.5;
+    assert!(poly6(0.0, h) > poly6(0.04, h) && poly6(h * h, h) == 0.0 && poly6(1.0, h) == 0.0);
+    // poly6 integrates to one over its ball (numerically, shells)
+    let mut total = 0.0;
+    let n = 200;
+    for i in 0..n { let r = (i as f32 + 0.5) / n as f32 * h; total += poly6(r * r, h) * 4.0 * std::f32::consts::PI * r * r * (h / n as f32); }
+    assert!((total - 1.0).abs() < 0.01, "{total}");
+    let g = spiky_grad(v3(0.2, 0.0, 0.0), h);
+    assert!(g.x < 0.0 && g.y == 0.0, "the kernel falls away from the centre, so its gradient points back: {g:?}");
+    assert_eq!(spiky_grad(v3(0.6, 0.0, 0.0), h), V3::ZERO);
+    assert_eq!(spiky_grad(V3::ZERO, h), V3::ZERO);
+    let r0 = rest_density(0.3, h);
+    assert!(r0 > poly6(0.0, h) && r0.is_finite(), "{r0}");
+    assert!(rest_density(0.2, h) > rest_density(0.4, h), "closer lattice, denser");
+}
+#[test]
+fn the_constraint_spreads_a_compressed_clump_and_leaves_a_sparse_cloud_alone() {
+    let (h, spacing) = (0.5f32, 0.3f32);
+    let rho0 = rest_density(spacing, h);
+    let density = |pos: &[V3], i: usize| pos.iter().map(|p| poly6((pos[i] - *p).dot(pos[i] - *p), h)).sum::<f32>();
+    // a clump much denser than the rest: 60 particles in a ball of 0.2 m
+    let mut pos: Vec<V3> = (0..60).map(|i| { let f = i as f32; v3((f * 0.7).sin() * 0.1, (f * 1.3).cos() * 0.1, (f * 2.1).sin() * 0.1) }).collect();
+    let before = (0..60).map(|i| density(&pos, i)).sum::<f32>() / 60.0;
+    for _ in 0..40 { let d = pbd_corrections(&pos, h, rho0, 100.0, 0.0); for (p, c) in pos.iter_mut().zip(d) { *p = *p + c; } }
+    let after = (0..60).map(|i| density(&pos, i)).sum::<f32>() / 60.0;
+    assert!(after < 0.5 * before, "the clump spread: {before} -> {after}");
+    assert!(pos.iter().all(|p| p.is_finite()));
+    // particles farther apart than the rest spacing feel nothing
+    let sparse = vec![v3(0.0, 0.0, 0.0), v3(1.0, 0.0, 0.0), v3(0.0, 1.0, 0.0)];
+    assert!(pbd_corrections(&sparse, h, rho0, 100.0, 0.0).iter().all(|c| c.len() < 1e-6));
+    // the correction is symmetric: two close particles are pushed apart equally
+    let two = vec![v3(-0.05, 0.0, 0.0), v3(0.05, 0.0, 0.0)];
+    let c = pbd_corrections(&two, h, rho0 * 0.1, 1.0, 0.0);
+    assert!(c[0].x < 0.0 && c[1].x > 0.0 && (c[0].x + c[1].x).abs() < 1e-5, "{c:?}");
+}
