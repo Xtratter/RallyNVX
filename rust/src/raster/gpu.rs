@@ -32,8 +32,10 @@ struct Uni {
     lamps: [f32; 4],
     /// The car's right-hand axis (rolls with the body): the beam's and the lamps' sideways direction.
     rt: [f32; 4],
+    /// The four hub offsets of the car (metres, see `vehicle_models::susp_offsets`): the suspension parts of the car's mesh follow them.
+    susp: [f32; 4],
 }
-const _: () = assert!(std::mem::size_of::<Uni>() == 464);
+const _: () = assert!(std::mem::size_of::<Uni>() == 480);
 
 /// One instance: model matrix, per-axis scale (for normals), colour. Matches the instance vertex layout (96 bytes).
 #[repr(C)]
@@ -476,7 +478,7 @@ impl Raster {
             tl_pos: [tc.x, tc.y, tc.z, (wv.lamps.tail[0] - wv.lamps.tail[1]).len() * 0.5],
             tl_col: tail_glow,
             wind: [wv.wind.x, wv.wind.z, wv.cloud_off.0, wv.cloud_off.1],
-            lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, (wv.lamps.head[0] - wv.lamps.head[1]).len() * 0.5], rt: [wv.lamps.right.x, wv.lamps.right.y, wv.lamps.right.z, 0.0] };
+            lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, (wv.lamps.head[0] - wv.lamps.head[1]).len() * 0.5], rt: [wv.lamps.right.x, wv.lamps.right.y, wv.lamps.right.z, 0.0], susp: vm::susp_offsets(wv.vehicle) };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // a new level invalidates every cache keyed by tile coordinates

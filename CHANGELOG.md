@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.33.0 - suspension
+
+- Added: the Peugeot's suspension (wishbones, struts and springs of all four corners, from the source model) is seen through the wheel arches and moves with the wheels: the outer ends follow the hub over bumps, jumps and in corners, the inner ends stay on the body
+
 ## 2.32.0 - wheel sets
 
 - Added: the Vulpes has three wheel sets from the source model, tarmac, gravel and snow (different tyres and rims); a free **Wheel set** button in the garage cycles them, the preview shows the choice at once, it is saved per car in the profile (old profiles load as tarmac); for now it changes the look only, the grip effect is planned

@@ -38,6 +38,15 @@ fn keep_body(n: &str) -> bool {
     good.iter().any(|g| n.starts_with(g))
 }
 
+/// The suspension parts of a corner: wishbones and the struts and springs (`x0_wishbone_fl`, `x0_suspension3_bl`, ...).
+fn is_susp(n: &str) -> bool { n.starts_with("x0_wishbone_") || n.starts_with("x0_suspension") }
+
+/// The corner of a suspension part by its name suffix: 0 front-left (+x), 1 front-right, 2 rear-left, 3 rear-right.
+fn corner_of(n: &str) -> Option<u8> { ["_fl", "_fr", "_bl", "_br"].iter().position(|s| n.ends_with(s)).map(|i| i as u8) }
+
+/// The weight of a vertex of a suspension part: 1 at the hub, 0 at the part's far end (`d` the distance to the hub, `dmax` the part's largest).
+fn susp_weight(d: f32, dmax: f32) -> f32 { if dmax <= 1e-6 { 1.0 } else { (1.0 - d / dmax).clamp(0.0, 1.0) } }
+
 fn lamp_colour(n: &str) -> [f32; 3] {
     let l = n.to_lowercase();
     if l.contains("brake") || l.contains("fog") { [0.95, 0.05, 0.03] } else if l.contains("turn") { [1.0, 0.55, 0.10] } else if l.contains("reverse") { [1.0, 1.0, 1.0] } else { [1.0, 0.95, 0.80] }
@@ -47,6 +56,7 @@ fn class_of(mat: &str, node: &str) -> (u8, bool) {
     let m = mat.to_lowercase();
     if m == "lamps" || node.ends_with("_lamp") || node.contains("_lamp.") || node == "Light_bar_lamps" { return (EMISSIVE, true); }
     if m.contains("glass") || m == "rearglass" { return (GLASS, true); }
+    if m == "susp" { return (14, false); }   // suspension parts: textured, moved with the wheel (MAT_CARSUSP)
     if m == "discs" { return (13, false); }   // the brake discs: textured metal that glows when hot (MAT_CARDISC)
     if m == "ligths_ints" { return (if node.contains("front") || node.starts_with("Light_bar") { INT_FRONT } else { INT_REAR }, false); }
     if m == "crapaint_ext" { return (PAINT, false); }
@@ -180,7 +190,7 @@ fn main() {
     eprintln!("ground y = {ground:.3}");
     // body
     let parts = collect(doc, &buffers, &mut tex, &keep_body, true);
-    let (mut bv, bi) = merge(&parts);
+    let (mut bv, mut bi) = merge(&parts);
     for v in &mut bv { v.p[1] -= ground; }
     // the model sits nose-high by the difference of its wheel centres: level it about the rear axle
     let cen = |name: &str| tyres.iter().find(|t| t.0 == name).map(|t| { let (lo, hi) = bounds(&t.1); [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0 - ground, (lo[2] + hi[2]) / 2.0] }).unwrap();
@@ -191,6 +201,32 @@ fn main() {
         let (y, z) = (v.p[1] - cr[1], v.p[2] - cr[2]);
         v.p[1] = y * ct - z * st + cr[1]; v.p[2] = y * st + z * ct + cr[2];
         let (ny, nz) = (v.n[1], v.n[2]); v.n[1] = ny * ct - nz * st; v.n[2] = ny * st + nz * ct;
+    }
+    // the suspension of the four corners: the same transform as the body, then the weights (1 at the hub, 0 at the far end of the part) and the corner in the vertex colour
+    {
+        let sp = collect(doc, &buffers, &mut tex, &|n| is_susp(n), true);
+        let hubs: Vec<[f32; 3]> = ["tyre_tarmac_lf", "tyre_tarmac_rf", "tyre_tarmac_lr", "tyre_tarmac_rr"].iter().map(|n| {
+            let c = cen(n); let (y, z) = (c[1] - cr[1], c[2] - cr[2]);
+            [c[0], y * ct - z * st + cr[1], y * st + z * ct + cr[2]]
+        }).collect();
+        let mut added = 0usize;
+        for (name, mut pv, pi) in sp {
+            let Some(corner) = corner_of(&name) else { eprintln!("  suspension part {name}: no corner in its name, skipped"); continue };
+            for v in &mut pv {
+                v.p[1] -= ground;
+                let (y, z) = (v.p[1] - cr[1], v.p[2] - cr[2]);
+                v.p[1] = y * ct - z * st + cr[1]; v.p[2] = y * st + z * ct + cr[2];
+                let (ny, nz) = (v.n[1], v.n[2]); v.n[1] = ny * ct - nz * st; v.n[2] = ny * st + nz * ct;
+            }
+            let h = hubs[corner as usize];
+            let dist = |v: &V| ((v.p[0] - h[0]).powi(2) + (v.p[1] - h[1]).powi(2) + (v.p[2] - h[2]).powi(2)).sqrt();
+            let dmax = pv.iter().map(dist).fold(0.0f32, f32::max);
+            for v in &mut pv { v.c = [q(susp_weight(dist(v), dmax)), corner, 0, 14]; }
+            let base = bv.len() as u32;
+            added += pi.len() / 3;
+            bv.extend(pv); bi.extend(pi.iter().map(|x| x + base));
+        }
+        eprintln!("suspension: {added} triangles added to the body");
     }
     eprintln!("levelled by {:.4} rad; wheel centres after levelling: front y {:.3}, rear y {:.3} (radius {:.3})", th, cr[1], cr[1], 0.326);
     eprintln!("body parts {} with {} vertices, {} triangles", parts.len(), bv.len(), bi.len() / 3);
@@ -225,7 +261,7 @@ fn main() {
         for v in &mut bv {
             if let Some(t) = v.tex {
                 // a big texture needs at least a tenth of the textured vertices to earn its tile
-                if count[&t] < if small[&t] { 300 } else { total / 10 } {
+                if v.c[3] != 14 && count[&t] < if small[&t] { 300 } else { total / 10 } {
                     if let Some(img) = tex.get(t) { let c = sample(img, v.uv); v.c = [q(c[0]), q(c[1]), q(c[2]), v.c[3]]; }
                     v.tex = None;
                 }
@@ -245,9 +281,11 @@ fn main() {
     let wheel_tex: std::collections::HashSet<usize> = groups.iter().flat_map(|g| g.0.iter().filter_map(|v| v.tex)).collect();
     let mut used: Vec<usize> = bv.iter().filter_map(|v| v.tex).chain(wheel_tex.iter().copied()).collect(); used.sort(); used.dedup();
     // the tarmac wheel's textures are tiled at 512 pixels at most (the livery keeps the whole width), the gravel and snow sets' at 256 (tyres) and 384 (rims); the others as they are
+    let susp_tex: std::collections::HashSet<usize> = bv.iter().filter(|v| v.c[3] == 14).filter_map(|v| v.tex).collect();   // the suspension's texture is tiled small (256 pixels)
     let alt_tex: std::collections::HashSet<usize> = groups[3..].iter().flat_map(|g| g.0.iter().filter_map(|v| v.tex)).filter(|t| !groups[..3].iter().any(|g| g.0.iter().any(|v| v.tex == Some(*t)))).collect();
     let sizes: Vec<(usize, u32, u32)> = used.iter().filter_map(|&i| tex.get(i).map(|im| {
         let (w, h) = (im.width(), im.height());
+        if susp_tex.contains(&i) && w.max(h) > 256 { let k = 256.0 / w.max(h) as f32; return (i, ((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1)); }
         let cap = if alt_tex.contains(&i) { if w.max(h) >= 2048 { 256 } else { 384 } } else { 512 };
         if wheel_tex.contains(&i) && w.max(h) > cap { let k = cap as f32 / w.max(h) as f32; (i, ((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1)) } else { (i, w, h) }
     })).collect();
@@ -278,4 +316,20 @@ fn main() {
     for (v, i) in &simplified { write(&mut out, v, i); }
     std::fs::write(&a[2], &out).unwrap();
     eprintln!("wrote {} bytes: body {} tris / {} verts; wheel {} tris, disc {} tris, caliper {} tris, gravel wheel {} tris, snow wheel {} tris", out.len(), si.len() / 3, sv.len(), simplified[0].1.len() / 3, simplified[1].1.len() / 3, simplified[2].1.len() / 3, simplified[3].1.len() / 3, simplified[4].1.len() / 3);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test] fn weights_are_one_at_the_hub_and_zero_at_the_far_end() {
+        assert_eq!(susp_weight(0.0, 0.4), 1.0); assert_eq!(susp_weight(0.4, 0.4), 0.0);
+        assert!((susp_weight(0.1, 0.4) - 0.75).abs() < 1e-6);
+        assert_eq!(susp_weight(1.0, 0.0), 1.0, "a point-sized part sticks to the hub");
+        assert_eq!(susp_weight(9.0, 0.4), 0.0, "never negative");
+    }
+    #[test] fn corners_come_from_the_name_suffix() {
+        assert_eq!(corner_of("x0_wishbone_fl"), Some(0)); assert_eq!(corner_of("x0_suspension3_fr"), Some(1));
+        assert_eq!(corner_of("x0_suspension_bl"), Some(2)); assert_eq!(corner_of("x0_suspension5_br"), Some(3)); assert_eq!(corner_of("x0_suspension"), None);
+        assert!(is_susp("x0_wishbone_fl") && is_susp("x0_suspension2_bl") && !is_susp("x0_main_body"));
+    }
 }
