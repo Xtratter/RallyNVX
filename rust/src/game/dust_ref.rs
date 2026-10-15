@@ -81,6 +81,28 @@ pub fn turbulence(p: V3, t: f32, speed: f32, ph: &Phys) -> V3 {
     n * amp
 }
 
+/// The ground under the dust comes from a window of terrain heights: `WINDOW` cells of 1 m around the car, stored toroidally (a cell lives in the
+/// slot `cell mod WINDOW`), so only the cells that come into the window are measured when the car moves.
+pub const WINDOW: i32 = 64;
+
+pub fn slot(cell: [i32; 2]) -> usize { (cell[1].rem_euclid(WINDOW) * WINDOW + cell[0].rem_euclid(WINDOW)) as usize }
+
+/// The first cell of the window when the car is in `car_cell`.
+pub fn window_base(car_cell: [i32; 2]) -> [i32; 2] { [car_cell[0] - WINDOW / 2, car_cell[1] - WINDOW / 2] }
+
+pub fn in_window(cell: [i32; 2], base: [i32; 2]) -> bool { (0..2).all(|a| cell[a] >= base[a] && cell[a] < base[a] + WINDOW) }
+
+/// The terrain height at (x, z) by bilinear interpolation of the cell-centre heights (`height(cell)`) of the window; `fallback` where a corner is outside.
+pub fn ground_height(x: f32, z: f32, base: [i32; 2], height: impl Fn(usize) -> f32, fallback: f32) -> f32 {
+    let (gx, gz) = (x - 0.5, z - 0.5);
+    let (ix, iz) = (gx.floor(), gz.floor());
+    let (fx, fz) = (gx - ix, gz - iz);
+    let c = [ix as i32, iz as i32];
+    let h = |dx: i32, dz: i32| { let cell = [c[0] + dx, c[1] + dz]; if in_window(cell, base) { height(slot(cell)) } else { fallback } };
+    let (a, b) = (h(0, 0) + (h(1, 0) - h(0, 0)) * fx, h(0, 1) + (h(1, 1) - h(0, 1)) * fx);
+    a + (b - a) * fz
+}
+
 #[cfg(test)]
 #[path = "dust_ref_tests.rs"]
 mod tests;

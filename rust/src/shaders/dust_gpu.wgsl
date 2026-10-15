@@ -16,11 +16,13 @@ struct U {
     car: vec4<f32>,     // car position, yaw
     car_vel: vec4<f32>,
     bx: vec4<f32>,      // the airflow box in metres (x, y, z) and its cell; cell 0 = no airflow
+    gw: vec4<i32>,      // the first cell (x, z) of the ground window
     emits: array<S, 64>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read_write> state: array<S>;
 @group(0) @binding(2) var<storage, read_write> render: array<DI>;
+@group(0) @binding(3) var ground_tex: texture_2d<f32>;   // terrain heights of the window, toroidal (cell mod 64)
 @group(1) @binding(0) var grid_vel: texture_3d<f32>;     // the airflow's velocity relative to the car, in the car's frame
 @group(1) @binding(1) var grid_solid: texture_3d<f32>;
 
@@ -31,6 +33,22 @@ fn emit(@builtin(global_invocation_id) gid: vec3<u32>) {
     state[(u.n.y + i) % u.n.z] = u.emits[i];
 }
 
+const WINDOW: i32 = 64;
+fn ground_cell(c: vec2<i32>) -> f32 {
+    let b = u.gw.xy;
+    if (any(c < b) || any(c >= b + vec2<i32>(WINDOW))) { return u.g.z; }
+    return textureLoad(ground_tex, vec2<i32>(((c.x % WINDOW) + WINDOW) % WINDOW, ((c.y % WINDOW) + WINDOW) % WINDOW), 0).x;
+}
+// the terrain height at (x, z): bilinear over the window (game/dust_ref.rs::ground_height), the car's ground beyond it
+fn ground(x: f32, z: f32) -> f32 {
+    let g = vec2<f32>(x - 0.5, z - 0.5);
+    let i = floor(g);
+    let f = g - i;
+    let c = vec2<i32>(i);
+    let a = mix(ground_cell(c), ground_cell(c + vec2<i32>(1, 0)), f.x);
+    let b = mix(ground_cell(c + vec2<i32>(0, 1)), ground_cell(c + vec2<i32>(1, 1)), f.x);
+    return mix(a, b, f.y);
+}
 // the wind: weaker near the ground (the CPU path's `air_velocity` without the wake)
 fn wind_at(p: vec3<f32>) -> vec3<f32> {
     let h = max(p.y - u.g.z, 0.0);
@@ -119,7 +137,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     let before = pos;
     pos = pos + vel * dt;
     if (in_solid(pos)) { pos = before; vel = vel * -0.2; }   // the car's body: it does not go through
-    let g = u.g.z + 0.04;
+    let g = ground(pos.x, pos.z) + 0.04;
     if (pos.y < g) {
         if (coarse) { s.d.z = 0.0; state[i] = s; render[i] = dead; return; }
         pos.y = g;

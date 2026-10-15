@@ -97,3 +97,19 @@ fn turbulence_is_finite_and_grows_with_speed() {
     let (a, b) = (turbulence(v3(1.0, 2.0, 3.0), 4.0, 0.0, &ph), turbulence(v3(1.0, 2.0, 3.0), 4.0, 30.0, &ph));
     assert!(a.is_finite() && b.is_finite() && b.len() > a.len());
 }
+
+#[test]
+fn the_ground_window_is_toroidal_and_interpolates() {
+    let base = window_base([100, -40]);
+    assert_eq!(base, [68, -72]);
+    assert!(in_window([68, -72], base) && in_window([131, -9], base) && !in_window([132, -9], base) && !in_window([100, -73], base));
+    assert_eq!(slot([0, 0]), slot([64, 64]));
+    assert_ne!(slot([1, 0]), slot([0, 1]));
+    // a slope of 0.5 m per metre in x and 0.2 in z, sampled at the cell centres
+    let mut heights = vec![0.0f32; (WINDOW * WINDOW) as usize];
+    for cx in base[0]..base[0] + WINDOW { for cz in base[1]..base[1] + WINDOW { heights[slot([cx, cz])] = 0.5 * (cx as f32 + 0.5) + 0.2 * (cz as f32 + 0.5); } }
+    let h = |i: usize| heights[i];
+    let g = ground_height(100.3, -40.8, base, h, -999.0);
+    assert!((g - (0.5 * 100.3 + 0.2 * -40.8)).abs() < 1e-3, "{g}");
+    assert_eq!(ground_height(500.0, 0.0, base, h, 7.0), 7.0);   // outside the window: the fallback
+}

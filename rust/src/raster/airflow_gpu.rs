@@ -7,7 +7,8 @@ use crate::game::airflow::{self, AirflowCfg, WAKE_LEN};
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct AUni { n: [i32; 4], g: [f32; 4], inflow: [f32; 4], shift: [f32; 4], boxes: [[f32; 4]; 16] }
 
-const STEP: f32 = 1.0 / 60.0;
+/// The airflow steps at 30 Hz: the target of the game is 30 fps, and the semi-Lagrangian solver is stable at this step.
+const STEP: f32 = 1.0 / 30.0;
 const MAX_BOXES: usize = 8;
 const TEX_USAGE: wgpu::TextureUsages = wgpu::TextureUsages::from_bits_truncate(wgpu::TextureUsages::TEXTURE_BINDING.bits() | wgpu::TextureUsages::STORAGE_BINDING.bits());
 
@@ -87,13 +88,13 @@ impl AirflowGpu {
         ] })
     }
 
-    /// Advances the simulation to `time` (60 Hz steps, at most two per frame) and records the compute passes. `inflow` is the air's velocity
+    /// Advances the simulation to `time` (30 Hz steps, at most `substeps` per frame) and records the compute passes. `inflow` is the air's velocity
     /// relative to the car in the car's frame, `boxes` the car (see `airflow::thick_boxes`).
     pub fn update(&mut self, dev: &wgpu::Device, queue: &wgpu::Queue, enc: &mut wgpu::CommandEncoder, inflow: [f32; 3], boxes: &[([f32; 3], [f32; 3])], time: f32) {
         let dt_frame = (time - self.last_time).clamp(0.0, 0.1);
         self.last_time = time;
         self.acc += dt_frame;
-        let steps = ((self.acc / STEP) as u32).min(2 * self.cfg.substeps);
+        let steps = ((self.acc / STEP) as u32).min(self.cfg.substeps);
         self.acc -= steps as f32 * STEP;
         if self.acc > STEP { self.acc = 0.0; }
         let first = self.inflow.is_none();

@@ -570,7 +570,7 @@ impl Raster {
         }
         if let (Some(dg), Some(fr)) = (self.dust_gpu.as_mut(), wv.dust_gpu.as_ref()) {
             let grid = self.airflow.as_ref().filter(|_| wv.airflow.is_some()).map(|a| { let (v, s) = a.fields(); (v, s, a.box_size()) });
-            dg.update(&self.device, &self.queue, &mut enc, fr, grid);
+            dg.update(&self.device, &self.queue, &mut enc, wv.terrain, fr, grid);
         }
         {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
