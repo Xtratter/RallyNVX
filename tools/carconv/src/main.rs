@@ -190,14 +190,17 @@ fn merge(parts: &[(String, Vec<V>, Vec<u32>)]) -> (Vec<V>, Vec<u32>) {
     (v, i)
 }
 
-fn simplify(v: &[V], idx: &[u32], target_tris: usize) -> (Vec<V>, Vec<u32>) {
+fn simplify(v: &[V], idx: &[u32], target_tris: usize) -> (Vec<V>, Vec<u32>) { simplify_with(v, idx, target_tris, 0.5, meshopt::SimplifyOptions::None) }
+
+/// `max_error` is relative to the mesh's extent; `LockBorder` keeps the open edges of thin shells (the cabin) from collapsing across openings.
+fn simplify_with(v: &[V], idx: &[u32], target_tris: usize, max_error: f32, opts: meshopt::SimplifyOptions) -> (Vec<V>, Vec<u32>) {
     if idx.len() / 3 <= target_tris { return compact(v, idx); }
     let bytes: Vec<u8> = v.iter().flat_map(|x| x.p.iter().flat_map(|f| f.to_le_bytes())).collect();
     let adapter = meshopt::VertexDataAdapter::new(&bytes, 12, 0).unwrap();
     let attrs: Vec<f32> = v.iter().flat_map(|x| [x.n[0], x.n[1], x.n[2], x.c[0] as f32 / 255.0, x.c[1] as f32 / 255.0, x.c[2] as f32 / 255.0, x.uv[0], x.uv[1]]).collect();
     let mut err = 0.0f32;
     let lock = vec![false; v.len()];
-    let out = meshopt::simplify_with_attributes_and_locks(idx, &adapter, &attrs, &[0.6, 0.6, 0.6, 0.4, 0.4, 0.4, 1.0, 1.0], 32, &lock, target_tris * 3, 0.5, meshopt::SimplifyOptions::None, Some(&mut err));
+    let out = meshopt::simplify_with_attributes_and_locks(idx, &adapter, &attrs, &[0.6, 0.6, 0.6, 0.4, 0.4, 0.4, 1.0, 1.0], 32, &lock, target_tris * 3, max_error, opts, Some(&mut err));
     eprintln!("  simplified {} -> {} tris (error {:.4})", idx.len() / 3, out.len() / 3, err);
     compact(v, &out)
 }
@@ -411,12 +414,13 @@ fn main() {
         let f = std::fs::File::create(&a[5]).expect("create livery jpg");
         image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::BufWriter::new(f), 90).encode_image(&atlas_img).expect("write jpg");
     }
-    let (sv, si) = simplify(&bv, &bi, body_t);
+    // the body has openings (the windows, the lamps, the arches): LockBorder and a small error keep them from being bridged by big triangles
+    let (sv, si) = simplify_with(&bv, &bi, body_t, 0.03, meshopt::SimplifyOptions::LockBorder);
     let budgets = [wheel_t, 300, 500, wheel_t, wheel_t];
     let simplified: Vec<(Vec<V>, Vec<u32>)> = groups.iter().zip(budgets).map(|(g, t)| simplify(&g.0, &g.1, t)).collect();
     let (cgv, cgi) = compact(&gv, &gi);
     // the interior groups simplified to their budgets: the cabin, the steering wheel, the driver
-    let parts: Vec<(Vec<V>, Vec<u32>)> = interior.iter().map(|(v, i, t)| simplify(v, i, *t)).collect();
+    let parts: Vec<(Vec<V>, Vec<u32>)> = interior.iter().enumerate().map(|(g, (v, i, t))| simplify_with(v, i, *t, if g == 2 { 0.02 } else { 0.004 }, meshopt::SimplifyOptions::LockBorder)).collect();   // tight for the cabin and the wheel (a loose error bridges the windscreen opening with a big black triangle), looser for the driver
     // the steering pivot: a two-vertex mesh, vertex 0 `pos` = the wheel's centre, `nrm` = its axis
     let meta_vert = |p: [f32; 3], n: [f32; 3]| V { p, n, c: [0, 0, 0, 0], uv: [0.0; 2], tex: None };
     let (mv, mi) = (vec![meta_vert(pivot, axis), meta_vert(pivot, axis)], vec![0u32, 1, 1]);

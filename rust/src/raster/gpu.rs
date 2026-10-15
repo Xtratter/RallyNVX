@@ -154,6 +154,7 @@ pub struct Raster {
     pl_inst_sh: wgpu::RenderPipeline,
     pl_sky: wgpu::RenderPipeline,
     pl_model: wgpu::RenderPipeline,
+    pl_model_back: wgpu::RenderPipeline,   // the car's body seen from inside: back faces culled (the inside of the shell is not drawn)
     pl_model_sh: wgpu::RenderPipeline,
     models: Vec<ModelBuf>,
     mbuf: wgpu::Buffer,
@@ -399,6 +400,12 @@ impl Raster {
         let model_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<vm::Vert>() as u64, step_mode: wgpu::VertexStepMode::Vertex, attributes: &MODEL_ATTRS };
         let minst_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<MInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &MINST_ATTRS };
         let pl_model = mk("model", &lay_main, "vs_model", Some("fs_model"), &[model_layout.clone(), minst_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
+        let pl_model_back = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("model_back"), layout: Some(&lay_main),
+            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_model"), compilation_options: Default::default(), buffers: &[model_layout.clone(), minst_layout.clone()] },
+            fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_model"), compilation_options: Default::default(), targets: &target }),
+            primitive: wgpu::PrimitiveState { cull_mode: Some(wgpu::Face::Back), ..Default::default() }, depth_stencil: depth_state(true, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+        });
         let pl_glass = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("glass"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_model"), compilation_options: Default::default(), buffers: &[model_layout.clone(), minst_layout.clone()] },
@@ -418,7 +425,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -754,12 +761,15 @@ impl Raster {
             }
             rp.set_pipeline(&self.pl_model);
             rp.set_vertex_buffer(1, self.mbuf.slice(..));
+            let inside = (wv.cam_pos - wv.vehicle.pos).len() < 1.5;   // the camera is in the car: its body is drawn with the back faces culled
             for k in 0..MODEL_SLOTS {
                 if k == SLOT_GLASS { continue; }   // drawn blended, after everything opaque
                 let (a, b) = mranges[k]; if b == a { continue; }
                 let m = &self.models[k];
+                if k == 0 && inside { rp.set_pipeline(&self.pl_model_back); rp.set_vertex_buffer(1, self.mbuf.slice(..)); }
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, a..b);
+                if k == 0 && inside { rp.set_pipeline(&self.pl_model); rp.set_vertex_buffer(1, self.mbuf.slice(..)); }
             }
             rp.set_pipeline(&self.pl_inst);
             rp.set_vertex_buffer(1, self.ibuf.slice(..));

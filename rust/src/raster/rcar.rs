@@ -262,7 +262,7 @@ mod tests {
         assert!(glass.idx.len() / 3 > 2500 && glass.idx.len() / 3 < 5000, "{} glass triangles", glass.idx.len() / 3);
         assert!(p.body.verts.iter().all(|v| v.col[3] != 1), "the body has no glass of its own any more");
         let t = interior.idx.len() / 3;
-        assert!((12_000..=20_000).contains(&t), "{t} interior triangles");
+        assert!((12_000..=32_000).contains(&t), "{t} cabin triangles");
         assert!(interior.verts.iter().all(|v| v.col[3] == 15), "interior is class 15");
         let textured = interior.verts.iter().filter(|v| v.uv != NO_UV).count();
         assert!(textured * 10 > interior.verts.len() * 9, "{textured} of {} interior vertices have a UV", interior.verts.len());
@@ -278,7 +278,7 @@ mod tests {
         let len = (m.nrm[0].powi(2) + m.nrm[1].powi(2) + m.nrm[2].powi(2)).sqrt();
         assert!((len - 1.0).abs() < 0.01 && m.nrm[2] < -0.5, "the axis is a unit vector pointing back at the driver: {:?}", m.nrm);
         let n = wheel.idx.len() / 3;
-        assert!((1500..=3500).contains(&n), "{n} steering wheel triangles");
+        assert!((1500..=5000).contains(&n), "{n} steering wheel triangles");
         let (lo, hi) = wheel.bounds();
         assert!(((lo.x + hi.x) / 2.0 - m.pos[0]).abs() < 0.08 && ((lo.y + hi.y) / 2.0 - m.pos[1]).abs() < 0.08, "the pivot is the wheel's centre");
         assert!(hi.x - lo.x < 0.5 && hi.y - lo.y < 0.5, "a steering wheel is smaller than 0.5 m");
