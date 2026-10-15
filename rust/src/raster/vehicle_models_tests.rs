@@ -38,3 +38,13 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
     let spun = car_wheel_poses(&v, 1.0);
     assert!((spun[0].0.rotate(v3(0., 1., 0.)) - p[0].0.rotate(v3(0., 1., 0.))).len() > 0.5, "spin rotates the wheel about its axle");
 }
+
+#[test] fn the_caliper_does_not_spin_but_follows_steer_and_suspension() {
+    use crate::game::{math::v3, vehicle::{Vehicle, VehicleSpec}};
+    let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0.0, 1.0, 0.0), 0.0); v.steer = 0.3; v.comp = [0.05, 0.0, 0.1, 0.0];
+    let (wheel, cal) = (car_wheel_poses(&v, 1.2), car_caliper_poses(&v));
+    for w in 0..4 { assert!((wheel[w].1 - cal[w].1).len() < 1e-5, "same hub position"); }
+    let spun = car_wheel_poses(&v, 0.0);
+    for w in 0..4 { assert!((cal[w].0.rotate(v3(0., 1., 0.)) - spun[w].0.rotate(v3(0., 1., 0.))).len() < 1e-5, "the caliper's orientation is the wheel's with no spin"); }
+    assert!((wheel[0].0.rotate(v3(0., 0., 1.)) - cal[0].0.rotate(v3(0., 0., 1.))).len() > 0.1, "the wheel itself has turned");
+}

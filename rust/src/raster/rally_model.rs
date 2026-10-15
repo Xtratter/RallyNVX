@@ -18,8 +18,8 @@ pub fn lamp_points() -> Option<super::rcar::LampPoints> {
 }
 
 pub fn build_rally(spec: &VehicleSpec) -> CarModel {
-    match super::rcar::parse(ASSET) {
-        Ok((mut body, mut wheel)) => {
+    match super::rcar::parse_all(ASSET) {
+        Ok(super::rcar::Parts { mut body, mut wheel, mut disc, mut caliper }) => {
             // the lamp units show the car's lamp state in the shader: their own material
             for v in &mut body.verts { if v.col[3] == super::vehicle_models::MAT_EMISSIVE { v.col[3] = super::vehicle_models::MAT_CARLAMP; } }
             for i in super::rcar::position_vertices(&body) { body.verts[i].col[3] = super::vehicle_models::MAT_CARPOS; }
@@ -27,8 +27,10 @@ pub fn build_rally(spec: &VehicleSpec) -> CarModel {
             let (sx, sy, sz) = (spec.size.x / 1.91, spec.size.y / 1.50, spec.size.z / 3.97);
             for v in &mut body.verts { v.pos = [v.pos[0] * sx, v.pos[1] * sy, v.pos[2] * sz]; }
             let k = spec.radius / 0.326;
-            for v in &mut wheel.verts { v.pos = [v.pos[0] * spec.look.wheel_width / 0.226, v.pos[1] * k, v.pos[2] * k]; }
-            CarModel { body, wheel }
+            for m in [Some(&mut wheel), disc.as_mut(), caliper.as_mut()].into_iter().flatten() {
+                for v in &mut m.verts { v.pos = [v.pos[0] * spec.look.wheel_width / 0.226, v.pos[1] * k, v.pos[2] * k]; }
+            }
+            CarModel { body, wheel, disc, caliper }
         }
         Err(e) => { log::error!("rally_car.rcar unusable ({e}); using the generated hatchback"); build_generated(spec) }
     }
@@ -84,7 +86,7 @@ fn build_generated(spec: &VehicleSpec) -> CarModel {
         add_box(&mut b, p(x, 0.58, -0.10), h(0.004, 0.04, 1.15), Q::IDENT, l.accent, MAT_PLASTIC);
         add_box(&mut b, p(x, 0.50, -0.10), h(0.004, 0.03, 1.15), Q::IDENT, BLUE, MAT_PLASTIC);
     }
-    CarModel { body: b, wheel: build_wheel(spec, [0.92, 0.92, 0.95], 6) }
+    CarModel::new(b, build_wheel(spec, [0.92, 0.92, 0.95], 6))
 }
 
 #[cfg(test)]

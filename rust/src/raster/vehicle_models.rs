@@ -17,6 +17,8 @@ pub const MAT_CARPOS: u8 = 8;
 /// The reflector interior of a front / of a rear lamp unit of a car model (textured; lit by the car's state in the shader).
 pub const MAT_CARINT_FRONT: u8 = 11;
 pub const MAT_CARINT_REAR: u8 = 12;
+/// A brake disc of a car model: textured metal that glows when hot (see `Vehicle::brake_heat`).
+pub const MAT_CARDISC: u8 = 13;
 
 /// One vertex: position, normal, colour (rgb) with the material id in the alpha byte. 28 bytes.
 #[repr(C)]
@@ -123,7 +125,9 @@ pub(crate) fn loft(stations: &[(f32, f32, f32, f32)], ring: usize, exp: f32, col
 
 pub(crate) fn scaled(st: &[(f32, f32, f32, f32)], sx: f32, sy: f32, sz: f32) -> Vec<(f32, f32, f32, f32)> { st.iter().map(|&(z, w, a, b)| (z * sz, (w * sx).max(0.06), a * sy, b * sy)).collect() }
 
-pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3 }
+pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3> }
+
+impl CarModel { pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None } } }
 
 pub(crate) const CHROME: [f32; 3] = [0.75, 0.77, 0.80];
 pub(crate) const RUBBER: [f32; 3] = [0.04, 0.04, 0.045];
@@ -174,7 +178,7 @@ fn build_suv(spec: &VehicleSpec) -> CarModel {
     add_cylinder(&mut body, v3(0.0, 0.85 * sy, -2.21 * sz), Axis::Z, 0.17 * sy, 0.03 * sz, 12, CHROME, MAT_CHROME);
 
     let wheel = build_wheel(spec, CHROME, 5);
-    CarModel { body, wheel }
+    CarModel::new(body, wheel)
 }
 
 pub fn car_wheel_poses(v: &Vehicle, spin: f32) -> [(Q, V3); 4] {
@@ -189,6 +193,9 @@ pub fn car_wheel_poses(v: &Vehicle, spin: f32) -> [(Q, V3); 4] {
     }
     out
 }
+
+/// The brake calipers: the wheels' poses with no spin (a caliper follows the steering and the suspension, not the rolling).
+pub fn car_caliper_poses(v: &Vehicle) -> [(Q, V3); 4] { car_wheel_poses(v, 0.0) }
 
 /// The body mesh is drawn 0.75 body-heights below the suspension attachment height (its own frame starts at y = 0.30)
 /// so the sills clear the ground by about half a metre; the attachment height itself sits above the centre of mass.
