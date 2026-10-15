@@ -24,6 +24,9 @@ pub const MAT_CARSUSP: u8 = 14;
 /// The interior and the driver of a car model: textured from the interior atlas, darkened by a cabin factor, drawn only near the car (see `draw_interior`).
 pub const MAT_CARINT: u8 = 15;
 
+/// The near plane for a camera `dist` metres from the car: 0.08 m inside or right at the car (the cockpit parts are closer than 0.3 m), 0.3 m otherwise.
+pub fn near_for(dist: f32) -> f32 { if dist < 2.5 { 0.08 } else { 0.3 } }
+
 /// Beyond this camera distance (metres) the car's windows are solid dark glass and the interior is not drawn.
 pub const INTERIOR_RANGE: f32 = 16.0;
 /// Whether the interior is drawn for a camera `dist` metres from the car.

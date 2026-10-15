@@ -30,7 +30,7 @@
       "upgrade_cost": 750,
       "mass": 1230,
       "size": { "width": 1.91, "height": 1.50, "length": 3.97 },
-      "cameras": { "hood": [0.72, 0.277], "bumper": [0.30, 0.52] },
+      "cameras": { "hood": [0.72, 0.277], "bumper": [0.30, 0.52], "cockpit": [0.36, 1.12, 0.15] },
       "wheels": [[-0.767, 0.10, 1.237], [0.767, 0.10, 1.237], [-0.767, 0.10, -1.210], [0.767, 0.10, -1.210]],
       "suspension": { "rest": 0.32, "radius": 0.326, "spring": 32000, "damper": 3200, "max_force_factor": 5.0 },
       "engine_force": 18000,

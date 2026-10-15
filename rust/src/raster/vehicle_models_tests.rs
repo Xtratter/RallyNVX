@@ -94,3 +94,7 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
     assert_eq!(&i1[3..], &[3, 4, 5], "the glass indices are shifted past the body's vertices");
     assert_eq!(v1[3][0], 5.0);
 }
+
+#[test] fn the_near_plane_is_close_inside_the_car_and_normal_outside() {
+    assert_eq!(near_for(0.0), 0.08); assert_eq!(near_for(2.49), 0.08); assert_eq!(near_for(2.5), 0.3); assert_eq!(near_for(100.0), 0.3);
+}

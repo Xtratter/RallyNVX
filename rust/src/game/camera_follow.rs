@@ -15,16 +15,17 @@ const RETURN_TIME: f32 = 0.5;
 const ELEV_MIN: f32 = 0.02;
 const ELEV_MAX: f32 = 1.25;
 
-/// The camera views the player cycles through: behind the car (the default), on the bonnet, low on the front bumper, high behind the car, and a free orbit round it.
+/// The camera views the player cycles through: behind the car (the default), on the bonnet, low on the front bumper, high behind the car, a free orbit round it, and the cockpit
+/// (the driver's eyes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CamView { Chase = 0, Hood = 1, Bumper = 2, Roof = 3, Orbit = 4 }
-pub const VIEWS: usize = 5;
+pub enum CamView { Chase = 0, Hood = 1, Bumper = 2, Roof = 3, Orbit = 4, Cockpit = 5 }
+pub const VIEWS: usize = 6;
 
 impl CamView {
     /// Any number becomes a view (out of range: the nearest one).
-    pub fn from_index(i: i32) -> CamView { match i.clamp(0, VIEWS as i32 - 1) { 0 => CamView::Chase, 1 => CamView::Hood, 2 => CamView::Bumper, 3 => CamView::Roof, _ => CamView::Orbit } }
-    /// The bonnet and bumper views ride on the car; the others follow it from outside.
-    pub fn rigid(self) -> bool { matches!(self, CamView::Hood | CamView::Bumper) }
+    pub fn from_index(i: i32) -> CamView { match i.clamp(0, VIEWS as i32 - 1) { 0 => CamView::Chase, 1 => CamView::Hood, 2 => CamView::Bumper, 3 => CamView::Roof, 4 => CamView::Orbit, _ => CamView::Cockpit } }
+    /// The bonnet, bumper and cockpit views ride on the car; the others follow it from outside.
+    pub fn rigid(self) -> bool { matches!(self, CamView::Hood | CamView::Bumper | CamView::Cockpit) }
 }
 
 /// Distance scale (the chase views) or zoom (the bonnet and bumper views) limits, and the height offset limits (metres, or the gaze tilt of the rigid views).
@@ -105,8 +106,9 @@ impl FollowCam {
         let s = &v.spec;
         let ground = s.wheels[0].y - s.rest - s.radius;   // the road, in the car's frame
         let spot = if self.view == CamView::Bumper { s.cam_bumper } else { s.cam_hood };   // fractions of the body: from the road up, from the centre forward
-        let (ly, lz) = (ground + spot[0] * s.size.y, spot[1] * s.size.z);
-        self.pos = v.pos + v.rot.rotate(v3(0.0, ly, lz));
+        // the cockpit: the driver's eyes in metres (x to the left, y above the road, z ahead of the centre); a car without them rides on the bonnet
+        let eye = match (self.view, s.cam_cockpit) { (CamView::Cockpit, Some(e)) => v3(e[0], ground + e[1], e[2]), _ => v3(0.0, ground + spot[0] * s.size.y, spot[1] * s.size.z) };
+        self.pos = v.pos + v.rot.rotate(eye);
         let k = 1.0 - (-14.0 * dt).exp();
         let g = self.gaze + (v.forward() - self.gaze) * k;
         if g.len() > 1e-3 { self.gaze = g.norm(); }

@@ -478,7 +478,7 @@ impl Raster {
 
         // camera and light matrices
         let aspect = self.config.width as f32 / self.config.height as f32;
-        let vp = mat_mul(perspective(wv.cam_fov.clamp(0.4, 1.6), aspect, 0.3, 2500.0), look_at(wv.cam_pos, wv.cam_target, v3(0., 1., 0.)));
+        let vp = mat_mul(perspective(wv.cam_fov.clamp(0.4, 1.6), aspect, vm::near_for((wv.cam_pos - wv.vehicle.pos).len()), 2500.0), look_at(wv.cam_pos, wv.cam_target, v3(0., 1., 0.)));
         let centre = wv.vehicle.pos;
         let up = if wv.sun.y.abs() > 0.99 { v3(0., 0., 1.) } else { v3(0., 1., 0.) };
         let light_vp = mat_mul(ortho(-70., 70., -70., 70., 1., 300.), look_at(centre + wv.sun * 150.0, centre, up));
