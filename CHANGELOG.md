@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.50.0 - the autopilot in the wet, wipers that wipe
+
+- Changed: the autopilot slows down on wet ground in proportion to the grip that is left (the square root of the wet grip factor, never below half), so the braking distance stays what it was; a soaked hairpin that ran off the road before is now taken cleanly
+- Fixed: the raindrops on the glass vanished all at once; now each cell of the windscreen is cleared when the wiper blade actually passes over it (up and back) and the drops grow in again afterwards; the side windows, which the wipers do not reach, still clear once per cycle; the drops are smaller and less ring-like
+- Fixed: when the rain stopped the wipers jumped to their park position; they now finish the wipe they are in and park
+
 ## 2.49.0 - the car gets wet
 
 - Added: in the rain the Peugeot's paint darkens a little, its clear coat turns smoother and more reflective (a water film), and small water beads on the body glint (near the camera only)

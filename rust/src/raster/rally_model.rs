@@ -59,7 +59,7 @@ pub fn build_rally(spec: &VehicleSpec) -> CarModel {
                         let pivot = crate::game::math::v3(m.pos[0] * sx, m.pos[1] * sy, m.pos[2] * sz);
                         let axis = crate::game::math::v3(m.nrm[0], m.nrm[1], m.nrm[2]).norm();
                         for v in &mut mesh.verts { v.pos = [v.pos[0] * sx - pivot.x, v.pos[1] * sy - pivot.y, v.pos[2] * sz - pivot.z]; }
-                        super::vehicle_models::Steering { mesh, pivot, axis }
+                        super::vehicle_models::Wiper::new(mesh, pivot, axis)
                     }))
                 }
                 _ => [None, None],

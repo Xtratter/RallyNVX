@@ -25,7 +25,9 @@ fn seg_dist(a: V3, b: V3, p: V3) -> f32 {
 }
 struct Run { max_off: f32, finished: bool, flipped: bool, recoveries: u32, time: f32, mean_speed: f32 }
 /// Drives a car with the autopilot along the road until it is done (or `limit` seconds).
-fn drive(pts: &[V3], kind: RoadKind, limit: f32) -> Run {
+fn drive(pts: &[V3], kind: RoadKind, limit: f32) -> Run { drive_in(pts, kind, limit, 0.0) }
+/// As `drive`, with the ground soaked to `wet` (0..1) the whole way.
+fn drive_in(pts: &[V3], kind: RoadKind, limit: f32, wet: f32) -> Run {
     let road = road_from(pts, kind, 8.0);
     let t = Terrain::flat().with_net(RoadNet::new(vec![road.clone()]));
     let car = VehicleSpec::offroader();
@@ -42,6 +44,7 @@ fn drive(pts: &[V3], kind: RoadKind, limit: f32) -> Run {
         if cmd.reset { v.reset_upright(&t); }
         if let Some((p, yaw)) = cmd.teleport { v = Vehicle::new(car, p, yaw); }
         let before = v.pos;
+        v.wet = wet;
         v.step_with(&t, &[], &cmd.input, DT, &mut loose);
         dist += (v.pos - before).len();
         time += DT;
@@ -88,4 +91,19 @@ fn drive(pts: &[V3], kind: RoadKind, limit: f32) -> Run {
     let mut ap = Autopilot::on_route(route_for_road(&road, &car, &cfg()), car, &v);
     v.rot = crate::game::math::Q::axis_angle(v3(0.0, 0.0, 1.0), std::f32::consts::PI);
     assert!(v.flipped() && ap.drive(&v, DT).reset);
+}
+
+#[test] fn a_soaked_road_is_driven_slower_and_still_without_leaving_it() {
+    let hairpin = track(&[(200.0, 0.0), (40.0, 180.0), (200.0, 0.0)]);
+    let (dry, wet) = (drive_in(&hairpin, RoadKind::Liaison, 140.0, 0.0), drive_in(&hairpin, RoadKind::Liaison, 140.0, 1.0));
+    assert!(wet.finished && !wet.flipped && wet.recoveries == 0, "finished {} off {} flipped {}", wet.finished, wet.max_off, wet.flipped);
+    assert!(wet.max_off < 3.5, "off {}", wet.max_off);
+    assert!(wet.mean_speed < dry.mean_speed * 0.97, "wet {} dry {}", wet.mean_speed, dry.mean_speed);
+}
+#[test] fn the_wet_speed_scale_follows_the_grip_of_the_surface() {
+    use crate::game::surface::Surface;
+    assert_eq!(wet_speed_scale(Surface::Asphalt, 0.0), 1.0);
+    assert!(wet_speed_scale(Surface::Asphalt, 1.0) < 1.0 && wet_speed_scale(Surface::Asphalt, 1.0) >= 0.5);
+    assert!(wet_speed_scale(Surface::Asphalt, 0.5) > wet_speed_scale(Surface::Asphalt, 1.0));
+    assert_eq!(wet_speed_scale(Surface::Asphalt, f32::NAN), 1.0);
 }

@@ -147,7 +147,7 @@ pub(crate) fn scaled(st: &[(f32, f32, f32, f32)], sx: f32, sy: f32, sz: f32) -> 
 
 pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2], pub glass: Option<Mesh3>, pub interior: Option<Mesh3>, pub steering: Option<Steering>, pub driver: Option<Mesh3>,
     /// The windscreen wipers (the driver's side first): each mesh is stored shifted by `-pivot` so that it sweeps about the origin, `axis` is the sweep axis.
-    pub wipers: [Option<Steering>; 2],
+    pub wipers: [Option<Wiper>; 2],
     /// The driver's gloves, stored shifted by the steering wheel's pivot so that they turn with the wheel.
     pub gloves: Option<Mesh3> }
 
@@ -162,15 +162,51 @@ pub fn steering_wheel_angle(steer: f32) -> f32 { if steer.is_finite() { (-steer 
 /// How far the wipers sweep (radians) from their parked position.
 pub const WIPER_SWEEP: f32 = 1.15;
 
-/// The angle of the wipers at `time` (seconds) in `rain` (0..1): parked below a light drizzle, else a smooth back-and-forth sweep, quicker in a heavy rain (a wipe takes
-/// 2.6 s in a drizzle and 1.3 s in a downpour; the pause at the park position is part of the cycle).
+/// How long one back-and-forth of the wipers takes (seconds) in `rain` (0..1): 2.6 s in a drizzle, 1.3 s in a downpour.
+pub fn wiper_period(rain: f32) -> f32 { if rain > 0.6 { 1.3 } else { 2.6 } }
+
+/// The angle of the wipers (radians from parked) at the cycle phase `ph` (0..1): up and back, with a dwell at the top and at the park position.
+pub fn wiper_angle_at(ph: f32) -> f32 {
+    if !ph.is_finite() { return 0.0; }
+    let ph = ph.rem_euclid(1.0);
+    let tri = if ph < 0.5 { ph * 2.0 } else { 2.0 - ph * 2.0 };
+    let s = (tri * 1.25).min(1.0);
+    WIPER_SWEEP * s * s * (3.0 - 2.0 * s)
+}
+
+/// The angle of the wipers at `time` (seconds) in `rain` (0..1): parked below a light drizzle, else the sweep of `wiper_angle_at`.
 pub fn wiper_angle(time: f32, rain: f32) -> f32 {
     if !(time.is_finite() && rain.is_finite()) || rain < 0.05 { return 0.0; }
-    let period = if rain > 0.6 { 1.3 } else { 2.6 };
-    let ph = (time / period).fract().abs();
-    let tri = if ph < 0.5 { ph * 2.0 } else { 2.0 - ph * 2.0 };   // up and back
-    let s = (tri * 1.25).min(1.0);                               // dwell at the top and at the park position
-    WIPER_SWEEP * s * s * (3.0 - 2.0 * s)
+    wiper_angle_at(time / wiper_period(rain))
+}
+
+/// The wipers' clock: it runs while it rains and, when the rain stops, finishes the wipe it is in before the blades park (so they never jump).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct WiperState { pub phase: f32 }
+impl WiperState {
+    /// Advances by `dt` seconds in `rain`; `true` while the wipers are working or finishing a wipe.
+    pub fn advance(&mut self, dt: f32, rain: f32) -> bool {
+        let raining = rain.is_finite() && rain >= 0.05;
+        if !raining && self.phase == 0.0 { return false; }
+        self.phase += dt.clamp(0.0, 0.5) / wiper_period(if raining { rain } else { 0.0 });
+        if self.phase >= 1.0 { self.phase = if raining { self.phase.fract() } else { 0.0 }; }
+        true
+    }
+}
+
+/// One windscreen wiper: its mesh shifted by `-pivot` (it sweeps about the origin), the sweep `axis` (out of the glass), the direction of the blade when parked (`rest`, in the
+/// plane of the sweep) and how far the tip reaches from the spindle (`reach`, metres).
+#[derive(Clone)]
+pub struct Wiper { pub mesh: Mesh3, pub pivot: V3, pub axis: V3, pub rest: V3, pub reach: f32 }
+
+impl Wiper {
+    /// Builds a wiper from its mesh (already shifted so the spindle is the origin), finding the rest direction and the reach from the farthest vertex.
+    pub fn new(mesh: Mesh3, pivot: V3, axis: V3) -> Wiper {
+        let far = mesh.verts.iter().map(|v| v3(v.pos[0], v.pos[1], v.pos[2])).max_by(|a, b| a.len().total_cmp(&b.len())).unwrap_or(v3(1.0, 0.0, 0.0));
+        let flat = far - axis * far.dot(axis);
+        let rest = if flat.len() > 1e-4 { flat.norm() } else { v3(1.0, 0.0, 0.0) };
+        Wiper { mesh, pivot, axis, rest, reach: far.len() + 0.03 }
+    }
 }
 
 /// The engine's revs (0..1) a car at `speed` m/s with the top speed `max_speed` shows on its RPM LEDs (the same curve as the engine sound at a steady throttle).

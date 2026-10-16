@@ -38,8 +38,11 @@ struct Uni {
     wx: [f32; 4],
     /// The car's position (the rain does not fall inside it) and the weather's clock.
     cr: [f32; 4],
+    /// The wipers: spindle + reach, sweep axis, parked direction (the driver's side, then the other); then the wipe's phase and a working flag.
+    wp: [[f32; 4]; 2], wax: [[f32; 4]; 2], wrs: [[f32; 4]; 2], wph: [f32; 4],
 }
-const _: () = assert!(std::mem::size_of::<Uni>() == 512);
+/// The wipers for the glass shader (object space of the car): spindle and reach, sweep axis, parked direction of each, and the wipe's phase (0..1) with a flag for "working".
+const _: () = assert!(std::mem::size_of::<Uni>() == 624);
 
 /// One instance: model matrix, per-axis scale (for normals), colour. Matches the instance vertex layout (96 bytes).
 #[repr(C)]
@@ -181,7 +184,8 @@ pub struct Raster {
     dust_buf: wgpu::Buffer,
     cache_seed: u64,
     car_key: [u32; 13],
-    car_wipers: [Option<(V3, V3)>; 2],   // the wipers' spindles and sweep axes, when the car has them
+    car_wipers: [Option<(V3, V3, V3, f32)>; 2],
+    wiper_state: vm::WiperState, wiper_time: f32,   // the wipers' spindles and sweep axes, when the car has them
     car_gloves: bool,   // the driver's gloves (they follow the steering wheel)
     car_steering: Option<(V3, V3)>,   // the steering wheel's pivot and axis, when the car has one
     car_has_driver: bool,
@@ -445,7 +449,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis))), car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach))), wiper_state: Default::default(), wiper_time: 0.0, car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -483,7 +487,7 @@ impl Raster {
         for k in 0..2 { self.models[SLOT_WIPER + k] = model_buf(&self.device, &car.wipers[k].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh)); }
         self.models[SLOT_GLOVES] = model_buf(&self.device, &car.gloves.clone().unwrap_or_else(placeholder_mesh));
         self.car_gloves = car.gloves.is_some();
-        self.car_wipers = std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis)));
+        self.car_wipers = std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach)));
         self.car_steering = car.steering.as_ref().map(|s| (s.pivot, s.axis));
         self.car_has_driver = car.driver.is_some();
         self.car_parts = (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some());
@@ -524,6 +528,11 @@ impl Raster {
         let hc = (wv.lamps.head[0] + wv.lamps.head[1]) * 0.5;
         let tc = (wv.lamps.tail[0] + wv.lamps.tail[1]) * 0.5 - v3(0., 0.3, 0.);
         let tail_glow = if wv.lights.reverse { [0.8, 0.8, 0.78, 7.0] } else if wv.lights.brake { [0.5, 0.04, 0.02, 7.0] } else if wv.lights.head { [0.12, 0.01, 0.005, 4.0] } else { [0.0; 4] };
+        // the wipers' clock runs here (the glass shader needs its phase)
+        let wdt = if wv.time > self.wiper_time { wv.time - self.wiper_time } else { 0.0 };
+        self.wiper_time = wv.time;
+        let wiping = self.wiper_state.advance(wdt, wv.weather.rain);
+        let wv4 = |k: usize, f: fn(&(V3, V3, V3, f32)) -> ([f32; 3], f32)| self.car_wipers[k].as_ref().map_or([0.0; 4], |w| { let (a, b) = f(w); [a[0], a[1], a[2], b] });
         let uni = Uni { vp: flatten(vp), light_vp: flatten(light_vp), inv_vp: flatten(inverse(vp)),
             cam: [wv.cam_pos.x, wv.cam_pos.y, wv.cam_pos.z, 0.], sun: [wv.sun.x, wv.sun.y, wv.sun.z, 0.],
             fog: [crate::game::weather::fog_k(wv.weather), wv.time, 0., 0.], sky_top: [wv.daylight.sky_top[0], wv.daylight.sky_top[1], wv.daylight.sky_top[2], 0.],
@@ -538,7 +547,9 @@ impl Raster {
             tl_col: tail_glow,
             wind: [wv.wind.x, wv.wind.z, wv.cloud_off.0, wv.cloud_off.1],
             lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, (wv.lamps.head[0] - wv.lamps.head[1]).len() * 0.5], rt: [wv.lamps.right.x, wv.lamps.right.y, wv.lamps.right.z, vm::dash_rpm(wv.vehicle.speed(), wv.vehicle.spec.max_speed)], susp: vm::susp_offsets(wv.vehicle),
-            wx: [wv.weather.rain, wv.weather.wet, wv.weather.cloud, crate::game::weather::disc_visibility(wv.weather)], cr: [wv.vehicle.pos.x, wv.vehicle.pos.y, wv.vehicle.pos.z, wv.time] };
+            wx: [wv.weather.rain, wv.weather.wet, wv.weather.cloud, crate::game::weather::disc_visibility(wv.weather)], cr: [wv.vehicle.pos.x, wv.vehicle.pos.y, wv.vehicle.pos.z, wv.time],
+            wp: [0, 1].map(|k| wv4(k, |w| ([w.0.x, w.0.y, w.0.z], w.3))), wax: [0, 1].map(|k| wv4(k, |w| ([w.1.x, w.1.y, w.1.z], 0.0))), wrs: [0, 1].map(|k| wv4(k, |w| ([w.2.x, w.2.y, w.2.z], 0.0))),
+            wph: [self.wiper_state.phase, (wiping && self.car_wipers[0].is_some()) as u8 as f32, 0.0, 0.0] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // a new level invalidates every cache keyed by tile coordinates
@@ -585,9 +596,9 @@ impl Raster {
         // the glass (always) and the interior (near the car only) share the body's pose
         if self.car_parts.3 { ml[SLOT_GLASS].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] }); }
         // the wipers sit on the outside of the glass: drawn with it, parked unless it rains
-        let wa = vm::wiper_angle(wv.time, wv.weather.rain);
+        let wa = vm::wiper_angle_at(self.wiper_state.phase);
         for k in 0..2 {
-            if let Some((pivot, axis)) = self.car_wipers[k] {
+            if let Some((pivot, axis, _, _)) = self.car_wipers[k] {
                 ml[SLOT_WIPER + k].push(MInst { m: mmat(bq.mul(Q::axis_angle(axis, wa)), bp + bq.rotate(pivot)), tint: [1.0, 1.0, 1.0, 0.5] });
             }
         }

@@ -1,7 +1,7 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
-    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>, susp: vec4<f32>, wx: vec4<f32>, cr: vec4<f32>,
+    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>, susp: vec4<f32>, wx: vec4<f32>, cr: vec4<f32>, wp0: vec4<f32>, wp1: vec4<f32>, wax0: vec4<f32>, wax1: vec4<f32>, wrs0: vec4<f32>, wrs1: vec4<f32>, wph: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
@@ -617,6 +617,28 @@ fn bead_normal(nc: vec3<f32>, lp: vec3<f32>, wp: vec3<f32>) -> vec3<f32> {
 
 // The car's glass, blended over the opaque scene: a dark tint, the sky reflected by Fresnel, a sun glint; see-through near the car (the interior shows), solid and dark from afar
 // (mirrored in `vehicle_models::glass_alpha`). The vertex colour's red is 1 for a clear lamp cover (a quarter of the alpha).
+// The time (in cycles) since a wiper blade last passed the point `lp` of the glass, or -1 where the blade never goes. The blade's angle there is the angle round the spindle from
+// the parked direction; the blade reaches it on the way up at the phase where the sweep curve (smoothstep of a clipped triangle, see `wiper_angle_at`) equals that angle,
+// and again on the way back.
+fn wiper_pass_age(lp: vec3<f32>, pivot_reach: vec4<f32>, axis: vec3<f32>, rest: vec3<f32>, cyc: f32) -> f32 {
+    if (pivot_reach.w <= 0.0) { return -1.0; }
+    let r = lp - pivot_reach.xyz;
+    let rp = r - axis * dot(r, axis);
+    let len = length(rp);
+    if (len > pivot_reach.w || len < 0.04) { return -1.0; }
+    let x = dot(rp, rest);
+    let y = dot(rp, cross(axis, rest));
+    let th = atan2(y, x);
+    if (th < 0.0 || th > 1.15) { return -1.0; }
+    let f = clamp(th / 1.15, 0.0, 1.0);
+    let s = 0.5 - sin(asin(clamp(1.0 - 2.0 * f, -1.0, 1.0)) / 3.0);   // the inverse of s*s*(3-2s)
+    let tri = s / 1.25;
+    let up = tri * 0.5;
+    let down = 1.0 - tri * 0.5;
+    let passed = select(select(down - 1.0, up, cyc >= up), down, cyc >= down);
+    return cyc - passed;
+}
+
 @fragment fn fs_glass(i: MOut) -> @location(0) vec4<f32> {
     let n = normalize(i.n);
     let to_cam = u.cam.xyz - i.wp;
@@ -633,24 +655,29 @@ fn bead_normal(nc: vec3<f32>, lp: vec3<f32>, wp: vec3<f32>) -> vec3<f32> {
     let k = 1.0 - 0.75 * clear;
     let near = (0.2 + 0.3 * fr) * k;
     var a = clamp(near + (0.95 - near) * t * k, 0.0, 1.0);
-    // raindrops on the panes: a lattice of cells on the glass (object space, so they stay on it), each holding a drop that grows in once the wipers have passed (the cycle matches
-    // `vehicle_models::wiper_angle`) and is cleared when the sweep starts over; none on a lamp cover
+    // raindrops on the panes: a lattice of cells on the glass (object space, so they stay on it), each holding a drop that grows in after the wiper blade last passed over its cell
+    // (the age is measured from the pass: the blade's angle at the cell, inverted from the sweep curve of `vehicle_models::wiper_angle_at`); panes the wipers do not reach
+    // (the side windows) just lose their drops once per cycle. None on a lamp cover.
     let rain = u.wx.x;
     if (rain > 0.05 && clear < 0.5 && dist < 12.0) {
-        let period = select(2.6, 1.3, rain > 0.6);
-        let cyc = fract(u.cr.w / period);
+        var age = u.wph.x;
+        if (u.wph.y > 0.5) {
+            let a0 = wiper_pass_age(i.lp, u.wp0, u.wax0.xyz, u.wrs0.xyz, u.wph.x);
+            let a1 = wiper_pass_age(i.lp, u.wp1, u.wax1.xyz, u.wrs1.xyz, u.wph.x);
+            if (a0 >= 0.0 && a1 >= 0.0) { age = min(a0, a1); } else if (a0 >= 0.0) { age = a0; } else if (a1 >= 0.0) { age = a1; }
+        }
         let g = vec2<f32>(i.lp.x, i.lp.y * 0.8 + i.lp.z * 0.6) / 0.05;
         let cell = floor(g);
         let h = hash_u3(u32(cell.x + 2000.0) * 7919u + u32(cell.y + 2000.0));
         let c = cell + vec2<f32>(0.3 + 0.4 * h.x, 0.3 + 0.4 * h.y);
-        let rad = 0.14 + 0.2 * h.z * h.z;
-        let born = h.x * 0.9;                                   // when in the cycle this drop appears
-        let grown = smoothstep(born, born + 0.08, cyc);
+        let rad = 0.10 + 0.16 * h.z * h.z;
+        let born = h.x * 0.55;                                  // how long after a wipe this drop appears (in cycles)
+        let grown = smoothstep(born, born + 0.06, age);
         let d = length(g - c) / rad;
         let drop = (1.0 - smoothstep(0.7, 1.0, d)) * grown * step(h.y, 0.25 + 0.7 * rain);
         let rim = smoothstep(0.35, 0.85, d) * (1.0 - smoothstep(0.85, 1.0, d));   // a drop is a small lens: bright rim, the sky seen through its middle
-        col += drop * (sky_gradient(r) * 0.5 + vec3<f32>(0.6) * rim * 0.5);
-        a = clamp(a + drop * 0.35, 0.0, 1.0);
+        col += drop * (sky_gradient(r) * 0.45 + vec3<f32>(0.6) * rim * 0.25);
+        a = clamp(a + drop * 0.4, 0.0, 1.0);
     }
     return vec4<f32>(finish(col), a);
 }
