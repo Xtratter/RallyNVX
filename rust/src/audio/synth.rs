@@ -15,7 +15,7 @@ const SMOOTH: f32 = 0.08;    // parameter smoothing time constant, seconds
 struct Voice { kind: u8, t: f32, strength: f32, phase: f32, lp1: OnePole, lp2: OnePole, live: bool }
 
 #[derive(Clone, Copy, Default)]
-struct Smoothed { load: f32, roll: f32, water: f32, slip: f32, wind: f32, car: f32 }
+struct Smoothed { drive1: f32, drive2: f32, load: f32, roll: f32, water: f32, slip: f32, wind: f32, car: f32 }
 
 pub struct Synth {
     target: AudioParams, s: Smoothed, master: f32, muted: bool, volume: f32, vol_s: f32,
@@ -23,7 +23,7 @@ pub struct Synth {
     gurgle: f32, squeal: f32, voice: EngineVoice,
     f_roll: [OnePole; 4], f_roll_w: [OnePole; 4], f_sq1: [OnePole; 4], f_sq2: [OnePole; 4], f_wind: OnePole, f_wind_r: OnePole,
     voices: [Voice; MAX_VOICES],
-    scene: Scene, emitters: Vec<Emitter>, block: usize, wind_k: f32, lp_wind: [OnePole; 2], reverb: Reverb,
+    scene: Scene, emitters: Vec<Emitter>, block: usize, wind_k: f32, lp_wind: [OnePole; 2], reverb: Reverb, burned_pub: f64,
 }
 
 /// What the sources emit at one instant, before the room and the listener's head: the exhaust, the engine bay, the four tyres, the car's body (the one-shots) and the wind at the listener's ears.
@@ -47,7 +47,7 @@ impl Synth {
             f_roll: [OnePole::default(); 4], f_roll_w: [OnePole::default(); 4], f_sq1: [OnePole::default(); 4], f_sq2: [OnePole::default(); 4],
             f_wind: OnePole::default(), f_wind_r: OnePole::default(),
             voices: [Voice::default(); MAX_VOICES],
-            scene: Scene::default(), emitters: (0..N_SRC).map(|_| Emitter::new()).collect(), block: 0, wind_k: 1.0, lp_wind: [OnePole::default(); 2], reverb: Reverb::new(),
+            scene: Scene::default(), emitters: (0..N_SRC).map(|_| Emitter::new()).collect(), block: 0, wind_k: 1.0, lp_wind: [OnePole::default(); 2], reverb: Reverb::new(), burned_pub: 0.0,
         }
     }
 
@@ -63,8 +63,8 @@ impl Synth {
         if ok(sc.listener) && ok(sc.fwd) && sc.src.iter().all(|p| ok(*p)) { self.scene = *sc; }
     }
 
-    /// The flame at the tail pipe now (0..1.5).
-    pub fn flame(&self) -> f32 { self.voice.flame }
+    /// The fuel (mol) burnt in the exhaust since the last call.
+    pub fn take_burned_delta(&mut self) -> f64 { let b = self.voice.engine.exhaust_burned; let d = (b - self.burned_pub).max(0.0); self.burned_pub = b; d }
 
     /// The revs of the simulated engine (rpm).
     pub fn engine_rpm(&self) -> f32 { self.voice.rpm() }
@@ -115,6 +115,8 @@ impl Synth {
         let fade = 1.0 / (FADE * rate);
         let t = self.target;
         self.s.load += (t.load - self.s.load) * a * 3.0;
+        // the revs the game asks for arrive 60 times a second, each a step: two cascaded smoothers (about 12 ms each) turn the stairs into a ramp, or the engine would rev in steps
+        { let k = 1.0 - (-1.0 / (0.012 * rate)).exp(); self.s.drive1 += (t.drive_rpm - self.s.drive1) * k; self.s.drive2 += (self.s.drive1 - self.s.drive2) * k; }
         self.s.roll += (t.roll - self.s.roll) * a; self.s.slip += (t.slip - self.s.slip) * a; self.s.wind += (t.wind - self.s.wind) * a;
         self.s.water += ((t.surface == Surface::Water) as u8 as f32 - self.s.water) * a;
         self.s.car += ((t.machine == Machine::Car) as u8 as f32 - self.s.car) * a;
@@ -129,7 +131,7 @@ impl Synth {
             if running {
                 let ignition = t.active && !self.muted && !t.stalled;
                 let starter = ignition && self.voice.engine.rpm() < 350.0;   // it cranks by itself when it is not running (the first start, a stall)
-                self.voice.sample(&Controls { throttle: self.s.load as f64, starter, clutch: t.clutch as f64, drive_rpm: t.drive_rpm as f64, ignition, als: t.als, cut: t.cut });
+                self.voice.sample(&Controls { throttle: self.s.load as f64, starter, clutch: t.clutch as f64, drive_rpm: self.s.drive2 as f64, ignition, als: t.als, cut: t.cut });
             }
             f.exhaust = self.voice.exhaust_out * 0.7 * self.s.car;
             f.bay = (self.voice.intake_out * 0.35 + self.voice.block_out * 0.35 + self.voice.turbo_out + self.voice.bov_out + self.voice.whine_out) * self.s.car;

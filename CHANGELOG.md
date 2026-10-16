@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.67.0 - real fire at the tail pipe, a smooth engine
+
+- Changed: the yellow cone is gone, the exhaust now throws real fire. The fuel that burns in the engine model's exhaust (its amount in moles, counted on the audio thread) comes out of the tail pipe as parcels of burning gas. Each one has its own temperature (about 2000 K), speed (25 to 70 m/s from the pipe's overpressure, more for a bigger burn, on top of the car's own speed), size (the volume of the hot gas, `n R T / p`: a pop of 0.002 mol is a few centimetres, a spark cut's 0.02 mol a fireball of ten) and age. They slow down by drag (a moving car leaves the fire behind in the still air), rise as hot gas does, spread as the jet takes in air and cool in the air's mixing; the colour is that of a black body at the parcel's temperature (white-yellow, orange, dull red, then out) and the glow goes with the fourth power of the temperature and thins as the parcel spreads. Drawn as additive, ragged, flickering sprites with a hotter, whiter heart; the fire lasts a quarter of a second
+- Fixed: the engine revved in steps. The game sends the revs 60 times a second and each was a step for the sound engine; two smoothers of about 12 ms turn the stairs into a ramp
+
 ## 2.66.0 - the test track
 
 - Added: "Test track" in the main menu: a bare, flat, endless sheet of tarmac (no trees, rocks, grass, water or roads) with white lines every 50 m (and bold ones every 250 m) to see the speed against, the car standing on it from the start. For trying the sound, the drivetrain, the flames and the handling. The ground is real tarmac for the grip, the dust and the tyre sound, and gets the wet-road look in the rain; "New level" leaves the track

@@ -80,12 +80,12 @@ pub fn set_muted(m: bool) { with(|s| s.set_muted(m)) }
 pub fn set_volume(v: f32) { with(|s| s.set_volume(v)) }
 /// Stops all sound immediately (the game screen is gone).
 pub fn silence() { with(|s| s.silence()) }
-/// The flame at the tail pipe (0..1.5), from the fuel burning in the engine model's exhaust: the renderer draws it.
-pub fn flame_level() -> f32 { f32::from_bits(FLAME.load(std::sync::atomic::Ordering::Relaxed)) }
-static FLAME: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// The fuel (mol) that burnt in the engine model's exhaust since the last call: the renderer turns it into the fire at the tail pipe.
+pub fn take_burned() -> f32 { BURNED.swap(0, std::sync::atomic::Ordering::Relaxed) as f32 * 1e-9 }
+static BURNED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Audio thread: fills `out` with interleaved stereo PCM16 samples.
-pub fn render_into(out: &mut [i16]) { with(|s| { s.render(out); FLAME.store(s.flame().to_bits(), std::sync::atomic::Ordering::Relaxed); }) }
+pub fn render_into(out: &mut [i16]) { with(|s| { s.render(out); BURNED.fetch_add((s.take_burned_delta() * 1e9) as u64, std::sync::atomic::Ordering::Relaxed); }) }
 
 #[cfg(test)]
 #[path = "synth_tests.rs"]

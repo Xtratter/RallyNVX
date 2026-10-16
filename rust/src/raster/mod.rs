@@ -2,6 +2,7 @@
 pub mod citygen;
 pub mod livery;
 pub mod dustgen;
+pub mod fire;
 pub mod glassdrops;
 pub mod airflow_gpu;
 pub mod blur_gpu;

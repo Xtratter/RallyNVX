@@ -391,20 +391,3 @@ pub fn car_body_pose(v: &Vehicle) -> (Q, V3) {
 #[cfg(test)]
 #[path = "vehicle_models_tests.rs"]
 mod tests;
-
-/// The flame of the exhaust: two cones along +z from the origin (a yellow core in an orange coat, emissive); the renderer turns the +z axis to point backwards from the tail pipe
-/// and scales it with the flame's strength.
-pub fn flame_mesh() -> Mesh3 {
-    let mut m = Mesh3::default();
-    for (r0, len, col) in [(0.050f32, 1.0f32, [255u8, 105, 20]), (0.028, 0.62, [255, 215, 110])] {
-        const N: usize = 10;
-        let base = m.verts.len() as u32;
-        for k in 0..N {
-            let a = k as f32 / N as f32 * std::f32::consts::TAU;
-            m.verts.push(Vert { pos: [r0 * a.cos(), r0 * a.sin(), 0.0], nrm: [a.cos(), a.sin(), 0.3], col: [col[0], col[1], col[2], MAT_EMISSIVE], uv: NO_UV });
-        }
-        m.verts.push(Vert { pos: [0.0, 0.0, len], nrm: [0.0, 0.0, 1.0], col: [col[0], col[1], col[2], MAT_EMISSIVE], uv: NO_UV });
-        for k in 0..N as u32 { m.idx.extend_from_slice(&[base + k, base + (k + 1) % N as u32, base + N as u32]); }
-    }
-    m
-}
