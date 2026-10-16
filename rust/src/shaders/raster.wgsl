@@ -159,6 +159,30 @@ fn lit(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return shade(albedo, wp, n, 0.92, 0.0);
 }
 
+// The ground when it is wet. Every ground has its dry roughness; rain (the surface wetness `u.wx.y`) darkens it (more where it is porous), gives it a thin film (a low
+// roughness: the sky and the sun show as a sheen at grazing angles) and fills the flat hollows with puddles: mirror-flat water that the raindrops ring. `low` (0..0.3) tips the
+// puddle noise towards the ruts and edges where the water collects. `pool` is the puddle share (0..1) for the caller to flatten its bump with.
+struct GSurf { a: vec3<f32>, n: vec3<f32>, r: f32, pool: f32 };
+fn ground_surface(wp: vec3<f32>, n: vec3<f32>, albedo: vec3<f32>, rough: f32, porous: f32, low: f32) -> GSurf {
+    var g = GSurf(albedo, n, rough, 0.0);
+    let wet = u.wx.y;
+    if (wet < 0.02) { return g; }
+    let flat_k = smoothstep(0.90, 0.985, n.y);
+    let pn = vnoise2(wp.xz * 0.22) * 0.6 + vnoise2(wp.xz * 0.9 + vec2<f32>(5.0, 2.0)) * 0.4 + low;
+    let pool = smoothstep(0.50, 0.58, pn + 0.25 * (wet - 0.5)) * smoothstep(0.55, 0.9, wet) * flat_k;
+    g.pool = pool;
+    g.a = albedo * mix(1.0, mix(0.74, 0.52, porous), wet) * mix(1.0, 0.6, pool);
+    g.r = mix(mix(rough, 0.16, wet * 0.75), 0.03, pool);
+    var nn = normalize(mix(n, vec3<f32>(0.0, 1.0, 0.0), pool));
+    let dist = distance(wp, u.cam.xyz);
+    if (u.wx.x > 0.05 && pool > 0.01 && dist < 45.0) {
+        let rp = ripples(wp.xz, u.fog.y, u.wx.x) * (1.0 - smoothstep(20.0, 45.0, dist)) * 0.3 * pool;
+        nn = normalize(nn + vec3<f32>(-rp.x, 0.0, -rp.y));
+    }
+    g.n = nn;
+    return g;
+}
+
 // Screen-space bump mapping (Mikkelsen): tilts `n` by the screen-space gradient of a height `h` (metres of relief), no tangents needed. Must run in uniform control flow.
 fn bump(n: vec3<f32>, wp: vec3<f32>, h: f32) -> vec3<f32> {
     let dpx = dpdx(wp); let dpy = dpdy(wp);
@@ -436,8 +460,11 @@ fn dust_layer(wp: vec3<f32>) -> f32 {
     a = mix(a, vec3<f32>(0.72, 0.58, 0.42), 0.5 * dust_layer(i.wp));   // settled dust
     // micro-relief: the ground texture's brightness read as a height (3 cm swing), fading out with distance (it would shimmer) and under snow
     let near = 1.0 - smoothstep(25.0, 70.0, distance(i.wp, u.cam.xyz));
-    let nb = bump(n, i.wp, dot(a, vec3<f32>(0.33)) * 0.03 * near * (1.0 - snow));
-    return vec4<f32>(lit(a, i.wp, nb), 1.0);
+    // the dry roughness of each ground (grass, dirt, sand, rock) by its weight; snow is smoother
+    let rough_dry = mix(dot(w, vec4<f32>(0.92, 0.88, 0.97, 0.70)), 0.55, snow);
+    let g = ground_surface(i.wp, n, a, rough_dry, dot(w, vec4<f32>(0.4, 1.0, 1.0, 0.0)) * (1.0 - snow), 0.0);
+    let nb = bump(g.n, i.wp, dot(a, vec3<f32>(0.33)) * 0.03 * near * (1.0 - snow) * (1.0 - g.pool));
+    return vec4<f32>(shade(g.a, i.wp, nb, g.r, 0.0), 1.0);
 }
 
 // foliage (material 6) bends downwind, more towards the top, with gust waves that travel with the wind and a small flutter
@@ -1066,7 +1093,11 @@ struct RIn { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @loc
     // micro-relief: aggregate in the asphalt (2 mm), loose gravel and ruts on the track (2 cm), fading out with distance
     let near = 1.0 - smoothstep(12.0, 45.0, distance(i.wp, u.cam.xyz));
     let relief = select(0.02 * vnoise2(i.wp.xz * 14.0) + 0.03 * vnoise2(i.wp.xz * 4.0), 0.002 * vnoise2(i.wp.xz * 90.0) + 0.002 * vnoise2(i.wp.xz * 30.0), asphalt);
-    return vec4<f32>(lit(col, i.wp, bump(up, i.wp, relief * near)), alpha);
+    // asphalt is dense (little darkening) and rougher on the aggregate; the track is porous and its ruts collect the water; the painted lines are smoother
+    let line = select(0.0, 1.0, asphalt && ((ac > 0.86 && ac < 0.92) || (ac < 0.025 && fract(s / 9.0) < 0.5)));
+    let rut_low = select(0.18 * smoothstep(0.12, 0.22, ac) * (1.0 - smoothstep(0.38, 0.50, ac)), 0.10 * smoothstep(0.1, 0.35, ac) * (1.0 - smoothstep(0.35, 0.6, ac)), asphalt);
+    let g = ground_surface(i.wp, up, col, mix(select(0.92, 0.86, asphalt), 0.55, line), select(0.9, 0.15, asphalt), rut_low);
+    return vec4<f32>(shade(g.a, i.wp, bump(g.n, i.wp, relief * near * (1.0 - g.pool)), g.r, 0.0), alpha);
 }
 
 struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) c: vec4<f32>, @location(2) wp: vec3<f32>, @location(3) e: vec4<f32> };

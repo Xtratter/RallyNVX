@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.56.0 - PBR ground: roughness and rain puddles
+
+- Added: the ground has its own roughness (grass, dirt, sand, rock, snow, asphalt, the painted lines) instead of one value for everything
+- Added: wet ground. In the rain the ground darkens (the porous dirt and sand more), gets a thin film that shows the sky and the sun as a sheen, and the flat hollows fill with mirror-like puddles that the raindrops ring; the water collects first in the ruts of the track and the wheel tracks of the asphalt. It dries together with the surface wetness after the rain
+
 ## 2.55.1 - a double tap resets the camera
 
 - Added: a double tap on free space (not on a control) puts the camera back to its default: the current view's default distance and height, the orbit turn dropped, and the Free camera returns behind the car looking at it. A drag or a long press is not a tap
