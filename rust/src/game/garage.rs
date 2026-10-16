@@ -51,10 +51,10 @@ pub fn upgrade_price(spec: &VehicleSpec, current: u8) -> Option<u32> {
 pub struct Garage { pub selected: String, pub cars: Vec<(String, [u8; NLEVELS])> }
 
 impl Garage {
-    /// The cars that cost nothing (the off-roader), the first of them selected.
+    /// The cars that cost nothing (the Peugeot), the first of them selected.
     pub fn new() -> Garage {
         let free: Vec<(String, [u8; NLEVELS])> = VehicleSpec::all().into_iter().filter(|(_, s)| s.price == 0).map(|(id, _)| (id, default_levels())).collect();
-        let selected = free.first().map_or_else(|| "offroader".to_string(), |c| c.0.clone());
+        let selected = free.first().map_or_else(|| "vulpes".to_string(), |c| c.0.clone());
         Garage { selected, cars: free }
     }
     pub fn owns(&self, id: &str) -> bool { self.cars.iter().any(|(i, _)| i == id) }

@@ -26,7 +26,7 @@
     },
     "vulpes": {
       "model": "rally",
-      "price": 3000,
+      "price": 0,
       "upgrade_cost": 750,
       "mass": 1230,
       "size": { "width": 1.91, "height": 1.50, "length": 3.97 },

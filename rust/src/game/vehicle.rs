@@ -37,9 +37,13 @@ pub struct VehicleSpec {
 impl VehicleSpec {
     /// The off-roader, from `vehicles.json` (see docs/vehicles.md).
     pub fn offroader() -> VehicleSpec { Self::by_id("offroader").expect("vehicles.json must define cars.offroader") }
+    /// The car the game starts with when no profile picks one: the first car of the garage (the Peugeot); the stand-in only if the file has no other.
+    pub fn default_car() -> VehicleSpec { Self::all().into_iter().next().map(|(_, s)| s).unwrap_or_else(Self::offroader) }
     pub fn by_id(id: &str) -> Option<VehicleSpec> { super::params::get().car(id) }
-    /// Every car of the vehicles file with its id, sorted by id.
-    pub fn all() -> Vec<(String, VehicleSpec)> { super::params::get().cars.clone() }
+    /// The car kept only as the engine's stand-in (tests, the world before a profile picks a car): it is not in the garage or the lists.
+    pub const INTERNAL_ID: &'static str = "offroader";
+    /// Every car of the vehicles file the player can have, with its id, sorted by id (the stand-in `INTERNAL_ID` is left out).
+    pub fn all() -> Vec<(String, VehicleSpec)> { super::params::get().cars.iter().filter(|(id, _)| id != Self::INTERNAL_ID).cloned().collect() }
 }
 
 /// What one wheel did in the last sub-step: for the dust (and later sound/tracks).
