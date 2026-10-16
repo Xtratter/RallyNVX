@@ -824,3 +824,13 @@ const DUST_DIV: f32 = 6.0;   // the low-resolution dust target is 1/DUST_DIV of 
     if (c.a < 0.003) { discard; }
     return vec4<f32>(c.rgb * c.a, c.a);
 }
+
+// the half-resolution dust drawn over the frame (bilinear)
+struct COut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+@group(1) @binding(4) var comp_tex: texture_2d<f32>;
+@group(1) @binding(5) var comp_smp: sampler;
+@vertex fn vs_vcomp(@builtin(vertex_index) vi: u32) -> COut {
+    var q = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
+    var o: COut; o.pos = vec4<f32>(q[vi], 0.0, 1.0); o.uv = vec2<f32>(q[vi].x * 0.5 + 0.5, 0.5 - q[vi].y * 0.5); return o;
+}
+@fragment fn fs_vcomp(i: COut) -> @location(0) vec4<f32> { return textureSampleLevel(comp_tex, comp_smp, i.uv, 0.0); }
