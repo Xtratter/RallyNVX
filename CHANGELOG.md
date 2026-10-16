@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.45.0 - shadow quality option
+
+- Added: Settings > Shadows: High (soft shadows with a blocker search, as before, the default), Medium (six taps turned per pixel, a fixed soft edge), Low (one filtered tap), Off (no shadow-map shadows; hills still shade the ground). Measured on a POCO F3 in daylight: High costs about 10 ms more in the main pass than the other three, which are close to each other (about 22 ms); Medium looks nearly like High, a little grainier
+
 ## 2.44.1 - profiling tools
 
 - Added: the GPU profile (debug extra `gpuprof 1`) now times the shadow and the main pass on their own, and a file `skipmask` in the app's files directory leaves draw groups out while profiling (1 terrain, 2 models, 4 instances, 8 roads, 16 water, 32 glass and rain) to see what each costs

@@ -38,6 +38,7 @@ class SettingsActivity : Activity() {
         row(t("Dust", "Пыль"), { arrayOf(t("Off", "Выкл"), t("Normal", "Обычная"), t("Lots", "Много"))[Controls.dust(this)] }) { Controls.setDust(this, DriveMath.cycle(Controls.dust(this), 3)) }
         row(t("Camera drag inversion", "Инверсия поворота камеры"), { CamMath.invertName(Controls.camInvert(this), java.util.Locale.getDefault().language != "ru") }) { Controls.setCamInvert(this, DriveMath.cycle(Controls.camInvert(this), CamMath.INVERT_MODES)) }
         row(t("Weather", "Погода"), { WeatherMode.name(Controls.weather(this), t("en", "ru") == "en") }) { Controls.setWeather(this, WeatherMode.next(Controls.weather(this))) }
+        row(t("Shadows", "Тени"), { arrayOf(t("High", "Высокие"), t("Medium", "Средние"), t("Low", "Низкие"), t("Off", "Выкл"))[Controls.shadows(this)] }) { Controls.setShadows(this, DriveMath.cycle(Controls.shadows(this), 4)) }
         row(t("Motion blur", "Размытие в движении"), { arrayOf(t("Off", "Выкл"), t("Low", "Слабое"), t("High", "Сильное"))[Controls.motionBlur(this)] }) { Controls.setMotionBlur(this, DriveMath.cycle(Controls.motionBlur(this), 3)) }
         row(t("Dust: particle pressure", "Пыль: давление частиц"), { if (Controls.dustOpt(this, 1)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.toggleDustOpt(this, 1) }
         row(t("Dust: exact car shape", "Пыль: точная форма кузова"), { if (Controls.dustOpt(this, 2)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.toggleDustOpt(this, 2) }

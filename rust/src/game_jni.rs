@@ -129,6 +129,10 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameWeather(_e: JNIEnv, _c: JClass, mode: jint) {
         crate::game::weather::set_mode(mode.clamp(0, 255) as u8);
     }
+    /// The Settings option "Shadows" (0 high, 1 medium, 2 low, 3 off).
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameShadows(_e: JNIEnv, _c: JClass, level: jint) {
+        crate::raster::set_shadow_quality(level);
+    }
     /// The Settings option "Motion blur" (0 off, 1 low, 2 high).
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameMotionBlur(_e: JNIEnv, _c: JClass, level: jint) {
         crate::raster::set_blur(level);

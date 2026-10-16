@@ -529,7 +529,7 @@ impl Raster {
             fog: [crate::game::weather::fog_k(wv.weather), wv.time, 0., 0.], sky_top: [wv.daylight.sky_top[0], wv.daylight.sky_top[1], wv.daylight.sky_top[2], 0.],
             sky_hor: [wv.daylight.sky_hor[0], wv.daylight.sky_hor[1], wv.daylight.sky_hor[2], 0.],
             sun_col: [wv.daylight.sun_col[0], wv.daylight.sun_col[1], wv.daylight.sun_col[2], 0.],
-            mode: { let b = crate::game::dust_ref::window_base([wv.vehicle.pos.x.floor() as i32, wv.vehicle.pos.z.floor() as i32]); [self.hybrid as u8 as f32, b[0] as f32, b[1] as f32, if wv.dust_gpu.as_ref().map_or(false, |f| f.opts & crate::game::dust::OPT_DEPOSIT != 0) { 1.0 } else { 0.0 }] }, cam_tile: [cx as f32, cz as f32, 0., 0.],
+            mode: { let b = crate::game::dust_ref::window_base([wv.vehicle.pos.x.floor() as i32, wv.vehicle.pos.z.floor() as i32]); [self.hybrid as u8 as f32, b[0] as f32, b[1] as f32, if wv.dust_gpu.as_ref().map_or(false, |f| f.opts & crate::game::dust::OPT_DEPOSIT != 0) { 1.0 } else { 0.0 }] }, cam_tile: [cx as f32, cz as f32, 0., SHADOW_Q.load(std::sync::atomic::Ordering::Relaxed) as f32],
             moon: [wv.daylight.moon.x, wv.daylight.moon.y, wv.daylight.moon.z, 0.],
             disc: [wv.daylight.sun_disc.x, wv.daylight.sun_disc.y, wv.daylight.sun_disc.z, wv.daylight.night],
             hl_pos: [hc.x, hc.y, hc.z, if wv.lights.head { 1.0 } else { 0.0 }],
@@ -889,6 +889,10 @@ impl Raster {
 static BLUR_LEVEL: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 /// The Settings option "Motion blur": 0 off, 1 low, 2 high.
 pub fn set_blur(level: i32) { BLUR_LEVEL.store(level.clamp(0, 2), std::sync::atomic::Ordering::Relaxed); }
+
+static SHADOW_Q: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+/// The Settings option "Shadows" (0 high: soft shadows with a blocker search, 1 medium: six rotated taps, 2 low: one tap, 3 off: no shadow-map shadows).
+pub fn set_shadow_quality(level: i32) { SHADOW_Q.store(level.clamp(0, 3), std::sync::atomic::Ordering::Relaxed); }
 
 static PROF_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static PROF_SKIP: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);

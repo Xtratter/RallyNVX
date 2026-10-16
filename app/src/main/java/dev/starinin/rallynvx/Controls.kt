@@ -61,6 +61,8 @@ object Controls {
     /** The weather the player asks for: 0 auto, 1 clear, 2 cloudy, 3 rain, 4 heavy rain, 5 fog. */
     fun weather(c: Context): Int = p(c).getInt("weather", 0).coerceIn(0, WeatherMode.COUNT - 1)
     fun setWeather(c: Context, v: Int) = p(c).edit().putInt("weather", v.coerceIn(0, WeatherMode.COUNT - 1)).apply()
+    fun shadows(c: Context): Int = p(c).getInt("shadows", 0).coerceIn(0, 3)
+    fun setShadows(c: Context, v: Int) = p(c).edit().putInt("shadows", v.coerceIn(0, 3)).apply()
     fun motionBlur(c: Context): Int = p(c).getInt("motion_blur", 0).coerceIn(0, 2)
     fun setMotionBlur(c: Context, v: Int) = p(c).edit().putInt("motion_blur", v.coerceIn(0, 2)).apply()
     /** The GPU dust options (bits: 1 particle pressure, 2 the car's exact shape, 4 collisions with the world, 8 the settled layer); all but the pressure by default. */
