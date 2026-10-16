@@ -2,6 +2,17 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.63.0 - turbo, blow-off, anti-lag and the gearbox's voice (engine model, stage B3)
+
+- Added: the turbo. A shaft with its own inertia is spun by the exhaust flow (the turbine's power from the flow and the pressure drop) and loaded by the compressor, whose outlet pressure follows its speed; its air fills a volume before the throttle; the wastegate holds the boost at about 0.55 bar. So the boost builds with a lag (about 0.75 s to full), the torque rises to about 330 N m at 4000 rpm, and the exhaust gets louder and hotter under boost
+- Added: the sounds of the turbo: a whistle at the compressor's blade-pass pitch that rises with the shaft speed and a whoosh of the air, both from the engine bay
+- Added: the blow-off valve: lifting off a boosted engine opens it (the plenum's vacuum) and the charge rushes out with a hiss; the boost falls
+- Added: anti-lag: with the pedal up above 3000 rpm the spark is very late (and skipped now and then), the mixture rich and a little air comes past the throttle, so the fuel burns in the exhaust: bangs at the tail pipe, a hot exhaust (about 1300 K) and a turbo that keeps spinning (the speed on a lift is about 1.5 times that without it). Unburnt fuel and air in the hot exhaust burn by themselves, which is what makes every pop
+- Added: a flat shift and a blip: a hard up-shift cuts the spark for a moment (the fuel goes unburnt into the exhaust and pops); a down-shift blips the throttle to match the revs
+- Added: the gearbox's whine, a tone at 21 times the revs that grows with the torque
+- Changed: the clutch grips harder (it holds the engine's torque with less slip), so the revs follow the wheels more closely
+- The engine's cost grew to about 0.15 s of one core per second of sound at 7600 rpm
+
 ## 2.62.2 - less hiss while driving
 
 - Fixed: while driving, something hissed like wind. Measured at 20-35 m/s, the rolling noise of the four tyres (a low-passed noise) was about as loud as the exhaust, and the intake's rush was an airy noise on top of the engine. The tyres' rolling noise is now 0.45 of what it was and the intake's rush half of what it was; the engine, the wind and the squeal are unchanged

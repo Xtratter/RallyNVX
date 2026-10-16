@@ -59,8 +59,35 @@ fn at(rpm: f64, throttle: f64) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
 #[test] fn the_voice_survives_abuse() {
     let mut v = EngineVoice::new(EngineSpec::rally_four());
     for i in 0..RATE as usize * 3 {
-        let ctl = Controls { throttle: ((i / 5000) % 3) as f64 * 0.5, starter: i < 20000, clutch: ((i / 7000) % 2) as f64, drive_rpm: ((i / 9000) % 4) as f64 * 2500.0, ignition: (i / 30000) % 2 == 0 };
+        let ctl = Controls { throttle: ((i / 5000) % 3) as f64 * 0.5, starter: i < 20000, clutch: ((i / 7000) % 2) as f64, drive_rpm: ((i / 9000) % 4) as f64 * 2500.0, ignition: (i / 30000) % 2 == 0, als: (i / 11000) % 2 == 0, cut: (i / 13000) % 3 == 0 };
         v.sample(&ctl);
         assert!(v.exhaust_out.is_finite() && v.intake_out.is_finite() && v.block_out.is_finite(), "{i}");
     }
+}
+
+#[test] fn the_turbo_whistles_at_a_pitch_that_follows_its_speed_and_the_valve_hisses_when_it_blows_off() {
+    let mut v = EngineVoice::new(EngineSpec::rally_four());
+    v.engine.omega = 4500.0 * std::f64::consts::TAU / 60.0;
+    let mut ctl = Controls { throttle: 1.0, clutch: 1.0, drive_rpm: 4500.0, ..Default::default() };
+    for _ in 0..RATE as usize * 2 { v.sample(&ctl); }
+    let f = (v.engine.turbo_omega / std::f64::consts::TAU * 5.0) as f32;
+    let mut buf = Vec::new(); for _ in 0..RATE as usize / 2 { v.sample(&ctl); buf.push(v.turbo_out); }
+    let near = [0.97f32, 1.0, 1.03].iter().map(|k| power(&buf, f * k)).fold(0.0f32, f32::max);
+    assert!(near > 4.0 * power(&buf, f * 0.7) && near > 4.0 * power(&buf, f * 1.4), "a whistle at {f} Hz: {near}");
+    assert!(rms(&buf) > 0.002, "{}", rms(&buf));
+    let loud = rms(&buf);
+    ctl.throttle = 0.0;
+    let mut hiss = Vec::new(); for _ in 0..RATE as usize / 20 { v.sample(&ctl); hiss.push(v.bov_out); }
+    assert!(rms(&hiss) > 0.005, "the blow-off hiss: {}", rms(&hiss));
+    let _ = loud;
+}
+#[test] fn the_gearbox_whines_at_a_multiple_of_the_revs_under_torque() {
+    let (_, _, _) = at(3000.0, 1.0);
+    let mut v = EngineVoice::new(EngineSpec::rally_four());
+    v.engine.omega = 3000.0 * std::f64::consts::TAU / 60.0;
+    let ctl = Controls { throttle: 1.0, clutch: 1.0, drive_rpm: 3000.0, ..Default::default() };
+    for _ in 0..RATE as usize / 2 { v.sample(&ctl); }
+    let mut buf = Vec::new(); for _ in 0..RATE as usize { v.sample(&ctl); buf.push(v.whine_out); }
+    let f = 3000.0 / 60.0 * 21.0;
+    assert!(power(&buf, f) > 5.0 * power(&buf, f * 1.3), "a whine at {f} Hz");
 }

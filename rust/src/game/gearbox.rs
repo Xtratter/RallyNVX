@@ -9,13 +9,13 @@ const FINAL: f32 = 5.0;
 const SHIFT_TIME: f32 = 0.22;
 
 #[derive(Clone, Copy, Debug)]
-pub struct Gearbox { pub gear: i32, shift: f32, pub clutch: f32 }
+pub struct Gearbox { pub gear: i32, shift: f32, up: bool, pub clutch: f32 }
 
 /// What the box asks of the engine: the revs the wheels give in this gear, and the clutch's grip (0 open .. 1 locked).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Drive { pub rpm: f32, pub clutch: f32, pub gear: i32 }
+pub struct Drive { pub rpm: f32, pub clutch: f32, pub gear: i32, pub cut: bool, pub blip: f32 }
 
-impl Default for Gearbox { fn default() -> Gearbox { Gearbox { gear: 1, shift: 0.0, clutch: 0.0 } } }
+impl Default for Gearbox { fn default() -> Gearbox { Gearbox { gear: 1, shift: 0.0, up: true, clutch: 0.0 } } }
 
 fn ratio(gear: i32) -> f32 { if gear < 0 { REVERSE * FINAL } else { RATIOS[(gear.clamp(1, 6) - 1) as usize] * FINAL } }
 
@@ -34,8 +34,8 @@ impl Gearbox {
             let rpm = rpm_in_gear(speed, r, self.gear);
             let up_at = 4600.0 + 2800.0 * thr;                          // a light foot shifts up early, a hard one holds the gear to the top of the revs
             let down_at = 2300.0 + 600.0 * thr;
-            if rpm > up_at && self.gear < 6 { self.gear += 1; self.shift = SHIFT_TIME; }
-            else if rpm < down_at && self.gear > 1 && rpm_in_gear(speed, r, self.gear - 1) < 6600.0 { self.gear -= 1; self.shift = SHIFT_TIME; }
+            if rpm > up_at && self.gear < 6 { self.gear += 1; self.shift = SHIFT_TIME; self.up = true; }
+            else if rpm < down_at && self.gear > 1 && rpm_in_gear(speed, r, self.gear - 1) < 6600.0 { self.gear -= 1; self.shift = SHIFT_TIME; self.up = false; }
         }
         let rpm = rpm_in_gear(speed, r, self.gear);
         // the clutch: open while shifting and in the air; slipping at a standstill, in the first metres per second, locked beyond
@@ -43,7 +43,10 @@ impl Gearbox {
             else if speed.abs() < 1.0 && thr < 0.05 { 0.0 }
             else { (0.35 + 0.65 * ((speed.abs() - 1.0) / 5.0).clamp(0.0, 1.0)).min(1.0) };
         self.clutch += (want - self.clutch) * (1.0 - (-dt / 0.04).exp());
-        Drive { rpm, clutch: self.clutch, gear: self.gear }
+        // a hard up-shift cuts the spark for a moment (the flat shift: the fuel goes on and pops in the exhaust); a down-shift blips the throttle to match the revs
+        let cut = self.shift > 0.5 * SHIFT_TIME && self.up && thr > 0.6;
+        let blip = if self.shift > 0.0 && !self.up { 0.55 } else { 0.0 };
+        Drive { rpm, clutch: self.clutch, gear: self.gear, cut, blip }
     }
 }
 

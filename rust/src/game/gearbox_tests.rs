@@ -1,6 +1,6 @@
 use super::*;
 
-fn drive(g: &mut Gearbox, speed: f32, thr: f32, secs: f32) -> Drive { let mut d = Drive { rpm: 0.0, clutch: 0.0, gear: 1 }; for _ in 0..(secs * 60.0) as usize { d = g.update(1.0 / 60.0, speed, thr, 0.326, false); } d }
+fn drive(g: &mut Gearbox, speed: f32, thr: f32, secs: f32) -> Drive { let mut d = Drive { rpm: 0.0, clutch: 0.0, gear: 1, cut: false, blip: 0.0 }; for _ in 0..(secs * 60.0) as usize { d = g.update(1.0 / 60.0, speed, thr, 0.326, false); } d }
 
 #[test] fn the_revs_follow_the_speed_and_the_gear() {
     let r = 0.326;
@@ -41,4 +41,16 @@ fn drive(g: &mut Gearbox, speed: f32, thr: f32, secs: f32) -> Drive { let mut d 
     let mut s = Gearbox::default(); let mut min_clutch = 1.0f32; let mut speed = 0.0;
     for _ in 0..60 * 8 { let d = s.update(1.0 / 60.0, speed, 1.0, 0.326, false); speed += 0.12; if speed > 8.0 { min_clutch = min_clutch.min(d.clutch); } }
     assert!(min_clutch < 0.6, "a shift opens the clutch: {min_clutch}");
+}
+
+#[test] fn a_hard_upshift_cuts_the_spark_and_a_downshift_blips_the_throttle() {
+    let mut g = Gearbox::default(); let (mut cut, mut speed) = (false, 0.0f32);
+    for _ in 0..60 * 8 { let d = g.update(1.0 / 60.0, speed, 1.0, 0.326, false); speed += 0.12; cut |= d.cut; }
+    assert!(cut, "the flat shift");
+    let mut soft = Gearbox::default(); let mut speed = 0.0f32; let mut soft_cut = false;
+    for _ in 0..60 * 12 { let d = soft.update(1.0 / 60.0, speed, 0.3, 0.326, false); speed += 0.08; soft_cut |= d.cut; }
+    assert!(!soft_cut, "a light foot shifts without the cut");
+    let mut g = Gearbox::default(); drive(&mut g, 40.0, 0.5, 2.0);
+    let mut blip = 0.0f32; for _ in 0..180 { blip = blip.max(g.update(1.0 / 60.0, 8.0, 0.0, 0.326, false).blip); }
+    assert!(blip > 0.3, "the blip on the way down: {blip}");
 }
