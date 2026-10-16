@@ -92,6 +92,7 @@ mod game {
         pub fn camera_drag(&mut self, dyaw: f32, dpitch: f32) { self.world.cam.drag(dyaw, dpitch); }
         /// The free camera flies `fwd` metres along its gaze and `up` metres up.
         pub fn camera_fly(&mut self, fwd: f32, up: f32) { self.world.cam.fly(fwd, up); }
+        pub fn camera_reset(&mut self) { self.world.cam.reset(); }
         pub fn camera_release(&mut self) { self.world.cam.set_dragging(false); }
         /// The camera view (see `CamView`), its distance scale or zoom and its height or tilt offset.
         pub fn camera_view(&mut self, view: i32, dist: f32, height: f32) { self.world.cam.set_view(view, dist, height); }

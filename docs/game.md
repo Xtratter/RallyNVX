@@ -227,3 +227,5 @@ No rally mode and no NPC orders yet, and only the raster and hybrid renderers. T
 ## Ограничения этой версии
 
 Пока нет гаража и заказов NPC, и только растровый и гибридный рендер. Режим «Сцены» с трассировкой не менялся.
+
+**Camera reset / Сброс камеры.** A double tap on free space (two taps within 350 ms, each shorter than 250 ms and moving less than 24 dp) puts the camera back to its default: the view's default distance and height, the orbit turn dropped, and the Free camera behind the car looking at it. / Двойной тап по свободному месту (два касания в пределах 350 мс, каждое короче 250 мс и со сдвигом меньше 24 dp) возвращает камеру в положение по умолчанию: расстояние и высота вида по умолчанию, поворот обзора сброшен, свободная камера встаёт за машину и смотрит на неё.

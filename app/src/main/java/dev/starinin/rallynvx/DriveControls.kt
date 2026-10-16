@@ -15,6 +15,9 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     /** A finger dragging on free space: (dx, dy) in pixels since the last event; `onCameraUp` when it lifts. */
     var onCamera: (Float, Float) -> Unit = { _, _ -> }
     var onCameraUp: () -> Unit = {}
+    /** A double tap on free space: the camera goes back to its default. */
+    var onCameraReset: () -> Unit = {}
+    private val doubleTap = DoubleTap(24f * resources.displayMetrics.density)
     /** Two fingers on free space: the span between them changed by `ratio` (new / old) and their middle moved by `dy` pixels (negative = up). */
     var onCameraPinch: (Float, Float) -> Unit = { _, _ -> }
     /** Current speed in km/h (the brake pedal reverses when nearly stopped). */
@@ -136,8 +139,8 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
                     wheelId < 0 && wheelMode && onWheel(x, y) -> { wheelId = pid; if (!nearHub(x, y)) wheel.down(touchAngle(x, y)) else wheel.down(90f) }
                     gasId < 0 && inView(gasView, x, y) -> { gasId = pid; gasView.pressure = pedalAt(gasView, y) }
                     brakeId < 0 && inView(brakeView, x, y) -> { brakeId = pid; brakeView.pressure = pedalAt(brakeView, y) }
-                    camId < 0 -> { camId = pid; camX = x; camY = y }   // free space: a camera drag (also while the other fingers drive)
-                    cam2Id < 0 -> { cam2Id = pid; cam2X = x; cam2Y = y; onCameraUp() }   // a second free finger: a pinch, the orbit drag pauses
+                    camId < 0 -> { camId = pid; camX = x; camY = y; doubleTap.down(e.eventTime, x, y) }   // free space: a camera drag (also while the other fingers drive)
+                    cam2Id < 0 -> { doubleTap.cancel(); cam2Id = pid; cam2X = x; cam2Y = y; onCameraUp() }   // a second free finger: a pinch, the orbit drag pauses
                     else -> if (e.actionMasked == MotionEvent.ACTION_DOWN && !any) return false
                 }
                 report()
@@ -175,7 +178,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
                 if (pid == cam2Id) { cam2Id = -1 }
                 if (pid == camId) {
                     if (cam2Id >= 0) { camId = cam2Id; camX = cam2X; camY = cam2Y; cam2Id = -1 }   // the other finger carries on as a single drag
-                    else { camId = -1; onCameraUp() }
+                    else { camId = -1; onCameraUp(); if (doubleTap.up(e.eventTime, e.getX(e.actionIndex), e.getY(e.actionIndex))) onCameraReset() }
                 }
                 report()
             }

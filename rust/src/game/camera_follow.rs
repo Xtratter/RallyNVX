@@ -42,7 +42,7 @@ pub struct FollowCam {
     pub user_yaw: f32, pub user_pitch: f32,
     dragging: bool, rev_t: f32, flip: f32,
     /// The free camera: where it is and where it looks (yaw turns to the right, pitch up), independent of the car.
-    free_pos: V3, free_yaw: f32, free_pitch: f32,
+    free_pos: V3, free_yaw: f32, free_pitch: f32, reset_free: bool,
 }
 
 fn rotate_y(v: V3, a: f32) -> V3 { let (s, c) = a.sin_cos(); v3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c) }
@@ -54,7 +54,7 @@ impl FollowCam {
     pub fn new_for(pos: V3, forward: V3, back: f32, up: f32) -> FollowCam {
         let heading = v3(forward.x, 0.0, forward.z).norm();
         FollowCam { pos: pos - heading * back + v3(0.0, up, 0.0), target: pos + v3(0.0, 1.2, 0.0), heading, view: CamView::Chase, dist: 1.0, height: 0.0, fov: 1.0, gaze: heading,
-            user_yaw: 0.0, user_pitch: 0.0, dragging: false, rev_t: 0.0, flip: 0.0, free_pos: pos, free_yaw: 0.0, free_pitch: 0.0 }
+            user_yaw: 0.0, user_pitch: 0.0, dragging: false, rev_t: 0.0, flip: 0.0, free_pos: pos, free_yaw: 0.0, free_pitch: 0.0, reset_free: false }
     }
 
     /// Picks the view with its distance scale and height offset (clamped; garbage becomes the defaults).
@@ -99,11 +99,22 @@ impl FollowCam {
     }
     /// The finger went down (`true`, nothing changes yet) or up (`false`: the camera may return once the car moves).
     pub fn set_dragging(&mut self, on: bool) { self.dragging = on; }
+    /// Double tap: the view goes back to its default (the player's orbit is dropped; the free camera returns to the chase spot behind the car on the next update).
+    pub fn reset(&mut self) {
+        self.user_yaw = 0.0; self.user_pitch = 0.0; self.dragging = false; self.reset_free = true;
+    }
 
     fn base_elev(back: f32, up: f32) -> f32 { (up - 1.2).atan2(back + 3.0) }
 
     pub fn update(&mut self, v: &Vehicle, t: &Terrain, dt: f32) {
         if self.view == CamView::Free {
+            if std::mem::take(&mut self.reset_free) {   // where the chase camera would be, looking at the car
+                let back = v3(v.forward().x, 0.0, v.forward().z).norm() * -8.0;
+                self.free_pos = v.pos + back + v3(0.0, 3.5, 0.0);
+                let d = (v.pos + v3(0.0, 1.2, 0.0) - self.free_pos).norm();
+                self.free_yaw = (-d.x).atan2(d.z);
+                self.free_pitch = d.y.clamp(-1.0, 1.0).asin();
+            }
             let floor = t.height(self.free_pos.x, self.free_pos.z) + 0.5;
             if self.free_pos.y < floor { self.free_pos.y = floor; }
             self.pos = self.free_pos;

@@ -281,3 +281,23 @@ fn settle_in(view: i32, dist: f32, height: f32) -> (Vehicle, Terrain, FollowCam)
     let p = other.pos; other.fly(10.0, 10.0);
     assert_eq!(other.pos, p, "flying does nothing in the other views");
 }
+
+#[test] fn a_reset_brings_the_orbit_and_the_free_camera_back() {
+    let (v, t, mut c) = settled_car();
+    c.set_view(4, 1.0, 0.0);
+    c.drag(1.2, 0.3);
+    assert!(c.user_yaw != 0.0);
+    c.reset();
+    assert!(c.user_yaw == 0.0 && c.user_pitch == 0.0, "the orbit is dropped");
+    c.set_view(6, 1.0, 0.0);
+    c.update(&v, &t, 1.0 / 60.0);
+    c.drag(2.0, 0.0); c.fly(30.0, 10.0);
+    c.update(&v, &t, 1.0 / 60.0);
+    assert!((c.pos - v.pos).len() > 20.0, "flown away");
+    c.reset();
+    c.update(&v, &t, 1.0 / 60.0);
+    let d = (c.pos - v.pos).len();
+    assert!(d > 5.0 && d < 11.0, "back behind the car: {d}");
+    let to_car = (v.pos + v3(0.0, 1.2, 0.0) - c.pos).norm();
+    assert!(c.free_dir().dot(to_car) > 0.99, "looking at the car");
+}
