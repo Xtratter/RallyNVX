@@ -59,6 +59,8 @@ pub struct Vehicle {
     pub braking: bool, pub reversing: bool,
     /// Brake disc heat per wheel, 0..1 (grows with the braking power, cools with time and the air; only visual: the discs glow).
     pub brake_heat: [f32; 4],
+    /// How wet the ground is, 0..1 (set by the world from the weather): the grip of every surface drops with it (`surfaces.json` -> `wet`).
+    pub wet: f32,
     /// The driver holds reverse (negative throttle), as opposed to merely rolling backwards.
     pub reverse_throttle: bool,
     /// The surface under the first wheel in contact (the HUD shows it); tests can force one for every wheel.
@@ -71,7 +73,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, braking: false, reversing: false, brake_heat: [0.0; 4], reverse_throttle: false, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -162,7 +164,8 @@ impl Vehicle {
             if self.contacts == 1 { self.surface = surf; }
             if let Some((ri, s_along, side)) = cell { loose.wear(ri, s_along, side, vf.abs().max(vl.abs()), h); }
             let tf = grip::tyre_factor(s.wheel_set, surf);   // the wheel set: the right tyres for the surface grip more
-            let (mu_s, lat_k, roll) = (s.mu * sg.mu * tf.0, s.lateral_k * sg.lateral * tf.1, s.rolling * sg.rolling);
+            let wf = grip::wet_factor(surf, self.wet);       // the wet ground: less grip, everywhere
+            let (mu_s, lat_k, roll) = (s.mu * sg.mu * tf.0 * wf.0, s.lateral_k * sg.lateral * tf.1 * wf.1, s.rolling * sg.rolling);
             let lat_mu = if !front && inp.handbrake { mu_s * s.handbrake_grip } else { mu_s };
             let mut fl = -vl * wheel_mass * lat_k;
             let lim_speed = if inp.throttle >= 0.0 { s.max_speed } else { s.max_speed * s.reverse_factor };

@@ -12,3 +12,13 @@ object TimeOfDay {
     fun phase(mode: Int) = PHASES[mode.mod(COUNT)]
     fun name(mode: Int, en: Boolean) = (if (en) EN else RU)[mode.mod(COUNT)]
 }
+
+/** The weather the player asks for (Settings and the quick button in the drive): Auto lets the level's seed decide; the others set it at once (see rust game/weather.rs). */
+object WeatherMode {
+    val EN = arrayOf("Auto", "Clear", "Cloudy", "Rain", "Heavy rain", "Fog")
+    val RU = arrayOf("Авто", "Ясно", "Облачно", "Дождь", "Ливень", "Туман")
+    const val COUNT = 6
+
+    fun next(mode: Int) = (mode + 1).mod(COUNT)
+    fun name(mode: Int, en: Boolean) = (if (en) EN else RU)[mode.mod(COUNT)]
+}

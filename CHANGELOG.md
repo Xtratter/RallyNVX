@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.37.0 - weather
+
+- Added: weather (Settings, Weather, and the Weather button in the drive: Auto / Clear / Cloudy / Rain / Heavy rain / Fog; Auto from the level's seed): clouds thicken, the sky greys and darkens, the sun and moon discs fade, fog thickens, rain streaks fall round the camera, the ground gets wet (darker, glossy with the sky in it), the grip drops by surface (`surfaces.json` -> `wet`) and on wet ground the wheels throw almost no dust but a pale cold spray mist (also on wet asphalt) and dark mud clods off the road, as real tyres do; wet ground dries in a few minutes
+
 ## 2.36.0 - tyre sets grip
 
 - Changed: the wheel set now matters on the road: gravel tyres grip 4-8 % better on gravel, dirt, grass and sand and 10 % worse on asphalt than the tarmac set (the baseline the cars were tuned with), snow tyres are a compromise and the worst on asphalt; the numbers are in `surfaces.json` -> `tyre_sets` (grip and side stiffness per set and surface, editable)

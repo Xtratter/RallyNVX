@@ -36,6 +36,8 @@ pub struct World {
     pub loose: LooseMap,
     /// Tyre dust and spray.
     pub dust: Dust,
+    /// The level's weather and how wet its ground is.
+    pub climate: super::weather::Climate,
     /// How far the wind has carried the clouds (sky shader noise units).
     pub cloud_off: (f32, f32),
     pub tracks: Tracks,
@@ -77,7 +79,7 @@ impl World {
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
         let loose = terrain.roads().map_or_else(LooseMap::empty, LooseMap::new);
-        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, rally: None, signs_on: true, props: HashMap::new() }
+        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), climate: super::weather::Climate::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, rally: None, signs_on: true, props: HashMap::new() }
     }
 
     /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
@@ -275,6 +277,8 @@ impl World {
         let near = self.nearby_props();
         if counting { inp = Input { brake: true, handbrake: true, ..Default::default() }; }   // held at the start line until GO
         if self.autopilot.is_some() { if let Some(r) = self.rally.as_mut() { r.run.assisted = true; } }
+        self.climate.step(dt);
+        self.vehicle.wet = self.climate.weather().wet;
         self.vehicle.step_with(&self.terrain, &near, &inp, dt, &mut self.loose);
         self.dust.set_gpu(super::dust::gpu_on(self.dust.level()));
         self.dust.update(&self.vehicle, &self.terrain, self.time, dt);
@@ -311,7 +315,7 @@ impl World {
     }
 
     /// Light and sky colours of the moment (the sun moves while the level runs).
-    pub fn daylight(&self) -> Daylight { daylight(self.terrain.seed, self.time) }
+    pub fn daylight(&self) -> Daylight { super::weather::apply(&daylight(self.terrain.seed, self.time), self.climate.weather()) }
     /// Unit vector towards the sun.
     pub fn sun_dir(&self) -> V3 { self.daylight().sun }
 }
@@ -387,7 +391,7 @@ pub struct WorldView<'a> {
     pub signs: &'a [super::signs::Sign],
     pub terrain: &'a Terrain, pub vehicle: &'a Vehicle,
     pub cam_pos: V3, pub cam_target: V3,
-    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub lights: CarLights, pub lamps: Lamps, pub dust: Vec<Particle>, pub wind: V3, pub cloud_off: (f32, f32),
+    pub props: Vec<&'a Prop>, pub sun: V3, pub daylight: Daylight, pub weather: super::weather::Weather, pub lights: CarLights, pub lamps: Lamps, pub dust: Vec<Particle>, pub wind: V3, pub cloud_off: (f32, f32),
     pub time: f32, pub cities: &'a [City], pub tracks: &'a Tracks,
 }
 
@@ -399,7 +403,7 @@ impl World {
         for tz in cz - r..=cz + r { for tx in cx - r..=cx + r { props.extend(self.tile_props_ref(tx, tz).iter()); } }
         let dl = self.daylight();
         WorldView { cam_fov: self.cam.fov, dust_gpu: if self.dust.gpu() { Some(DustGpuIn { emits: self.dust.take_emits(), car_pos: self.vehicle.pos, yaw: self.vehicle.forward().x.atan2(self.vehicle.forward().z), car_vel: self.vehicle.vel, wind: self.dust.wind(), ground_y: self.terrain.height(self.vehicle.pos.x, self.vehicle.pos.z), cap: self.dust.gpu_cap(), time: self.time, body_pose: { let (q, o) = crate::raster::vehicle_models::car_body_pose(&self.vehicle); (o, [q.rotate(v3(1.0, 0.0, 0.0)), q.rotate(v3(0.0, 1.0, 0.0)), q.rotate(v3(0.0, 0.0, 1.0))]) }, opts: super::dust::opts(), sun: self.sun_dir(), body: [self.vehicle.spec.size.x * 0.5, self.vehicle.spec.size.z * 0.5, self.vehicle.spec.size.y], vortex_scale: 1.0 + 0.25 * self.vehicle.spec.kit.wing as f32 + 0.12 * self.vehicle.spec.kit.underbody as f32 + 0.1 * self.vehicle.spec.kit.splitter as f32 }) } else { None },
-            airflow: if super::airflow::debug_on() || self.dust.gpu() { Some(super::airflow::flow_in(&self.vehicle, self.wind(), &super::airflow::cfg())) } else { None }, fluid: if self.dust.level() == 3 { Some(super::fluid::pack(&self.vehicle, &super::fluid::cfg(), &super::grip::table())) } else { None }, signs: if self.signs_on { self.terrain.signs() } else { &[] }, terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(), wind: self.wind(), cloud_off: self.cloud_off,
+            airflow: if super::airflow::debug_on() || self.dust.gpu() { Some(super::airflow::flow_in(&self.vehicle, self.wind(), &super::airflow::cfg())) } else { None }, fluid: if self.dust.level() == 3 { Some(super::fluid::pack(&self.vehicle, &super::fluid::cfg(), &super::grip::table())) } else { None }, signs: if self.signs_on { self.terrain.signs() } else { &[] }, terrain: &self.terrain, vehicle: &self.vehicle, cam_pos: self.cam.pos, cam_target: self.cam.target, props, sun: self.sun_dir(), daylight: dl, weather: self.climate.weather(), lights: carlights::state(&self.vehicle, dl.night), lamps: carlights::lamps(&self.vehicle), dust: self.dust.particles(), wind: self.wind(), cloud_off: self.cloud_off,
             time: self.time, cities: &self.cities, tracks: &self.tracks }
     }
 }

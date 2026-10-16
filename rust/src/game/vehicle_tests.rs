@@ -347,3 +347,19 @@ fn cornering_accel(surface: Surface, spec: VehicleSpec) -> f32 {
     let (t_on_asph, g_on_asph) = (peak_side_accel(0, Asphalt), peak_side_accel(1, Asphalt));
     assert!(t_on_asph > g_on_asph, "tarmac tyres corner harder on asphalt: {t_on_asph} vs {g_on_asph}");
 }
+
+#[test] fn wet_ground_makes_the_car_brake_later_and_slide_sooner() {
+    use crate::game::surface::Surface::Asphalt;
+    fn stop(wet: f32) -> f32 {
+        let t = Terrain::flat();
+        let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0., 1.2, 0.), 0.0);
+        v.force_surface = Some(Asphalt); v.wet = wet;
+        for _ in 0..180 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+        for _ in 0..600 { v.step(&t, &[], &Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+        let x0 = v.pos;
+        for _ in 0..900 { if v.vel.len() < 0.5 { break; } v.step(&t, &[], &Input { brake: true, ..Default::default() }, 1.0 / 60.0); }
+        (v.pos - x0).len()
+    }
+    let (dry, soaked) = (stop(0.0), stop(1.0));
+    assert!(soaked > dry * 1.1, "the wet road lengthens the braking: {dry} m dry, {soaked} m soaked");
+}

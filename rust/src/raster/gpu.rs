@@ -34,8 +34,12 @@ struct Uni {
     rt: [f32; 4],
     /// The four hub offsets of the car (metres, see `vehicle_models::susp_offsets`): the suspension parts of the car's mesh follow them.
     susp: [f32; 4],
+    /// The weather: rain, wet ground, cloud cover, the visibility of the sun and moon discs.
+    wx: [f32; 4],
+    /// The car's position (the rain does not fall inside it) and the weather's clock.
+    cr: [f32; 4],
 }
-const _: () = assert!(std::mem::size_of::<Uni>() == 480);
+const _: () = assert!(std::mem::size_of::<Uni>() == 512);
 
 /// One instance: model matrix, per-axis scale (for normals), colour. Matches the instance vertex layout (96 bytes).
 #[repr(C)]
@@ -56,6 +60,9 @@ fn inst_facade(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = in
 
 /// A street strip: even asphalt with lane marks drawn by the shader (colour alpha 4).
 fn inst_street(rot: Q, pos: V3, s: V3, color: [f32; 3]) -> Inst { let mut i = inst(rot, pos, s, color); i.color[3] = 4.0; i }
+
+/// The number of rain instances drawn (the shader keeps the share `rain` of them alive).
+const RAIN_DROPS: u32 = 6000;
 
 struct MeshBuf { vb: wgpu::Buffer, ib: wgpu::Buffer, n: u32, wb: Option<wgpu::Buffer> }
 
@@ -160,7 +167,8 @@ pub struct Raster {
     mbuf: wgpu::Buffer,
     pl_water: wgpu::RenderPipeline,
     pl_road: wgpu::RenderPipeline,
-    pl_glass: wgpu::RenderPipeline, pl_dust: wgpu::RenderPipeline, pl_dust_pt: wgpu::RenderPipeline, pl_dust_specks: wgpu::RenderPipeline,
+    pl_glass: wgpu::RenderPipeline,
+    pl_rain: wgpu::RenderPipeline, pl_dust: wgpu::RenderPipeline, pl_dust_pt: wgpu::RenderPipeline, pl_dust_specks: wgpu::RenderPipeline,
     fluid: Option<fluid_gpu::FluidGpu>,
     /// The airflow debug view: made on first use (`airflow_tried`), so nothing is allocated while it is off.
     airflow: Option<airflow_gpu::AirflowGpu>, airflow_tried: bool, adapter: wgpu::Adapter,
@@ -406,6 +414,12 @@ impl Raster {
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_model"), compilation_options: Default::default(), targets: &target }),
             primitive: wgpu::PrimitiveState { cull_mode: Some(wgpu::Face::Back), ..Default::default() }, depth_stencil: depth_state(true, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
         });
+        let pl_rain = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("rain"), layout: Some(&lay_main),
+            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_rain"), compilation_options: Default::default(), buffers: &[] },
+            fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_rain"), compilation_options: Default::default(), targets: &target_blend }),
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+        });
         let pl_glass = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("glass"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_model"), compilation_options: Default::default(), buffers: &[model_layout.clone(), minst_layout.clone()] },
@@ -425,7 +439,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -502,7 +516,7 @@ impl Raster {
         let tail_glow = if wv.lights.reverse { [0.8, 0.8, 0.78, 7.0] } else if wv.lights.brake { [0.5, 0.04, 0.02, 7.0] } else if wv.lights.head { [0.12, 0.01, 0.005, 4.0] } else { [0.0; 4] };
         let uni = Uni { vp: flatten(vp), light_vp: flatten(light_vp), inv_vp: flatten(inverse(vp)),
             cam: [wv.cam_pos.x, wv.cam_pos.y, wv.cam_pos.z, 0.], sun: [wv.sun.x, wv.sun.y, wv.sun.z, 0.],
-            fog: [1.0 / 330.0, wv.time, 0., 0.], sky_top: [wv.daylight.sky_top[0], wv.daylight.sky_top[1], wv.daylight.sky_top[2], 0.],
+            fog: [crate::game::weather::fog_k(wv.weather), wv.time, 0., 0.], sky_top: [wv.daylight.sky_top[0], wv.daylight.sky_top[1], wv.daylight.sky_top[2], 0.],
             sky_hor: [wv.daylight.sky_hor[0], wv.daylight.sky_hor[1], wv.daylight.sky_hor[2], 0.],
             sun_col: [wv.daylight.sun_col[0], wv.daylight.sun_col[1], wv.daylight.sun_col[2], 0.],
             mode: { let b = crate::game::dust_ref::window_base([wv.vehicle.pos.x.floor() as i32, wv.vehicle.pos.z.floor() as i32]); [self.hybrid as u8 as f32, b[0] as f32, b[1] as f32, if wv.dust_gpu.as_ref().map_or(false, |f| f.opts & crate::game::dust::OPT_DEPOSIT != 0) { 1.0 } else { 0.0 }] }, cam_tile: [cx as f32, cz as f32, 0., 0.],
@@ -513,7 +527,8 @@ impl Raster {
             tl_pos: [tc.x, tc.y, tc.z, (wv.lamps.tail[0] - wv.lamps.tail[1]).len() * 0.5],
             tl_col: tail_glow,
             wind: [wv.wind.x, wv.wind.z, wv.cloud_off.0, wv.cloud_off.1],
-            lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, (wv.lamps.head[0] - wv.lamps.head[1]).len() * 0.5], rt: [wv.lamps.right.x, wv.lamps.right.y, wv.lamps.right.z, 0.0], susp: vm::susp_offsets(wv.vehicle) };
+            lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, (wv.lamps.head[0] - wv.lamps.head[1]).len() * 0.5], rt: [wv.lamps.right.x, wv.lamps.right.y, wv.lamps.right.z, 0.0], susp: vm::susp_offsets(wv.vehicle),
+            wx: [wv.weather.rain, wv.weather.wet, wv.weather.cloud, crate::game::weather::disc_visibility(wv.weather)], cr: [wv.vehicle.pos.x, wv.vehicle.pos.y, wv.vehicle.pos.z, wv.time] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
         // a new level invalidates every cache keyed by tile coordinates
@@ -803,6 +818,10 @@ impl Raster {
                     rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                     rp.draw_indexed(0..m.n, 0, a..b);
                 }
+            }
+            if wv.weather.rain > 0.02 {   // the rain streaks: stateless instanced quads round the camera (`vs_rain`)
+                rp.set_pipeline(&self.pl_rain);
+                rp.draw(0..6, 0..RAIN_DROPS);
             }
             if let (Some(dg), true) = (self.dust_gpu.as_ref(), wv.dust_gpu.is_some()) {
                 // the specks of grit at full resolution with the scene's depth test; the cloud itself follows after the pass at low resolution

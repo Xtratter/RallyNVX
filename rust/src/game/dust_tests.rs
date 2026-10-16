@@ -190,3 +190,37 @@ fn the_cars_wake_scours_the_road_behind_it_even_without_slip() {
     }
     assert!(behind > 20, "the wake picked up {behind} particles behind the car");
 }
+
+/// The GPU dust's emits over a few seconds of driving on a surface with the ground this wet.
+fn gpu_emits(surface: Surface, wet: f32) -> Vec<P> {
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0., 1.0, 0.), 0.0);
+    v.force_surface = Some(surface);
+    let mut d = Dust::new(7);
+    d.set_gpu(true);
+    for _ in 0..120 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+    v.vel = v.forward() * 18.0; v.wet = wet;
+    let mut out = Vec::new();
+    for i in 0..180 { v.step(&t, &[], &Input { throttle: 0.4, steer: if (i / 40) % 2 == 0 { 0.3 } else { -0.3 }, ..Default::default() }, 1.0 / 60.0); d.update(&v, &t, i as f32 / 60.0, 1.0 / 60.0); out.extend(d.take_emits()); }
+    out
+}
+#[test] fn on_wet_gravel_the_wheels_throw_spray_and_mud_instead_of_dust() {
+    let dry = gpu_emits(Surface::Gravel, 0.0);
+    assert!(!dry.is_empty() && dry.iter().all(|p| !(p.smoke && p.coarse)), "dry: dust, no spray");
+    let wet = gpu_emits(Surface::Gravel, 1.0);
+    let spray = wet.iter().filter(|p| p.smoke && p.coarse).count();
+    let mud = wet.iter().filter(|p| p.speck && p.coarse).count();
+    let dust = wet.iter().filter(|p| !p.smoke && !p.speck).count();
+    assert!(spray > wet.len() / 4 && mud > wet.len() / 10, "spray {spray}, mud {mud} of {}", wet.len());
+    assert!(dust < wet.len() / 5, "only a thin share of dust is left: {dust} of {}", wet.len());
+    assert!(wet.iter().filter(|p| p.smoke && p.coarse).all(|p| p.color[2] > p.color[0] - 0.05), "the mist is pale and cold");
+    let specks: Vec<_> = wet.iter().filter(|p| p.speck).collect();
+    assert!(specks.iter().filter(|p| p.color.iter().all(|c| *c < 0.5)).count() * 10 > specks.len() * 8, "the mud is dark");
+}
+#[test] fn wet_asphalt_gives_spray_and_no_mud() {
+    let dry = gpu_emits(Surface::Asphalt, 0.0);
+    let wet = gpu_emits(Surface::Asphalt, 1.0);
+    assert!(wet.iter().any(|p| p.smoke && p.coarse), "spray");
+    assert!(wet.iter().all(|p| !(p.speck && p.coarse)), "no mud on a road");
+    assert!(wet.len() * 2 >= dry.len(), "the road is not silent when wet: {} vs {}", wet.len(), dry.len());
+}

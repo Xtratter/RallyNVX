@@ -613,7 +613,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     let tau = select(u.ph.x, u.ph.y, coarse) * (0.6 + 0.8 * fract(s.d.y * 7.31));   // every grain answers the air a little differently
     var settle = select(u.ph.z, u.ph.w, coarse);
-    if (smoke) { settle = -0.45; }   // tyre smoke is warm and fine: it drifts up a little
+    if (smoke) { settle = select(-0.45, 0.12, s.d.x > 3.5); }   // tyre smoke is warm and fine: it drifts up a little; wet-road spray (class 4) is cold water mist: it hangs and sinks slowly
     var air = air_at(pos, age / life);
     if (any(air != air)) { air = vec3<f32>(0.0); }
     // pushed away from the dust around it; lit by the sun through the dust above it (the cells' light), the dense middle darker
@@ -673,7 +673,7 @@ fn dust_step(@builtin(global_invocation_id) gid: vec3<u32>) {
     // all dust is soft smoke-like billows: fine dust and smoke spread wide (loose-soil dust stops growing after a few seconds, it only thins), the coarse part stays tighter
     let grow = select(select(1.1 * sqrt(min(age, 5.0)), 0.6 * sqrt(min(age, 3.0)), coarse), 1.1 * sqrt(age), smoke);
     let size = s.a.w * (1.0 + grow + 0.35 * x);
-    let alpha = select(select(0.22, 0.26, coarse), 0.22, smoke) * fade_in * pow(1.0 - x, select(select(1.0, 1.4, coarse), 0.8, smoke));
+    let alpha = select(select(0.22, 0.26, coarse), select(0.22, 0.13, s.d.x > 3.5), smoke) * fade_in * pow(1.0 - x, select(select(1.0, 1.4, coarse), 0.8, smoke));
     render[i] = DI(vec4<f32>(pos, size), vec4<f32>(s.c.xyz * shade, alpha), vec4<f32>(s.d.y, x, select(0.0, 1.0, coarse), light));
 }
 
