@@ -34,5 +34,6 @@ pub mod surface;
 pub mod terrain;
 pub mod tracks;
 pub mod vehicle;
+pub mod weather;
 pub mod wind;
 pub mod world;

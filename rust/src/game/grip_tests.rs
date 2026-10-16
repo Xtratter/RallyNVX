@@ -128,3 +128,24 @@ fn stage(len: f32) -> RoadNet {
     bad["tyre_sets"]["snow"]["moon"] = serde_json::json!([1.0, 1.0]);
     assert!(GripTable::from_json(&bad.to_string()).is_err(), "an unknown surface");
 }
+
+#[test] fn wet_ground_costs_grip_everywhere_it_is_listed_and_dry_ground_nothing() {
+    let t = GripTable::from_json(EMBEDDED).unwrap();
+    let all = [Surface::Grass, Surface::Dirt, Surface::Sand, Surface::Rock, Surface::Gravel, Surface::Asphalt, Surface::Water];
+    for s in all {
+        assert_eq!(t.wet_factor(s, 0.0), (1.0, 1.0), "dry {s:?}");
+        let (g, l) = t.wet_factor(s, 1.0); assert!((0.3..=1.0).contains(&g) && (0.3..=1.0).contains(&l), "soaked {s:?}: {g} {l}");
+        let half = t.wet_factor(s, 0.5); assert!(half.0 >= g && half.0 <= 1.0, "between: {half:?}");
+    }
+    assert!(t.wet_factor(Surface::Dirt, 1.0).0 < t.wet_factor(Surface::Sand, 1.0).0, "mud is worse than wet sand");
+    assert!(t.wet_factor(Surface::Asphalt, 1.0).0 < 0.85, "wet asphalt is slippery");
+    assert_eq!(t.wet_factor(Surface::Asphalt, f32::NAN), (1.0, 1.0));
+    assert_eq!(t.wet_factor(Surface::Asphalt, 5.0), t.wet_factor(Surface::Asphalt, 1.0), "clamped");
+    let mut v: serde_json::Value = serde_json::from_str(EMBEDDED).unwrap();
+    v.as_object_mut().unwrap().remove("wet");
+    assert_eq!(GripTable::from_json(&v.to_string()).unwrap().wet_factor(Surface::Asphalt, 1.0), (1.0, 1.0), "no table: neutral");
+    v["wet"] = serde_json::json!({ "asphalt": [0.1, 1.0] });
+    assert!(GripTable::from_json(&v.to_string()).is_err(), "out of range");
+    v["wet"] = serde_json::json!({ "ice": [0.5, 0.5] });
+    assert!(GripTable::from_json(&v.to_string()).is_err(), "unknown surface");
+}

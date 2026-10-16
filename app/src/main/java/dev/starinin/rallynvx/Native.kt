@@ -59,6 +59,8 @@ object Native {
     @JvmStatic external fun gameAirflowDebug(on: Int)
     @JvmStatic external fun gameDustGpuDebug(on: Int)
     @JvmStatic external fun gameAero(on: Int)
+    /** The weather: 0 auto (the level's seed), 1 clear, 2 cloudy, 3 rain, 4 heavy rain, 5 fog; it moves smoothly and the ground dries slowly. */
+    @JvmStatic external fun gameWeather(mode: Int)
     /** Motion blur: 0 off, 1 low, 2 high. */
     @JvmStatic external fun gameMotionBlur(level: Int)
     /** The GPU dust options as bits: 1 particle pressure, 2 the car's exact shape, 4 world collisions, 8 the settled layer. */

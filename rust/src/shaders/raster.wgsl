@@ -1,7 +1,7 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
-    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>, susp: vec4<f32>,
+    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>, susp: vec4<f32>, wx: vec4<f32>, cr: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
@@ -213,11 +213,14 @@ fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: 
     let sun = normalize(u.sun.xyz);
     let diff = max(dot(n, sun), 0.0) * sh;
     let amb = mix(vec3<f32>(0.20, 0.22, 0.26) * mix(1.0, 0.12, u.disc.w), u.sky_top.rgb * 0.55, n.y * 0.5 + 0.5);
-    var c = albedo * (u.sun_col.rgb * diff + amb);
+    // wet ground (upward-facing surfaces, not the car): darker, and glossy with the sky in it at grazing angles
+    let wetk = u.wx.y * smoothstep(0.55, 0.9, n.y) * (1.0 - own_surface);
+    let al = albedo * (1.0 - 0.32 * wetk);
+    var c = al * (u.sun_col.rgb * diff + amb);
     if (u.hl_pos.w > 0.0 && own_surface < 0.5) {
         let l = normalize(wp - u.hl_pos.xyz);
         // a beam on a grazing surface (the ground far ahead) is weak by n.l alone: keep a floor so the beam reaches far
-        c = c + albedo * vec3<f32>(1.0, 0.93, 0.80) * (14.0 * headbeam(wp) * (0.25 + 0.75 * max(dot(n, -l), 0.0)));
+        c = c + al * vec3<f32>(1.0, 0.93, 0.80) * (14.0 * headbeam(wp) * (0.25 + 0.75 * max(dot(n, -l), 0.0)));
     }
     if (u.tl_col.w > 0.0 && own_surface < 0.5) {
         let dv = wp - u.tl_pos.xyz;
@@ -225,7 +228,7 @@ fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: 
         // only what lies behind the rear bumper is lit by the tail lights, never the ground under the car (mirrored in `carlights::tail_gain`)
         let behind = smoothstep(0.3, 1.0, dot(dv, -normalize(u.hl_dir.xyz)));
         let att = clamp(1.0 - dist / u.tl_col.w, 0.0, 1.0);
-        c = c + albedo * u.tl_col.rgb * (behind * att * att * (0.35 + 0.65 * max(dot(n, -dv / max(dist, 0.001)), 0.0)) * 4.0);
+        c = c + al * u.tl_col.rgb * (behind * att * att * (0.35 + 0.65 * max(dot(n, -dv / max(dist, 0.001)), 0.0)) * 4.0);
     }
     if (sharp > 0.0) {
         let v = normalize(u.cam.xyz - wp);
@@ -233,6 +236,11 @@ fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: 
         c = c + u.sun_col.rgb * 0.4 * spec * pow(max(dot(n, h), 0.0), sharp) * sh * step(0.0, dot(n, sun));
         let fr = pow(1.0 - max(dot(n, v), 0.0), 4.0);
         c = c + sky_gradient(reflect(-v, n)) * fr * spec * 0.5;
+    }
+    if (wetk > 0.0) {
+        let vw = normalize(u.cam.xyz - wp);
+        let frw = pow(1.0 - max(dot(n, vw), 0.0), 4.0);
+        c = c + sky_gradient(reflect(-vw, n)) * (0.04 + frw) * wetk * 0.7;
     }
     let d = length(wp - u.cam.xyz);
     let f = 1.0 - exp(-d * u.fog.x);
@@ -434,6 +442,55 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     return vec4<f32>(finish(col), a);
 }
 
+
+// Rain: streaks on a lattice that is fixed in the world round the camera (so they fall past a moving car), wind-slanted, not inside the car; stateless (the position is a hash of
+// the instance and the clock). `wx.x` is the rain (0..1): that share of the instances is alive.
+const RAIN_N: f32 = 6000.0;
+struct ROut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) a: f32 };
+fn hash_u3(i: u32) -> vec3<f32> {
+    var s = i * 747796405u + 2891336453u;
+    var r = vec3<f32>(0.0);
+    for (var k = 0; k < 3; k++) {
+        s = s * 747796405u + 2891336453u;
+        let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+        r[k] = f32((w >> 22u) ^ w) / 4294967295.0;
+    }
+    return r;
+}
+fn wrap_to(v: vec3<f32>, p: vec3<f32>) -> vec3<f32> { return v - floor(v / p + vec3<f32>(0.5)) * p; }
+@vertex fn vs_rain(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> ROut {
+    var o: ROut;
+    o.pos = vec4<f32>(2.0, 2.0, 2.0, 1.0);   // off screen unless the drop is alive
+    o.uv = vec2<f32>(0.0); o.a = 0.0;
+    if (f32(ii) >= u.wx.x * RAIN_N) { return o; }
+    let h = hash_u3(ii);
+    let bx = vec3<f32>(26.0, 14.0, 26.0);
+    let drift = vec3<f32>(u.wind.x, 0.0, u.wind.y) * 0.8;
+    let t = u.cr.w;
+    let start = h * bx + drift * t - vec3<f32>(0.0, 11.0 * t, 0.0);
+    let p = u.cam.xyz + wrap_to(start - u.cam.xyz, bx);
+    // not inside the car
+    let dc = p - u.cr.xyz;
+    if (abs(dc.x) < 2.6 && abs(dc.z) < 2.6 && dc.y > -1.2 && dc.y < 1.8) { return o; }
+    let dir = normalize(vec3<f32>(drift.x, -11.0, drift.z));
+    let to_cam = p - u.cam.xyz;
+    let dist = length(to_cam);
+    let w = 0.004 + 0.0018 * dist;
+    let side = normalize(cross(dir, to_cam)) * w;
+    var q = array<vec2<f32>, 6>(vec2<f32>(-1.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(-1.0, 1.0), vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0));
+    let c = q[vi];
+    let wp = p + dir * (0.5 * c.y) + side * c.x;
+    o.pos = u.vp * vec4<f32>(wp, 1.0);
+    o.uv = c;
+    o.a = (0.22 + 0.2 * u.wx.x) * (1.0 - smoothstep(8.0, 13.0, dist)) * smoothstep(0.6, 2.0, dist);
+    return o;
+}
+@fragment fn fs_rain(i: ROut) -> @location(0) vec4<f32> {
+    let edge = 1.0 - abs(i.uv.x);
+    let col = u.sky_hor.rgb * 0.7 + vec3<f32>(0.25);
+    return vec4<f32>(col, i.a * edge);
+}
+
 struct IOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) emi: f32,
     @location(4) ctr: vec3<f32>, @location(5) size: vec3<f32> };
 
@@ -534,10 +591,10 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     if (dir.y > 0.02) {
         let p = dir.xz / (dir.y + 0.12) * 0.35 - u.wind.zw;   // the pattern drifts downwind (the offset integrates the wind on the CPU)
         let n = fbm2(p);
-        cov = smoothstep(0.50, 0.78, n) * smoothstep(0.02, 0.25, dir.y) * mix(1.0, 0.4, night);
+        cov = smoothstep(0.50 - 0.45 * u.wx.z, 0.78 - 0.40 * u.wx.z, n) * smoothstep(0.02, 0.25, dir.y) * mix(1.0, 0.4, night);   // the weather's cloud cover lowers the thresholds: overcast
         let lit_side = clamp(0.55 + 0.45 * (1.0 - n), 0.0, 1.0);
         let sun_tint = normalize(u.sun_col.rgb + vec3<f32>(0.001)) * 1.7;
-        let cloud = mix(vec3<f32>(0.62, 0.65, 0.72), vec3<f32>(1.0, 0.98, 0.95) * sun_tint, lit_side) * mix(1.0, 0.06, night);
+        let cloud = mix(vec3<f32>(0.62, 0.65, 0.72), vec3<f32>(1.0, 0.98, 0.95) * sun_tint, lit_side) * mix(1.0, 0.06, night) * (1.0 - 0.35 * u.wx.z);
         c = mix(c, cloud, cov * 0.92);
     }
     // stars: a hashed point field on the sphere, twinkling, only in the night and in clear sky
@@ -551,7 +608,7 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
             let mag = 0.35 + 0.65 * (h - 0.985) / 0.015;
             let tw = 0.75 + 0.25 * sin(u.fog.y * 3.0 + h * 400.0);
             let star = smoothstep(0.17, 0.0, d) * mag * tw;
-            c = c + vec3<f32>(0.85, 0.9, 1.0) * star * 1.8 * smoothstep(0.2, 0.9, night) * (1.0 - cov) * smoothstep(0.0, 0.18, dir.y);
+            c = c + vec3<f32>(0.85, 0.9, 1.0) * star * 1.8 * smoothstep(0.2, 0.9, night) * (1.0 - cov) * smoothstep(0.0, 0.18, dir.y) * u.wx.w;
         }
     }
     // the moon: a disc whose lit side faces the sun, with a soft glow
@@ -561,7 +618,7 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     let upv = cross(md, rgt);
     let pm = vec2<f32>(dot(dir, rgt), dot(dir, upv)) / rm;
     let r2 = dot(pm, pm);
-    let shown = horizon * (1.0 - 0.9 * cov);
+    let shown = horizon * (1.0 - 0.9 * cov) * u.wx.w;
     if (sm > 0.0 && r2 < 1.0) {
         let nrm = rgt * pm.x + upv * pm.y - md * sqrt(max(1.0 - r2, 0.0));
         let lit_m = clamp(dot(nrm, sd) * 2.5, 0.0, 1.0);
@@ -574,7 +631,7 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     let s = max(dot(dir, sd), 0.0);
     let sun_c = mix(vec3<f32>(1.0, 0.95, 0.80), vec3<f32>(1.0, 0.42, 0.14), 1.0 - smoothstep(0.0, 0.35, sd.y)) * smoothstep(-0.14, 0.0, sd.y);
     let sun_disc = 1.0 - smoothstep(1.7e-4, 2.3e-4, 1.0 - s);
-    c = c + sun_c * (sun_disc * 14.0 * horizon + pow(s, 400.0) * 3.0 + pow(s, 12.0) * 0.12 + pow(s, 3.0) * 0.04);
+    c = c + sun_c * (sun_disc * 14.0 * horizon * u.wx.w + pow(s, 400.0) * 3.0 * u.wx.w + pow(s, 12.0) * 0.12 * u.wx.w + pow(s, 3.0) * 0.04);
     return vec4<f32>(finish(c), 1.0);
 }
 

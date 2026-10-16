@@ -214,6 +214,7 @@ impl Dust {
         }
         // emission
         let (cap, mut factor) = caps(self.level);
+        factor *= 1.0 - 0.85 * v.wet.clamp(0.0, 1.0);   // wet ground raises little dust
         if cap == 0 { return; }
         if self.gpu { factor *= table.dust_gpu_factor; }
         let vh = horizontal(v.vel);

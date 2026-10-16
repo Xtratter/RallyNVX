@@ -37,6 +37,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var camBtn: View? = null
     private var todMode = 0   // the quick time-of-day switch (see TimeOfDay); every launch starts on Auto
     private var todBtn: View? = null
+    private var weatherBtn: View? = null
     private var camView = 0; private var camDist = 1f; private var camHeight = 0f
     private var seed = 0L
     private lateinit var audio: AudioEngine
@@ -108,6 +109,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, if (rallyIdx > 0) 150f else 284f, 168f) { setAutopilot(!autopilotOn) }
         autopilotBtn?.setOnLongClickListener { showAutopilotPanel(); true }   // long press: the autopilot settings
         // the camera view button under the status line: a tap cycles the views, a long press puts the current view back to its default distance and height
+        intent.getIntExtra("weather", -1).let { if (it >= 0) Controls.setWeather(this, it) }   // debug/test: the weather mode
+        Native.gameWeather(Controls.weather(this))   // before the level is made: it starts in that weather
         camView = intent.getIntExtra("camview", Controls.camView(this)).coerceIn(0, CamMath.VIEWS - 1)   // debug/test: `camview`, `camdist`, `camheight` pick a view
         camDist = CamMath.clampDist(intent.getFloatExtra("camdist", Controls.camDist(this, camView))); camHeight = CamMath.clampHeight(camView, intent.getFloatExtra("camheight", Controls.camHeight(this, camView)))
         camBtn = M3Widgets.button(this, camLabel(), M3Widgets.ButtonKind.TONAL) { selectCameraView(CamMath.next(camView)) }.also {
@@ -122,6 +125,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         todBtn = M3Widgets.button(this, todLabel(), M3Widgets.ButtonKind.TONAL) {
             todMode = TimeOfDay.next(todMode); Native.gameTimeOfDay(TimeOfDay.phase(todMode)); (todBtn as? android.widget.TextView)?.text = todLabel()
         }.also { root.addView(it, FrameLayout.LayoutParams(px(150f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(240f), px(88f), 0, 0) }) }
+        // the weather: a tap cycles Auto, Clear, Cloudy, Rain, Heavy rain, Fog (it blends in over a few seconds; saved like the Settings row)
+        weatherBtn = M3Widgets.button(this, weatherLabel(), M3Widgets.ButtonKind.TONAL) {
+            Controls.setWeather(this, WeatherMode.next(Controls.weather(this))); Native.gameWeather(Controls.weather(this)); (weatherBtn as? android.widget.TextView)?.text = weatherLabel()
+        }.also { root.addView(it, FrameLayout.LayoutParams(px(190f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(398f), px(88f), 0, 0) }) }
         button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
             handbrakeBtn = this
             applyControlLayout()
@@ -400,7 +407,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val colB = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val list = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; addView(colA, LinearLayout.LayoutParams(px(330f), -2)); addView(colB, LinearLayout.LayoutParams(px(330f), -2).apply { marginStart = px(16f) }) }
         var rows = 0
-        fun applyLive() { if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0); Native.gameDustOpts(Controls.dustOpts(this)); Native.gameMotionBlur(Controls.motionBlur(this)) }; refreshers.forEach { it() } }
+        fun applyLive() { if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0); Native.gameDustOpts(Controls.dustOpts(this)); Native.gameMotionBlur(Controls.motionBlur(this)); Native.gameWeather(Controls.weather(this)) }; refreshers.forEach { it() } }
         fun row(text: String, value: () -> String, onClick: () -> Unit) {
             val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             r.addView(TextView(this).apply { this.text = text; textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -430,6 +437,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         settingsPanel = p
     }
 
+    private fun weatherLabel() = t("Weather: ", "Погода: ") + WeatherMode.name(Controls.weather(this), java.util.Locale.getDefault().language != "ru")
     private fun todLabel() = t("Time: ", "Время: ") + TimeOfDay.name(todMode, java.util.Locale.getDefault().language != "ru")
     private fun camLabel() = t("View: ", "Вид: ") + CamMath.name(camView, java.util.Locale.getDefault().language != "ru")
 

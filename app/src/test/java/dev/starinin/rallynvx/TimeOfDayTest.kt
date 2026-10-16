@@ -19,4 +19,11 @@ class TimeOfDayTest {
     @Test fun `names exist in both languages`() {
         for (m in 0 until TimeOfDay.COUNT) { assertTrue(TimeOfDay.name(m, true).isNotBlank()); assertTrue(TimeOfDay.name(m, false).isNotBlank()) }
     }
+    @Test fun `the weather modes cycle through all six and have names`() {
+        var m = 0
+        val seen = (1..WeatherMode.COUNT).map { m = WeatherMode.next(m); m }
+        assertEquals(listOf(1, 2, 3, 4, 5, 0), seen)
+        for (i in 0 until WeatherMode.COUNT) { assertTrue(WeatherMode.name(i, true).isNotBlank() && WeatherMode.name(i, false).isNotBlank()) }
+        assertEquals("Rain", WeatherMode.name(3, true)); assertEquals("Ливень", WeatherMode.name(4, false)); assertEquals("Auto", WeatherMode.name(6, true))
+    }
 }
