@@ -89,9 +89,13 @@ fn shadow_at(wp: vec3<f32>, n: vec3<f32>) -> f32 {
     if (inside < 0.5) { return 1.0; }
     let sun_n = normalize(u.sun.xyz);
     let zr = p.z - (0.0015 + 0.006 * (1.0 - clamp(dot(n, sun_n), 0.0, 1.0)));   // slope-scaled bias
+    if (dot(n, sun_n) <= 0.0) { return 1.0; }                // facing away from the sun: the diffuse term is zero whatever the shadow says
+    // beyond 45 m the filter is cut to a little over half the taps (the penumbra is hardly resolved there anyway)
+    let far = distance(wp, u.cam.xyz) > 45.0;
     var bsum = 0.0; var bcnt = 0.0;
     let maxpix = 12.0;                                       // search radius in texels = the largest filter radius
-    for (var i = 0; i < 9; i++) {
+    for (var k = 0; k < select(9, 5, far); k++) {
+        let i = select(k, select(k * 2, 8, k == 4), far);
         let o = select(POISSON[i] * (maxpix * texel), vec2<f32>(0.0), i == 8);   // 8 spread taps plus the centre
         let q = clamp(uv + o, vec2<f32>(0.0), vec2<f32>(0.9995));
         let d = textureLoad(shadow_tex, vec2<i32>(q * 2048.0), 0);
@@ -102,8 +106,9 @@ fn shadow_at(wp: vec3<f32>, n: vec3<f32>) -> f32 {
     let pen_m = clamp(dist_m * 0.028, 0.04, 0.8);
     let rad = pen_m / 0.0684 * texel;                        // shadow map texel = 140 / 2048 m (at most 12 texels)
     var s = textureSampleCompareLevel(shadow_tex, shadow_smp, uv, zr);
-    for (var i = 0; i < 11; i++) { s += textureSampleCompareLevel(shadow_tex, shadow_smp, uv + POISSON[i] * rad, zr); }
-    return s / 12.0;
+    let np = select(11, 5, far);
+    for (var k = 0; k < np; k++) { s += textureSampleCompareLevel(shadow_tex, shadow_smp, uv + POISSON[select(k, k * 2, far)] * rad, zr); }
+    return s / (1.0 + f32(np));
 }
 
 // terrain height from the atlas (metres); far below everything where no tile is loaded

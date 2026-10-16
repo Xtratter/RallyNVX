@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.44.1 - profiling tools
+
+- Added: the GPU profile (debug extra `gpuprof 1`) now times the shadow and the main pass on their own, and a file `skipmask` in the app's files directory leaves draw groups out while profiling (1 terrain, 2 models, 4 instances, 8 roads, 16 water, 32 glass and rain) to see what each costs
+- Changed: soft shadows beyond 45 m use about half the taps, and surfaces facing away from the sun skip the shadow lookup (no visible difference)
+- Measured (day, 3rd person, POCO F3): the main pass takes about 25 ms, of which the terrain about 11 ms, roads 4 ms, models 3 ms; the soft-shadow filter is about a third of the main pass; at night the headlight lighting adds 5 to 8 ms. The phone throttles when hot (the same scene ranged from 25 to 30 ms)
+
 ## 2.44.0 - micro-relief
 
 - Added: normal maps for the Peugeot (paint details, tyres, rims, plastics from the model's own maps, in a half-size atlas next to the livery); they fade out with distance

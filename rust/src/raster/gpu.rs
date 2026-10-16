@@ -742,7 +742,7 @@ impl Raster {
                 label: Some("shadow"), color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.shadow.1,
                     depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
-                timestamp_writes: None, occlusion_query_set: None });
+                timestamp_writes: self.prof.as_ref().and_then(|p| p.pass_writes(6)), occlusion_query_set: None });
             rp.set_pipeline(&self.pl_terrain_sh);
             rp.set_bind_group(0, &self.bg_shadow, &[]);
             for (&(tx, tz, lod), m) in &self.tiles {
@@ -782,12 +782,13 @@ impl Raster {
                     ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: wv.daylight.sky_hor[0] as f64 * 0.7, g: wv.daylight.sky_hor[1] as f64 * 0.7, b: wv.daylight.sky_hor[2] as f64 * 0.7, a: 1.0 }), store: wgpu::StoreOp::Store } })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.depth.1,
                     depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: if dust_low || blur_on { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard } }), stencil_ops: None }),
-                timestamp_writes: None, occlusion_query_set: None });
+                timestamp_writes: self.prof.as_ref().and_then(|p| p.pass_writes(8)), occlusion_query_set: None });
             rp.set_bind_group(0, &self.bg_main, &[]);
             rp.set_pipeline(&self.pl_sky);
             rp.draw(0..3, 0..1);
+            let skip = prof_skip();   // debug: draw groups left out while profiling (file `skipmask` in the app's files dir: 1 terrain, 2 models, 4 instances, 8 roads, 16 water, 32 glass and rain)
             rp.set_pipeline(&self.pl_terrain);
-            for m in self.tiles.values() {
+            for m in self.tiles.values().filter(|_| skip & 1 == 0) {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 if let Some(w) = &m.wb { rp.set_vertex_buffer(1, w.slice(..)); }
                 rp.draw_indexed(0..m.n, 0, 0..1);
@@ -797,7 +798,7 @@ impl Raster {
             let inside = (wv.cam_pos - wv.vehicle.pos).len() < 1.5;   // the camera is in the car: its body is drawn with the back faces culled
             for k in 0..MODEL_SLOTS {
                 if k == SLOT_GLASS { continue; }   // drawn blended, after everything opaque
-                let (a, b) = mranges[k]; if b == a { continue; }
+                let (a, b) = mranges[k]; if b == a || skip & 2 != 0 { continue; }
                 let m = &self.models[k];
                 if k == 0 && inside { rp.set_pipeline(&self.pl_model_back); rp.set_vertex_buffer(1, self.mbuf.slice(..)); }
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
@@ -807,29 +808,29 @@ impl Raster {
             rp.set_pipeline(&self.pl_inst);
             rp.set_vertex_buffer(1, self.ibuf.slice(..));
             for k in 0..4 {
-                let (a, b) = ranges[k]; if b == a { continue; }
+                let (a, b) = ranges[k]; if b == a || skip & 4 != 0 { continue; }
                 let m = &self.meshes[k];
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, a..b);
             }
-            if city_end > city_start {
+            if city_end > city_start && skip & 4 == 0 {
                 let m = &self.meshes[0];
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, city_start..city_end);
             }
             rp.set_pipeline(&self.pl_road);
-            for m in self.roads.values().flatten() {
+            for m in self.roads.values().flatten().filter(|_| skip & 8 == 0) {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, 0..1);
             }
             rp.set_pipeline(&self.pl_water);
-            for m in self.water.values().flatten() {
+            for m in self.water.values().flatten().filter(|_| skip & 16 == 0) {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, 0..1);
             }
             {   // the car's glass: blended over the opaque scene, no depth write (see `fs_glass`)
                 let (a, b) = mranges[SLOT_GLASS];
-                if b > a {
+                if b > a && skip & 32 == 0 {
                     let m = &self.models[SLOT_GLASS];
                     rp.set_pipeline(&self.pl_glass);
                     rp.set_vertex_buffer(1, self.mbuf.slice(..));
@@ -837,7 +838,7 @@ impl Raster {
                     rp.draw_indexed(0..m.n, 0, a..b);
                 }
             }
-            if wv.weather.rain > 0.02 {   // the rain streaks: stateless instanced quads round the camera (`vs_rain`)
+            if wv.weather.rain > 0.02 && skip & 32 == 0 {   // the rain streaks: stateless instanced quads round the camera (`vs_rain`)
                 rp.set_pipeline(&self.pl_rain);
                 rp.draw(0..6, 0..RAIN_DROPS);
             }
@@ -890,9 +891,11 @@ static BLUR_LEVEL: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::
 pub fn set_blur(level: i32) { BLUR_LEVEL.store(level.clamp(0, 2), std::sync::atomic::Ordering::Relaxed); }
 
 static PROF_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static PROF_SKIP: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+fn prof_skip() -> u32 { if PROF_ON.load(std::sync::atomic::Ordering::Relaxed) { PROF_SKIP.load(std::sync::atomic::Ordering::Relaxed) } else { 0 } }
 pub fn set_prof(on: bool) { PROF_ON.store(on, std::sync::atomic::Ordering::Relaxed); }
 pub fn prof_on() -> bool { PROF_ON.load(std::sync::atomic::Ordering::Relaxed) }
-const PROF_N: u32 = 6;
+const PROF_N: u32 = 10;
 const PROF_NAMES: [&str; 5] = ["airflow", "dust compute", "shadow+main", "dust low+comp", "rest"];
 
 struct Prof { qs: wgpu::QuerySet, resolve: wgpu::Buffer, read: wgpu::Buffer, period: f32, frame: u32 }
@@ -904,6 +907,10 @@ impl Prof {
             read: dev.create_buffer(&wgpu::BufferDescriptor { label: Some("prof_read"), size: 8 * PROF_N as u64, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false }),
             period, frame: 0 }
     }
+    /// Begin/end timestamps of a render pass at queries `i` and `i + 1` (only while profiling).
+    fn pass_writes(&self, i: u32) -> Option<wgpu::RenderPassTimestampWrites<'_>> {
+        PROF_ON.load(std::sync::atomic::Ordering::Relaxed).then(|| wgpu::RenderPassTimestampWrites { query_set: &self.qs, beginning_of_pass_write_index: Some(i), end_of_pass_write_index: Some(i + 1) })
+    }
     fn mark(&self, enc: &mut wgpu::CommandEncoder, i: u32) { if PROF_ON.load(std::sync::atomic::Ordering::Relaxed) { enc.write_timestamp(&self.qs, i); } }
     fn resolve(&self, enc: &mut wgpu::CommandEncoder) {
         if !PROF_ON.load(std::sync::atomic::Ordering::Relaxed) { return; }
@@ -914,6 +921,7 @@ impl Prof {
     fn report(&mut self, dev: &wgpu::Device) {
         if !PROF_ON.load(std::sync::atomic::Ordering::Relaxed) { return; }
         self.frame += 1;
+        if self.frame % 10 == 0 { PROF_SKIP.store(std::fs::read_to_string("/data/data/dev.starinin.rallynvx/files/skipmask").ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0), std::sync::atomic::Ordering::Relaxed); }
         if self.frame % 90 != 0 { return; }
         let slice = self.read.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
@@ -922,6 +930,6 @@ impl Prof {
         self.read.unmap();
         let ms = |a: usize| (ts[a + 1].wrapping_sub(ts[a])) as f32 * self.period / 1.0e6;
         let parts: Vec<String> = (0..5).map(|i| format!("{} {:.1}", PROF_NAMES[i], ms(i))).collect();
-        log::info!("gpuprof ms: {} | total {:.1}", parts.join(", "), (ts[5].wrapping_sub(ts[0])) as f32 * self.period / 1.0e6);
+        log::info!("gpuprof ms: {} | total {:.1} | passes: shadow {:.1}, main {:.1}", parts.join(", "), (ts[5].wrapping_sub(ts[0])) as f32 * self.period / 1.0e6, ms(6), ms(8));
     }
 }
