@@ -107,3 +107,24 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
     assert_eq!(steering_wheel_angle(f32::NAN), 0.0);
     assert!(draw_driver(5.0) && draw_driver(1.2) && !draw_driver(0.9) && !draw_driver(0.0), "no driver with the camera inside the car");
 }
+
+#[cfg(test)]
+mod wiper_tests {
+    use super::super::{wiper_angle, WIPER_SWEEP};
+    #[test] fn wipers_are_parked_when_it_does_not_rain() {
+        for t in [0.0, 0.7, 5.3] { assert_eq!(wiper_angle(t, 0.0), 0.0); assert_eq!(wiper_angle(t, 0.04), 0.0); }
+    }
+    #[test] fn wipers_sweep_up_to_the_limit_and_come_back_in_the_rain() {
+        let samples: Vec<f32> = (0..400).map(|k| wiper_angle(k as f32 * 0.01, 0.5)).collect();
+        let max = samples.iter().cloned().fold(0.0, f32::max);
+        assert!((max - WIPER_SWEEP).abs() < 1e-3, "reaches the sweep limit: {max}");
+        assert!(samples.iter().all(|&a| (0.0..=WIPER_SWEEP + 1e-4).contains(&a)), "never beyond the sweep");
+        assert!(wiper_angle(0.0, 0.5) < 1e-4 && wiper_angle(2.6, 0.5) < 1e-4, "parked at the start of every cycle");
+    }
+    #[test] fn wipers_are_quicker_in_a_heavy_rain_and_ignore_bad_input() {
+        assert!(wiper_angle(0.65, 0.9) > 0.99 * WIPER_SWEEP, "half a wipe in a downpour is at the top");
+        assert!(wiper_angle(0.65, 0.3) < 0.99 * WIPER_SWEEP, "a drizzle is slower");
+        assert_eq!(wiper_angle(f32::NAN, 0.5), 0.0); assert_eq!(wiper_angle(1.0, f32::NAN), 0.0);
+        assert!(wiper_angle(-1.3, 0.9) >= 0.0, "a negative clock still gives a valid angle");
+    }
+}
