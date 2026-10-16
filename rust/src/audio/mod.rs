@@ -3,6 +3,7 @@
 pub mod acoustics;
 pub mod director;
 pub mod dsp;
+pub mod reverb;
 pub mod spatial;
 pub mod synth;
 
@@ -50,9 +51,11 @@ pub struct Scene {
     pub extra: [SrcExtra; N_SRC],
     /// The listener sits in the car's cabin: the wind is muffled (a gain and a cutoff in Hz).
     pub wind_gain: f32, pub wind_hz: f32,
+    /// The environment's tail and echoes, worked out from rays cast round the listener.
+    pub env: reverb::Env,
 }
 impl Default for Scene {
-    fn default() -> Scene { Scene { listener: V3::ZERO, fwd: v3(0.0, 0.0, 1.0), src: [v3(0.0, 0.0, 8.0); N_SRC], wheel_on: [1.0; 4], wheel_slip: [1.0; 4], extra: [SrcExtra::default(); N_SRC], wind_gain: 1.0, wind_hz: 20000.0 } }
+    fn default() -> Scene { Scene { listener: V3::ZERO, fwd: v3(0.0, 0.0, 1.0), src: [v3(0.0, 0.0, 8.0); N_SRC], wheel_on: [1.0; 4], wheel_slip: [1.0; 4], extra: [SrcExtra::default(); N_SRC], wind_gain: 1.0, wind_hz: 20000.0, env: reverb::Env::default() } }
 }
 
 /// One-shot sounds. Strengths are 0..1.

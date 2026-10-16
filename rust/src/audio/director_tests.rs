@@ -93,7 +93,7 @@ fn settled() -> World { let mut w = World::new(7); for _ in 0..120 { w.step(&Inp
 
 #[test] fn the_scene_puts_the_listener_at_the_camera_and_the_sources_on_the_car() {
     use super::{SRC_BAY, SRC_BODY, SRC_EXHAUST, SRC_WHEEL};
-    let mut w = settled(); let d = Director::new();
+    let mut w = settled(); let mut d = Director::new();
     for _ in 0..30 { w.cam.update(&w.vehicle, &w.terrain, 1.0 / 60.0); }
     let sc = d.scene(&w);
     assert_eq!(sc.listener, w.cam.pos);
@@ -109,7 +109,7 @@ fn settled() -> World { let mut w = World::new(7); for _ in 0..120 { w.step(&Inp
 #[test] fn the_cockpit_hears_the_world_through_the_body_and_the_chase_camera_does_not() {
     use super::{SRC_BAY, SRC_EXHAUST};
     let mut w = World::new_with(7, crate::game::vehicle::VehicleSpec::by_id("vulpes").unwrap()); for _ in 0..120 { w.step(&Input::default(), 1.0 / 60.0); }
-    let d = Director::new();
+    let mut d = Director::new();
     for _ in 0..60 { w.cam.update(&w.vehicle, &w.terrain, 1.0 / 60.0); }
     let out = d.scene(&w);
     assert!(out.wind_gain == 1.0 && out.extra[SRC_EXHAUST].gain > 0.9, "the chase camera is outside: {:?}", out.extra[SRC_EXHAUST]);

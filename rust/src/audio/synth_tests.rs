@@ -127,3 +127,18 @@ fn rms(v: &[f32]) -> f32 { (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f3
     let mut bad = Scene::default(); bad.listener = v3(f32::NAN, 0.0, 0.0); s.set_scene(&bad);
     assert!(run_st(&mut s, 0.1).iter().all(|x| x.is_finite()));
 }
+
+#[test] fn the_environment_adds_a_tail_that_rings_after_the_sound_and_echoes_off_a_wall() {
+    use super::reverb::Env;
+    let tail = |env: Env| {
+        let mut s = Synth::new(); s.set_params(&AudioParams { active: true, ..Default::default() });
+        let mut sc = Scene::default(); sc.env = env; s.set_scene(&sc);
+        let mut v = vec![0.0f32; secs(3.0) * 2]; s.render_stereo_f32(&mut v);
+        s.push(Event::Touchdown(1.0));
+        let mut v = vec![0.0f32; secs(2.0) * 2]; s.render_stereo_f32(&mut v);
+        let late = &v[secs(1.0) * 2..secs(1.5) * 2]; (late.iter().map(|x| x * x).sum::<f32>() / late.len() as f32).sqrt()
+    };
+    let dry = tail(Env { level: 0.0, ..Env::default() });
+    let wet = tail(Env { rt60: 1.5, level: 0.8, damp_hz: 9000.0, ..Env::default() });
+    assert!(dry < 1e-6 && wet > 1e-4, "a room rings after the sound has ended: {wet} vs {dry}");
+}

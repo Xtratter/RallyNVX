@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.61.0 - the sound of the place (spatial audio, stage 3)
+
+- Added: the environment reverb from rays. 64 rays are cast round the listener (a quarter of them renewed every frame, up to 150 m): they meet the ground, rocks, the crowns of the trees, houses; their mean free path, the share that escapes into the sky and what the things they hit absorb give the tail: a street between houses rings long and loud, an open field barely at all, a forest is short and dark (the crowns take the highs). A feedback delay network of eight lines plays it, its decay time follows the rays (Eyring's formula) and moves smoothly when you drive from the field into the town
+- Added: echoes off the surroundings: a wall, a cliff or a house on the right, left, ahead or behind comes back after the round trip to it (distance x 2 / 343 m/s), panned to its side and as strong as the share of the rays that met it
+- Changed: in the cockpit the tail is the small upholstered room of the cabin (short and dark), not the outside
+
 ## 2.60.0 - what stands in the way of a sound (spatial audio, stage 2)
 
 - Added: the sound is blocked and bent: a ridge, a rock, a house or the car itself between a source and your ears takes the sound's highs first (a screen's diffraction, Maekawa's rule per band, with the longer path's delay); the crown of a tree dulls it a little; a wall muffles it

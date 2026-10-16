@@ -1,6 +1,7 @@
 //! Turns the game world into `AudioParams` and one-shot `Event`s by comparing each frame with the previous one.
 use super::{AudioParams, Event, Machine, Scene, Surface, N_SRC, SRC_BAY, SRC_BODY, SRC_EXHAUST, SRC_WHEEL};
-use super::acoustics::{ground_reflection, occlusion, surface_reflection, Cabin, Kind, Obstacle, Shape};
+use super::acoustics::{environment, ground_reflection, occlusion, sphere_dirs, surface_alpha, surface_reflection, trace, Cabin, Kind, Obstacle, RayResult, Shape};
+use super::reverb::Env;
 use super::SrcExtra;
 use crate::game::props::PropKind;
 use crate::game::{math::v3, world::World};
@@ -9,17 +10,23 @@ pub struct Director {
     started: bool, time: f32, seed: u64,
     grounded: bool, wet: bool,
     hspeed: f32, vy: f32, air_time: f32, quiet_until: f32,
+    /// The rays cast round the listener, a share of them renewed every frame (the tail and the echoes follow what they met), and where the renewing is.
+    rays: Vec<RayResult>, ray_next: usize, ray_seed: u64,
 }
+
+/// Rays cast round the listener, and how far they look, m.
+const RAYS: usize = 64;
+const RAY_RANGE: f32 = 150.0;
 
 impl Default for Director { fn default() -> Self { Director::new() } }
 
 impl Director {
     pub fn new() -> Director {
-        Director { started: false, time: 0.0, seed: 0, grounded: true, wet: false, hspeed: 0.0, vy: 0.0, air_time: 0.0, quiet_until: 0.0 }
+        Director { started: false, time: 0.0, seed: 0, grounded: true, wet: false, hspeed: 0.0, vy: 0.0, air_time: 0.0, quiet_until: 0.0, rays: Vec::new(), ray_next: 0, ray_seed: u64::MAX }
     }
 
     /// Where the listener (the camera) and the sound sources of the car are: the exhaust at the tail, the engine bay at the nose, the four tyres where they touch the ground.
-    pub fn scene(&self, w: &World) -> Scene {
+    pub fn scene(&mut self, w: &World) -> Scene {
         let v = &w.vehicle;
         let size = v.spec.size;
         let at = |x: f32, y: f32, z: f32| v.pos + v.rot.rotate(v3(x, y, z));
@@ -63,6 +70,20 @@ impl Director {
             sc.extra[k] = SrcExtra { gain, hz, extra_delay: o.extra_delay, echo };
         }
         if inside { sc.wind_gain = 0.45; sc.wind_hz = 1500.0; }
+        // the environment: rays round the listener (a quarter of them each frame) say how long the tail rings and where the walls are
+        if self.rays.is_empty() { self.rays = sphere_dirs(RAYS).into_iter().map(|dir| RayResult { dir, hit: None }).collect(); }
+        if self.ray_seed != t.seed { self.ray_seed = t.seed; for r in self.rays.iter_mut() { r.hit = None; } }
+        if inside {
+            sc.env = Env { rt60: 0.12, level: 0.18, damp_hz: 3500.0, ..Env::default() };   // the cabin: a small, upholstered room
+        } else {
+            let galpha = |x: f32, z: f32| if water.map_or(false, |l| t.height(x, z) < l) { surface_alpha(crate::game::surface::Surface::Water) } else { surface_alpha(crate::game::surface::surface_at(t, x, z)) };
+            for _ in 0..RAYS / 4 {
+                let i = self.ray_next; self.ray_next = (i + 1) % RAYS;
+                let dir = self.rays[i].dir;
+                self.rays[i].hit = trace(sc.listener, dir, RAY_RANGE, &ground, &galpha, &obs);
+            }
+            sc.env = environment(&self.rays, sc.fwd);
+        }
         sc
     }
 
