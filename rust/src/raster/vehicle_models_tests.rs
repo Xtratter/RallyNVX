@@ -29,22 +29,22 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
 #[test] fn wheel_poses_sit_at_the_mounts_and_front_wheels_steer() {
     let t = Terrain::flat(); let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., 1.1, 0.), 0.0);
     for _ in 0..120 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
-    let p = car_wheel_poses(&v, 0.0);
+    let p = car_wheel_poses(&v, 0.0, 0.0);
     for w in 0..4 { let mount = v.pos + v.rot.rotate(v.spec.wheels[w]); assert!((p[w].1.x - mount.x).abs() < 0.01 && (p[w].1.z - mount.z).abs() < 0.01, "wheel {w}"); assert!(p[w].1.y < mount.y + 1e-3); }
     let mut s = v; s.steer = 0.4;
-    let ps = car_wheel_poses(&s, 0.0);
+    let ps = car_wheel_poses(&s, 0.0, 0.0);
     let axle = |q: Q| q.rotate(v3(1., 0., 0.));
     assert!((axle(ps[0].0).z).abs() > 0.2 && (axle(ps[2].0).z).abs() < 0.05, "front wheels turn, rear wheels do not");
-    let spun = car_wheel_poses(&v, 1.0);
+    let spun = car_wheel_poses(&v, 1.0, 1.0);
     assert!((spun[0].0.rotate(v3(0., 1., 0.)) - p[0].0.rotate(v3(0., 1., 0.))).len() > 0.5, "spin rotates the wheel about its axle");
 }
 
 #[test] fn the_caliper_does_not_spin_but_follows_steer_and_suspension() {
     use crate::game::{math::v3, vehicle::{Vehicle, VehicleSpec}};
     let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0.0, 1.0, 0.0), 0.0); v.steer = 0.3; v.comp = [0.05, 0.0, 0.1, 0.0];
-    let (wheel, cal) = (car_wheel_poses(&v, 1.2), car_caliper_poses(&v));
+    let (wheel, cal) = (car_wheel_poses(&v, 1.2, 1.2), car_caliper_poses(&v));
     for w in 0..4 { assert!((wheel[w].1 - cal[w].1).len() < 1e-5, "same hub position"); }
-    let spun = car_wheel_poses(&v, 0.0);
+    let spun = car_wheel_poses(&v, 0.0, 0.0);
     for w in 0..4 { assert!((cal[w].0.rotate(v3(0., 1., 0.)) - spun[w].0.rotate(v3(0., 1., 0.))).len() < 1e-5, "the caliper's orientation is the wheel's with no spin"); }
     assert!((wheel[0].0.rotate(v3(0., 0., 1.)) - cal[0].0.rotate(v3(0., 0., 1.))).len() > 0.1, "the wheel itself has turned");
 }

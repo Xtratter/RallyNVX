@@ -2,6 +2,13 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.52.0 - free camera and a handbrake that stays on
+
+- Added: the **Free** camera view: one finger turns the gaze, a pinch flies forward and back along it, two fingers up or down raise and lower the camera; it starts where the camera was and stays put when the car drives off
+- Changed: the handbrake button latches: a tap sets the handbrake, the next tap releases it (a dot on the button shows it is on; Reset, New level, the autopilot and leaving the game release it)
+- Changed: the handbrake locks the rear wheels for good: they do not turn (also on screen), they have no drive, and a parked car is held on a slope by the full static grip of the locked tyres (a car sliding keeps the reduced grip of a slide)
+- Changed: the brake lamps no longer come on for the handbrake, only for the brake pedal
+
 ## 2.51.2 - the wipers stay on the glass
 
 - Fixed: a wiper's blade tip lifted off the windscreen and stuck out above the A-pillar when swung (the model's rig axes are tilted up to 18 degrees off the glass); the wipers now sweep about the glass's own normal at their spindles, and the sweep is limited to the angle at which the blades stay on the glass (1 rad at most)

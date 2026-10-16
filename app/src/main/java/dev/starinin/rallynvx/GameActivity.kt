@@ -96,7 +96,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         drive = DriveControls(this).also { it.onChange = { thr, steer, brake, amt -> if (autopilotOn && (thr != 0f || steer != 0f || brake)) setAutopilot(false); carThr = thr; carSteer = steer; carBrake = brake; carAmt = amt; sendInput() } }
         drive?.onCamera = { dx, dy -> if (running) { val (sx, sy) = CamMath.dragSigns(Controls.camInvert(this)); Native.gameCamera(dx * 0.006f * sx, -dy * 0.004f * sy) } }   // drag right = the camera swings round, drag down = lower
         drive?.onCameraUp = { if (running) Native.gameCameraUp() }
-        drive?.onCameraPinch = { ratio, dy -> changeCamera(CamMath.pinchFor(camView, camDist, ratio), CamMath.height(camView, camHeight, dy, resources.displayMetrics.density)) }   // spread = closer, both fingers up = higher
+        drive?.onCameraPinch = { ratio, dy -> if (CamMath.free(camView)) { if (running) Native.gameCameraFly(CamMath.flyForward(ratio), CamMath.flyUp(dy, resources.displayMetrics.density)) } else changeCamera(CamMath.pinchFor(camView, camDist, ratio), CamMath.height(camView, camHeight, dy, resources.displayMetrics.density)) }   // spread = closer, both fingers up = higher
         root.addView(drive, FrameLayout.LayoutParams(-1, -1))
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
@@ -104,8 +104,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             M3Widgets.button(this, label, M3Widgets.ButtonKind.TONAL, onClick).also {
                 root.addView(it, FrameLayout.LayoutParams(px(w), px(48f), gravity).apply { setMargins(0, px(top), px(end), 0) })
             }
-        button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { autopilotOn = false; showAutopilot(); Native.gameReset() }
-        newLevelBtn = button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { autopilotOn = false; showAutopilot(); seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
+        button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { autopilotOn = false; showAutopilot(); setHandbrake(false); Native.gameReset() }
+        newLevelBtn = button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { autopilotOn = false; showAutopilot(); setHandbrake(false); seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
         autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, if (rallyIdx > 0) 150f else 284f, 168f) { setAutopilot(!autopilotOn) }
         autopilotBtn?.setOnLongClickListener { showAutopilotPanel(); true }   // long press: the autopilot settings
         // the camera view button under the status line: a tap cycles the views, a long press puts the current view back to its default distance and height
@@ -134,8 +134,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             applyControlLayout()
             setOnTouchListener { _, e ->
                 when (e.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { if (autopilotOn) setAutopilot(false); handbrake = true; sendInput() }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { handbrake = false; sendInput() }
+                    // a tap sets the handbrake and the next tap releases it: it stays on for as long as the player wants the car parked
+                    MotionEvent.ACTION_DOWN -> { if (autopilotOn) setAutopilot(false); setHandbrake(!handbrake) }
                 }
                 true
             }
@@ -188,10 +188,17 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun label(text: String, size: Float = 16f) = TextView(this).apply { this.text = text; textSize = size; setTextColor(M3.TEXT); gravity = Gravity.CENTER }
 
     /** Turns the autopilot on or off (any touch of the wheel or pedals turns it off). */
+    /** The handbrake latch: on it holds the car (the rear wheels locked) until the next tap. */
+    private fun setHandbrake(on: Boolean) {
+        handbrake = on
+        (handbrakeBtn as? android.widget.TextView)?.text = HandbrakeMath.label(on, t("en", "ru") == "en")
+        sendInput()
+    }
     private fun setAutopilot(on: Boolean) {
         if (!running) return
         if (on) autopilotStyle = Controls.autopilotStyle(this)
         if (on) sendAutopilotTune()
+        if (on && handbrake) setHandbrake(false)   // the autopilot drives with the handbrake off
         autopilotOn = on; Native.gameAutopilot(if (on) autopilotStyle else -1); showAutopilot()
     }
     /** Hands the own style's numbers (settings) to the game. */
@@ -373,6 +380,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         // debug/test: a camera orbit (radians) and a held throttle (after 1.5 s) without touching the screen
         val camYaw = intent.getFloatExtra("camyaw", 0f); val camPitch = intent.getFloatExtra("campitch", 0f)
         if (camYaw != 0f || camPitch != 0f) Native.gameCamera(camYaw, camPitch)
+        // debug/test: the free camera flies (`camfwd` metres along the gaze, `camup` metres up) and the handbrake starts on
+        val camFwd = intent.getFloatExtra("camfwd", 0f); val camUp = intent.getFloatExtra("camup", 0f)
+        if (camFwd != 0f || camUp != 0f) Native.gameCameraFly(camFwd, camUp)
+        if (intent.getIntExtra("handbrake", 0) > 0) setHandbrake(true)
         intent.getFloatExtra("steer", 0f).let { st -> if (st != 0f) handler.postDelayed({ carSteer = st; sendInput() }, 1500) }
         intent.getFloatExtra("throttle", 0f).let { th -> if (th != 0f) handler.postDelayed({ carThr = th; sendInput() }, 1500) }
         audio.start()
@@ -520,7 +531,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onResume() { super.onResume(); handler.post(tick); if (running) audio.start(); drive?.paused = false; applyControls() }
     override fun onPause() {
-        audio.stop(); handler.removeCallbacks(tick); drive?.paused = true; stopTilt(); handbrake = false; sendInput()
+        audio.stop(); handler.removeCallbacks(tick); drive?.paused = true; stopTilt(); setHandbrake(false)
         super.onPause()
     }
 

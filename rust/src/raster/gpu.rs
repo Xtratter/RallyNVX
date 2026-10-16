@@ -205,7 +205,7 @@ pub struct Raster {
     roads: HashMap<(i32, i32), Option<MeshBuf>>,
     bush_cache: HashMap<(i32, i32), Vec<Bush>>,
     grass_cache: Option<((i32, i32, usize), Vec<(V3, f32)>)>,
-    wheel_spin: f32,
+    wheel_spin: f32, wheel_spin_rear: f32,   // the front wheels' turn and the rear wheels' (which the handbrake stops)
     last_time: f32,
     meshes: [MeshBuf; 4], // cube, cylinder, cone, sphere
     tiles: HashMap<(i32, i32, u32), MeshBuf>,
@@ -453,7 +453,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach))), wiper_state: Default::default(), wiper_time: 0.0, film: Default::default(), car_screen: car.windscreen, car_sweep: car.wiper_sweep, car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach))), wiper_state: Default::default(), wiper_time: 0.0, film: Default::default(), car_screen: car.windscreen, car_sweep: car.wiper_sweep, car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, wheel_spin_rear: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -638,6 +638,7 @@ impl Raster {
         let veh = wv.vehicle;
         self.wheel_spin += veh.speed() / veh.spec.radius * dt;
         self.wheel_spin %= std::f32::consts::TAU;
+        if !veh.parked { self.wheel_spin_rear = self.wheel_spin; }   // the locked rear wheels keep the angle they stopped at
         let (bq, bp) = vm::car_body_pose(veh);
         ml[0].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] });   // alpha 0.5: the player's car (not lit by its own lamps)
         // the glass (always) and the interior (near the car only) share the body's pose
@@ -659,7 +660,7 @@ impl Raster {
             }
             if self.car_has_driver && vm::draw_driver((wv.cam_pos - veh.pos).len()) { ml[SLOT_DRIVER].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] }); }
         }
-        for (w, p) in vm::car_wheel_poses(veh, self.wheel_spin).iter().enumerate() {
+        for (w, p) in vm::car_wheel_poses(veh, self.wheel_spin, self.wheel_spin_rear).iter().enumerate() {
             ml[1].push(MInst { m: mmat(p.0, p.1), tint: [1.0, 1.0, 1.0, 0.5] });
             // the disc turns with the wheel; its tint alpha carries the brake heat (0.1 .. 0.5), see `fs_model`
             if self.car_parts.0 { ml[SLOT_DISC].push(MInst { m: mmat(p.0, p.1), tint: [1.0, 1.0, 1.0, 0.1 + 0.4 * veh.brake_heat[w].clamp(0.0, 1.0)] }); }
@@ -677,7 +678,7 @@ impl Raster {
         if let Some(level) = wv.terrain.water_level() {
             if veh.speed().abs() > 2.0 {
                 let tick = (wv.time * 16.0) as i32;
-                for (wi, p) in vm::car_wheel_poses(veh, 0.0).iter().enumerate() {
+                for (wi, p) in vm::car_wheel_poses(veh, 0.0, 0.0).iter().enumerate() {
                     if wv.terrain.height(p.1.x, p.1.z) >= level - 0.05 { continue; }
                     for n in 0..10i32 {
                         let h = |k: i32| crate::game::terrain::hash01(0x5B1A + wi as u64, tick.wrapping_mul(31).wrapping_add(n), k);

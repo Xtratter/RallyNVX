@@ -43,7 +43,7 @@ fn settled(spec: VehicleSpec) -> Vehicle {
 #[test] fn the_vehicle_remembers_brake_and_reverse() {
     let t = Terrain::flat(); let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., 1.2, 0.), 0.0);
     v.step(&t, &[], &Input { brake: true, ..Default::default() }, 1.0 / 60.0); assert!(v.braking && !v.reversing);
-    v.step(&t, &[], &Input { handbrake: true, ..Default::default() }, 1.0 / 60.0); assert!(v.braking);
+    v.step(&t, &[], &Input { handbrake: true, ..Default::default() }, 1.0 / 60.0); assert!(!v.braking && v.parked, "the handbrake locks the wheels but does not light the brake lamps");
     v.step(&t, &[], &Input::default(), 1.0 / 60.0); assert!(!v.braking);
     v.step(&t, &[], &Input { throttle: -1.0, ..Default::default() }, 1.0 / 60.0); assert!(v.reversing, "throttle asks for reverse");
     for _ in 0..200 { v.step(&t, &[], &Input { throttle: -1.0, ..Default::default() }, 1.0 / 60.0); }

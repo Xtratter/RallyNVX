@@ -363,3 +363,45 @@ fn cornering_accel(surface: Surface, spec: VehicleSpec) -> f32 {
     let (dry, soaked) = (stop(0.0), stop(1.0));
     assert!(soaked > dry * 1.1, "the wet road lengthens the braking: {dry} m dry, {soaked} m soaked");
 }
+
+/// A spot of the level's terrain where the ground falls away ahead of the car at roughly `grade` (rise over run) and is smooth enough to park on.
+fn slope_spot(t: &Terrain, grade: f32) -> Option<(V3, f32)> {
+    for j in -40..=40 { for i in -40..=40 {
+        let (x, z) = (i as f32 * 12.0, j as f32 * 12.0);
+        let (gx, gz) = ((t.height(x + 2.0, z) - t.height(x - 2.0, z)) / 4.0, (t.height(x, z + 2.0) - t.height(x, z - 2.0)) / 4.0);
+        let g = gx.hypot(gz);
+        if (g - grade).abs() < 0.04 && !t.is_water(x, z, 2.0) {
+            // the car looks downhill: along (-gx, -gz)
+            let yaw = (-gx).atan2(-gz);
+            // the ground must be about as steep a little way across and further down, so it does not level off under the car
+            let (fx, fz) = (x - gx / g * 6.0, z - gz / g * 6.0);
+            if (t.height(fx, fz) - t.height(x, z)).abs() > grade * 6.0 * 0.6 { return Some((v3(x, t.height(x, z) + 1.1, z), yaw)); }
+        }
+    } }
+    None
+}
+#[test] fn the_handbrake_holds_the_car_on_a_slope_that_it_rolls_down_without_it() {
+    let t = Terrain::new(7);
+    let (pos, yaw) = slope_spot(&t, 0.18).expect("a slope of about 10 degrees");
+    let drift = |inp: Input| {
+        let mut v = Vehicle::new(VehicleSpec::offroader(), pos, yaw);
+        run(&mut v, &t, inp, 1.5);   // it settles onto its suspension
+        let p0 = v.pos;
+        run(&mut v, &t, inp, 6.0);
+        ((v.pos - p0).len(), v.vel.len())
+    };
+    let (free, free_v) = drift(Input::default());
+    let (held, held_v) = drift(Input { handbrake: true, ..Default::default() });
+    assert!(free > 6.0, "it rolls down without the handbrake: {free} m at {free_v} m/s");
+    assert!(held < 0.7 && held_v < 0.3, "the handbrake holds it: {held} m, {held_v} m/s");
+}
+#[test] fn a_locked_rear_wheel_gives_no_drive_and_the_front_wheels_keep_theirs() {
+    let (mut v, t) = flat_car(1.1);
+    run(&mut v, &t, Input::default(), 1.0);
+    run(&mut v, &t, Input { throttle: 1.0, handbrake: true, ..Default::default() }, 3.0);
+    let (mut free, _) = flat_car(1.1);
+    run(&mut free, &t, Input::default(), 1.0);
+    run(&mut free, &t, Input { throttle: 1.0, ..Default::default() }, 3.0);
+    assert!(v.speed() < free.speed() * 0.6, "the locked rear tyres drag: {} against {}", v.speed(), free.speed());
+    assert!(v.parked && !v.braking, "parked, not braking");
+}

@@ -18,12 +18,12 @@ const ELEV_MAX: f32 = 1.25;
 /// The camera views the player cycles through: behind the car (the default), on the bonnet, low on the front bumper, high behind the car, a free orbit round it, and the cockpit
 /// (the driver's eyes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CamView { Chase = 0, Hood = 1, Bumper = 2, Roof = 3, Orbit = 4, Cockpit = 5 }
-pub const VIEWS: usize = 6;
+pub enum CamView { Chase = 0, Hood = 1, Bumper = 2, Roof = 3, Orbit = 4, Cockpit = 5, Free = 6 }
+pub const VIEWS: usize = 7;
 
 impl CamView {
     /// Any number becomes a view (out of range: the nearest one).
-    pub fn from_index(i: i32) -> CamView { match i.clamp(0, VIEWS as i32 - 1) { 0 => CamView::Chase, 1 => CamView::Hood, 2 => CamView::Bumper, 3 => CamView::Roof, 4 => CamView::Orbit, _ => CamView::Cockpit } }
+    pub fn from_index(i: i32) -> CamView { match i.clamp(0, VIEWS as i32 - 1) { 0 => CamView::Chase, 1 => CamView::Hood, 2 => CamView::Bumper, 3 => CamView::Roof, 4 => CamView::Orbit, 5 => CamView::Cockpit, _ => CamView::Free } }
     /// The bonnet, bumper and cockpit views ride on the car; the others follow it from outside.
     pub fn rigid(self) -> bool { matches!(self, CamView::Hood | CamView::Bumper | CamView::Cockpit) }
 }
@@ -41,6 +41,8 @@ pub struct FollowCam {
     /// offset of the camera's elevation angle.
     pub user_yaw: f32, pub user_pitch: f32,
     dragging: bool, rev_t: f32, flip: f32,
+    /// The free camera: where it is and where it looks (yaw turns to the right, pitch up), independent of the car.
+    free_pos: V3, free_yaw: f32, free_pitch: f32,
 }
 
 fn rotate_y(v: V3, a: f32) -> V3 { let (s, c) = a.sin_cos(); v3(v.x * c + v.z * s, v.y, -v.x * s + v.z * c) }
@@ -52,12 +54,20 @@ impl FollowCam {
     pub fn new_for(pos: V3, forward: V3, back: f32, up: f32) -> FollowCam {
         let heading = v3(forward.x, 0.0, forward.z).norm();
         FollowCam { pos: pos - heading * back + v3(0.0, up, 0.0), target: pos + v3(0.0, 1.2, 0.0), heading, view: CamView::Chase, dist: 1.0, height: 0.0, fov: 1.0, gaze: heading,
-            user_yaw: 0.0, user_pitch: 0.0, dragging: false, rev_t: 0.0, flip: 0.0 }
+            user_yaw: 0.0, user_pitch: 0.0, dragging: false, rev_t: 0.0, flip: 0.0, free_pos: pos, free_yaw: 0.0, free_pitch: 0.0 }
     }
 
     /// Picks the view with its distance scale and height offset (clamped; garbage becomes the defaults).
     pub fn set_view(&mut self, view: i32, dist: f32, height: f32) {
+        let was_free = self.view == CamView::Free;
         self.view = CamView::from_index(view);
+        if self.view == CamView::Free && !was_free {
+            // the free camera starts where the camera is, looking where it looks
+            let d = (self.target - self.pos).norm();
+            self.free_pos = self.pos;
+            self.free_yaw = (-d.x).atan2(d.z);
+            self.free_pitch = d.y.clamp(-1.0, 1.0).asin();
+        }
         self.dist = if dist.is_finite() { dist.clamp(DIST_MIN, DIST_MAX) } else { 1.0 };
         let h = if self.view.rigid() { 1.0 } else { 6.0 };
         let lo = if self.view.rigid() { -1.0 } else { -3.0 };
@@ -69,10 +79,23 @@ impl FollowCam {
     /// The finger moves on the screen: orbit by `dyaw` and tilt the elevation by `dpitch` (radians).
     pub fn drag(&mut self, dyaw: f32, dpitch: f32) {
         if !dyaw.is_finite() || !dpitch.is_finite() { return; }
+        if self.view == CamView::Free {   // one finger: where to look (drag right = look right, up = look up)
+            self.free_yaw = (self.free_yaw + dyaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+            self.free_pitch = (self.free_pitch + dpitch).clamp(-1.5, 1.5);
+            return;
+        }
         self.dragging = true;
         self.user_yaw += dyaw;
         let lo = ELEV_MIN - Self::base_elev(8.0, 3.5); let hi = ELEV_MAX - Self::base_elev(8.0, 3.5);
         self.user_pitch = (self.user_pitch + dpitch).clamp(lo, hi);
+    }
+    /// The free camera's looking direction.
+    pub fn free_dir(&self) -> V3 { let (sy, cy) = self.free_yaw.sin_cos(); let (sp, cp) = self.free_pitch.sin_cos(); v3(-sy * cp, sp, cy * cp) }
+    /// Flies the free camera: `fwd` metres along where it looks (negative = back), `up` metres up (negative = down). Does nothing in the other views.
+    pub fn fly(&mut self, fwd: f32, up: f32) {
+        if self.view != CamView::Free || !fwd.is_finite() || !up.is_finite() { return; }
+        let d = self.free_dir();
+        self.free_pos = self.free_pos + d * fwd.clamp(-60.0, 60.0) + v3(0.0, up.clamp(-30.0, 30.0), 0.0);
     }
     /// The finger went down (`true`, nothing changes yet) or up (`false`: the camera may return once the car moves).
     pub fn set_dragging(&mut self, on: bool) { self.dragging = on; }
@@ -80,6 +103,14 @@ impl FollowCam {
     fn base_elev(back: f32, up: f32) -> f32 { (up - 1.2).atan2(back + 3.0) }
 
     pub fn update(&mut self, v: &Vehicle, t: &Terrain, dt: f32) {
+        if self.view == CamView::Free {
+            let floor = t.height(self.free_pos.x, self.free_pos.z) + 0.5;
+            if self.free_pos.y < floor { self.free_pos.y = floor; }
+            self.pos = self.free_pos;
+            self.target = self.pos + self.free_dir() * 20.0;
+            self.fov = 1.0;
+            return;
+        }
         if self.view.rigid() { self.ride(v, dt); return; }
         let sp = v.speed();
         // reverse view: after a short delay of reversing the camera swings to the front of the car

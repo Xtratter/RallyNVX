@@ -43,7 +43,7 @@ fn check(m: &Mesh3, name: &str) {
     let (bq, bp) = car_body_pose(&v);
     let ground_y = bp.y;                                           // the rally body frame starts at the ground
     assert!(ground_y.abs() < 0.04, "the body frame origin is {ground_y} m from the ground");
-    for (i, (q, p)) in car_wheel_poses(&v, 0.0).iter().enumerate() {
+    for (i, (q, p)) in car_wheel_poses(&v, 0.0, 0.0).iter().enumerate() {
         let _ = q;
         assert!((p.y - s.radius).abs() < 0.04, "wheel {i} centre height {}", p.y);
         assert!((p.x - s.wheels[i].x).abs() < 0.02 && (p.z - s.wheels[i].z).abs() < 0.02, "wheel {i} at ({}, {})", p.x, p.z);
