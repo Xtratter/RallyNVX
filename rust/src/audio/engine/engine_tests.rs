@@ -61,11 +61,11 @@ fn started() -> Engine {
         sum / n as f64
     };
     let (t4, t_half, t_idle) = (measure(4000.0, 1.0), measure(4000.0, 0.4), measure(4000.0, 0.0));
-    assert!(t4 > 110.0 && t4 < 300.0, "torque at 4000 rpm, full throttle: {t4} N m");
+    assert!(t4 > 200.0 && t4 < 420.0, "torque at 4000 rpm, full throttle: {t4} N m (turbocharged two-litre)");
     assert!(t4 > t_half + 20.0 && t_half > t_idle + 10.0, "more throttle, more torque: {t4} {t_half} {t_idle}");
     assert!(t_idle < 0.0, "a closed throttle brakes (engine braking): {t_idle}");
     let hp6 = measure(6000.0, 1.0) * 6000.0 * TAU / 60.0 / 745.7;
-    assert!(hp6 > 100.0 && hp6 < 260.0, "power at 6000 rpm: {hp6} hp");
+    assert!(hp6 > 180.0 && hp6 < 450.0, "power at 6000 rpm: {hp6} hp");
 }
 #[test] fn the_ignition_off_stops_the_fire_and_the_engine_winds_down() {
     let mut e = started();
@@ -90,4 +90,75 @@ fn started() -> Engine {
     let t0 = std::time::Instant::now();
     run(&mut e, 1.0);
     eprintln!("TIME one second of engine: {:?} (rpm {:.0})", t0.elapsed(), e.rpm());
+}
+
+
+#[test] #[ignore] fn debug_turbo() {
+    let mut e = Engine::new(EngineSpec::rally_four());
+    e.controls = Controls { throttle: 0.0, clutch: 1.0, drive_rpm: 4500.0, ..Default::default() };
+    e.omega = 4500.0 * TAU / 60.0;
+    run(&mut e, 1.0);
+    eprintln!("DBG closed: turbo {:.0} rpm boost {:.2} bar", e.turbo_omega * 60.0 / TAU, e.boost_bar());
+    e.controls.throttle = 1.0;
+    for i in 0..12 { run(&mut e, 0.25); eprintln!("DBG wot t={:.2}: turbo {:.0} rpm boost {:.2} bar wastegate {:.2} torque {:.0}", (i + 1) as f64 * 0.25, e.turbo_omega * 60.0 / TAU, e.boost_bar(), e.wastegate, e.clutch_torque); }
+    e.controls.throttle = 0.0;
+    let mut bov = 0.0f64; let mut peak = 0.0f64;
+    for i in 0..60 { run(&mut e, 0.02); bov = bov.max(e.bov_flow); peak = peak.max(e.boost_bar()); if i % 10 == 0 { eprintln!("DBG lift t={:.2}: turbo {:.0} boost {:.2} bov {:.2} mol/s plenum {:.2}", (i + 1) as f64 * 0.02, e.turbo_omega * 60.0 / TAU, e.boost_bar(), e.bov_flow, e.plenum.pressure() / 1e5); } }
+    eprintln!("DBG bov max {bov:.2} mol/s");
+}
+
+
+fn held(rpm: f64, thr: f64, als: bool) -> Engine {
+    let mut e = Engine::new(EngineSpec::rally_four());
+    e.controls = Controls { throttle: thr, clutch: 1.0, drive_rpm: rpm, als, ..Default::default() };
+    e.omega = rpm * TAU / 60.0;
+    e
+}
+#[test] fn the_turbo_spools_up_with_a_lag_to_the_wastegate_limit_and_idles_without_boost() {
+    let mut e = held(4500.0, 0.0, false);
+    run(&mut e, 1.0);
+    assert!(e.boost_bar() < 0.12, "no boost with the throttle shut: {}", e.boost_bar());
+    let idle_rpm = e.turbo_omega * 60.0 / TAU;
+    e.controls.throttle = 1.0;
+    run(&mut e, 0.15); let early = e.boost_bar();
+    run(&mut e, 2.0);
+    let late = e.boost_bar();
+    assert!(early < 0.6 * late && late > 0.3 && late < 0.9, "lag: {early} bar after 0.15 s, {late} bar after 2 s");
+    assert!(e.turbo_omega * 60.0 / TAU > 2.0 * idle_rpm, "the turbo spools up");
+    run(&mut e, 4.0);
+    assert!(e.boost_bar() < 0.75, "the wastegate holds the boost at its limit: {} bar (open {})", e.boost_bar(), e.wastegate);
+}
+#[test] fn lifting_off_a_boosted_engine_blows_off_and_the_boost_falls() {
+    let mut e = held(4500.0, 1.0, false);
+    run(&mut e, 2.5);
+    let boosted = e.boost_bar(); assert!(boosted > 0.35, "{boosted}");
+    e.controls.throttle = 0.0;
+    let mut bov = 0.0f64; for _ in 0..50 { run(&mut e, 0.01); bov = bov.max(e.bov_flow); }
+    assert!(bov > 1.0, "the blow-off valve opens: {bov} mol/s");
+    run(&mut e, 0.6);
+    assert!(e.boost_bar() < 0.5 * boosted, "the boost falls: {} from {boosted}", e.boost_bar());
+}
+#[test] fn the_anti_lag_keeps_the_turbo_spinning_and_bangs_in_the_exhaust_on_a_lift() {
+    let lift = |als: bool| {
+        let mut e = held(5000.0, 1.0, als);
+        run(&mut e, 2.0);
+        e.controls.throttle = 0.0;
+        let mut peak = 0.0f64; for _ in 0..80 { run(&mut e, 0.01); peak = peak.max(e.exhaust_pressure()); }
+        (e.turbo_omega, peak)
+    };
+    let (w0, p0) = lift(false); let (w1, p1) = lift(true);
+    assert!(w1 > 1.15 * w0, "the turbo keeps its speed with anti-lag: {w1} vs {w0}");
+    assert!(p1 > 1.5 * p0.max(5e3), "bangs: collector peak {p1} Pa vs {p0}");
+}
+#[test] fn a_spark_cut_sends_fuel_to_the_exhaust_that_burns_there() {
+    let burned = |cut: bool| {
+        let mut e = held(5500.0, 1.0, false);
+        run(&mut e, 1.5);
+        let before = e.exhaust_burned;
+        e.controls.cut = cut;
+        run(&mut e, 0.15);
+        e.exhaust_burned - before
+    };
+    let (normal, cut) = (burned(false), burned(true));
+    assert!(cut > 20.0 * normal.max(1e-9), "a cut pops: {cut} mol of fuel burnt in the exhaust vs {normal}");
 }

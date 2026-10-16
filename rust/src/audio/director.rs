@@ -115,7 +115,8 @@ impl Director {
         p.machine = Machine::Car;
         // the engine's wheels: the gearbox picks the gear from the speed and the pedal, the engine model on the audio thread does the rest
         let drive = self.gearbox.update(dt, v.vel.dot(v.forward()), throttle, v.spec.radius, !grounded);
-        p.drive_rpm = drive.rpm; p.clutch = drive.clutch;
+        p.drive_rpm = drive.rpm; p.clutch = drive.clutch; p.cut = drive.cut; p.als = true;   // a rally car: the anti-lag is always armed
+        p.load = p.load.max(drive.blip);
         p.load = throttle.abs();
         p.roll = if grounded { frac.sqrt() } else { 0.0 };
         p.surface = if wet { Surface::Water } else { Surface::Ground };
