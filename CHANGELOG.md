@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.65.0 - flames from the exhaust, by the physics
+
+- Added: the tail pipe spits fire exactly when the engine model burns fuel in the exhaust: the anti-lag's pops on a lift at high revs (fuel and air burning in the hot exhaust, in pulses), the flame of a hard up-shift's spark cut (the unburnt fuel the engine pumps out lights up), nothing on a plain lift or at full throttle. The flame is two emissive cones (a yellow core in an orange coat) at the real tip of the exhaust pipe found in the model (x 0.46, 0.25 m high, 1.85 m behind the centre); its length follows the burn rate and flickers, it rises at once and falls in about 70 ms with the sound of the pop
+- Added: the engine's tone on and off the throttle: a lift takes weight and brightness off the exhaust (the engine drags instead of pulling) and a third off the block's rattle; a flame in the pipe brings the sound back. The intake is silent off the throttle by itself (the air no longer flows)
+
 ## 2.64.0 - a real transmission: the engine, the clutch, the gears and a manual
 
 - Added: the car is now driven through a real drivetrain. The engine has its own speed and inertia; its torque comes from a map measured from the sound's engine model (a turbocharged two-litre: 200 N m at 1000 rpm, 325 N m at 5000, engine braking with the throttle shut) with a turbo lag and an idle governor; a clutch carries the torque to the wheels through the gear (six gears and a reverse, ratios 2.92 to 0.92, final drive 5.0) and the force at the ground is what the clutch carries. The old constant engine force is gone: the pull now depends on the gear and the revs, falls at a shift and the engine brakes in the gears. The rev limiter is at 7800 rpm

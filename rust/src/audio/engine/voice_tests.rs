@@ -91,3 +91,25 @@ fn at(rpm: f64, throttle: f64) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
     let f = 3000.0 / 60.0 * 21.0;
     assert!(power(&buf, f) > 5.0 * power(&buf, f * 1.3), "a whine at {f} Hz");
 }
+
+#[test] fn fuel_burning_in_the_exhaust_makes_a_flame_and_a_plain_lift_does_not() {
+    let flame_after = |als: bool, cut: bool, throttle: f64| {
+        let mut v = EngineVoice::new(EngineSpec::rally_four());
+        v.engine.omega = 5500.0 * std::f64::consts::TAU / 60.0;
+        let mut ctl = Controls { throttle: 1.0, clutch: 1.0, drive_rpm: 5500.0, als, ..Default::default() };
+        for _ in 0..RATE as usize * 2 { v.sample(&ctl); }
+        ctl.throttle = throttle; ctl.cut = cut;
+        let mut top = 0.0f32; for _ in 0..RATE as usize / 3 { v.sample(&ctl); top = top.max(v.flame); }
+        top
+    };
+    assert!(flame_after(false, false, 0.0) < 0.05, "a plain lift: no flame");
+    assert!(flame_after(false, false, 1.0) < 0.05, "full throttle: no flame");
+    let (pop, flat) = (flame_after(true, false, 0.0), flame_after(false, true, 1.0));
+    assert!(pop > 0.2, "the anti-lag's pops: {pop}");
+    assert!(flat > 0.5, "a spark cut spits fire: {flat}");
+}
+#[test] fn off_the_throttle_the_exhaust_is_duller_and_lighter() {
+    let (on, _, _) = at(4500.0, 1.0); let (off, _, _) = at(4500.0, 0.0);
+    let hi = |b: &[f32]| (30..60).map(|k| power(b, k as f32 * 100.0)).sum::<f32>() / (1..10).map(|k| power(b, k as f32 * 100.0)).sum::<f32>().max(1e-12);
+    assert!(hi(&off) < hi(&on), "a lift loses brightness: {} vs {}", hi(&off), hi(&on));
+}

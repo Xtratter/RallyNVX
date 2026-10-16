@@ -63,6 +63,9 @@ impl Synth {
         if ok(sc.listener) && ok(sc.fwd) && sc.src.iter().all(|p| ok(*p)) { self.scene = *sc; }
     }
 
+    /// The flame at the tail pipe now (0..1.5).
+    pub fn flame(&self) -> f32 { self.voice.flame }
+
     /// The revs of the simulated engine (rpm).
     pub fn engine_rpm(&self) -> f32 { self.voice.rpm() }
 
@@ -122,6 +125,7 @@ impl Synth {
         // car: the engine (the model runs on this thread: the exhaust pipe's sound and the intake's and the block's, which fill the engine bay), the tyres' rolling noise and squeal
         if self.s.car > 0.001 {
             let running = self.master > 0.0 || goal > 0.0;
+            if !running { self.voice.flame = 0.0; }
             if running {
                 let ignition = t.active && !self.muted && !t.stalled;
                 let starter = ignition && self.voice.engine.rpm() < 350.0;   // it cranks by itself when it is not running (the first start, a stall)

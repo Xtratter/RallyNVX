@@ -145,7 +145,7 @@ pub(crate) fn loft(stations: &[(f32, f32, f32, f32)], ring: usize, exp: f32, col
 
 pub(crate) fn scaled(st: &[(f32, f32, f32, f32)], sx: f32, sy: f32, sz: f32) -> Vec<(f32, f32, f32, f32)> { st.iter().map(|&(z, w, a, b)| (z * sz, (w * sx).max(0.06), a * sy, b * sy)).collect() }
 
-pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2], pub glass: Option<Mesh3>, pub interior: Option<Mesh3>, pub steering: Option<Steering>, pub driver: Option<Mesh3>,
+pub struct CarModel { pub exhaust_tip: Option<[f32; 3]>, pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2], pub glass: Option<Mesh3>, pub interior: Option<Mesh3>, pub steering: Option<Steering>, pub driver: Option<Mesh3>,
     /// The windscreen wipers (the driver's side first): each mesh is stored shifted by `-pivot` so that it sweeps about the origin, `axis` is the sweep axis.
     pub wipers: [Option<Wiper>; 2],
     /// The driver's gloves, stored shifted by the steering wheel's pivot so that they turn with the wheel.
@@ -277,7 +277,7 @@ pub fn dash_rpm(speed: f32, max_speed: f32) -> f32 {
 pub fn draw_driver(dist: f32) -> bool { dist >= 1.2 }
 
 impl CarModel {
-    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None], glass: None, interior: None, steering: None, driver: None, wipers: [None, None], gloves: None, windscreen: None, wiper_sweep: WIPER_SWEEP } }
+    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { exhaust_tip: None, body, wheel, disc: None, caliper: None, alt_wheels: [None, None], glass: None, interior: None, steering: None, driver: None, wipers: [None, None], gloves: None, windscreen: None, wiper_sweep: WIPER_SWEEP } }
     /// The wheel mesh of a wheel set (0 tarmac, 1 gravel, 2 snow); a set the model does not have shows the tarmac wheel.
     pub fn wheel_for(&self, set: u8) -> &Mesh3 {
         match set { 1 | 2 => self.alt_wheels[set as usize - 1].as_ref().unwrap_or(&self.wheel), _ => &self.wheel }
@@ -391,3 +391,20 @@ pub fn car_body_pose(v: &Vehicle) -> (Q, V3) {
 #[cfg(test)]
 #[path = "vehicle_models_tests.rs"]
 mod tests;
+
+/// The flame of the exhaust: two cones along +z from the origin (a yellow core in an orange coat, emissive); the renderer turns the +z axis to point backwards from the tail pipe
+/// and scales it with the flame's strength.
+pub fn flame_mesh() -> Mesh3 {
+    let mut m = Mesh3::default();
+    for (r0, len, col) in [(0.050f32, 1.0f32, [255u8, 105, 20]), (0.028, 0.62, [255, 215, 110])] {
+        const N: usize = 10;
+        let base = m.verts.len() as u32;
+        for k in 0..N {
+            let a = k as f32 / N as f32 * std::f32::consts::TAU;
+            m.verts.push(Vert { pos: [r0 * a.cos(), r0 * a.sin(), 0.0], nrm: [a.cos(), a.sin(), 0.3], col: [col[0], col[1], col[2], MAT_EMISSIVE], uv: NO_UV });
+        }
+        m.verts.push(Vert { pos: [0.0, 0.0, len], nrm: [0.0, 0.0, 1.0], col: [col[0], col[1], col[2], MAT_EMISSIVE], uv: NO_UV });
+        for k in 0..N as u32 { m.idx.extend_from_slice(&[base + k, base + (k + 1) % N as u32, base + N as u32]); }
+    }
+    m
+}

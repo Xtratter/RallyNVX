@@ -116,7 +116,8 @@ const SLOT_STEERING: usize = SLOT_SIGN + 21;  // the steering wheel (turns about
 const SLOT_DRIVER: usize = SLOT_SIGN + 22;    // the driver, drawn with the interior unless the camera is inside the car
 const SLOT_WIPER: usize = SLOT_SIGN + 23;    // the two windscreen wipers (+0 the driver's side, +1 the other), sweeping in the rain
 const SLOT_GLOVES: usize = SLOT_SIGN + 25;   // the driver's gloves (turn with the steering wheel), drawn with the interior in every view
-const MODEL_SLOTS: usize = SLOT_SIGN + 26;
+const SLOT_FLAME: usize = SLOT_SIGN + 26;    // the flame at the tail pipe (emissive cones, drawn when fuel burns in the exhaust)
+const MODEL_SLOTS: usize = SLOT_SIGN + 27;
 const MAX_MODEL_INST: usize = 6144;
 const SIGN_SCALE: f32 = 2.2;   // the signs are drawn bigger than real ones so they read from a moving car
 const NEAR_SHADOW: f32 = 90.0;   // plants within this distance of the car cast shadows
@@ -188,7 +189,7 @@ pub struct Raster {
     cache_seed: u64,
     car_key: [u32; 13],
     car_wipers: [Option<(V3, V3, V3, f32)>; 2],
-    wiper_state: vm::WiperState, wiper_time: f32,
+    wiper_state: vm::WiperState, wiper_time: f32, car_exhaust: Option<[f32; 3]>,
     film: super::glassdrops::Film, car_screen: Option<super::glassdrops::Windscreen>, car_sweep: f32,   // the wipers' spindles and sweep axes, when the car has them
     car_gloves: bool,   // the driver's gloves (they follow the steering wheel)
     car_steering: Option<(V3, V3)>,   // the steering wheel's pivot and axis, when the car has one
@@ -487,7 +488,7 @@ impl Raster {
         }
         crate::loading::stage(crate::loading::WORLD, 65);
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach))), wiper_state: Default::default(), wiper_time: 0.0, film: Default::default(), car_screen: car.windscreen, car_sweep: car.wiper_sweep, car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, wheel_spin_rear: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach))), wiper_state: Default::default(), wiper_time: 0.0, car_exhaust: car.exhaust_tip, film: Default::default(), car_screen: car.windscreen, car_sweep: car.wiper_sweep, car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, wheel_spin_rear: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -524,6 +525,8 @@ impl Raster {
         self.models[SLOT_DRIVER] = model_buf(&self.device, &car.driver.clone().unwrap_or_else(placeholder_mesh));
         for k in 0..2 { self.models[SLOT_WIPER + k] = model_buf(&self.device, &car.wipers[k].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh)); }
         self.models[SLOT_GLOVES] = model_buf(&self.device, &car.gloves.clone().unwrap_or_else(placeholder_mesh));
+        self.models[SLOT_FLAME] = model_buf(&self.device, &vm::flame_mesh());
+        self.car_exhaust = car.exhaust_tip;
         self.car_gloves = car.gloves.is_some();
         self.car_wipers = std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach)));
         self.car_screen = car.windscreen;
@@ -676,6 +679,17 @@ impl Raster {
         let (bq, bp) = vm::car_body_pose(veh);
         ml[0].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] });   // alpha 0.5: the player's car (not lit by its own lamps)
         // the glass (always) and the interior (near the car only) share the body's pose
+        // the flame: where fuel burns in the exhaust the tail pipe spits fire, long and flickering with its strength (see `audio::flame_level`)
+        if let Some(tip) = self.car_exhaust {
+            let fl = crate::audio::flame_level();
+            if fl > 0.04 && (wv.cam_pos - veh.pos).len() < 90.0 {
+                let flick = 0.7 + 0.3 * ((wv.time * 63.0).sin() * (wv.time * 41.0 + 1.7).sin()).abs();
+                let (len, wid) = ((0.25 + 1.1 * fl.min(1.5)) * flick, 0.7 + 0.5 * fl.min(1.2));
+                let back = bq.rotate(v3(0.0, 0.0, -1.0)); let (x, y) = (bq.rotate(v3(1.0, 0.0, 0.0)), bq.rotate(v3(0.0, 1.0, 0.0)));
+                let p = bp + bq.rotate(v3(tip[0], tip[1], tip[2]));
+                ml[SLOT_FLAME].push(MInst { m: [x.x * wid, x.y * wid, x.z * wid, 0., y.x * wid, y.y * wid, y.z * wid, 0., back.x * len, back.y * len, back.z * len, 0., p.x, p.y, p.z, 1.], tint: [1.0, 1.0, 1.0, 0.5] });
+            }
+        }
         if self.car_parts.3 { ml[SLOT_GLASS].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] }); }
         // the wipers sit on the outside of the glass: drawn with it, parked unless it rains
         let wa = vm::wiper_angle_at(self.wiper_state.phase, self.wiper_state.wipe) * self.car_sweep / vm::WIPER_SWEEP;
@@ -846,7 +860,7 @@ impl Raster {
             rp.set_pipeline(&self.pl_model_sh);
             rp.set_vertex_buffer(1, self.mbuf.slice(..));
             for k in 0..MODEL_SLOTS {
-                if k == SLOT_GLASS || k == SLOT_INTERIOR || k == SLOT_STEERING || k == SLOT_DRIVER || k == SLOT_GLOVES { continue; }   // the glass and the interior cast no shadows
+                if k == SLOT_GLASS || k == SLOT_INTERIOR || k == SLOT_STEERING || k == SLOT_DRIVER || k == SLOT_GLOVES || k == SLOT_FLAME { continue; }   // the glass, the interior and the flame cast no shadows
                 let (a, mut b) = mranges[k];
                 if k >= SLOT_TREE { b = if k == SLOT_GRASS { a } else { a + mnear[k].min(b - a) }; }
                 if b == a { continue; }
