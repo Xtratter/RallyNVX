@@ -66,7 +66,19 @@ pub fn build_rally(spec: &VehicleSpec) -> CarModel {
             };
             let windscreen = glass.as_ref().and_then(|g| super::glassdrops::Windscreen::from_glass(&g.verts.iter().map(|v| v.pos).collect::<Vec<_>>(), &g.idx));
             let steering_ok = steering.is_some();
-            CarModel { body, wheel, disc, caliper, alt_wheels, glass, interior, steering, driver, wipers, gloves: if steering_ok { gloves } else { None }, windscreen }
+            // the wipers sweep about the glass's own normal at their spindles (the rig's axes are tilted off it by up to 18 degrees, which would lift a blade's tip off the glass)
+            let wipers = match glass.as_ref() {
+                Some(g) => {
+                    let gv: Vec<[f32; 3]> = g.verts.iter().map(|v| v.pos).collect();
+                    wipers.map(|w| w.map(|w| match super::glassdrops::local_normal(&gv, &g.idx, [w.pivot.x, w.pivot.y, w.pivot.z], 0.5) {
+                        Some(n) => super::vehicle_models::Wiper::new(w.mesh, w.pivot, crate::game::math::v3(-n[0], -n[1], -n[2])),
+                        None => w,
+                    }))
+                }
+                None => wipers,
+            };
+            let wiper_sweep = match windscreen.as_ref() { Some(s) => wipers.iter().flatten().map(|w| w.max_sweep(s)).fold(super::vehicle_models::WIPER_SWEEP, f32::min), None => super::vehicle_models::WIPER_SWEEP };
+            CarModel { body, wheel, disc, caliper, alt_wheels, glass, interior, steering, driver, wipers, gloves: if steering_ok { gloves } else { None }, windscreen, wiper_sweep }
         }
         Err(e) => { log::error!("rally_car.rcar unusable ({e}); using the generated hatchback"); build_generated(spec) }
     }

@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.51.2 - the wipers stay on the glass
+
+- Fixed: a wiper's blade tip lifted off the windscreen and stuck out above the A-pillar when swung (the model's rig axes are tilted up to 18 degrees off the glass); the wipers now sweep about the glass's own normal at their spindles, and the sweep is limited to the angle at which the blades stay on the glass (1 rad at most)
+
 ## 2.51.1 - the wipers keep the model's own look
 
 - Fixed: the moving wipers (the model's arm and blade) had been recoloured flat black; they now keep the model's own material and texture (its interior texture, lit by the sun like the paint)
