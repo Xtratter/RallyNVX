@@ -55,6 +55,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var resultsPanel: FrameLayout? = null
     private var newLevelBtn: View? = null
     private var paceStrip: PaceStrip? = null
+    private var loadingView: LoadingView? = null
     private var lastNote = 0
     private var tts: android.speech.tts.TextToSpeech? = null
     private var voicePlayer: VoicePlayer? = null
@@ -69,6 +70,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             if ((s[29] > 0.5f) != autopilotOn) { autopilotOn = s[29] > 0.5f; showAutopilot() }   // it switches itself off at the finish
             if (autopilotOn && s[29].toInt() - 1 != autopilotStyle) { autopilotStyle = (s[29].toInt() - 1).coerceIn(0, 3); showAutopilot() }
             if (rallyIdx > 0) updateRally(s)
+            if (running) loadingView?.takeIf { it.visibility == View.VISIBLE }?.report(Native.gameLoadProgress())
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
         }
@@ -172,6 +174,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val soundBtn = M3Widgets.button(this, if (audio.muted) "🔇" else "🔊", M3Widgets.ButtonKind.TONAL) {}
         soundBtn.setOnClickListener { audio.muted = !audio.muted; (soundBtn as? android.widget.TextView)?.text = if (audio.muted) "🔇" else "🔊" }
         root.addView(soundBtn, FrameLayout.LayoutParams(px(52f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(140f), 0, 0) })
+        loadingView = LoadingView(this).also { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }   // over everything until the first frame
         setContentView(root)
     }
 
@@ -355,6 +358,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         intent.getIntExtra("dustgpu", 0).let { if (it > 0) Native.gameDustGpuDebug(it) }   // debug/test: the dust on the GPU
         intent.getIntExtra("airflow", 0).let { if (it > 0) Native.gameAirflowDebug(it) }   // debug/test: the airflow slice
         Native.gameTimeOfDay(intent.getFloatExtra("tod", -1f))   // debug/test: time of day; a launch without it clears the previous freeze (the switch starts on Auto)
+        loadingView?.restart()
         Native.gameStart(h.surface, w, hh, seed, profile, false)
         Native.gameQuality(Quality.index(this))
         intent.getIntExtra("dust", -1).let { if (it >= 0) Controls.setDust(this, it) }   // debug/test: the dust level (0 off, 1 normal, 2 lots)

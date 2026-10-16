@@ -56,6 +56,7 @@ mod android {
     pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameStart(mut env: JNIEnv, _c: JClass, surface: JObject, w: jint, h: jint, seed: jlong, profile: jni::objects::JString, garage: jboolean) {
         crate::init_logger();
         stop_engine();
+        crate::loading::begin();   // before the thread starts: the UI must not read the previous run's 100 %
         let win = unsafe { NativeWindow::from_surface(env.get_raw() as *mut _, surface.as_raw() as *mut _) };
         let Some(win) = win else { log::error!("ANativeWindow_fromSurface failed"); return; };
         let profile_path: String = env.get_string(&profile).map(|s| s.into()).unwrap_or_default();
@@ -68,8 +69,11 @@ mod android {
                 log::info!("game thread: creating renderer");
                 let raster = Raster::new(win, w, h);
                 let mut g = Game::new(raster, seed as u64, st);
+                crate::loading::stage(crate::loading::CAR, 80);
                 if !profile_path.is_empty() { g.with_profile(std::path::PathBuf::from(&profile_path)); }
                 if garage != 0 { g.start_garage_selected(); }   // the garage scene
+                crate::loading::stage(crate::loading::FIRST_FRAME, 92);
+                let mut first = true;
                 'run: loop {
                     loop {
                         match rx.try_recv() {
@@ -98,6 +102,7 @@ mod android {
                         }
                     }
                     g.frame();
+                    if first { first = false; crate::loading::stage(crate::loading::FIRST_FRAME, 100); }
                 }
             }));
             *st2.lock().unwrap() = [0.0; STAT_LEN];
@@ -109,6 +114,8 @@ mod android {
         *ENGINE.lock().unwrap() = Some(Engine { tx, handle: Some(handle), stats });
     }
 
+    /// The start-up progress: `stage << 8 | percent` (100 % = the first frame is on the screen).
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameLoadProgress(_e: JNIEnv, _c: JClass) -> jint { crate::loading::packed() as jint }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameStop(_e: JNIEnv, _c: JClass) { stop_engine(); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameResize(_e: JNIEnv, _c: JClass, w: jint, h: jint) { send(GCmd::Resize(w.max(1) as u32, h.max(1) as u32)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameInput(_e: JNIEnv, _c: JClass, throttle: jfloat, steer: jfloat, brake: jboolean, handbrake: jboolean, brake_amt: jfloat) {
