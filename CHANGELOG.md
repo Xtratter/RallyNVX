@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.40.0 - the low beam reaches the road, not the ground under the car
+
+- Fixed: the headlights lit the ground under and just ahead of the bumper, so an airborne car still seemed to drive on the ground: the beam now fades out below its axis (between about 6 and 16 degrees down), as a real low beam does; the lit ground moves away from the car as it rises, and nothing below an airborne car is lit; the beam's axis is 1.7 degrees down (was 2.9), so the road is lit further ahead
+
 ## 2.39.0 - the beam is a light
 
 - Changed: the headlights light only what is really in front of them: the terrain between the lamps and a point blocks the beam (a crest keeps the beam off the ground behind it; 4 samples of the height atlas along each ray), so a nose-down car no longer paints a light pool on ground it cannot see
