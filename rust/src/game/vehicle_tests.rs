@@ -322,3 +322,28 @@ fn cornering_accel(surface: Surface, spec: VehicleSpec) -> f32 {
     for _ in 0..1200 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
     assert!(v.brake_heat.iter().all(|h| *h < hot[0] * 0.2 + 1e-3), "{:?} cooled from {:?}", v.brake_heat, hot);
 }
+
+#[test] fn the_right_wheel_set_corners_harder_on_its_surface() {
+    // a car on gravel and on asphalt with each set: the peak lateral grip follows the set
+    fn peak_side_accel(set: u8, surface: crate::game::surface::Surface) -> f32 {
+        let t = Terrain::flat();
+        let mut spec = VehicleSpec::by_id("vulpes").unwrap(); spec.wheel_set = set;
+        let mut v = Vehicle::new(spec, v3(0., 1.2, 0.), 0.0);
+        v.force_surface = Some(surface);
+        for _ in 0..180 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
+        for _ in 0..360 { v.step(&t, &[], &Input { throttle: 0.6, ..Default::default() }, 1.0 / 60.0); }
+        let mut peak = 0.0f32;
+        for _ in 0..240 {
+            let before = v.vel;
+            v.step(&t, &[], &Input { throttle: 0.2, steer: 1.0, ..Default::default() }, 1.0 / 60.0);
+            let a = (v.vel - before) * 60.0;
+            peak = peak.max(a.dot(v.right()).abs());
+        }
+        peak
+    }
+    use crate::game::surface::Surface::{Asphalt, Gravel};
+    let (g_on_gravel, t_on_gravel) = (peak_side_accel(1, Gravel), peak_side_accel(0, Gravel));
+    assert!(g_on_gravel > t_on_gravel, "gravel tyres corner harder on gravel: {g_on_gravel} vs {t_on_gravel}");
+    let (t_on_asph, g_on_asph) = (peak_side_accel(0, Asphalt), peak_side_accel(1, Asphalt));
+    assert!(t_on_asph > g_on_asph, "tarmac tyres corner harder on asphalt: {t_on_asph} vs {g_on_asph}");
+}

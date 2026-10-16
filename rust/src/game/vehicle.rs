@@ -14,7 +14,7 @@ pub enum CarStyle { Suv, Rally }
 pub struct VehicleSpec {
     /// Body style, price in the garage (0 = owned from the start) and the base price of one upgrade level.
     pub style: CarStyle, pub price: u32, pub upgrade_cost: u32,
-    /// The wheel set shown (0 tarmac, 1 gravel, 2 snow): set from the garage, read by the renderer only (the grip effect is a later stage).
+    /// The wheel set shown (0 tarmac, 1 gravel, 2 snow): set from the garage; the renderer picks the wheel mesh by it and the tyre table of `surfaces.json` (`tyre_sets`) scales the grip by it.
     pub wheel_set: u8,
     pub mass: f32,
     /// Body box (width, height, length) in metres and the renderer's colours.
@@ -161,7 +161,8 @@ impl Vehicle {
             let sg = grip::grip(surf, looseness);
             if self.contacts == 1 { self.surface = surf; }
             if let Some((ri, s_along, side)) = cell { loose.wear(ri, s_along, side, vf.abs().max(vl.abs()), h); }
-            let (mu_s, lat_k, roll) = (s.mu * sg.mu, s.lateral_k * sg.lateral, s.rolling * sg.rolling);
+            let tf = grip::tyre_factor(s.wheel_set, surf);   // the wheel set: the right tyres for the surface grip more
+            let (mu_s, lat_k, roll) = (s.mu * sg.mu * tf.0, s.lateral_k * sg.lateral * tf.1, s.rolling * sg.rolling);
             let lat_mu = if !front && inp.handbrake { mu_s * s.handbrake_grip } else { mu_s };
             let mut fl = -vl * wheel_mass * lat_k;
             let lim_speed = if inp.throttle >= 0.0 { s.max_speed } else { s.max_speed * s.reverse_factor };

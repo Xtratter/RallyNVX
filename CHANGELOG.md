@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.36.0 - tyre sets grip
+
+- Changed: the wheel set now matters on the road: gravel tyres grip 4-8 % better on gravel, dirt, grass and sand and 10 % worse on asphalt than the tarmac set (the baseline the cars were tuned with), snow tyres are a compromise and the worst on asphalt; the numbers are in `surfaces.json` -> `tyre_sets` (grip and side stiffness per set and surface, editable)
+
 ## 2.35.0 - the cockpit
 
 - Added: a sixth camera view, **Cockpit** ("Салон"): the camera sits at the driver's eyes inside the Peugeot and you drive looking at the dashboard, the steering wheel and the road through the windscreen (the pinch zooms, the two-finger height tilts the gaze, as in the bonnet view); the driver is not drawn when the camera is inside, and the near plane goes down to 8 cm there

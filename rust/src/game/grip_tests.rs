@@ -102,3 +102,29 @@ fn stage(len: f32) -> RoadNet {
     let e = GripTable::from_json(&EMBEDDED.replace("\"life\": 2.6", "\"life\": 60.0")).unwrap_err(); assert!(e.contains("gravel") && e.contains("life"), "{e}");
     let e = GripTable::from_json(&EMBEDDED.replace("\"cap_normal\": 400,", "")).unwrap_err(); assert!(e.contains("cap_normal"), "{e}");
 }
+
+#[test] fn each_wheel_set_is_best_on_its_own_surface_and_the_numbers_stay_in_range() {
+    let t = GripTable::from_json(EMBEDDED).unwrap();
+    let all = [Surface::Grass, Surface::Dirt, Surface::Sand, Surface::Rock, Surface::Gravel, Surface::Asphalt, Surface::Water];
+    for set in 0..3u8 { for s in all { let (g, l) = t.tyre(set, s); assert!((0.5..=1.5).contains(&g) && (0.5..=1.5).contains(&l), "set {set} {s:?}: {g} {l}"); } }
+    for s in all { assert_eq!(t.tyre(0, s), (1.0, 1.0), "the tarmac set is the baseline the cars were tuned with: {s:?}"); }
+    assert!(t.tyre(0, Surface::Asphalt).0 > t.tyre(1, Surface::Asphalt).0 && t.tyre(0, Surface::Asphalt).0 > t.tyre(2, Surface::Asphalt).0, "tarmac tyres win on asphalt");
+    for loose in [Surface::Gravel, Surface::Dirt, Surface::Grass, Surface::Sand] { assert!(t.tyre(1, loose).0 > t.tyre(0, loose).0, "gravel tyres win on {loose:?}"); }
+    assert!(t.tyre(2, Surface::Asphalt).0 < t.tyre(1, Surface::Asphalt).0, "snow tyres are the worst on asphalt");
+    assert_eq!(t.tyre(9, Surface::Asphalt), t.tyre(0, Surface::Asphalt), "an unknown set counts as tarmac");
+}
+#[test] fn a_file_without_tyre_sets_loads_with_neutral_tyres_and_bad_ones_are_refused() {
+    let mut v: serde_json::Value = serde_json::from_str(EMBEDDED).unwrap();
+    v.as_object_mut().unwrap().remove("tyre_sets");
+    let t = GripTable::from_json(&v.to_string()).unwrap();
+    for set in 0..3u8 { assert_eq!(t.tyre(set, Surface::Gravel), (1.0, 1.0)); }
+    let mut bad = serde_json::from_str::<serde_json::Value>(EMBEDDED).unwrap();
+    bad["tyre_sets"]["gravel"]["dirt"] = serde_json::json!([3.0, 1.0]);
+    assert!(GripTable::from_json(&bad.to_string()).is_err(), "out of range");
+    let mut bad = serde_json::from_str::<serde_json::Value>(EMBEDDED).unwrap();
+    bad["tyre_sets"]["ice"] = serde_json::json!({});
+    assert!(GripTable::from_json(&bad.to_string()).is_err(), "an unknown set");
+    let mut bad = serde_json::from_str::<serde_json::Value>(EMBEDDED).unwrap();
+    bad["tyre_sets"]["snow"]["moon"] = serde_json::json!([1.0, 1.0]);
+    assert!(GripTable::from_json(&bad.to_string()).is_err(), "an unknown surface");
+}
