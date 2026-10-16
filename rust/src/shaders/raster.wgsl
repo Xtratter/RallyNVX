@@ -197,6 +197,23 @@ fn shade_lite(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return shade_with(albedo, wp, n, 0.95, 0.0, shadow_basic(wp, n));
 }
 
+// Leaves and needles: thin, translucent and a little waxy. The crowns are blobs of normals, so the diffuse term wraps round the terminator (light scatters inside the foliage),
+// a leaf lit from behind glows in its own saturated colour (transmission, strongest looking into the sun through the crown), and a faint waxy sheen sharpens when the leaves are wet.
+fn shade_leaf(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+    let sun = normalize(u.sun.xyz);
+    let v = normalize(u.cam.xyz - wp);
+    let sh = shadow_basic(wp, n);
+    let wet = u.wx.y;
+    let al = albedo * (1.0 - 0.22 * wet);                      // wet leaves are darker
+    var c = shade_with(al, wp, n, mix(0.62, 0.34, wet), 0.0, sh);
+    let nl = dot(n, sun);
+    let wrap = clamp((nl + 0.45) / 1.45, 0.0, 1.0);
+    c = c + al * u.sun_col.rgb * (max(wrap - max(nl, 0.0), 0.0) * 0.55 * sh);
+    let back = pow(clamp(dot(v, -sun), 0.0, 1.0), 4.0) * clamp(0.35 - nl, 0.0, 1.0) * 1.4 + clamp(-nl, 0.0, 1.0) * 0.18;
+    c = c + al * al * 1.6 * u.sun_col.rgb * (back * sh);        // the light that came through: the albedo squared is its absorption-saturated colour
+    return c;
+}
+
 // how much the tail lights light a point (0..1): only what lies behind the rear bumper, never under the car; mirrored in `carlights::tail_gain`
 fn taillight(wp: vec3<f32>) -> f32 {
     if (u.tl_col.w <= 0.0) { return 0.0; }
@@ -436,7 +453,7 @@ fn sway(w: vec3<f32>, k_world: f32) -> vec3<f32> {
     return vec3<f32>(w.x + off.x, w.y, w.z + off.y);
 }
 
-struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32, @location(5) own: f32, @location(6) uv: vec2<f32>, @location(7) heat: f32, @location(8) lp: vec3<f32> };
+struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32, @location(5) own: f32, @location(6) uv: vec2<f32>, @location(7) heat: f32, @location(8) lp: vec3<f32>, @location(9) kind: f32 };
 
 fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec4<f32>) -> vec3<f32> {
     return (mat4x4<f32>(m0, m1, m2, m3) * vec4<f32>(p, 1.0)).xyz;
@@ -468,6 +485,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     o.ao = select(1.0, mix(0.55, 1.0, smoothstep(0.0, 1.8, hgt)), tint.a > 1.5);
     o.uv = uv;
     o.lp = p;
+    o.kind = tint.a;   // 2 = plants, 3 = rocks, 0.5 the player's car, 1 other models
     o.heat = clamp((tint.a - 0.1) / 0.4, 0.0, 1.0);   // a brake disc's tint alpha carries its heat (0.1 .. 0.5)
     o.own = select(0.0, 1.0, tint.a < 0.75);   // tint.a 0.5 = the player's car: its lamps do not light it
     return o;
@@ -564,10 +582,14 @@ fn map_normal(n: vec3<f32>, wp: vec3<f32>, uv: vec2<f32>, k: f32) -> vec3<f32> {
     }
     if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.06, 0.0), 1.0); }   // glass
     if (m == 4) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.22, 1.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
-    if (m == 6) { return vec4<f32>(shade_lite(i.col * occl, i.wp, n), 1.0); }   // foliage
+    if (m == 6) { return vec4<f32>(shade_leaf(i.col * occl, i.wp, n), 1.0); }   // foliage
     if (m == 0 && has_uv) { return vec4<f32>(shade_coat(albedo * occl, i.wp, n, normalize(i.n), 0.30) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // the rally car's paint: clear-coated
     if (m == 0) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.28, 0.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
     if (m == 2) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.88, 0.0), 1.0); }   // rubber
+    if (i.kind > 1.5) {   // bark and rock: rough stone and wood, darker and glossier when wet
+        let wet = u.wx.y;
+        return vec4<f32>(shade(albedo * occl * (1.0 - 0.3 * wet), i.wp, n, mix(0.92, 0.5, wet), 0.0), 1.0);
+    }
     return vec4<f32>(shade(albedo * occl, i.wp, n, 0.5, 0.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
 }
 

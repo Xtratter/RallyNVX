@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.48.0 - physically based foliage
+
+- Changed: leaves and needles have their own lighting: the diffuse term wraps round the terminator (light scatters inside a crown), a leaf lit from behind glows in its own saturated colour (transmission), a faint waxy sheen that sharpens and darkens when the leaves are wet
+- Changed: bark and rock are rough (roughness 0.92) and become darker and glossier in the rain
+
 ## 2.47.0 - physically based water and sky
 
 - Changed: the sky's clouds are lit as a participating medium: optical depth grows with density (Beer-Lambert), the sun's light is attenuated by the density towards the sun and scattered forward (Henyey-Greenstein), so cloud edges glow silver and dense cores and bases are dark; crisper edges, smaller billows, a thin cirrus veil above; the sun's glow is a Mie forward-scattering lobe
