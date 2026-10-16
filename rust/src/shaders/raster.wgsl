@@ -33,6 +33,9 @@ fn sky_gradient(dir: vec3<f32>) -> vec3<f32> {
     return mix(c, u.sky_hor.rgb * 1.05, (1.0 - smoothstep(0.0, 0.12, dir.y)) * 0.6);
 }
 
+// Henyey-Greenstein phase function (normalised to 1/4pi * 4pi = 1 over the sphere average ~ 1/(4 pi)): `g` the anisotropy
+fn hg(cs: f32, g: f32) -> f32 { let g2 = g * g; return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cs, 1e-4), 1.5) * 0.0795775; }
+
 fn vnoise2(p: vec2<f32>) -> f32 {
     let i = floor(p); let f = fract(p);
     let s = f * f * (3.0 - 2.0 * f);
@@ -752,16 +755,33 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     let sd = normalize(u.disc.xyz);
     let md = normalize(u.moon.xyz);
     let horizon = smoothstep(-0.02, 0.03, dir.y);
-    // clouds: noise on a plane above the viewer, drifting with the wind
+    // clouds: a layer of noise on a plane above the viewer, drifting with the wind. Lit like a participating medium: the optical depth grows with the density (Beer-Lambert),
+    // the sun's light is attenuated by the density towards the sun (a second tap offset along it) and scattered forward (Henyey-Greenstein), which gives the bright silver
+    // edges and the dark, dense cores and bases; the sky lights them from all sides. A high thin cirrus veil lies above.
     var cov = 0.0;
     if (dir.y > 0.02) {
-        let p = dir.xz / (dir.y + 0.12) * 0.35 - u.wind.zw;   // the pattern drifts downwind (the offset integrates the wind on the CPU)
-        let n = fbm2(p);
-        cov = smoothstep(0.50 - 0.45 * u.wx.z, 0.78 - 0.40 * u.wx.z, n) * smoothstep(0.02, 0.25, dir.y) * mix(1.0, 0.4, night);   // the weather's cloud cover lowers the thresholds: overcast
-        let lit_side = clamp(0.55 + 0.45 * (1.0 - n), 0.0, 1.0);
-        let sun_tint = normalize(u.sun_col.rgb + vec3<f32>(0.001)) * 1.7;
-        let cloud = mix(vec3<f32>(0.62, 0.65, 0.72), vec3<f32>(1.0, 0.98, 0.95) * sun_tint, lit_side) * mix(1.0, 0.06, night) * (1.0 - 0.35 * u.wx.z);
-        c = mix(c, cloud, cov * 0.92);
+        let sdir = normalize(vec3<f32>(sd.x, max(sd.y, 0.05), sd.z));
+        let p = dir.xz / (dir.y + 0.12) * 0.6 - u.wind.zw * 0.58;   // the pattern drifts downwind (the offset integrates the wind on the CPU)
+        let lo = 0.50 - 0.45 * u.wx.z; let hi = lo + 0.17;           // the weather's cloud cover lowers the threshold: overcast; a crisp edge
+        let n = fbm2(p) - 0.10 * vnoise2(p * 7.0);                   // billows and erosion at the edges
+        let dens = smoothstep(lo, hi, n);
+        let ns = fbm2(p + sdir.xz / sdir.y * 0.08) - 0.10 * vnoise2((p + sdir.xz / sdir.y * 0.08) * 7.0);   // the density a little way towards the sun
+        let dens_s = smoothstep(lo, hi, ns);
+        let tau = dens * 5.0;
+        let fade = smoothstep(0.02, 0.25, dir.y);
+        cov = (1.0 - exp(-tau)) * fade * mix(1.0, 0.4, night);
+        let cs = dot(dir, sd);
+        let phase = mix(hg(cs, 0.62), hg(cs, -0.25), 0.35);        // forward lobe with a little back scatter
+        let sun_in = u.sun_col.rgb * exp(-dens_s * 3.0);           // what reaches this point of the cloud
+        let multi = 0.3 + 0.7 * exp(-dens * 1.2);                   // multiple scattering lifts the thick parts
+        let amb_c = mix(u.sky_hor.rgb, u.sky_top.rgb, 0.6) * 0.8 * (1.0 - 0.5 * dens);
+        let cloud = (sun_in * phase * 4.2 * multi + amb_c) * (1.0 - 0.3 * u.wx.z) * mix(1.0, 0.06, night);
+        c = mix(c, cloud, cov * 0.95);
+        // cirrus: thin streaks high up, in wisps stretched along the wind; faint, in clear weather mostly
+        let pc = vec2<f32>(p.x * 0.45, p.y * 1.9) + vec2<f32>(11.0, 3.0);
+        let ci = smoothstep(0.55, 0.85, fbm2(pc)) * fade * (0.30 - 0.18 * u.wx.z) * mix(1.0, 0.1, night);
+        c = mix(c, cloud * 0.85 + u.sky_hor.rgb * 0.15, ci * (1.0 - cov));
+        cov = max(cov, ci);
     }
     // stars: a hashed point field on the sphere, twinkling, only in the night and in clear sky
     if (night > 0.2 && dir.y > 0.0) {
@@ -797,7 +817,7 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     let s = max(dot(dir, sd), 0.0);
     let sun_c = mix(vec3<f32>(1.0, 0.95, 0.80), vec3<f32>(1.0, 0.42, 0.14), 1.0 - smoothstep(0.0, 0.35, sd.y)) * smoothstep(-0.14, 0.0, sd.y);
     let sun_disc = 1.0 - smoothstep(1.7e-4, 2.3e-4, 1.0 - s);
-    c = c + sun_c * (sun_disc * 14.0 * horizon * u.wx.w + pow(s, 400.0) * 3.0 * u.wx.w + pow(s, 12.0) * 0.12 * u.wx.w + pow(s, 3.0) * 0.04);
+    c = c + sun_c * (sun_disc * 14.0 * horizon * u.wx.w + pow(s, 400.0) * 3.0 * u.wx.w + hg(s, 0.78) * 0.9 * u.wx.w * (1.0 - 0.6 * u.wx.z) + pow(s, 3.0) * 0.02);
     return vec4<f32>(finish(c), 1.0);
 }
 
@@ -805,27 +825,65 @@ struct WOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @lo
 @vertex fn vs_water(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>) -> WOut {
     var o: WOut; o.pos = u.vp * vec4<f32>(p, 1.0); o.wp = p; o.depth = n.x; return o;
 }
+// Rain on water: rings spreading from random points of a lattice, each ring a small wave packet; `k` is the rain (0..1). Returns the slope (d height / d xz).
+fn ripples(p: vec2<f32>, t: f32, k: f32) -> vec2<f32> {
+    var g = vec2<f32>(0.0);
+    for (var layer = 0; layer < 2; layer++) {
+        let sc = select(1.3, 2.1, layer == 1);
+        let q = p * sc + f32(layer) * 7.7;
+        let cell = floor(q);
+        let h = hash2(cell + f32(layer) * 31.0);
+        let ph = fract(t * 0.9 + h * 3.1);                         // age of this cell's ring, 0..1
+        let ctr = cell + vec2<f32>(0.25 + 0.5 * hash2(cell + 5.0), 0.25 + 0.5 * hash2(cell + 9.0));
+        let d = q - ctr;
+        let r = length(d);
+        let rr = ph * 0.55;
+        let w = exp(-pow((r - rr) * 14.0, 2.0)) * (1.0 - ph) * select(0.0, 1.0, h < k);
+        g += normalize(d + vec2<f32>(1e-4)) * w * cos((r - rr) * 40.0) * 0.5 * sc;
+    }
+    return g;
+}
+
 @fragment fn fs_water(i: WOut) -> @location(0) vec4<f32> {
     let t = u.fog.y;
-    // wave normal from two drifting noise layers
+    let dist = length(i.wp - u.cam.xyz);
+    // wave slope from drifting noise layers; the fine ones fade out with distance (they would shimmer) and the surface grows rougher in the rain
     let e = 0.15;
     let p1 = i.wp.xz * 0.35 + vec2<f32>(t * 0.15, t * 0.08);
     let p2 = i.wp.xz * 0.9 + vec2<f32>(-t * 0.2, t * 0.11);
+    let p3 = i.wp.xz * 2.7 + vec2<f32>(t * 0.33, -t * 0.27);
     let h0 = vnoise2(p1) * 0.6 + vnoise2(p2) * 0.4;
     let hx = vnoise2(p1 + vec2<f32>(e, 0.0)) * 0.6 + vnoise2(p2 + vec2<f32>(e, 0.0)) * 0.4;
     let hz = vnoise2(p1 + vec2<f32>(0.0, e)) * 0.6 + vnoise2(p2 + vec2<f32>(0.0, e)) * 0.4;
-    let n = normalize(vec3<f32>(-(hx - h0) * 1.6, 1.0, -(hz - h0) * 1.6));
+    var sl = vec2<f32>(hx - h0, hz - h0) * 1.6;
+    let fine = 1.0 - smoothstep(25.0, 90.0, dist);
+    let c0 = vnoise2(p3);
+    sl += vec2<f32>(vnoise2(p3 + vec2<f32>(e, 0.0)) - c0, vnoise2(p3 + vec2<f32>(0.0, e)) - c0) * (0.55 + 0.7 * u.wx.x) * fine;
+    if (u.wx.x > 0.05 && dist < 60.0) { sl += ripples(i.wp.xz, t, u.wx.x) * (1.0 - smoothstep(30.0, 60.0, dist)) * 0.35; }
+    let n = normalize(vec3<f32>(-sl.x, 1.0, -sl.y));
     let v = normalize(u.cam.xyz - i.wp);
+    let nv = max(dot(n, v), 0.02);
     let d = max(i.depth, 0.0);
-    let body = mix(vec3<f32>(0.05, 0.20, 0.22), vec3<f32>(0.01, 0.06, 0.13), smoothstep(0.0, 1.2, d)) * (0.5 + 0.5 * length(u.sun_col.rgb) / 2.6);
-    let fr = pow(1.0 - max(dot(n, v), 0.0), 5.0);
-    var c = mix(body, sky_gradient(reflect(-v, n)), clamp(0.04 + 0.96 * fr, 0.0, 1.0));
+    // the body: light scattered back out of the water, darker and bluer with depth, lit by the sun and the sky
+    let day = 0.5 + 0.5 * length(u.sun_col.rgb) / 2.6;
+    let body = mix(vec3<f32>(0.05, 0.20, 0.22), vec3<f32>(0.01, 0.06, 0.13), smoothstep(0.0, 1.2, d)) * day;
+    // physically based surface: water's F0 is 0.02; the roughness is the waves' slope variance (a calm pond is nearly a mirror, the rain and the wind rough it up)
+    let rough = clamp(0.06 + 0.10 * u.wx.x + 0.04 * length(u.wind.xy) * 0.2 + 0.0 * dist, 0.05, 0.35);
+    let f0 = vec3<f32>(0.02);
+    let spec_env = sky_env(reflect(-v, n), rough) * env_brdf(f0, rough, nv);
+    var c = body * (1.0 - fresnel(f0, nv)) + spec_env;
     let sd = normalize(u.sun.xyz);
-    c = c + u.sun_col.rgb * 0.4 * pow(max(dot(reflect(-sd, n), v), 0.0), 120.0);
-    let f = clamp(1.0 - exp(-length(i.wp - u.cam.xyz) * u.fog.x), 0.0, 1.0);
+    c = c + u.sun_col.rgb * ggx_spec(n, v, sd, f0, rough * rough) * 0.9;
+    if (u.hl_pos.w > 0.0) {   // the headlights' beam glitters on the water as it does on wet ground
+        let l = normalize(i.wp - u.hl_pos.xyz);
+        let g = headbeam(i.wp);
+        if (g > 0.0) { c = c + vec3<f32>(1.0, 0.93, 0.80) * (14.0 * g) * (ggx_spec(n, v, -l, f0, max(rough * rough, 0.01)) * 0.5 + body * 0.4 * max(dot(n, -l), 0.0)); }
+    }
+    let f = clamp(1.0 - exp(-dist * u.fog.x), 0.0, 1.0);
     c = mix(c, u.sky_hor.rgb, f);
+    // see-through in the shallows; a steep view into deep water is clearer than a grazing one (which is mostly mirror)
     let alpha = smoothstep(0.0, 0.5, i.depth) * mix(0.35, 0.85, smoothstep(0.0, 1.2, d));
-    return vec4<f32>(finish(c), alpha);
+    return vec4<f32>(finish(c), clamp(alpha + fresnel(f0, nv).x * 1.5, 0.0, 1.0));
 }
 
 struct RIn { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) a: vec3<f32> };

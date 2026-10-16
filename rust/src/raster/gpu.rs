@@ -517,7 +517,7 @@ impl Raster {
 
         // camera and light matrices
         let aspect = self.config.width as f32 / self.config.height as f32;
-        let vp = mat_mul(perspective(wv.cam_fov.clamp(0.4, 1.6), aspect, vm::near_for((wv.cam_pos - wv.vehicle.pos).len()), 2500.0), look_at(wv.cam_pos, wv.cam_target, v3(0., 1., 0.)));
+        let vp = mat_mul(perspective(wv.cam_fov.clamp(0.4, 1.6), aspect, vm::near_for((wv.cam_pos - wv.vehicle.pos).len()), 2500.0), look_at(wv.cam_pos, wv.cam_target + v3(0., prof_look(), 0.), v3(0., 1., 0.)));
         let centre = wv.vehicle.pos;
         let up = if wv.sun.y.abs() > 0.99 { v3(0., 0., 1.) } else { v3(0., 1., 0.) };
         let light_vp = mat_mul(ortho(-70., 70., -70., 70., 1., 300.), look_at(centre + wv.sun * 150.0, centre, up));
@@ -895,6 +895,9 @@ static SHADOW_Q: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::ne
 pub fn set_shadow_quality(level: i32) { SHADOW_Q.store(level.clamp(0, 3), std::sync::atomic::Ordering::Relaxed); }
 
 static PROF_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Debug (profiling on): the file `lookup` in the app's files directory raises the camera's target by that many metres, to look at the sky.
+static PROF_LOOK: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+fn prof_look() -> f32 { if PROF_ON.load(std::sync::atomic::Ordering::Relaxed) { f32::from_bits(PROF_LOOK.load(std::sync::atomic::Ordering::Relaxed)) } else { 0.0 } }
 static PROF_SKIP: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 fn prof_skip() -> u32 { if PROF_ON.load(std::sync::atomic::Ordering::Relaxed) { PROF_SKIP.load(std::sync::atomic::Ordering::Relaxed) } else { 0 } }
 pub fn set_prof(on: bool) { PROF_ON.store(on, std::sync::atomic::Ordering::Relaxed); }
@@ -926,6 +929,7 @@ impl Prof {
         if !PROF_ON.load(std::sync::atomic::Ordering::Relaxed) { return; }
         self.frame += 1;
         if self.frame % 10 == 0 { PROF_SKIP.store(std::fs::read_to_string("/data/data/dev.starinin.rallynvx/files/skipmask").ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0), std::sync::atomic::Ordering::Relaxed); }
+        if self.frame % 10 == 0 { PROF_LOOK.store(std::fs::read_to_string("/data/data/dev.starinin.rallynvx/files/lookup").ok().and_then(|t| t.trim().parse::<f32>().ok()).unwrap_or(0.0).to_bits(), std::sync::atomic::Ordering::Relaxed); }
         if self.frame % 90 != 0 { return; }
         let slice = self.read.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
