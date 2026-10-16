@@ -301,6 +301,10 @@ mod tests {
             let (lo, hi) = w.bounds();
             assert!(m.pos[0] >= lo.x - 0.5 && m.pos[0] <= hi.x + 0.5 && m.pos[1] > 0.6 && m.pos[1] < 1.2, "the spindle is at the foot of the windscreen: {:?}", m.pos);
             assert!(hi.x - lo.x > 0.2, "a wiper is a long blade");
+            let axis = [m.nrm[0], m.nrm[1], m.nrm[2]];
+            let (mut dmin, mut dmax) = (f32::MAX, f32::MIN);
+            for v in &w.verts { let d = (v.pos[0] - m.pos[0]) * axis[0] + (v.pos[1] - m.pos[1]) * axis[1] + (v.pos[2] - m.pos[2]) * axis[2]; dmin = dmin.min(d); dmax = dmax.max(d); }
+            assert!(dmax - dmin < 0.12, "the blade lies in the plane its axis is normal to (it sweeps over the glass, not through the air): thickness {}", dmax - dmin);
         }
         assert!(meta.verts[0].pos[0] > meta.verts[1].pos[0], "the driver's wiper is on the +x side");
     }

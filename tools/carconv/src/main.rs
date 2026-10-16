@@ -334,7 +334,12 @@ fn main() {
         body_xf(&mut bv, ground, cr, st, ct);
         let n = bv.len().max(1) as f32;
         let pivot = [0, 1, 2].map(|k| bv.iter().map(|v| v.p[k]).sum::<f32>() / n);
-        let (_, mut axis) = ring_pivot(&interior[*g].0.iter().map(|v| v.p).collect::<Vec<_>>());
+        let _ = g;
+        // the blade sweeps in the plane of the windscreen: its axis is the glass's normal (the smallest principal axis of the front window), pointing up and out
+        let wp = collect(doc, &buffers, &mut tex, &|n| n == "int_window_f", false);
+        let (mut wv, _) = merge(&wp);
+        body_xf(&mut wv, ground, cr, st, ct);
+        let (_, mut axis) = ring_pivot(&wv.iter().map(|v| v.p).collect::<Vec<_>>());
         if axis[1] < 0.0 { axis = axis.map(|x| -x); }
         eprintln!("wiper {base}: pivot ({:.3}, {:.3}, {:.3}), axis ({:.3}, {:.3}, {:.3}), {} triangles", pivot[0], pivot[1], pivot[2], axis[0], axis[1], axis[2], interior[*g].1.len() / 3);
         (pivot, axis)

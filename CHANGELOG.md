@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.50.1 - the wipers sweep over the glass
+
+- Fixed: the wipers swung about the wrong axis (found from the blade's own shape, which lay along the glass), so they poked out of the windscreen into the air; the axis is now the windscreen's normal, and the blade is checked to lie in the plane it sweeps
+- Fixed: raindrops on the side windows were stretched into slanted streaks (the pattern was flattened onto two axes); they are now round drops from two 3D lattices, many small and a few big, on every pane
+
 ## 2.50.0 - the autopilot in the wet, wipers that wipe
 
 - Changed: the autopilot slows down on wet ground in proportion to the grip that is left (the square root of the wet grip factor, never below half), so the braking distance stays what it was; a soaked hairpin that ran off the road before is now taken cleanly
