@@ -1,5 +1,7 @@
 //! The synthesiser: smoothed continuous voices (engine, rolling, squeal, wind) plus a pool of one-shots.
 use super::dsp::{coef, frac, Noise, OnePole};
+use super::engine::voice::EngineVoice;
+use super::engine::{Controls, EngineSpec};
 use super::reverb::Reverb;
 use super::spatial::{path, Emitter, MAX_DELAY};
 use super::{AudioParams, Event, Machine, Scene, Surface, N_SRC, RATE, SRC_BAY, SRC_BODY, SRC_EXHAUST, SRC_WHEEL};
@@ -9,19 +11,16 @@ const MAX_VOICES: usize = 8;
 const FADE: f32 = 0.05;      // seconds for mute/inactive fades
 const SMOOTH: f32 = 0.08;    // parameter smoothing time constant, seconds
 
-/// Fundamental of the engine for `rpm` in 0..1.
-pub fn engine_freq(rpm: f32) -> f32 { 40.0 + 140.0 * rpm.clamp(0.0, 1.0) }
-
 #[derive(Clone, Copy, Default)]
 struct Voice { kind: u8, t: f32, strength: f32, phase: f32, lp1: OnePole, lp2: OnePole, live: bool }
 
 #[derive(Clone, Copy, Default)]
-struct Smoothed { rpm: f32, load: f32, roll: f32, water: f32, slip: f32, wind: f32, car: f32 }
+struct Smoothed { load: f32, roll: f32, water: f32, slip: f32, wind: f32, car: f32 }
 
 pub struct Synth {
     target: AudioParams, s: Smoothed, master: f32, muted: bool, volume: f32, vol_s: f32,
     noise: Noise, noise_w: [Noise; 4], noise_wind: Noise, rate: f32, a: f32,
-    engine_phase: f32, gurgle: f32, squeal: f32,
+    gurgle: f32, squeal: f32, voice: EngineVoice,
     f_roll: [OnePole; 4], f_roll_w: [OnePole; 4], f_sq1: [OnePole; 4], f_sq2: [OnePole; 4], f_wind: OnePole, f_wind_r: OnePole,
     voices: [Voice; MAX_VOICES],
     scene: Scene, emitters: Vec<Emitter>, block: usize, wind_k: f32, lp_wind: [OnePole; 2], reverb: Reverb,
@@ -44,7 +43,7 @@ impl Synth {
             target: AudioParams::default(), s: Smoothed::default(), master: 0.0, muted: false, volume: 1.0, vol_s: 1.0,
             noise: Noise::new(0x1234_5678), noise_w: [Noise::new(0x2345_6789), Noise::new(0x3456_789A), Noise::new(0x4567_89AB), Noise::new(0x5678_9ABC)], noise_wind: Noise::new(0x6789_ABCD),
             rate, a: 1.0 - (-1.0 / (SMOOTH * rate)).exp(),
-            engine_phase: 0.0, gurgle: 0.0, squeal: 0.0,
+            gurgle: 0.0, squeal: 0.0, voice: EngineVoice::new(EngineSpec::rally_four()),
             f_roll: [OnePole::default(); 4], f_roll_w: [OnePole::default(); 4], f_sq1: [OnePole::default(); 4], f_sq2: [OnePole::default(); 4],
             f_wind: OnePole::default(), f_wind_r: OnePole::default(),
             voices: [Voice::default(); MAX_VOICES],
@@ -54,7 +53,8 @@ impl Synth {
 
     pub fn set_params(&mut self, p: &AudioParams) {
         let c = |v: f32| if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 };
-        self.target = AudioParams { machine: p.machine, rpm: c(p.rpm), load: c(p.load), roll: c(p.roll), surface: p.surface, slip: c(p.slip), wind: c(p.wind), active: p.active };
+        let rpm = |v: f32| if v.is_finite() { v.clamp(0.0, 12000.0) } else { 0.0 };
+        self.target = AudioParams { machine: p.machine, drive_rpm: rpm(p.drive_rpm), clutch: c(p.clutch), load: c(p.load), roll: c(p.roll), surface: p.surface, slip: c(p.slip), wind: c(p.wind), active: p.active };
     }
 
     /// Where everything is (the listener and the sources): the paths are renewed at the next block.
@@ -62,6 +62,9 @@ impl Synth {
         let ok = |v: crate::game::math::V3| v.x.is_finite() && v.y.is_finite() && v.z.is_finite();
         if ok(sc.listener) && ok(sc.fwd) && sc.src.iter().all(|p| ok(*p)) { self.scene = *sc; }
     }
+
+    /// The revs of the simulated engine (rpm).
+    pub fn engine_rpm(&self) -> f32 { self.voice.rpm() }
 
     pub fn set_muted(&mut self, m: bool) { self.muted = m; }
     /// Master volume 0..1 (applied after the soft clip, smoothed).
@@ -108,7 +111,7 @@ impl Synth {
         let c_wind = coef(500.0, rate);
         let fade = 1.0 / (FADE * rate);
         let t = self.target;
-        self.s.rpm += (t.rpm - self.s.rpm) * a; self.s.load += (t.load - self.s.load) * a;
+        self.s.load += (t.load - self.s.load) * a * 3.0;
         self.s.roll += (t.roll - self.s.roll) * a; self.s.slip += (t.slip - self.s.slip) * a; self.s.wind += (t.wind - self.s.wind) * a;
         self.s.water += ((t.surface == Surface::Water) as u8 as f32 - self.s.water) * a;
         self.s.car += ((t.machine == Machine::Car) as u8 as f32 - self.s.car) * a;
@@ -116,16 +119,16 @@ impl Synth {
         self.master = if self.master < goal { (self.master + fade).min(goal) } else { (self.master - fade).max(goal) };
         let n = self.noise.next();
         let mut f = Frame::default();
-        // car: the engine's pulses (the exhaust carries the low harmonics, the engine bay the upper ones), the tyres' rolling noise and squeal
+        // car: the engine (the model runs on this thread: the exhaust pipe's sound and the intake's and the block's, which fill the engine bay), the tyres' rolling noise and squeal
         if self.s.car > 0.001 {
-            self.engine_phase = frac(self.engine_phase + engine_freq(self.s.rpm) / rate);
-            let p = self.engine_phase * TAU;
-            let w = [0.6f32, 0.7, 1.0, 0.8, 0.6, 0.4];   // the mids carry the sound on a phone speaker
-            let (mut lo, mut hi) = (0.0, 0.0);
-            for (k, wk) in w.iter().enumerate() { let h = (p * (k + 1) as f32).sin() * wk; if k < 3 { lo += h; } else { hi += h; } }
-            let amp = 0.10 + 0.22 * self.s.load;
-            f.exhaust = (lo * 0.30 + n * 0.04) * amp * self.s.car;
-            f.bay = hi * 0.30 * amp * self.s.car;
+            let running = self.master > 0.0 || goal > 0.0;
+            if running {
+                let ignition = t.active && !self.muted;
+                let starter = ignition && self.voice.engine.rpm() < 350.0;   // it cranks by itself when it is not running (the first start, a stall)
+                self.voice.sample(&Controls { throttle: self.s.load as f64, starter, clutch: t.clutch as f64, drive_rpm: t.drive_rpm as f64, ignition });
+            }
+            f.exhaust = self.voice.exhaust_out * 0.7 * self.s.car;
+            f.bay = (self.voice.intake_out * 0.35 + self.voice.block_out * 0.35) * self.s.car;
             self.gurgle = frac(self.gurgle + 3.0 / rate);
             self.squeal = frac(self.squeal + 9.0 / rate);
             let wobble = 0.6 + 0.4 * (self.squeal * TAU).sin();

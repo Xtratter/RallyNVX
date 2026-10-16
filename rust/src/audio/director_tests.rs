@@ -5,10 +5,10 @@ fn settled() -> World { let mut w = World::new(7); for _ in 0..120 { w.step(&Inp
 #[test] fn free_drive_at_rest_is_quiet_and_driving_raises_the_revs() {
     let mut w = settled(); let mut d = Director::new();
     let (p, ev) = d.update(&w, 0.0, true);
-    assert_eq!(p.machine, Machine::Car); assert!(p.active && p.rpm < 0.3 && p.roll < 0.05 && ev.is_empty(), "{p:?} {ev:?}");
+    assert_eq!(p.machine, Machine::Car); assert!(p.active && p.drive_rpm < 2500.0 && p.roll < 0.05 && ev.is_empty(), "{p:?} {ev:?}");
     for _ in 0..240 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
     let (p2, _) = d.update(&w, 1.0, true);
-    assert!(p2.rpm > p.rpm + 0.3 && p2.roll > 0.3 && p2.load > p.load && p2.surface == Surface::Ground, "{p2:?}");
+    assert!(p2.drive_rpm > p.drive_rpm + 1500.0 && p2.roll > 0.3 && p2.load > p.load && p2.surface == Surface::Ground, "{p2:?}");
 }
 #[test] fn landing_after_a_jump_gives_one_touchdown_scaled_by_speed() {
     let mut w = settled(); let mut d = Director::new();

@@ -3,6 +3,7 @@ use super::{AudioParams, Event, Machine, Scene, Surface, N_SRC, SRC_BAY, SRC_BOD
 use super::acoustics::{environment, ground_reflection, occlusion, sphere_dirs, surface_alpha, surface_reflection, trace, Cabin, Kind, Obstacle, RayResult, Shape};
 use super::reverb::Env;
 use super::SrcExtra;
+use crate::game::gearbox::Gearbox;
 use crate::game::props::PropKind;
 use crate::game::{math::v3, world::World};
 
@@ -12,6 +13,7 @@ pub struct Director {
     hspeed: f32, vy: f32, air_time: f32, quiet_until: f32,
     /// The rays cast round the listener, a share of them renewed every frame (the tail and the echoes follow what they met), and where the renewing is.
     rays: Vec<RayResult>, ray_next: usize, ray_seed: u64,
+    gearbox: Gearbox,
 }
 
 /// Rays cast round the listener, and how far they look, m.
@@ -22,7 +24,7 @@ impl Default for Director { fn default() -> Self { Director::new() } }
 
 impl Director {
     pub fn new() -> Director {
-        Director { started: false, time: 0.0, seed: 0, grounded: true, wet: false, hspeed: 0.0, vy: 0.0, air_time: 0.0, quiet_until: 0.0, rays: Vec::new(), ray_next: 0, ray_seed: u64::MAX }
+        Director { started: false, time: 0.0, seed: 0, grounded: true, wet: false, hspeed: 0.0, vy: 0.0, air_time: 0.0, quiet_until: 0.0, rays: Vec::new(), ray_next: 0, ray_seed: u64::MAX, gearbox: Gearbox::default() }
     }
 
     /// Where the listener (the camera) and the sound sources of the car are: the exhaust at the tail, the engine bay at the nose, the four tyres where they touch the ground.
@@ -111,8 +113,10 @@ impl Director {
         let wet = w.terrain.is_water(v.pos.x, v.pos.z, 0.0);
         let (hspeed, vy) = (v.vel.x.hypot(v.vel.z), v.vel.y);
         p.machine = Machine::Car;
-        p.rpm = (0.18 + 0.6 * frac.powf(0.7) + 0.2 * throttle.abs()).min(1.0);
-        p.load = (0.2 + 0.7 * throttle.abs()).min(1.0);
+        // the engine's wheels: the gearbox picks the gear from the speed and the pedal, the engine model on the audio thread does the rest
+        let drive = self.gearbox.update(dt, v.vel.dot(v.forward()), throttle, v.spec.radius, !grounded);
+        p.drive_rpm = drive.rpm; p.clutch = drive.clutch;
+        p.load = throttle.abs();
         p.roll = if grounded { frac.sqrt() } else { 0.0 };
         p.surface = if wet { Surface::Water } else { Surface::Ground };
         p.slip = if grounded { ((v.vel.dot(v.right()).abs() - 2.0) / 6.0).clamp(0.0, 1.0) } else { 0.0 };
