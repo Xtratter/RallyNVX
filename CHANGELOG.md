@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.54.1 - the controls work again
+
+- Fixed: since 2.53.0 the controls did not react: the loading screen faded out but stayed on top, invisible, and ate the touches (its fade was restarted every 100 ms and never finished); it now fades once and is removed
+
 ## 2.54.0 - a pipeline cache: a fast start
 
 - Added: the compiled GPU pipelines are kept in the app's cache folder (`pipelines.bin`, the Vulkan pipeline cache); the next start skips the shader compilation: on the test phone the start to the first frame went from 5.6 s to 1.1 s. A stale file (a driver or game update) is replaced by a fresh cache on its own
