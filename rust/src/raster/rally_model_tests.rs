@@ -22,7 +22,7 @@ fn check(m: &Mesh3, name: &str) {
     let mats: std::collections::HashSet<u8> = m.body.verts.iter().map(|v| v.col[3]).collect();
     for want in [MAT_PAINT, MAT_PLASTIC, MAT_CHROME, MAT_CARLAMP] {   // the glass is its own mesh (`CarModel::glass`)
          assert!(mats.contains(&want), "missing material {want}"); }
-    assert!(m.wheel.verts.iter().any(|v| v.col[3] == MAT_RUBBER) && m.wheel.verts.iter().any(|v| v.col[3] == MAT_CHROME));
+    assert!(m.wheel.verts.iter().any(|v| v.col[3] == MAT_RUBBER) && m.wheel.verts.iter().any(|v| v.col[3] == MAT_CHROME || v.col[3] == 20), "the rim is metal or painted alloy");
     let (wlo, whi) = m.wheel.bounds();
     assert!(((whi.y - wlo.y) / 2.0 - s.radius).abs() < s.radius * 0.08, "wheel radius {}", (whi.y - wlo.y) / 2.0);
 }

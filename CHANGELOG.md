@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.55.0 - PBR surfaces per material
+
+- Added: roughness and metal per material. The source model has no metallic-roughness maps, so `tools/carconv` tells carbon, painted alloy (the rims) and bare metal (screws, exhaust) from plastic and chrome by material name (new classes 19-21), and every class has its own roughness range in which the texture's brightness picks the spot (darker areas are dirtier and rougher). The rims are now painted alloy under a clear coat instead of bare chrome, the carbon is clear-coated, rubber and plastic are rougher than the paint, chrome is a polished mirror
+
 ## 2.54.2 - the wipers reach the pillar and change speed smoothly
 
 - Fixed: the blades swung only about 57 degrees and stopped in the middle of the glass; they now sweep as far as the glass allows (the driver's blade reaches the pillar, over 70 degrees). Because the glass is curved, each arm's axis is tilted a little so the blade tip follows the glass instead of sinking into it

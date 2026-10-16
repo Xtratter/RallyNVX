@@ -116,7 +116,7 @@ mod tests {
         assert!(b.tris() > 3000 && w.tris() > 200, "{} / {} triangles", b.tris(), w.tris());
         for m in [&b, &w] {
             assert!(m.idx.iter().all(|&i| (i as usize) < m.verts.len()));
-            for v in &m.verts { let l = (v.nrm[0].powi(2) + v.nrm[1].powi(2) + v.nrm[2].powi(2)).sqrt(); assert!((l - 1.0).abs() < 0.02, "normal {l}"); assert!(v.col[3] <= 5 || (11..=15).contains(&v.col[3]), "material id {}", v.col[3]); }
+            for v in &m.verts { let l = (v.nrm[0].powi(2) + v.nrm[1].powi(2) + v.nrm[2].powi(2)).sqrt(); assert!((l - 1.0).abs() < 0.02, "normal {l}"); assert!(v.col[3] <= 5 || (11..=15).contains(&v.col[3]) || (19..=21).contains(&v.col[3]), "material id {}", v.col[3]); }
         }
         let (lo, hi) = b.bounds();
         assert!(lo.y > -0.02 && hi.y < 1.6 && hi.z - lo.z > 3.8 && hi.z - lo.z < 4.2 && hi.x > 0.8 && lo.x < -0.8, "{lo:?} {hi:?}");

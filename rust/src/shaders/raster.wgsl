@@ -541,7 +541,7 @@ fn bead_normal(nc: vec3<f32>, lp: vec3<f32>, wp: vec3<f32>) -> vec3<f32> {
     let has_uv0 = i.uv.x < 0.9999;
     let m0 = i32(i.mat + 0.5);
     // the textured exterior (paint, plastic, chrome, rubber and the wheels) is bump-mapped from the normal atlas, fading out with distance
-    let nk = select(0.0, 1.0 - smoothstep(14.0, 40.0, distance(i.wp, u.cam.xyz)), has_uv0 && (m0 == 0 || m0 == 2 || m0 == 3 || m0 == 4));
+    let nk = select(0.0, 1.0 - smoothstep(14.0, 40.0, distance(i.wp, u.cam.xyz)), has_uv0 && (m0 == 0 || m0 == 2 || m0 == 3 || m0 == 4 || m0 >= 19));
     let n = map_normal(normalize(i.n), i.wp, i.uv, nk);
     let occl = mix(1.0, i.ao, u.mode.x);
     let m = i32(i.mat + 0.5);
@@ -551,6 +551,8 @@ fn bead_normal(nc: vec3<f32>, lp: vec3<f32>, wp: vec3<f32>) -> vec3<f32> {
     let has_uv = i.uv.x < 0.9999;
     let iv = textureSample(interior_tex, interior_smp, clamp(i.uv, vec2<f32>(0.0), vec2<f32>(1.0)));
     let albedo = select(i.col, i.col * lv.rgb, has_uv);
+    // the surface: the source has no roughness maps, so each material has its roughness range and the texture's brightness picks the spot in it (darker = dirtier, worn or printed = rougher)
+    let dark = select(0.5, 1.0 - sqrt(clamp(dot(lv.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.0, 1.0)), has_uv);
     if (m == 5) { return vec4<f32>(finish(i.col * (2.2 + 2.0 * u.disc.w)), 1.0); }       // lamps
     if (m == 7 || m == 8) {   // the car's own lamps: the shape is the mesh's, the state comes from the car; the class from the colour (8: a front position lamp)
         let c = i.col;
@@ -600,24 +602,27 @@ fn bead_normal(nc: vec3<f32>, lp: vec3<f32>, wp: vec3<f32>) -> vec3<f32> {
     }
     if (m == 14) {   // a suspension part: its texture only (the vertex colour carries the weight and the corner)
         let sc = select(vec3<f32>(0.22), lv.rgb, has_uv);
-        return vec4<f32>(shade(sc * occl, i.wp, n, 0.55, 0.5), 1.0);
+        return vec4<f32>(shade(sc * occl, i.wp, n, mix(0.40, 0.70, dark), 0.6), 1.0);
     }
     if (m == 13) {   // a brake disc: textured metal that glows orange-red when hot (stronger in the dark)
         let hot = i.heat * i.heat;
         let glow = vec3<f32>(1.0, 0.32, 0.08) * hot * (1.2 + 3.0 * u.disc.w);
-        return vec4<f32>(shade(albedo * occl, i.wp, n, 0.35, 1.0) + finish(glow), 1.0);
+        return vec4<f32>(shade(albedo * occl, i.wp, n, mix(0.30, 0.60, dark), 1.0) + finish(glow), 1.0);
     }
     if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.06, 0.0), 1.0); }   // glass
-    if (m == 4) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.22, 1.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
+    if (m == 4) { return vec4<f32>(shade(albedo * occl, i.wp, n, mix(0.06, 0.22, dark), 1.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
     if (m == 6) { return vec4<f32>(shade_leaf(i.col * occl, i.wp, n), 1.0); }   // foliage
-    if (m == 0 && has_uv) { return vec4<f32>(shade_coat(albedo * occl, i.wp, n, bead_normal(normalize(i.n), i.lp, i.wp), 0.30, u.wx.y) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // the rally car's paint: clear-coated
+    if (m == 0 && has_uv) { return vec4<f32>(shade_coat(albedo * occl, i.wp, n, bead_normal(normalize(i.n), i.lp, i.wp), mix(0.26, 0.55, dark), u.wx.y) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // the rally car's paint: clear-coated
     if (m == 0) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.28, 0.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
-    if (m == 2) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.88, 0.0), 1.0); }   // rubber
+    if (m == 2) { return vec4<f32>(shade(albedo * occl, i.wp, n, mix(0.82, 0.95, dark), 0.0), 1.0); }   // rubber
+    if (m == 19) { return vec4<f32>(shade_coat(albedo * occl, i.wp, n, bead_normal(normalize(i.n), i.lp, i.wp), mix(0.20, 0.38, dark), u.wx.y) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // carbon: a clear-coated weave
+    if (m == 20) { return vec4<f32>(shade_coat(albedo * occl, i.wp, n, bead_normal(normalize(i.n), i.lp, i.wp), mix(0.22, 0.50, dark), u.wx.y), 1.0); }   // painted alloy (the rims)
+    if (m == 21) { return vec4<f32>(shade(albedo * occl, i.wp, n, mix(0.30, 0.60, dark), 0.9) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // bare metal (screws, exhaust)
     if (i.kind > 1.5) {   // bark and rock: rough stone and wood, darker and glossier when wet
         let wet = u.wx.y;
         return vec4<f32>(shade(albedo * occl * (1.0 - 0.3 * wet), i.wp, n, mix(0.92, 0.5, wet), 0.0), 1.0);
     }
-    return vec4<f32>(shade(albedo * occl, i.wp, n, 0.5, 0.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
+    return vec4<f32>(shade(albedo * occl, i.wp, n, mix(0.45, 0.70, dark), 0.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
 }
 
 // The car's glass, blended over the opaque scene: a dark tint, the sky reflected by Fresnel, a sun glint; see-through near the car (the interior shows), solid and dark from afar
