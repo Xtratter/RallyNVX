@@ -137,7 +137,7 @@ impl Synth {
                 let nk = self.noise_w[k].next();
                 let ground = self.f_roll[k].run(nk, c_roll) * 0.35;
                 let wet = self.f_roll_w[k].run(nk, c_roll_w) * 0.45 * gur;
-                let roll = (ground * (1.0 - self.s.water) + wet * self.s.water) * self.s.roll * self.scene.wheel_on[k];
+                let roll = (ground * (1.0 - self.s.water) + wet * self.s.water) * self.s.roll * self.scene.wheel_on[k] * 0.45;   // the tyres under the engine: a hush, not a roar
                 let band = self.f_sq1[k].run(nk, c_s1) - self.f_sq2[k].run(nk, c_s2);
                 let squeal = band * self.s.slip * self.scene.wheel_slip[k] * 0.9 * wobble;
                 f.wheels[k] = (roll + squeal) * 0.5 * self.s.car;   // four incoherent tyres: half the amplitude each keeps the total power of one
