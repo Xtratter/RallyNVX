@@ -35,6 +35,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var autopilotBtn: View? = null
     private var settingsPanel: View? = null
     private var camBtn: View? = null
+    private var gearView: GearView? = null
+    private var gearBtn: View? = null
+    private var manual = false
     private var todMode = 0   // the quick time-of-day switch (see TimeOfDay); every launch starts on Auto
     private var todBtn: View? = null
     private var weatherBtn: View? = null
@@ -71,6 +74,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             if (autopilotOn && s[29].toInt() - 1 != autopilotStyle) { autopilotStyle = (s[29].toInt() - 1).coerceIn(0, 3); showAutopilot() }
             if (rallyIdx > 0) updateRally(s)
             if (running) loadingView?.takeIf { it.visibility == View.VISIBLE }?.report(Native.gameLoadProgress())
+            gearView?.update(s[80].toInt(), s[81], s[82] > 0.5f, s[83] > 0.5f)
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
         }
@@ -100,7 +104,16 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         drive?.onCameraUp = { if (running) Native.gameCameraUp() }
         drive?.onCameraReset = { changeCamera(1f, 0f); if (running) Native.gameCameraReset() }   // a double tap: the default distance and height, the orbit dropped, the free camera behind the car
         drive?.onCameraPinch = { ratio, dy -> if (CamMath.free(camView)) { if (running) Native.gameCameraFly(CamMath.flyForward(ratio), CamMath.flyUp(dy, resources.displayMetrics.density)) } else changeCamera(CamMath.pinchFor(camView, camDist, ratio), CamMath.height(camView, camHeight, dy, resources.displayMetrics.density)) }   // spread = closer, both fingers up = higher
+        drive?.onShift = { d -> if (running) Native.gameShift(d) }
+        drive?.onClutch = { p -> if (running) Native.gameClutch(p) }
+        manual = Controls.manual(this); drive?.setManual(manual)
         root.addView(drive, FrameLayout.LayoutParams(-1, -1))
+        gearView = GearView(this).also { root.addView(it, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { setMargins(0, 0, 0, px(24f)) }) }
+        // the gearbox: a tap switches the automatic and the manual (the clutch pedal and the shift buttons appear); the choice is kept
+        gearBtn = M3Widgets.button(this, gearLabel(), M3Widgets.ButtonKind.TONAL) {
+            manual = !manual; Controls.setManual(this, manual); drive?.setManual(manual); if (running) Native.gameGearMode(if (manual) 1 else 0)
+            (gearBtn as? android.widget.TextView)?.text = gearLabel()
+        }.also { root.addView(it, FrameLayout.LayoutParams(px(132f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(76f), px(140f), 0, 0) }) }
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
         fun button(label: String, gravity: Int, top: Float, end: Float, w: Float = 120f, onClick: () -> Unit) =
@@ -374,6 +387,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Native.gameDustOpts(Controls.dustOpts(this))
         Native.gameSigns(Controls.signs(this))
         Native.gameCameraView(camView, camDist, camHeight)
+        Native.gameGearMode(if (manual) 1 else 0)
         running = true
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
@@ -461,6 +475,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun camLabel() = t("View: ", "Вид: ") + CamMath.name(camView, java.util.Locale.getDefault().language != "ru")
 
     /** Takes the distance (zoom) and height (tilt) of the current view, keeps them for next time and sends them to the game. */
+    private fun gearLabel() = if (manual) t("Gearbox: manual", "Коробка: МКПП") else t("Gearbox: auto", "Коробка: АКПП")
+
     private fun changeCamera(dist: Float, height: Float) {
         camDist = CamMath.clampDist(dist); camHeight = CamMath.clampHeight(camView, height)
         Controls.setCam(this, camView, camDist, camHeight)

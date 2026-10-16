@@ -17,7 +17,7 @@ fn run(s: &mut Synth, n: f32) -> Vec<f32> { let mut v = vec![0.0; secs(n)]; s.re
     for machine in [Machine::None, Machine::Car] {
         let mut s = Synth::new();
         for _ in 0..50 {
-            s.set_params(&AudioParams { machine, als: r() > 0.5, cut: r() > 0.8, drive_rpm: r() * 11000.0 - 1000.0, clutch: r(), load: r(), roll: r(), surface: if r() > 0.5 { Surface::Water } else { Surface::Ground }, slip: r(), wind: r(), active: true });
+            s.set_params(&AudioParams { machine, als: r() > 0.5, cut: r() > 0.8, stalled: r() > 0.9, drive_rpm: r() * 11000.0 - 1000.0, clutch: r(), load: r(), roll: r(), surface: if r() > 0.5 { Surface::Water } else { Surface::Ground }, slip: r(), wind: r(), active: true });
             if r() > 0.5 { s.push(Event::Crash); }
             if r() > 0.5 { s.push(Event::Splash(r())); }
             for x in run(&mut s, 0.2) { assert!(x.is_finite() && x.abs() <= 1.0, "{machine:?}: {x}"); }

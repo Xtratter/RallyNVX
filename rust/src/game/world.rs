@@ -30,6 +30,8 @@ pub struct World {
     pub terrain: Terrain,
     pub vehicle: Vehicle,
     pub cam: FollowCam,
+    /// The engine, the clutch and the gearbox (see `drivetrain`), and whether the driver chose the manual (the autopilot always drives in the automatic).
+    pub drivetrain: super::drivetrain::Drivetrain, pub manual: bool,
     pub time: f32,
     pub cities: Vec<City>,
     /// The loose layer of the special stage (worn by the wheels, reset with the level).
@@ -79,7 +81,7 @@ impl World {
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
         let loose = terrain.roads().map_or_else(LooseMap::empty, LooseMap::new);
-        World { terrain, vehicle, cam, time: 0.0, cities, loose, dust: Dust::new(seed), climate: super::weather::Climate::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, rally: None, signs_on: true, props: HashMap::new() }
+        World { terrain, vehicle, cam, drivetrain: super::drivetrain::Drivetrain::new(), manual: false, time: 0.0, cities, loose, dust: Dust::new(seed), climate: super::weather::Climate::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, rally: None, signs_on: true, props: HashMap::new() }
     }
 
     /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
@@ -263,6 +265,7 @@ impl World {
         if inp.reset {
             self.autopilot = None;
             if self.rally.is_some() { self.rally_reset(); inp.reset = false; } else { self.vehicle.reset_upright(&self.terrain); }
+            self.drivetrain.reset();
         }
         if counting { self.autopilot = None; }
         if let Some(ap) = self.autopilot.as_mut() {
@@ -279,6 +282,17 @@ impl World {
         if self.autopilot.is_some() { if let Some(r) = self.rally.as_mut() { r.run.assisted = true; } }
         self.climate.step(dt);
         self.vehicle.wet = self.climate.weather().wet;
+        // the drivetrain: the engine against the clutch and the gear gives the force at the wheels (the autopilot always drives the automatic)
+        {
+            use super::drivetrain::{DriveIn, Mode};
+            let want = if self.manual && self.autopilot.is_none() && !counting { Mode::Manual } else { Mode::Auto };
+            if want != self.drivetrain.mode { self.drivetrain.set_mode(want); if want == Mode::Manual && self.drivetrain.gear > 1 { /* keeps the gear it was in */ } }
+            let fwd = self.vehicle.vel.dot(self.vehicle.forward());
+            let out = self.drivetrain.step(dt, &DriveIn { throttle: inp.throttle, speed: fwd, wheel_r: self.vehicle.spec.radius, airborne: self.vehicle.contacts == 0 });
+            self.vehicle.drive_force = Some(out.force);
+            // the reverse gear of the manual: the pedal asks for backwards (the lamps and the camera follow it)
+            if want == Mode::Manual && out.gear < 0 { inp.throttle = -inp.throttle.abs(); } else if want == Mode::Manual { inp.throttle = inp.throttle.abs(); }
+        }
         self.vehicle.step_with(&self.terrain, &near, &inp, dt, &mut self.loose);
         self.dust.set_gpu(super::dust::gpu_on(self.dust.level()));
         self.dust.update(&self.vehicle, &self.terrain, self.time, dt);

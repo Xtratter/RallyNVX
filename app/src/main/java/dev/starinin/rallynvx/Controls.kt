@@ -61,6 +61,9 @@ object Controls {
     /** The weather the player asks for: 0 auto, 1 clear, 2 cloudy, 3 rain, 4 heavy rain, 5 fog. */
     fun weather(c: Context): Int = p(c).getInt("weather", 0).coerceIn(0, WeatherMode.COUNT - 1)
     fun setWeather(c: Context, v: Int) = p(c).edit().putInt("weather", v.coerceIn(0, WeatherMode.COUNT - 1)).apply()
+    /** The manual transmission is chosen (the clutch pedal and the shift buttons are shown). */
+    fun manual(c: Context): Boolean = p(c).getBoolean("manual_gearbox", false)
+    fun setManual(c: Context, v: Boolean) = p(c).edit().putBoolean("manual_gearbox", v).apply()
     fun shadows(c: Context): Int = p(c).getInt("shadows", 0).coerceIn(0, 3)
     fun setShadows(c: Context, v: Int) = p(c).edit().putInt("shadows", v.coerceIn(0, 3)).apply()
     fun motionBlur(c: Context): Int = p(c).getInt("motion_blur", 0).coerceIn(0, 2)

@@ -2,6 +2,15 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.64.0 - a real transmission: the engine, the clutch, the gears and a manual
+
+- Added: the car is now driven through a real drivetrain. The engine has its own speed and inertia; its torque comes from a map measured from the sound's engine model (a turbocharged two-litre: 200 N m at 1000 rpm, 325 N m at 5000, engine braking with the throttle shut) with a turbo lag and an idle governor; a clutch carries the torque to the wheels through the gear (six gears and a reverse, ratios 2.92 to 0.92, final drive 5.0) and the force at the ground is what the clutch carries. The old constant engine force is gone: the pull now depends on the gear and the revs, falls at a shift and the engine brakes in the gears. The rev limiter is at 7800 rpm
+- Added: the automatic: it picks the gear from the revs and the pedal, the clutch bites with the revs (a gentle creep at idle, a slipping launch at full throttle), a shift takes 0.22 s with the clutch open, a hard up-shift cuts the spark, a down-shift blips the throttle; the reverse comes from the negative throttle at a standstill. The autopilot always drives the automatic
+- Added: the manual (МКПП): a button "Gearbox: auto / manual" (top left, under the view button); in the manual a clutch pedal appears left of the brake and two shift buttons (up and down) above it. The sequence is R, N, 1 to 6; a shift takes 0.12 s and a hard up-shift cuts the spark (a flat shift). The clutch bites on the pedal's travel (its pedal follows the finger's place on the pad); let it go in gear at a standstill and the engine stalls (the sound stops, the gear indicator blinks "stalled") and starts again by itself after a moment once the clutch is pressed or the box is in neutral; in neutral the engine revs free to the limiter. The choice is kept
+- Added: the gear indicator at the bottom: the gear (R, N, 1-6), the mode and a bar of the revs with a red zone
+- Changed: the sound follows the game's engine: the revs, the throttle and the spark cut come from the drivetrain
+- Not yet: the exhaust flames (next) and the engine's tone on and off the throttle
+
 ## 2.63.1 - a natural blow-off
 
 - Fixed: the blow-off valve's hiss was a short click-like burst. The charge volume before the throttle is now 6 L (piping and the intercooler, it was 2.5) and the valve smaller, so the air leaves over about half a second; the valve opens in proportion to how far the charge is over the atmosphere, so the flow tapers off smoothly instead of stopping short. The sound is a jet of broadband turbulence: it starts sharply, is bright while the pressure behind it is high, darkens and falls away as the charge empties, and flickers a little like a real jet

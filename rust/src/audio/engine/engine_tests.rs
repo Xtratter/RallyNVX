@@ -171,3 +171,25 @@ fn held(rpm: f64, thr: f64, als: bool) -> Engine {
     assert!(flows[1] > 1.0 && flows[19] > 0.3 && flows[19] < flows[1], "still venting at 0.4 s and weaker than at the start: {:?}", (flows[1], flows[19]));
     assert!(flows.windows(2).all(|w| w[1] <= w[0] * 1.15 + 0.05), "a smooth fall, no jumps: {flows:?}");
 }
+
+/// Measures the engine's net torque (N m) on a grid of revs and throttle with the turbo spooled, and writes `engine_torque.json` for the game's drivetrain.
+/// Run with `cargo test --release --lib generate_torque_table -- --ignored`.
+#[test] #[ignore] fn generate_torque_table() {
+    let rpms: Vec<f64> = (2..=16).map(|k| k as f64 * 500.0).collect();   // 1000 .. 8000
+    let thrs = [0.0, 0.25, 0.5, 0.75, 1.0];
+    let mut rows = Vec::new();
+    for &t in &thrs {
+        let mut row = Vec::new();
+        for &r in &rpms {
+            let mut e = held(r, t, false);
+            e.controls.ignition = true; e.controls.clutch = 1.0;
+            run(&mut e, 2.5);
+            let n = (0.25 / DT) as usize; let mut sum = 0.0;
+            for _ in 0..n { e.step(DT); sum += e.clutch_torque; }
+            row.push((sum / n as f64 * 10.0).round() / 10.0);
+        }
+        rows.push(row);
+    }
+    let json = format!("{{\n  \"rpm\": {:?},\n  \"throttle\": {:?},\n  \"torque\": {:?}\n}}\n", rpms, thrs, rows);
+    std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/engine_torque.json"), json).unwrap();
+}

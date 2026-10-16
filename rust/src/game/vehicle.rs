@@ -69,6 +69,8 @@ pub struct Vehicle {
     pub wet: f32,
     /// The driver holds reverse (negative throttle), as opposed to merely rolling backwards.
     pub reverse_throttle: bool,
+    /// The force the drivetrain puts on the ground along the heading (N, all wheels); `None` falls back to the throttle times the spec's engine force.
+    pub drive_force: Option<f32>,
     /// The surface under the first wheel in contact (the HUD shows it); tests can force one for every wheel.
     pub surface: Surface, pub force_surface: Option<Surface>,
     pub wheels: [WheelInfo; 4],
@@ -79,7 +81,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_force: None, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -180,7 +182,7 @@ impl Vehicle {
             let lim_speed = if inp.throttle >= 0.0 { s.max_speed } else { s.max_speed * s.reverse_factor };
             let taper = (1.0 - (fspeed * inp.throttle.signum()).max(0.0) / lim_speed).clamp(0.0, 1.0);
             let locked = inp.handbrake && !front;   // the handbrake locks the rear wheels: no drive, and the tyre holds the ground like a block of rubber
-            let mut fx = if locked { 0.0 } else { inp.throttle * s.engine_force / 4.0 * taper } - vf * roll;
+            let mut fx = if locked { 0.0 } else { match self.drive_force { Some(f) => f / 4.0, None => inp.throttle * s.engine_force / 4.0 * taper } } - vf * roll;
             // brake pedal: scaled by how hard it is pressed (0 = legacy full force); the handbrake always bites the rear wheels fully
             let kb = if inp.brake_amt > 0.0 { inp.brake_amt.clamp(0.05, 1.0) } else { 1.0 };
             let k = if inp.handbrake && !front { 1.0 } else if inp.brake { kb } else { 0.0 };
