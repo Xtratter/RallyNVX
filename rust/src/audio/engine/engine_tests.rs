@@ -162,3 +162,12 @@ fn held(rpm: f64, thr: f64, als: bool) -> Engine {
     let (normal, cut) = (burned(false), burned(true));
     assert!(cut > 20.0 * normal.max(1e-9), "a cut pops: {cut} mol of fuel burnt in the exhaust vs {normal}");
 }
+
+#[test] fn the_blow_off_hiss_tapers_off_over_half_a_second_instead_of_stopping_short() {
+    let mut e = held(4500.0, 1.0, false);
+    run(&mut e, 3.0);
+    e.controls.throttle = 0.0;
+    let mut flows = Vec::new(); for _ in 0..40 { run(&mut e, 0.02); flows.push(e.bov_flow); }
+    assert!(flows[1] > 1.0 && flows[19] > 0.3 && flows[19] < flows[1], "still venting at 0.4 s and weaker than at the start: {:?}", (flows[1], flows[19]));
+    assert!(flows.windows(2).all(|w| w[1] <= w[0] * 1.15 + 0.05), "a smooth fall, no jumps: {flows:?}");
+}
