@@ -327,18 +327,18 @@ mod tests {
         let car = crate::raster::rally_model::build_rally(&crate::game::vehicle::VehicleSpec::by_id("vulpes").unwrap());
         let s = car.windscreen.expect("windscreen");
         assert!(s.hull_n >= 4, "the outline of the glass: {}", s.hull_n);
+        assert!(car.wiper_sweep > 1.2, "the blades reach the pillar, not the middle of the glass: {}", car.wiper_sweep);
         assert!(car.wiper_sweep > 0.5 && car.wiper_sweep <= crate::raster::vehicle_models::WIPER_SWEEP, "sweep {}", car.wiper_sweep);
         for w in car.wipers.iter().flatten() {
             // at the swept angle the blade's tip is on the glass; a good deal further it is not
-            let side = w.axis.cross(w.rest);
-            let tip = |th: f32| { let p = w.pivot + (w.rest * th.cos() + side * th.sin()) * w.reach * 0.93; let r = [p.x - s.origin[0], p.y - s.origin[1], p.z - s.origin[2]]; s.inside(r[0] * s.u[0] + r[1] * s.u[1] + r[2] * s.u[2], r[0] * s.v[0] + r[1] * s.v[1] + r[2] * s.v[2], 0.0) };
+            let tip = |th: f32| { let p = w.tip_at(th, 0.93); let r = [p.x - s.origin[0], p.y - s.origin[1], p.z - s.origin[2]]; s.inside(r[0] * s.u[0] + r[1] * s.u[1] + r[2] * s.u[2], r[0] * s.v[0] + r[1] * s.v[1] + r[2] * s.v[2], 0.0) };
             assert!(tip(car.wiper_sweep), "the tip stays on the glass at the sweep");
             // and it stays close to the glass's surface all the way: the tip's height above the glass's plane changes by less than the glass's own curvature allows
-            let height = |th: f32| { let p = w.pivot + (w.rest * th.cos() + side * th.sin()) * w.reach * 0.93; (p.x - s.origin[0]) * s.n[0] + (p.y - s.origin[1]) * s.n[1] + (p.z - s.origin[2]) * s.n[2] };
+            let height = |th: f32| { let p = w.tip_at(th, 0.93); (p.x - s.origin[0]) * s.n[0] + (p.y - s.origin[1]) * s.n[1] + (p.z - s.origin[2]) * s.n[2] };
             let h0 = height(0.0);
             for k in 1..=10 {
                 let th = car.wiper_sweep * k as f32 / 10.0;
-                assert!((height(th) - h0).abs() < 0.08, "the blade tip rises {} m off the glass's plane at {th} rad", height(th) - h0);
+                assert!((height(th) - h0).abs() < 0.03, "the blade tip rises {} m off the glass's plane at {th} rad", height(th) - h0);
             }
         }
     }

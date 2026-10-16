@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.54.2 - the wipers reach the pillar and change speed smoothly
+
+- Fixed: the blades swung only about 57 degrees and stopped in the middle of the glass; they now sweep as far as the glass allows (the driver's blade reaches the pillar, over 70 degrees). Because the glass is curved, each arm's axis is tilted a little so the blade tip follows the glass instead of sinking into it
+- Fixed: when the rain changed the wiper speed (or its intensity crossed a threshold) the blades jumped to another angle, and the start and the end of the work looked cut off; the speed change now keeps the blade where it is
+
 ## 2.54.1 - the controls work again
 
 - Fixed: since 2.53.0 the controls did not react: the loading screen faded out but stayed on top, invisible, and ate the touches (its fade was restarted every 100 ms and never finished); it now fades once and is removed

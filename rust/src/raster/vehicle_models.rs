@@ -164,7 +164,7 @@ pub struct Steering { pub mesh: Mesh3, pub pivot: V3, pub axis: V3 }
 pub fn steering_wheel_angle(steer: f32) -> f32 { if steer.is_finite() { (-steer * 5.5).clamp(-3.8, 3.8) } else { 0.0 } }
 
 /// How far the wipers sweep (radians) from their parked position.
-pub const WIPER_SWEEP: f32 = 1.0;
+pub const WIPER_SWEEP: f32 = 1.6;
 
 /// The wipers' cycle in `rain` (0..1) as `(period, wipe)`: the period in seconds and the share of it spent wiping (the rest is a pause at the park position). A drizzle gets an
 /// intermittent wipe (a 1.6 s sweep every 5 s), a steady rain the slow speed (1.8 s a cycle) and a downpour the fast one (1.15 s), as car wipers do.
@@ -196,7 +196,13 @@ impl WiperState {
     /// Advances by `dt` seconds in `rain`; `true` while the wipers are working or finishing a wipe.
     pub fn advance(&mut self, dt: f32, rain: f32) -> bool {
         let raining = rain.is_finite() && rain >= 0.05;
-        if raining { let (p, w) = wiper_cycle(rain); self.period = p; self.wipe = w; }
+        if raining {
+            let (p, w) = wiper_cycle(rain);
+            if w != self.wipe {   // another speed: keep the blade where it is (in the stroke or in the pause), do not let it jump
+                self.phase = if self.phase < self.wipe { self.phase / self.wipe * w } else { w + (self.phase - self.wipe) / (1.0 - self.wipe) * (1.0 - w) };
+            }
+            self.period = p; self.wipe = w;
+        }
         if !raining && self.phase == 0.0 { return false; }
         if !raining && self.phase >= self.wipe { self.phase = 0.0; return false; }   // paused between wipes: park at once
         self.phase += dt.clamp(0.0, 0.5) / self.period;
@@ -215,15 +221,10 @@ impl Wiper {
     /// The largest sweep (radians, at most `WIPER_SWEEP`) at which the whole blade stays on the glass: the arm is as long as the glass is high, and swung too far it would
     /// point out over the pillar. Scans the blade's length at each angle against the glass's outline, 2 cm in from its edge.
     pub fn max_sweep(&self, screen: &super::glassdrops::Windscreen) -> f32 {
-        let axis = self.axis;
-        let side = axis.cross(self.rest);
         let mut th = WIPER_SWEEP;
         while th > 0.2 {
-            let (c, s) = (th.cos(), th.sin());
-            let dir = self.rest * c + side * s;
             let on_glass = (5..=10).all(|k| {   // the outer half: the arm's root sits at the glass's lower edge, off it
-                let d = self.reach * 0.1 * k as f32 * 0.93;
-                let p = self.pivot + dir * d;
+                let p = self.tip_at(th, 0.1 * k as f32 * 0.93);
                 let rel = [p.x - screen.origin[0], p.y - screen.origin[1], p.z - screen.origin[2]];
                 screen.inside(rel[0] * screen.u[0] + rel[1] * screen.u[1] + rel[2] * screen.u[2], rel[0] * screen.v[0] + rel[1] * screen.v[1] + rel[2] * screen.v[2], 0.0)
             });
@@ -231,6 +232,30 @@ impl Wiper {
             th -= 0.02;
         }
         0.2
+    }
+    /// The point at the fraction `f` of the arm's length, the blade swung by `th` radians about the axis (Rodrigues), in the car's frame.
+    pub fn tip_at(&self, th: f32, f: f32) -> V3 {
+        let r = self.rest * (self.reach * f);
+        let (c, s) = (th.cos(), th.sin());
+        self.pivot + r * c + self.axis.cross(r) * s + self.axis * (self.axis.dot(r) * (1.0 - c))
+    }
+    /// The glass is curved and the blade sweeps a flat arc, so the tip would sink into the glass towards the pillar. A real arm is sprung and follows the glass; here the axis is
+    /// tilted towards the rest direction (the tip then rises as it swings, by about `reach * sin(a) * (1 - cos(th))`) by the angle that keeps the tip nearest to the glass's plane
+    /// over `0..=sweep`.
+    pub fn follow_glass(mut self, screen: &super::glassdrops::Windscreen, sweep: f32) -> Wiper {
+        let n = v3(screen.n[0], screen.n[1], screen.n[2]);
+        let base = self.axis; let rest = self.rest;
+        let height = |w: &Wiper, th: f32| w.tip_at(th, 0.93).dot(n);
+        let mut best = (f32::MAX, 0.0f32);
+        for k in -60..=60 {
+            let a = k as f32 * 0.005;
+            let mut w = self.clone(); w.axis = (base * a.cos() + rest * a.sin()).norm();
+            let h0 = height(&w, 0.0);
+            let dev = (1..=20).map(|j| (height(&w, sweep * j as f32 / 20.0) - h0).abs()).fold(0.0, f32::max);
+            if dev < best.0 { best = (dev, a); }
+        }
+        self.axis = (base * best.1.cos() + rest * best.1.sin()).norm();
+        self
     }
     /// Builds a wiper from its mesh (already shifted so the spindle is the origin), finding the rest direction and the reach from the farthest vertex.
     pub fn new(mesh: Mesh3, pivot: V3, axis: V3) -> Wiper {

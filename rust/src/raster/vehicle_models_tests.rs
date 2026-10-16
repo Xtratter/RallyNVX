@@ -150,6 +150,19 @@ mod wiper_tests {
         d.phase = 0.7;                                     // in the pause
         assert!(!d.advance(0.05, 0.0) && d.phase == 0.0, "the pause ends at once when the rain stops");
     }
+    #[test] fn the_blades_do_not_jump_when_the_rain_changes_the_speed_or_starts_and_stops() {
+        // sweep the rain up and down across the speed thresholds; the angle may only move by what the speed allows in one step
+        let mut w = WiperState::default();
+        let mut last = 0.0f32; let mut worst = 0.0f32;
+        for k in 0..3000 {
+            let rain = 0.5 + 0.5 * (k as f32 * 0.013).sin() * 1.4;   // 0 .. 1, crossing 0.05, 0.25 and 0.6 again and again
+            w.advance(0.02, rain.clamp(0.0, 1.0));
+            let a = wiper_angle_at(w.phase, w.wipe);
+            worst = worst.max((a - last).abs()); last = a;
+        }
+        // the fastest sweep is the whole angle in 1.15 s / 2: a 0.02 s step moves it by at most about WIPER_SWEEP * pi * 0.02 / 1.15 / 2
+        assert!(worst < WIPER_SWEEP * std::f32::consts::PI * 0.02 / 1.15 * 1.3, "the blade jumped by {worst} rad in one step");
+    }
     /// The glass shader finds when the blade passes an angle by inverting the sweep curve (`u = asin(sqrt(f)) / pi`); the same arithmetic here must land on that angle on the way up and back.
     #[test] fn the_shaders_inverse_of_the_sweep_finds_the_phase_a_blade_passes_an_angle() {
         for wipe in [0.32f32, 1.0] { for k in 1..20 {
