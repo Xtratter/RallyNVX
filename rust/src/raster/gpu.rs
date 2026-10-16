@@ -212,6 +212,11 @@ pub struct Raster {
     _keep: Box<dyn std::any::Any>, // native window / winit window; dropped after `surface` (field order)
 }
 
+static CACHE_DIR: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+/// Where the compiled pipelines are kept between runs (the app's cache folder).
+pub fn set_cache_dir(dir: &str) { *CACHE_DIR.lock().unwrap() = if dir.is_empty() { None } else { Some(std::path::PathBuf::from(dir)) }; }
+fn pipeline_cache_file() -> Option<std::path::PathBuf> { CACHE_DIR.lock().unwrap().as_ref().map(|d| d.join("pipelines.bin")) }
+
 impl Raster {
     #[cfg(target_os = "android")]
     pub fn new(window: NativeWindow, w: u32, h: u32) -> Raster {
@@ -235,7 +240,7 @@ impl Raster {
         let info = adapter.get_info();
         log::info!("adapter: {} ({:?}) {}", info.name, info.backend, info.driver_info);
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("game_device"), required_features: adapter.features() & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS), required_limits: adapter.limits(),
+            label: Some("game_device"), required_features: adapter.features() & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS | wgpu::Features::PIPELINE_CACHE), required_limits: adapter.limits(),
             memory_hints: wgpu::MemoryHints::Performance,
         }, None)).expect("request_device");
         crate::loading::stage(crate::loading::GPU, 8);
@@ -366,6 +371,13 @@ impl Raster {
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() }] });
 
         crate::loading::stage(crate::loading::SHADERS, 45);
+        let cache_file = pipeline_cache_file();
+        let pcache = if device.features().contains(wgpu::Features::PIPELINE_CACHE) {
+            let data = cache_file.as_ref().and_then(|p| std::fs::read(p).ok());
+            log::info!("pipeline cache: {}", data.as_ref().map_or("none yet".to_string(), |d| format!("{} bytes", d.len())));
+            // SAFETY: the data is only what `PipelineCache::get_data` gave earlier (it is checked against the driver; a stale or broken file makes a fresh cache)
+            Some(unsafe { device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor { label: Some("pipelines"), data: data.as_deref(), fallback: true }) })
+        } else { None };
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("raster"), source: wgpu::ShaderSource::Wgsl(crate::shaders::raster().into()) });
         let lay_main = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[&bgl_main], push_constant_ranges: &[] });
         let lay_shadow = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[&bgl_shadow], push_constant_ranges: &[] });
@@ -382,7 +394,7 @@ impl Raster {
                 label: Some(label), layout: Some(lay),
                 vertex: wgpu::VertexState { module: &module, entry_point: Some(vs), compilation_options: Default::default(), buffers: bufs },
                 fragment: fs.map(|f| wgpu::FragmentState { module: &module, entry_point: Some(f), compilation_options: Default::default(), targets: &target }),
-                primitive: prim, depth_stencil: ds, multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+                primitive: prim, depth_stencil: ds, multisample: wgpu::MultisampleState::default(), multiview: None, cache: pcache.as_ref(),
             })
         };
         let weight_layout = wgpu::VertexBufferLayout { array_stride: 4, step_mode: wgpu::VertexStepMode::Vertex, attributes: &WEIGHT_ATTRS };
@@ -393,7 +405,7 @@ impl Raster {
             label: Some("water"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_water"), compilation_options: Default::default(), buffers: &[mesh_layout.clone()] },
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_water"), compilation_options: Default::default(), targets: &target_blend }),
-            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: pcache.as_ref(),
         });
         let road_bias = wgpu::DepthBiasState { constant: -4, slope_scale: -2.0, clamp: 0.0 };
         crate::loading::stage(crate::loading::SHADERS, 50);
@@ -401,7 +413,7 @@ impl Raster {
             label: Some("road"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_road"), compilation_options: Default::default(), buffers: &[mesh_layout.clone()] },
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_road"), compilation_options: Default::default(), targets: &target_blend }),
-            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, road_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, road_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: pcache.as_ref(),
         });
         const DUST_ATTRS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4];
         let dust_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<dustgen::DustInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &DUST_ATTRS };
@@ -410,19 +422,19 @@ impl Raster {
             label: Some("dust"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_dust"), compilation_options: Default::default(), buffers: &[dust_layout] },
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_dust"), compilation_options: Default::default(), targets: &target_blend }),
-            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: pcache.as_ref(),
         });
         let pl_dust_pt = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("dust_pt"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_dust"), compilation_options: Default::default(), buffers: &[wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<dustgen::DustInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &DUST_ATTRS }] },
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_dust_pt"), compilation_options: Default::default(), targets: &target_blend }),
-            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: pcache.as_ref(),
         });
         let pl_dust_specks = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("dust_specks"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_dust_specks"), compilation_options: Default::default(), buffers: &[wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<dustgen::DustInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &DUST_ATTRS }] },
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_dust_speck"), compilation_options: Default::default(), targets: &target_blend }),
-            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: pcache.as_ref(),
         });
         let dust_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_inst"), size: (dustgen::MAX_INST * std::mem::size_of::<dustgen::DustInst>()) as u64, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         crate::loading::stage(crate::loading::SHADERS, 54);
@@ -439,20 +451,20 @@ impl Raster {
             label: Some("model_back"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_model"), compilation_options: Default::default(), buffers: &[model_layout.clone(), minst_layout.clone()] },
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_model"), compilation_options: Default::default(), targets: &target }),
-            primitive: wgpu::PrimitiveState { cull_mode: Some(wgpu::Face::Back), ..Default::default() }, depth_stencil: depth_state(true, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+            primitive: wgpu::PrimitiveState { cull_mode: Some(wgpu::Face::Back), ..Default::default() }, depth_stencil: depth_state(true, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: pcache.as_ref(),
         });
         let pl_rain = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("rain"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_rain"), compilation_options: Default::default(), buffers: &[] },
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_rain"), compilation_options: Default::default(), targets: &target_blend }),
-            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: pcache.as_ref(),
         });
         crate::loading::stage(crate::loading::SHADERS, 63);
         let pl_glass = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("glass"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_model"), compilation_options: Default::default(), buffers: &[model_layout.clone(), minst_layout.clone()] },
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_glass"), compilation_options: Default::default(), targets: &target_blend }),
-            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: pcache.as_ref(),
         });
         let pl_model_sh = mk("model_sh", &lay_shadow, "vs_model_shadow", None, &[model_layout, minst_layout], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
         crate::loading::stage(crate::loading::SHADERS, 64);
@@ -467,6 +479,12 @@ impl Raster {
         let mbuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("model_inst"), size: (MAX_MODEL_INST * std::mem::size_of::<MInst>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
+        if let (Some(c), Some(path)) = (&pcache, &cache_file) {   // keep what the driver compiled: the next start skips the shader compilation
+            if let Some(data) = c.get_data() {
+                let old = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+                if data.len() as u64 != old { let tmp = path.with_extension("tmp"); if std::fs::write(&tmp, &data).is_ok() { let _ = std::fs::rename(&tmp, path); } }
+            }
+        }
         crate::loading::stage(crate::loading::WORLD, 65);
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
             pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach))), wiper_state: Default::default(), wiper_time: 0.0, film: Default::default(), car_screen: car.windscreen, car_sweep: car.wiper_sweep, car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, wheel_spin_rear: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
