@@ -449,6 +449,19 @@ fn dust_layer(wp: vec3<f32>) -> f32 {
     let far = mat_sample(0, uv2) * w.x + mat_sample(1, uv2) * w.y + mat_sample(2, uv2) * w.z + mat_sample(3, uv2) * w.w;
     a = a * (0.65 + 0.7 * dot(far, vec3<f32>(0.33)) / max(dot(a, vec3<f32>(0.33)), 0.05) * 0.5);
     a = pow(a, vec3<f32>(1.35));   // the maps are stored linear and bright; this deepens and saturates them
+    // the test track: weights of zero mean tarmac everywhere, painted with a grid of white lines every 50 m (and a bold line every 250 m) to see the speed against
+    let tarmac = (i.w.x + i.w.y + i.w.z + i.w.w) < 0.004;
+    var paint = 0.0;
+    let w_px = max(length(fwidth(i.wp.xz)), 0.02);   // derivatives out of the branch
+    if (tarmac) {
+        let ta = pow(mat_sample(4, uv), vec3<f32>(1.35));
+        let tf = pow(mat_sample(4, uv2), vec3<f32>(1.35));
+        a = ta * (0.65 + 0.7 * dot(tf, vec3<f32>(0.33)) / max(dot(ta, vec3<f32>(0.33)), 0.05) * 0.5) * 0.55;
+        let g = abs(fract(i.wp.xz / 50.0 + 0.5) - 0.5) * 50.0;
+        let g2 = abs(fract(i.wp.xz / 250.0 + 0.5) - 0.5) * 250.0;
+        paint = max(1.0 - smoothstep(0.10, 0.10 + w_px, min(g.x, g.y)), 1.0 - smoothstep(0.30, 0.30 + w_px, min(g2.x, g2.y)));
+        a = mix(a, vec3<f32>(0.62), 0.92 * paint);
+    }
     let snow = smoothstep(34.0, 44.0, i.wp.y) * (1.0 - smoothstep(0.1, 0.3, 1.0 - n.y));
     a = mix(a, vec3<f32>(0.85, 0.86, 0.90), snow);
     let conc_fade = 1.0 - smoothstep(180.0, 260.0, distance(i.wp, u.cam.xyz));
@@ -461,7 +474,7 @@ fn dust_layer(wp: vec3<f32>) -> f32 {
     // micro-relief: the ground texture's brightness read as a height (3 cm swing), fading out with distance (it would shimmer) and under snow
     let near = 1.0 - smoothstep(25.0, 70.0, distance(i.wp, u.cam.xyz));
     // the dry roughness of each ground (grass, dirt, sand, rock) by its weight; snow is smoother
-    let rough_dry = mix(dot(w, vec4<f32>(0.92, 0.88, 0.97, 0.70)), 0.55, snow);
+    let rough_dry = select(mix(dot(w, vec4<f32>(0.92, 0.88, 0.97, 0.70)), 0.55, snow), mix(0.86, 0.55, paint), tarmac);
     let g = ground_surface(i.wp, n, a, rough_dry, dot(w, vec4<f32>(0.4, 1.0, 1.0, 0.0)) * (1.0 - snow), 0.0);
     let nb = bump(g.n, i.wp, dot(a, vec3<f32>(0.33)) * 0.03 * near * (1.0 - snow) * (1.0 - g.pool));
     return vec4<f32>(shade(g.a, i.wp, nb, g.r, 0.0), 1.0);

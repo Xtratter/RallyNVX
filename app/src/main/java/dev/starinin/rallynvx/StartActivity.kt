@@ -35,6 +35,9 @@ class StartActivity : Activity() {
         add(M3Widgets.button(this, t("Free drive", "Свободная езда"), M3Widgets.ButtonKind.FILLED) {
             startActivity(Intent(this, GameActivity::class.java).putExtra("seed", System.nanoTime() and 0xFFFFFFL).putExtra("profile", profile))
         })
+        add(M3Widgets.button(this, t("Test track", "Испытательный полигон"), M3Widgets.ButtonKind.TONAL) {
+            startActivity(Intent(this, GameActivity::class.java).putExtra("seed", 1L).putExtra("profile", profile).putExtra("testtrack", true))
+        })
         add(M3Widgets.button(this, t("Rally", "Ралли"), M3Widgets.ButtonKind.FILLED) {
             startActivity(Intent(this, RallyMenuActivity::class.java).putExtra("profile", profile))
         })

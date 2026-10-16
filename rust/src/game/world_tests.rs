@@ -271,3 +271,16 @@ mod pace_world {
     assert_eq!((w.cam.view as i32, w.cam.dist, w.cam.height), (1, 1.5, 0.5));
     assert!(w.view(1).cam_fov < 1.0, "the zoomed bonnet view reaches the renderer");
 }
+
+#[test] fn the_test_track_is_flat_asphalt_and_bare_and_the_car_drives_on_it() {
+    let mut w = World::test_track(VehicleSpec::default_car());
+    assert!(w.terrain.is_flat_test() && w.terrain.height(123.0, -456.0) == 0.0);
+    assert_eq!(crate::game::surface::surface_at(&w.terrain, 800.0, 800.0), crate::game::surface::Surface::Asphalt);
+    assert!(crate::game::props::tile_props(&w.terrain, 3, 4).is_empty() && crate::game::scatter::tile_bushes(&w.terrain, 3, 4).is_empty());
+    assert!(crate::game::scatter::grass_spots(&w.terrain, w.vehicle.pos, 30.0, 100).is_empty());
+    assert!(w.vehicle.contacts > 0 && w.vehicle.vel.len() < 0.5, "settled at rest");
+    for _ in 0..60 * 8 { w.step(&crate::game::input::Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+    assert!(w.vehicle.vel.len() * 3.6 > 60.0 && w.vehicle.pos.y < 1.5, "it drives: {} km/h", w.vehicle.vel.len() * 3.6);
+    let (_, weights) = w.terrain.tile_mesh_with_weights(0, 0, 0);
+    assert!(!weights.is_empty() && weights.iter().all(|w| *w == [0, 0, 0, 0]), "the tiles are marked as tarmac");
+}

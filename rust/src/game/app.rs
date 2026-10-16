@@ -95,6 +95,8 @@ mod game {
         /// The free camera flies `fwd` metres along its gaze and `up` metres up.
         pub fn camera_fly(&mut self, fwd: f32, up: f32) { self.world.cam.fly(fwd, up); }
         pub fn camera_reset(&mut self) { self.world.cam.reset(); }
+        /// The test track (a flat sheet of tarmac) instead of a level.
+        pub fn test_track(&mut self) { self.world = World::test_track(self.car); self.world.dust.set_level(self.dust_level); self.acc = 0.0; self.input = Input::default(); }
         /// The driver shifts (+1 up, -1 down), picks the manual or the automatic and works the clutch pedal (0 up .. 1 down).
         pub fn shift(&mut self, dir: i32) { self.world.drivetrain.shift(dir); }
         pub fn set_manual(&mut self, on: bool) { self.manual = on; self.world.manual = on; }

@@ -33,7 +33,7 @@ mod android {
     use crate::game::{app::{Game, STAT_LEN}, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Rally(i32), Signs(bool), Camera(f32, f32), CameraUp, CameraReset, Shift(i32), Manual(bool), Clutch(f32), CameraFly(f32, f32), CameraView(i32, f32, f32), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
+    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Rally(i32), Signs(bool), Camera(f32, f32), CameraUp, CameraReset, TestTrack, Shift(i32), Manual(bool), Clutch(f32), CameraFly(f32, f32), CameraView(i32, f32, f32), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -87,6 +87,7 @@ mod android {
                             Ok(GCmd::Camera(y, p)) => g.camera_drag(y, p),
                             Ok(GCmd::CameraUp) => g.camera_release(),
                             Ok(GCmd::CameraReset) => g.camera_reset(),
+                            Ok(GCmd::TestTrack) => g.test_track(),
                             Ok(GCmd::Shift(d)) => g.shift(d),
                             Ok(GCmd::Manual(m)) => g.set_manual(m),
                             Ok(GCmd::Clutch(c)) => g.set_clutch(c),
@@ -191,6 +192,8 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameShift(_e: JNIEnv, _c: JClass, dir: jint) { send(GCmd::Shift(dir)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameGearMode(_e: JNIEnv, _c: JClass, manual: jint) { send(GCmd::Manual(manual != 0)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameClutch(_e: JNIEnv, _c: JClass, pedal: jfloat) { send(GCmd::Clutch(pedal)); }
+    /// The test track: a flat sheet of tarmac.
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameTestTrack(_e: JNIEnv, _c: JClass) { send(GCmd::TestTrack); }
     /// A double tap: the camera goes back to its default.
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameCameraReset(_e: JNIEnv, _c: JClass) { send(GCmd::CameraReset); }
     /// The camera view: 0 chase, 1 bonnet, 2 bumper, 3 roof, 4 orbit, with its distance scale (zoom) and height offset (tilt).

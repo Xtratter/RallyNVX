@@ -18,6 +18,7 @@ fn gentle(t: &Terrain, x: f32, z: f32, min_y: f32) -> Option<V3> {
 }
 
 pub fn tile_bushes(t: &Terrain, tx: i32, tz: i32) -> Vec<Bush> {
+    if t.is_flat_test() { return Vec::new(); }   // the test track is bare
     let mut out = Vec::new();
     for k in 0..BUSHES_PER_TILE {
         let a = hash01(t.seed ^ 0x61, tx.wrapping_mul(16).wrapping_add(k), tz);
@@ -33,6 +34,7 @@ pub fn tile_bushes(t: &Terrain, tx: i32, tz: i32) -> Vec<Bush> {
 /// Grass tufts on a 1.2 m jittered grid within `radius` of `centre` (which should be snapped by the caller so the
 /// result stays stable while the camera moves), nearest first, at most `cap`. Tuft: (position, scale).
 pub fn grass_spots(t: &Terrain, centre: V3, radius: f32, cap: usize) -> Vec<(V3, f32)> {
+    if t.is_flat_test() { return Vec::new(); }
     if cap == 0 { return Vec::new(); }
     let n = (radius / GRASS_CELL).ceil() as i32;
     let (ci, cj) = ((centre.x / GRASS_CELL).floor() as i32, (centre.z / GRASS_CELL).floor() as i32);

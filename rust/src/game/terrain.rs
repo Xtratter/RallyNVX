@@ -182,7 +182,8 @@ impl Terrain {
             let nm = self.normal(x, z);
             let h = self.height(x, z);
             verts.push([x, h, z, nm.x, nm.y, nm.z]);
-            weights.push(crate::game::materials::terrain_weights(h, nm, x, z));
+            // the flat test track is all tarmac: weights of zero are the shader's sign for it
+            weights.push(if self.is_flat_test() { [0, 0, 0, 0] } else { crate::game::materials::terrain_weights(h, nm, x, z) });
         } }
         let w = (n + 1) as u32;
         let mut idx = Vec::with_capacity(n * n * 6 + 4 * n * 6);

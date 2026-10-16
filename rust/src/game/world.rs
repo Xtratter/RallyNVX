@@ -235,6 +235,16 @@ impl World {
         self.cam.set_view(view, dist, height);
     }
 
+    /// The test track: a bare flat sheet of tarmac (painted with a grid of lines every 50 m), no props, no water, no roads; the car on it from the start. For trying the sound,
+    /// the drivetrain and the handling.
+    pub fn test_track(car: VehicleSpec) -> World {
+        let mut w = World::from_terrain(Terrain::flat(), car, (0.0, 0.0), 0.0);
+        for _ in 0..120 { w.step(&Input::default(), 1.0 / 60.0); }
+        w.vehicle.vel = V3::ZERO; w.vehicle.omega = V3::ZERO; w.drivetrain.reset();
+        w.time = 0.0;
+        w
+    }
+
     /// The garage scene: the car settled on the flat spawn plateau, never driven; `step_garage` orbits the camera.
     pub fn garage(car: VehicleSpec) -> World {
         let mut w = World::new_with(7, car);
