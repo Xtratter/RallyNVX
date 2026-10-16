@@ -149,7 +149,9 @@ pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>
     /// The windscreen wipers (the driver's side first): each mesh is stored shifted by `-pivot` so that it sweeps about the origin, `axis` is the sweep axis.
     pub wipers: [Option<Wiper>; 2],
     /// The driver's gloves, stored shifted by the steering wheel's pivot so that they turn with the wheel.
-    pub gloves: Option<Mesh3> }
+    pub gloves: Option<Mesh3>,
+    /// The windscreen's plane in the body's frame, where the running raindrops live (found from the glass mesh).
+    pub windscreen: Option<super::glassdrops::Windscreen> }
 
 /// The steering wheel of a car model: its mesh is stored shifted by `-pivot` so that it turns about the origin; `pivot` is where the wheel's centre is in the body frame,
 /// `axis` its axis (a unit vector towards the driver).
@@ -162,34 +164,42 @@ pub fn steering_wheel_angle(steer: f32) -> f32 { if steer.is_finite() { (-steer 
 /// How far the wipers sweep (radians) from their parked position.
 pub const WIPER_SWEEP: f32 = 1.15;
 
-/// How long one back-and-forth of the wipers takes (seconds) in `rain` (0..1): 2.6 s in a drizzle, 1.3 s in a downpour.
-pub fn wiper_period(rain: f32) -> f32 { if rain > 0.6 { 1.3 } else { 2.6 } }
-
-/// The angle of the wipers (radians from parked) at the cycle phase `ph` (0..1): up and back, with a dwell at the top and at the park position.
-pub fn wiper_angle_at(ph: f32) -> f32 {
-    if !ph.is_finite() { return 0.0; }
-    let ph = ph.rem_euclid(1.0);
-    let tri = if ph < 0.5 { ph * 2.0 } else { 2.0 - ph * 2.0 };
-    let s = (tri * 1.25).min(1.0);
-    WIPER_SWEEP * s * s * (3.0 - 2.0 * s)
+/// The wipers' cycle in `rain` (0..1) as `(period, wipe)`: the period in seconds and the share of it spent wiping (the rest is a pause at the park position). A drizzle gets an
+/// intermittent wipe (a 1.6 s sweep every 5 s), a steady rain the slow speed (1.8 s a cycle) and a downpour the fast one (1.15 s), as car wipers do.
+pub fn wiper_cycle(rain: f32) -> (f32, f32) {
+    if rain > 0.6 { (1.15, 1.0) } else if rain > 0.25 { (1.8, 1.0) } else { (5.0, 0.32) }
 }
 
-/// The angle of the wipers at `time` (seconds) in `rain` (0..1): parked below a light drizzle, else the sweep of `wiper_angle_at`.
+/// The angle of the wipers (radians from parked) at the cycle phase `ph` (0..1) for a cycle that wipes during the share `wipe` of it: the blade swings up and back as sin squared
+/// (what a crank and a linkage give: slow at the turns, fastest mid-glass) and then waits parked.
+pub fn wiper_angle_at(ph: f32, wipe: f32) -> f32 {
+    if !(ph.is_finite() && wipe.is_finite()) || wipe <= 0.0 { return 0.0; }
+    let u = (ph.rem_euclid(1.0) / wipe).min(1.0);
+    let s = (std::f32::consts::PI * u).sin();
+    WIPER_SWEEP * s * s
+}
+
+/// The angle of the wipers at `time` (seconds) in `rain` (0..1): parked while it is dry, else the sweep of `wiper_angle_at`.
 pub fn wiper_angle(time: f32, rain: f32) -> f32 {
     if !(time.is_finite() && rain.is_finite()) || rain < 0.05 { return 0.0; }
-    wiper_angle_at(time / wiper_period(rain))
+    let (period, wipe) = wiper_cycle(rain);
+    wiper_angle_at(time / period, wipe)
 }
 
 /// The wipers' clock: it runs while it rains and, when the rain stops, finishes the wipe it is in before the blades park (so they never jump).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct WiperState { pub phase: f32 }
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WiperState { pub phase: f32, pub period: f32, pub wipe: f32 }
+impl Default for WiperState { fn default() -> Self { WiperState { phase: 0.0, period: 5.0, wipe: 0.32 } } }
 impl WiperState {
     /// Advances by `dt` seconds in `rain`; `true` while the wipers are working or finishing a wipe.
     pub fn advance(&mut self, dt: f32, rain: f32) -> bool {
         let raining = rain.is_finite() && rain >= 0.05;
+        if raining { let (p, w) = wiper_cycle(rain); self.period = p; self.wipe = w; }
         if !raining && self.phase == 0.0 { return false; }
-        self.phase += dt.clamp(0.0, 0.5) / wiper_period(if raining { rain } else { 0.0 });
+        if !raining && self.phase >= self.wipe { self.phase = 0.0; return false; }   // paused between wipes: park at once
+        self.phase += dt.clamp(0.0, 0.5) / self.period;
         if self.phase >= 1.0 { self.phase = if raining { self.phase.fract() } else { 0.0 }; }
+        if !raining && self.phase >= self.wipe { self.phase = 0.0; }
         true
     }
 }
@@ -220,7 +230,7 @@ pub fn dash_rpm(speed: f32, max_speed: f32) -> f32 {
 pub fn draw_driver(dist: f32) -> bool { dist >= 1.2 }
 
 impl CarModel {
-    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None], glass: None, interior: None, steering: None, driver: None, wipers: [None, None], gloves: None } }
+    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None], glass: None, interior: None, steering: None, driver: None, wipers: [None, None], gloves: None, windscreen: None } }
     /// The wheel mesh of a wheel set (0 tarmac, 1 gravel, 2 snow); a set the model does not have shows the tarmac wheel.
     pub fn wheel_for(&self, set: u8) -> &Mesh3 {
         match set { 1 | 2 => self.alt_wheels[set as usize - 1].as_ref().unwrap_or(&self.wheel), _ => &self.wheel }

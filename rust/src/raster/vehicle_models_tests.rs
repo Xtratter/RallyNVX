@@ -110,22 +110,55 @@ fn outward_min(m: &Mesh3, name: &str, min: f32) {
 
 #[cfg(test)]
 mod wiper_tests {
-    use super::super::{wiper_angle, WIPER_SWEEP};
+    use super::super::{wiper_angle, wiper_angle_at, wiper_cycle, WiperState, WIPER_SWEEP};
     #[test] fn wipers_are_parked_when_it_does_not_rain() {
         for t in [0.0, 0.7, 5.3] { assert_eq!(wiper_angle(t, 0.0), 0.0); assert_eq!(wiper_angle(t, 0.04), 0.0); }
     }
-    #[test] fn wipers_sweep_up_to_the_limit_and_come_back_in_the_rain() {
-        let samples: Vec<f32> = (0..400).map(|k| wiper_angle(k as f32 * 0.01, 0.5)).collect();
-        let max = samples.iter().cloned().fold(0.0, f32::max);
-        assert!((max - WIPER_SWEEP).abs() < 1e-3, "reaches the sweep limit: {max}");
-        assert!(samples.iter().all(|&a| (0.0..=WIPER_SWEEP + 1e-4).contains(&a)), "never beyond the sweep");
-        assert!(wiper_angle(0.0, 0.5) < 1e-4 && wiper_angle(2.6, 0.5) < 1e-4, "parked at the start of every cycle");
+    #[test] fn the_cycle_gets_quicker_and_continuous_as_the_rain_grows() {
+        let (pd, wd) = wiper_cycle(0.1); let (ps, ws) = wiper_cycle(0.4); let (pf, wf) = wiper_cycle(0.9);
+        assert!(pd > ps && ps > pf && wd < 1.0 && ws == 1.0 && wf == 1.0, "drizzle intermittent, then slow, then fast");
+        assert!(pd * wd > 1.0 && pf > 0.8, "no absurd speeds");
     }
-    #[test] fn wipers_are_quicker_in_a_heavy_rain_and_ignore_bad_input() {
-        assert!(wiper_angle(0.65, 0.9) > 0.99 * WIPER_SWEEP, "half a wipe in a downpour is at the top");
-        assert!(wiper_angle(0.65, 0.3) < 0.99 * WIPER_SWEEP, "a drizzle is slower");
-        assert_eq!(wiper_angle(f32::NAN, 0.5), 0.0); assert_eq!(wiper_angle(1.0, f32::NAN), 0.0);
-        assert!(wiper_angle(-1.3, 0.9) >= 0.0, "a negative clock still gives a valid angle");
+    #[test] fn the_blade_swings_as_sin_squared_and_waits_parked_between_wipes() {
+        assert_eq!(wiper_angle_at(0.0, 0.32), 0.0);
+        assert!((wiper_angle_at(0.16, 0.32) - WIPER_SWEEP).abs() < 1e-4, "the top is mid-wipe");
+        assert!(wiper_angle_at(0.5, 0.32) < 1e-6 && wiper_angle_at(0.9, 0.32) < 1e-6, "parked in the pause");
+        assert!(wiper_angle_at(0.04, 0.32) < wiper_angle_at(0.08, 0.32), "rising");
+        let samples: Vec<f32> = (0..400).map(|k| wiper_angle_at(k as f32 / 400.0, 1.0)).collect();
+        assert!(samples.iter().all(|&a| (0.0..=WIPER_SWEEP + 1e-4).contains(&a)));
+        assert!(wiper_angle_at(f32::NAN, 1.0) == 0.0 && wiper_angle_at(0.3, 0.0) == 0.0);
+    }
+    #[test] fn the_wiper_angle_over_time_follows_the_rain() {
+        let max = (0..1000).map(|k| wiper_angle(k as f32 * 0.01, 0.9)).fold(0.0, f32::max);
+        assert!((max - WIPER_SWEEP).abs() < 0.01, "{max}");
+        assert!(wiper_angle(0.0, 0.9) == 0.0);
+    }
+    #[test] fn the_clock_is_parked_when_dry_and_runs_in_the_rain() {
+        let mut w = WiperState::default();
+        assert!(!w.advance(0.1, 0.0) && w.phase == 0.0);
+        assert!(w.advance(0.5, 0.5) && w.phase > 0.0);
+    }
+    #[test] fn when_the_rain_stops_the_wipe_finishes_and_the_blades_park() {
+        let mut w = WiperState::default();
+        for _ in 0..8 { w.advance(0.1, 0.9); }
+        assert!(w.phase > 0.0, "mid-wipe");
+        let mut steps = 0;
+        while w.advance(0.05, 0.0) && steps < 200 { steps += 1; }
+        assert!(steps < 100 && w.phase == 0.0, "parked after {steps} steps");
+        let mut d = WiperState::default();
+        for _ in 0..30 { d.advance(0.1, 0.1); }          // intermittent: somewhere in the pause or a wipe
+        d.phase = 0.7;                                     // in the pause
+        assert!(!d.advance(0.05, 0.0) && d.phase == 0.0, "the pause ends at once when the rain stops");
+    }
+    /// The glass shader finds when the blade passes an angle by inverting the sweep curve (`u = asin(sqrt(f)) / pi`); the same arithmetic here must land on that angle on the way up and back.
+    #[test] fn the_shaders_inverse_of_the_sweep_finds_the_phase_a_blade_passes_an_angle() {
+        for wipe in [0.32f32, 1.0] { for k in 1..20 {
+            let f = k as f32 / 20.0;
+            let uu = f.sqrt().asin() / std::f32::consts::PI;
+            let (up, down) = (uu * wipe, (1.0 - uu) * wipe);
+            for ph in [up, down] { assert!((wiper_angle_at(ph, wipe) - f * WIPER_SWEEP).abs() < 2e-3, "wipe {wipe} f {f} ph {ph}: {}", wiper_angle_at(ph, wipe)); }
+            assert!(up < down);
+        } }
     }
 }
 
@@ -138,39 +171,5 @@ mod dash_tests {
         assert!(dash_rpm(500.0, 50.0) <= 1.0 && dash_rpm(-30.0, 50.0) > 0.18, "reversing revs too");
         assert_eq!(dash_rpm(f32::NAN, 50.0), 0.0); assert_eq!(dash_rpm(10.0, f32::INFINITY), 0.0);
         assert!(dash_rpm(10.0, 0.0).is_finite());
-    }
-}
-
-#[cfg(test)]
-mod wiper_state_tests {
-    use super::super::{wiper_angle_at, WiperState, WIPER_SWEEP};
-    #[test] fn the_clock_is_parked_when_dry_and_runs_in_the_rain() {
-        let mut w = WiperState::default();
-        assert!(!w.advance(0.1, 0.0) && w.phase == 0.0);
-        assert!(w.advance(0.5, 0.5) && w.phase > 0.0);
-    }
-    #[test] fn when_the_rain_stops_the_wipe_finishes_and_the_blades_park() {
-        let mut w = WiperState::default();
-        for _ in 0..20 { w.advance(0.1, 0.5); }
-        assert!(w.phase > 0.0, "mid-wipe");
-        let mut steps = 0;
-        while w.advance(0.05, 0.0) && steps < 200 { steps += 1; assert!(wiper_angle_at(w.phase) >= 0.0); }
-        assert!(steps < 100 && w.phase == 0.0 && wiper_angle_at(w.phase) == 0.0, "parked after {steps} steps");
-    }
-    /// The glass shader finds when the blade passes an angle by inverting the sweep curve; the same arithmetic here must land on that angle on the way up and on the way back.
-    #[test] fn the_shaders_inverse_of_the_sweep_finds_the_phase_a_blade_passes_an_angle() {
-        for k in 1..20 {
-            let f = k as f32 / 20.0;
-            let s = 0.5 - ((1.0 - 2.0 * f).asin() / 3.0).sin();
-            let tri = s / 1.25;
-            let (up, down) = (tri * 0.5, 1.0 - tri * 0.5);
-            for ph in [up, down] { assert!((wiper_angle_at(ph) - f * WIPER_SWEEP).abs() < 2e-3, "f {f} ph {ph}: {}", wiper_angle_at(ph)); }
-            assert!(up < down);
-        }
-    }
-    #[test] fn the_angle_at_a_phase_is_continuous_and_bounded() {
-        let mut prev = wiper_angle_at(0.0);
-        for k in 1..=1000 { let a = wiper_angle_at(k as f32 / 1000.0); assert!((0.0..=WIPER_SWEEP + 1e-4).contains(&a) && (a - prev).abs() < 0.05, "{k}"); prev = a; }
-        assert!(wiper_angle_at(f32::NAN) == 0.0 && wiper_angle_at(-0.25) == wiper_angle_at(0.75));
     }
 }

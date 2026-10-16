@@ -1,7 +1,7 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
-    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>, susp: vec4<f32>, wx: vec4<f32>, cr: vec4<f32>, wp0: vec4<f32>, wp1: vec4<f32>, wax0: vec4<f32>, wax1: vec4<f32>, wrs0: vec4<f32>, wrs1: vec4<f32>, wph: vec4<f32>,
+    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>, susp: vec4<f32>, wx: vec4<f32>, cr: vec4<f32>, wp0: vec4<f32>, wp1: vec4<f32>, wax0: vec4<f32>, wax1: vec4<f32>, wrs0: vec4<f32>, wrs1: vec4<f32>, wph: vec4<f32>, film: vec4<f32>, sl: array<vec4<f32>, 64>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
@@ -455,7 +455,7 @@ fn sway(w: vec3<f32>, k_world: f32) -> vec3<f32> {
     return vec3<f32>(w.x + off.x, w.y, w.z + off.y);
 }
 
-struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32, @location(5) own: f32, @location(6) uv: vec2<f32>, @location(7) heat: f32, @location(8) lp: vec3<f32>, @location(9) kind: f32 };
+struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32, @location(5) own: f32, @location(6) uv: vec2<f32>, @location(7) heat: f32, @location(8) lp: vec3<f32>, @location(9) kind: f32, @location(10) ln: vec3<f32> };
 
 fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec4<f32>) -> vec3<f32> {
     return (mat4x4<f32>(m0, m1, m2, m3) * vec4<f32>(p, 1.0)).xyz;
@@ -487,6 +487,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     o.ao = select(1.0, mix(0.55, 1.0, smoothstep(0.0, 1.8, hgt)), tint.a > 1.5);
     o.uv = uv;
     o.lp = p;
+    o.ln = n;   // the object-space normal
     o.kind = tint.a;   // 2 = plants, 3 = rocks, 0.5 the player's car, 1 other models
     o.heat = clamp((tint.a - 0.1) / 0.4, 0.0, 1.0);   // a brake disc's tint alpha carries its heat (0.1 .. 0.5)
     o.own = select(0.0, 1.0, tint.a < 0.75);   // tint.a 0.5 = the player's car: its lamps do not light it
@@ -617,6 +618,27 @@ fn bead_normal(nc: vec3<f32>, lp: vec3<f32>, wp: vec3<f32>) -> vec3<f32> {
 
 // The car's glass, blended over the opaque scene: a dark tint, the sky reflected by Fresnel, a sun glint; see-through near the car (the interior shows), solid and dark from afar
 // (mirrored in `vehicle_models::glass_alpha`). The vertex colour's red is 1 for a clear lamp cover (a quarter of the alpha).
+// The radius (mm) of a pinned drop: hit when the water that fell passes `arrival`, grown as the cube root of the water since (`0.35` units to its full size `r0`), shrunk by `evap`
+// mm^2 of evaporation, capped at `cap`. Mirrors `glassdrops::static_drop_radius`.
+fn static_drop_radius(r0: f32, arrival: f32, water: f32, evap: f32, cap: f32) -> f32 {
+    let g = clamp((water - arrival) / 0.35, 0.0, 1.0);
+    let r = r0 * pow(g, 0.33333334);
+    return min(sqrt(max(r * r - evap, 0.0)), cap);
+}
+
+// The light a small dome of water on the glass throws: its normal tilts from the glass's by up to ~60 degrees at the rim (a sessile drop, contact angle ~60), so it mirrors the
+// sky and flashes the sun. `offs` is the pixel's offset from the drop's centre in the glass's coordinates (metres), `rr` the drop's radius; `jx`/`jy` turn glass steps into world ones.
+fn drop_light(offs: vec2<f32>, rr: f32, jx: vec3<f32>, jy: vec3<f32>, nw: vec3<f32>, v: vec3<f32>, sun: vec3<f32>) -> vec3<f32> {
+    let rho = clamp(length(offs) / max(rr, 1e-6), 0.0, 1.0);
+    let tilt = asin(clamp(rho * 0.87, 0.0, 0.99));
+    let ow = normalize(jx * offs.x + jy * offs.y + vec3<f32>(1e-6));
+    let nd = normalize(nw * cos(tilt) + ow * sin(tilt));
+    let nv = max(dot(nd, v), 0.02);
+    let f = fresnel(vec3<f32>(0.02), nv).x;
+    let rf = reflect(-v, nd);
+    return sky_env(rf, 0.04) * (0.10 + 3.0 * f) + u.sun_col.rgb * ggx_spec(nd, v, sun, vec3<f32>(0.02), 0.003) * 0.8;
+}
+
 // The time (in cycles) since a wiper blade last passed the point `lp` of the glass, or -1 where the blade never goes. The blade's angle there is the angle round the spindle from
 // the parked direction; the blade reaches it on the way up at the phase where the sweep curve (smoothstep of a clipped triangle, see `wiper_angle_at`) equals that angle,
 // and again on the way back.
@@ -631,16 +653,27 @@ fn wiper_pass_age(lp: vec3<f32>, pivot_reach: vec4<f32>, axis: vec3<f32>, rest: 
     let th = atan2(y, x);
     if (th < 0.0 || th > 1.15) { return -1.0; }
     let f = clamp(th / 1.15, 0.0, 1.0);
-    let s = 0.5 - sin(asin(clamp(1.0 - 2.0 * f, -1.0, 1.0)) / 3.0);   // the inverse of s*s*(3-2s)
-    let tri = s / 1.25;
-    let up = tri * 0.5;
-    let down = 1.0 - tri * 0.5;
+    let uu = asin(sqrt(f)) / 3.14159265;                          // the sweep angle is sin^2(pi u) of the wipe's progress u: this is its inverse (up stroke; the way back is 1 - u)
+    let wipe = max(u.wph.z, 0.05);
+    let up = uu * wipe;
+    let down = (1.0 - uu) * wipe;
     let passed = select(select(down - 1.0, up, cyc >= up), down, cyc >= down);
     return cyc - passed;
 }
 
 @fragment fn fs_glass(i: MOut) -> @location(0) vec4<f32> {
     let n = normalize(i.n);
+    // the glass's own 2D coordinates (metres), from the object-space normal; their screen derivatives (pixel size on the glass, and how a step on the glass is a step in the world)
+    let nl_o = normalize(i.ln);
+    let t1 = normalize(cross(nl_o, vec3<f32>(0.0, 1.0, 0.001)));
+    let t2 = cross(nl_o, t1);
+    let pl = vec2<f32>(dot(i.lp, t1), dot(i.lp, t2));
+    let px = max(length(fwidth(pl)), 1e-5);
+    let dxp = dpdx(pl); let dyp = dpdy(pl);
+    let det = dxp.x * dyp.y - dxp.y * dyp.x;
+    let idet = select(0.0, 1.0 / det, abs(det) > 1e-12);
+    let jx = (dpdx(i.wp) * dyp.y - dpdy(i.wp) * dxp.y) * idet;   // d world / d pl.x
+    let jy = (dpdy(i.wp) * dxp.x - dpdx(i.wp) * dyp.x) * idet;   // d world / d pl.y
     let to_cam = u.cam.xyz - i.wp;
     let dist = length(to_cam);
     let v = to_cam / max(dist, 0.001);
@@ -655,41 +688,62 @@ fn wiper_pass_age(lp: vec3<f32>, pivot_reach: vec4<f32>, axis: vec3<f32>, rest: 
     let k = 1.0 - 0.75 * clear;
     let near = (0.2 + 0.3 * fr) * k;
     var a = clamp(near + (0.95 - near) * t * k, 0.0, 1.0);
-    // raindrops on the panes: a lattice of cells on the glass (object space, so they stay on it), each holding a drop that grows in after the wiper blade last passed over its cell
-    // (the age is measured from the pass: the blade's angle at the cell, inverted from the sweep curve of `vehicle_models::wiper_angle_at`); panes the wipers do not reach
-    // (the side windows) just lose their drops once per cycle. None on a lamp cover.
-    let rain = u.wx.x;
-    if (rain > 0.05 && clear < 0.5 && dist < 12.0) {
-        // where a wiper blade reaches, the film's age is the time since the blade last passed; everywhere else (the side windows, the corners of the windscreen) each drop
-        // runs its own slow life: it grows in and, some seconds later, runs off, on its own clock
-        var wiped = -1.0;
+    // Drops on the glass. The film's state comes from the CPU (`glassdrops.rs`): how much water has fallen on the pane (`film.x`), how much has evaporated (`film.y`, mm^2), the
+    // radius above which a drop would run in the air (`film.z`) and the running drops (`sl`, up to 32). Here the many pinned drops: three lattices of cells on the glass
+    // (3 mm to 0.3 mm drops), each cell hit by the rain at its own moment, its drop growing by coalescing, shrinking by evaporation, capped where the wind would move it. Where a
+    // wiper blade has passed, the cell restarts from the moment of the pass. Drops are tiny, so each is drawn no thinner than a pixel and, below that, fades by its area.
+    let water = u.film.x;
+    if (clear < 0.5 && dist < 14.0 && (water > 0.001 || u.film.w > 0.5)) {
+        var wiped_s = -1.0;                                      // seconds since a blade last passed this point, where one reaches
         if (u.wph.y > 0.5) {
             let a0 = wiper_pass_age(i.lp, u.wp0, u.wax0.xyz, u.wrs0.xyz, u.wph.x);
             let a1 = wiper_pass_age(i.lp, u.wp1, u.wax1.xyz, u.wrs1.xyz, u.wph.x);
-            if (a0 >= 0.0 && a1 >= 0.0) { wiped = min(a0, a1); } else if (a0 >= 0.0) { wiped = a0; } else if (a1 >= 0.0) { wiped = a1; }
+            if (a0 >= 0.0 && a1 >= 0.0) { wiped_s = min(a0, a1) * u.wph.w; } else if (a0 >= 0.0) { wiped_s = a0 * u.wph.w; } else if (a1 >= 0.0) { wiped_s = a1 * u.wph.w; }
         }
-        // two lattices of 3D cells in the car's object space (7 cm for the sparse big drops, 3 cm for the many small ones): the glass slices through each cell, so a drop's size
-        // varies and every pane, flat or tilted, is covered the same way
+        var nw = normalize(i.n);
+        nw = select(-nw, nw, dot(nw, v) > 0.0);
         var drop = 0.0;
-        var rim = 0.0;
-        for (var layer = 0; layer < 2; layer++) {
-            let cs = select(0.07, 0.03, layer == 1);
-            let g = i.lp / cs;
+        var lit = vec3<f32>(0.0);
+        var edge = 0.0;
+        for (var layer = 0; layer < 3; layer++) {
+            let cs = select(select(0.04, 0.018, layer == 1), 0.009, layer == 2);
+            let g = pl / cs;
             let cell = floor(g);
-            let h = hash_u3(u32(cell.x + 2000.0) * 7919u + u32(cell.y + 2000.0) * 104729u + u32(cell.z + 2000.0) + u32(layer) * 15485863u);
-            let c = cell + vec3<f32>(0.3 + 0.4 * h.x, 0.3 + 0.4 * h.y, 0.3 + 0.4 * h.z);
-            let rad = select(0.20 + 0.18 * h.z * h.z, 0.22 + 0.18 * h.z, layer == 1);
-            let born = h.x * 0.55;                              // how long after a wipe this drop appears (in cycles)
-            let age = select(fract(u.cr.w / (9.0 + 8.0 * h.z) + h.y * 7.31), wiped, wiped >= 0.0);
-            let grown = smoothstep(born, born + 0.06, age);
-            let d = length(g - c) / rad;
-            let dens = select(0.30 + 0.5 * rain, 0.55 + 0.4 * rain, layer == 1);
-            let dr = (1.0 - smoothstep(0.6, 1.0, d)) * grown * step(h.y, dens);
-            drop = max(drop, dr);
-            rim = max(rim, smoothstep(0.35, 0.85, d) * (1.0 - smoothstep(0.85, 1.0, d)) * step(0.001, dr));
+            let h = hash_u3(u32(cell.x + 3000.0) * 7919u + u32(cell.y + 3000.0) * 104729u + u32(layer) * 15485863u);
+            let ctr = cell + vec2<f32>(0.5) + (h.xy - vec2<f32>(0.5)) * 0.5;
+            let r0 = select(select(mix(1.8, 3.2, h.z), mix(0.9, 1.8, h.z), layer == 1), mix(0.3, 0.8, h.z), layer == 2);   // mm
+            var wl = water; var el = u.film.y;
+            if (wiped_s >= 0.0) { wl = wiped_s * u.wx.x / 3.0; el = 0.0; }   // 3.0 = glassdrops::FILL_TIME
+            let r_mm = static_drop_radius(r0, h.x, wl, el, u.film.z);
+            let offs = (g - ctr) * cs;
+            let dd = length(offs);
+            let rm = r_mm * 0.001;
+            let rr = max(rm, 0.8 * px);
+            let cov = (1.0 - smoothstep(0.7 * rr, rr, dd)) * min(1.0, (rm * rm) / (rr * rr)) * step(0.0001, rm);
+            if (cov > 0.0) {
+                lit += cov * drop_light(offs, rr, jx, jy, nw, v, sun);
+                edge = max(edge, cov * smoothstep(0.55, 0.95, dd / rr));
+                drop = max(drop, cov);
+            }
         }
-        col += drop * (sky_gradient(r) * 0.45 + vec3<f32>(0.6) * rim * 0.25);
-        a = clamp(a + drop * 0.4, 0.0, 1.0);
+        let nsl = i32(u.film.w + 0.5);
+        for (var k = 0; k < nsl; k++) {   // the running drops: a round head and a tail behind it
+            let pr = u.sl[2 * k]; let dr = u.sl[2 * k + 1];
+            let d = i.lp - pr.xyz;
+            let tail = dr.w;
+            let tcl = clamp(dot(d, dr.xyz), -tail, 0.0);
+            let q = d - dr.xyz * tcl;
+            let rr = max(pr.w, 0.8 * px);
+            let width = rr * (1.0 - 0.5 * (-tcl / max(tail, 1e-4)));
+            let cov = (1.0 - smoothstep(0.7 * width, width, length(q))) * min(1.0, (pr.w * pr.w) / (rr * rr));
+            if (cov > 0.0) {
+                lit += cov * drop_light(vec2<f32>(dot(q, t1), dot(q, t2)), width, jx, jy, nw, v, sun);
+                edge = max(edge, cov * smoothstep(0.55, 0.95, length(q) / width));
+                drop = max(drop, cov);
+            }
+        }
+        col = col * (1.0 - 0.35 * edge) + lit;
+        a = clamp(a + drop * 0.22 + (lit.x + lit.y + lit.z) * 0.25, 0.0, 1.0);
     }
     return vec4<f32>(finish(col), a);
 }

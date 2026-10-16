@@ -64,8 +64,9 @@ pub fn build_rally(spec: &VehicleSpec) -> CarModel {
                 }
                 _ => [None, None],
             };
+            let windscreen = glass.as_ref().and_then(|g| super::glassdrops::Windscreen::from_glass(&g.verts.iter().map(|v| v.pos).collect::<Vec<_>>(), &g.idx));
             let steering_ok = steering.is_some();
-            CarModel { body, wheel, disc, caliper, alt_wheels, glass, interior, steering, driver, wipers, gloves: if steering_ok { gloves } else { None } }
+            CarModel { body, wheel, disc, caliper, alt_wheels, glass, interior, steering, driver, wipers, gloves: if steering_ok { gloves } else { None }, windscreen }
         }
         Err(e) => { log::error!("rally_car.rcar unusable ({e}); using the generated hatchback"); build_generated(spec) }
     }
