@@ -28,17 +28,19 @@ pub struct Parts { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, p
     /// The steering wheel mesh (in the body frame), its pivot mesh (two vertices: `pos` of the first = the wheel's centre, `nrm` = its axis towards the driver) and the driver.
     pub steering: Option<Mesh3>, pub pivot: Option<Mesh3>, pub driver: Option<Mesh3>,
     /// The two windscreen wipers (the driver's side first) and their pivot mesh (two vertices: `pos` = the spindle, `nrm` = the axis they sweep about, out of the glass).
-    pub wipers: [Option<Mesh3>; 2], pub wiper_pivots: Option<Mesh3> }
+    pub wipers: [Option<Mesh3>; 2], pub wiper_pivots: Option<Mesh3>,
+    /// The instrument cluster and the RPM LEDs (classes 16 and 17; the game draws them with the interior) and the driver's gloves (they turn with the steering wheel).
+    pub dash: Option<Mesh3>, pub gloves: Option<Mesh3> }
 
-/// All the meshes of an `.rcar` file: `RCAR` (28-byte vertices), `RCA2` (32 bytes with a `u16x2` UV after the colour), `RCA3` (a `u32` mesh count of 2 to 14, then the meshes in
-/// the order body, wheel, disc, caliper, gravel wheel, snow wheel, glass, interior, steering wheel, steering pivot, driver, wiper, wiper, wiper pivots; 32-byte vertices).
+/// All the meshes of an `.rcar` file: `RCAR` (28-byte vertices), `RCA2` (32 bytes with a `u16x2` UV after the colour), `RCA3` (a `u32` mesh count of 2 to 15, then the meshes in
+/// the order body, wheel, disc, caliper, gravel wheel, snow wheel, glass, interior, steering wheel, steering pivot, driver, wiper, wiper, wiper pivots, dash, gloves (not in the Peugeot file: its gloves are skinned and collapse without the rig); 32-byte vertices).
 pub fn parse_all(d: &[u8]) -> Result<Parts, String> {
     let (stride, count) = match d.get(..4) {
         Some(b"RCAR") => (28, 2usize),
         Some(b"RCA2") => (32, 2),
         Some(b"RCA3") => {
             let n = d.get(4..8).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])).ok_or("truncated")? as usize;
-            if !(2..=14).contains(&n) { return Err(format!("bad mesh count {n}")); }
+            if !(2..=15).contains(&n) { return Err(format!("bad mesh count {n}")); }
             (32, n)
         }
         _ => return Err("not an RCAR/RCA2/RCA3 file".into()),
@@ -47,7 +49,7 @@ pub fn parse_all(d: &[u8]) -> Result<Parts, String> {
     let mut meshes = Vec::new();
     for _ in 0..count { meshes.push(mesh(d, &mut o, stride)?); }
     let mut it = meshes.into_iter();
-    Ok(Parts { body: it.next().unwrap(), wheel: it.next().unwrap(), disc: it.next(), caliper: it.next(), alt_wheels: [it.next(), it.next()], glass: it.next(), interior: it.next(), steering: it.next(), pivot: it.next(), driver: it.next(), wipers: [it.next(), it.next()], wiper_pivots: it.next() })
+    Ok(Parts { body: it.next().unwrap(), wheel: it.next().unwrap(), disc: it.next(), caliper: it.next(), alt_wheels: [it.next(), it.next()], glass: it.next(), interior: it.next(), steering: it.next(), pivot: it.next(), driver: it.next(), wipers: [it.next(), it.next()], wiper_pivots: it.next(), dash: it.next(), gloves: it.next() })
 }
 
 /// `(body, wheel)` from the bytes of an `.rcar` file.
@@ -203,7 +205,7 @@ mod tests {
         assert_eq!(p.body.verts[0].pos[1], 0.0); assert_eq!(p.wheel.verts[0].pos[1], 1.0); assert_eq!(p.disc.unwrap().verts[0].pos[1], 2.0); assert_eq!(p.caliper.unwrap().verts[0].uv, [7, 9]);
         let p3 = parse_all(&rca3(3)).unwrap(); assert!(p3.disc.is_some() && p3.caliper.is_none());
         let old = parse_all(PEUGEOT_V1).unwrap(); assert!(old.disc.is_none() && old.caliper.is_none());
-        assert!(parse_all(&rca3(2)).is_ok() && parse_all(&rca3(1)).is_err() && parse_all(&rca3(15)).is_err(), "2 to 14 meshes");
+        assert!(parse_all(&rca3(2)).is_ok() && parse_all(&rca3(1)).is_err() && parse_all(&rca3(16)).is_err(), "2 to 15 meshes");
         let p11 = parse_all(&rca3(11)).unwrap(); assert_eq!(p11.steering.as_ref().unwrap().verts[0].pos[1], 8.0); assert_eq!(p11.pivot.as_ref().unwrap().verts[0].pos[1], 9.0); assert_eq!(p11.driver.as_ref().unwrap().verts[0].pos[1], 10.0);
         assert!(parse_all(&rca3(8)).unwrap().steering.is_none() && parse_all(&rca3(9)).unwrap().pivot.is_none());
         let p8 = parse_all(&rca3(8)).unwrap(); assert_eq!(p8.glass.as_ref().unwrap().verts[0].pos[1], 6.0); assert_eq!(p8.interior.as_ref().unwrap().verts[0].pos[1], 7.0);
@@ -301,6 +303,15 @@ mod tests {
             assert!(hi.x - lo.x > 0.2, "a wiper is a long blade");
         }
         assert!(meta.verts[0].pos[0] > meta.verts[1].pos[0], "the driver's wiper is on the +x side");
+    }
+    #[test] fn the_embedded_peugeot_has_a_backlit_dash_with_rpm_leds() {
+        let p = parse_all(PEUGEOT).unwrap();
+        let dash = p.dash.expect("dash");
+        assert!(dash.verts.iter().any(|v| v.col[3] == 16), "the cluster is class 16");
+        let mut leds: Vec<u8> = dash.verts.iter().filter(|v| v.col[3] == 17).map(|v| v.col[1]).collect();
+        leds.sort(); leds.dedup();
+        assert_eq!(leds, vec![1, 2, 3, 4], "four RPM LEDs");
+        assert!(dash.verts.iter().all(|v| v.col[3] == 16 || v.col[3] == 17));
     }
     #[test] fn a_mesh_without_lamps_has_no_points() {
         assert!(lamp_points(&Mesh3::default()).is_none());

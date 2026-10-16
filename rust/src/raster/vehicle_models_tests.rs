@@ -128,3 +128,15 @@ mod wiper_tests {
         assert!(wiper_angle(-1.3, 0.9) >= 0.0, "a negative clock still gives a valid angle");
     }
 }
+
+#[cfg(test)]
+mod dash_tests {
+    use super::super::dash_rpm;
+    #[test] fn the_revs_idle_climb_with_speed_and_stay_in_range() {
+        assert!((dash_rpm(0.0, 50.0) - 0.18).abs() < 1e-6);
+        assert!(dash_rpm(25.0, 50.0) > dash_rpm(5.0, 50.0));
+        assert!(dash_rpm(500.0, 50.0) <= 1.0 && dash_rpm(-30.0, 50.0) > 0.18, "reversing revs too");
+        assert_eq!(dash_rpm(f32::NAN, 50.0), 0.0); assert_eq!(dash_rpm(10.0, f32::INFINITY), 0.0);
+        assert!(dash_rpm(10.0, 0.0).is_finite());
+    }
+}

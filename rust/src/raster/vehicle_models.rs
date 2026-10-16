@@ -147,7 +147,9 @@ pub(crate) fn scaled(st: &[(f32, f32, f32, f32)], sx: f32, sy: f32, sz: f32) -> 
 
 pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2], pub glass: Option<Mesh3>, pub interior: Option<Mesh3>, pub steering: Option<Steering>, pub driver: Option<Mesh3>,
     /// The windscreen wipers (the driver's side first): each mesh is stored shifted by `-pivot` so that it sweeps about the origin, `axis` is the sweep axis.
-    pub wipers: [Option<Steering>; 2] }
+    pub wipers: [Option<Steering>; 2],
+    /// The driver's gloves, stored shifted by the steering wheel's pivot so that they turn with the wheel.
+    pub gloves: Option<Mesh3> }
 
 /// The steering wheel of a car model: its mesh is stored shifted by `-pivot` so that it turns about the origin; `pivot` is where the wheel's centre is in the body frame,
 /// `axis` its axis (a unit vector towards the driver).
@@ -171,11 +173,18 @@ pub fn wiper_angle(time: f32, rain: f32) -> f32 {
     WIPER_SWEEP * s * s * (3.0 - 2.0 * s)
 }
 
+/// The engine's revs (0..1) a car at `speed` m/s with the top speed `max_speed` shows on its RPM LEDs (the same curve as the engine sound at a steady throttle).
+pub fn dash_rpm(speed: f32, max_speed: f32) -> f32 {
+    if !(speed.is_finite() && max_speed.is_finite()) { return 0.0; }
+    let frac = (speed.abs() / max_speed.max(1.0)).clamp(0.0, 1.0);
+    (0.18 + 0.6 * frac.powf(0.7)).min(1.0)
+}
+
 /// Whether the driver is drawn for a camera `dist` metres from the car's centre: not when the camera sits inside the car (the head would block the view).
 pub fn draw_driver(dist: f32) -> bool { dist >= 1.2 }
 
 impl CarModel {
-    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None], glass: None, interior: None, steering: None, driver: None, wipers: [None, None] } }
+    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None], glass: None, interior: None, steering: None, driver: None, wipers: [None, None], gloves: None } }
     /// The wheel mesh of a wheel set (0 tarmac, 1 gravel, 2 snow); a set the model does not have shows the tarmac wheel.
     pub fn wheel_for(&self, set: u8) -> &Mesh3 {
         match set { 1 | 2 => self.alt_wheels[set as usize - 1].as_ref().unwrap_or(&self.wheel), _ => &self.wheel }

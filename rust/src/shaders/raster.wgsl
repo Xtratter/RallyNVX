@@ -474,6 +474,16 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
         let ia = select(vec3<f32>(0.12), iv.rgb, has_uv);
         return vec4<f32>(shade_with(ia * occl, i.wp, n, 0.7, 0.0, 0.3) * 0.7, 1.0);
     }
+    if (m == 16) {   // the instrument cluster: like the interior, backlit when it is dark (u.disc.w)
+        let ia = select(vec3<f32>(0.12), iv.rgb, has_uv);
+        return vec4<f32>(shade_with(ia * occl, i.wp, n, 0.7, 0.0, 0.3) * 0.7 + finish(ia * (0.05 + 1.3 * u.disc.w)), 1.0);
+    }
+    if (m == 17) {   // an RPM LED (the number 1..4 in the green channel of the colour): lit when the revs reach its threshold
+        let k = floor(i.col.g * 255.0 + 0.5);
+        let on = select(0.0, 1.0, u.rt.w > 0.52 + 0.12 * k);
+        let tone = select(select(vec3<f32>(1.0, 0.15, 0.1), vec3<f32>(1.0, 0.65, 0.1), k < 3.5), vec3<f32>(0.2, 1.0, 0.3), k < 2.5);
+        return vec4<f32>(0.03 + finish(tone * (0.04 + on * 3.0)), 1.0);
+    }
     if (m == 14) {   // a suspension part: its texture only (the vertex colour carries the weight and the corner)
         let sc = select(vec3<f32>(0.22), lv.rgb, has_uv);
         return vec4<f32>(shade(sc * occl, i.wp, n, 0.55, 0.5), 1.0);

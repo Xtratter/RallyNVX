@@ -109,7 +109,8 @@ const SLOT_GLASS: usize = SLOT_SIGN + 20;     // the car's transparent glass (it
 const SLOT_STEERING: usize = SLOT_SIGN + 21;  // the steering wheel (turns about its axis), drawn with the interior
 const SLOT_DRIVER: usize = SLOT_SIGN + 22;    // the driver, drawn with the interior unless the camera is inside the car
 const SLOT_WIPER: usize = SLOT_SIGN + 23;    // the two windscreen wipers (+0 the driver's side, +1 the other), sweeping in the rain
-const MODEL_SLOTS: usize = SLOT_SIGN + 25;
+const SLOT_GLOVES: usize = SLOT_SIGN + 25;   // the driver's gloves (turn with the steering wheel), drawn with the interior in every view
+const MODEL_SLOTS: usize = SLOT_SIGN + 26;
 const MAX_MODEL_INST: usize = 6144;
 const SIGN_SCALE: f32 = 2.2;   // the signs are drawn bigger than real ones so they read from a moving car
 const NEAR_SHADOW: f32 = 90.0;   // plants within this distance of the car cast shadows
@@ -181,6 +182,7 @@ pub struct Raster {
     cache_seed: u64,
     car_key: [u32; 13],
     car_wipers: [Option<(V3, V3)>; 2],   // the wipers' spindles and sweep axes, when the car has them
+    car_gloves: bool,   // the driver's gloves (they follow the steering wheel)
     car_steering: Option<(V3, V3)>,   // the steering wheel's pivot and axis, when the car has one
     car_has_driver: bool,
     car_parts: (bool, bool, bool, bool),   // whether the car model has brake discs / calipers / an interior / glass
@@ -433,13 +435,13 @@ impl Raster {
         let nat = nature_models::build_all();
         let signs_meshes = sign_models::build_all();
         let models: Vec<ModelBuf> = [&car.body, &car.wheel].into_iter()
-            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass]).chain(signs_meshes.iter()).chain([&car.disc.clone().unwrap_or_else(placeholder_mesh), &car.caliper.clone().unwrap_or_else(placeholder_mesh), &car.interior.clone().unwrap_or_else(placeholder_mesh), &car.glass.clone().unwrap_or_else(placeholder_mesh), &car.steering.as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.driver.clone().unwrap_or_else(placeholder_mesh), &car.wipers[0].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.wipers[1].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh)]).map(|m| model_buf(&device, m)).collect();
+            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass]).chain(signs_meshes.iter()).chain([&car.disc.clone().unwrap_or_else(placeholder_mesh), &car.caliper.clone().unwrap_or_else(placeholder_mesh), &car.interior.clone().unwrap_or_else(placeholder_mesh), &car.glass.clone().unwrap_or_else(placeholder_mesh), &car.steering.as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.driver.clone().unwrap_or_else(placeholder_mesh), &car.wipers[0].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.wipers[1].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.gloves.clone().unwrap_or_else(placeholder_mesh)]).map(|m| model_buf(&device, m)).collect();
         assert_eq!(models.len(), MODEL_SLOTS);
         let mbuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("model_inst"), size: (MAX_MODEL_INST * std::mem::size_of::<MInst>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis))), car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis))), car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -475,6 +477,8 @@ impl Raster {
         self.models[SLOT_STEERING] = model_buf(&self.device, &car.steering.as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh));
         self.models[SLOT_DRIVER] = model_buf(&self.device, &car.driver.clone().unwrap_or_else(placeholder_mesh));
         for k in 0..2 { self.models[SLOT_WIPER + k] = model_buf(&self.device, &car.wipers[k].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh)); }
+        self.models[SLOT_GLOVES] = model_buf(&self.device, &car.gloves.clone().unwrap_or_else(placeholder_mesh));
+        self.car_gloves = car.gloves.is_some();
         self.car_wipers = std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis)));
         self.car_steering = car.steering.as_ref().map(|s| (s.pivot, s.axis));
         self.car_has_driver = car.driver.is_some();
@@ -529,7 +533,7 @@ impl Raster {
             tl_pos: [tc.x, tc.y, tc.z, (wv.lamps.tail[0] - wv.lamps.tail[1]).len() * 0.5],
             tl_col: tail_glow,
             wind: [wv.wind.x, wv.wind.z, wv.cloud_off.0, wv.cloud_off.1],
-            lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, (wv.lamps.head[0] - wv.lamps.head[1]).len() * 0.5], rt: [wv.lamps.right.x, wv.lamps.right.y, wv.lamps.right.z, 0.0], susp: vm::susp_offsets(wv.vehicle),
+            lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, (wv.lamps.head[0] - wv.lamps.head[1]).len() * 0.5], rt: [wv.lamps.right.x, wv.lamps.right.y, wv.lamps.right.z, vm::dash_rpm(wv.vehicle.speed(), wv.vehicle.spec.max_speed)], susp: vm::susp_offsets(wv.vehicle),
             wx: [wv.weather.rain, wv.weather.wet, wv.weather.cloud, crate::game::weather::disc_visibility(wv.weather)], cr: [wv.vehicle.pos.x, wv.vehicle.pos.y, wv.vehicle.pos.z, wv.time] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
@@ -589,6 +593,7 @@ impl Raster {
             if let Some((pivot, axis)) = self.car_steering {
                 let q = bq.mul(Q::axis_angle(axis, vm::steering_wheel_angle(veh.steer)));
                 ml[SLOT_STEERING].push(MInst { m: mmat(q, bp + bq.rotate(pivot)), tint: [1.0, 1.0, 1.0, 0.5] });
+                if self.car_gloves { ml[SLOT_GLOVES].push(MInst { m: mmat(q, bp + bq.rotate(pivot)), tint: [1.0, 1.0, 1.0, 0.5] }); }
             }
             if self.car_has_driver && vm::draw_driver((wv.cam_pos - veh.pos).len()) { ml[SLOT_DRIVER].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] }); }
         }
@@ -744,7 +749,7 @@ impl Raster {
             rp.set_pipeline(&self.pl_model_sh);
             rp.set_vertex_buffer(1, self.mbuf.slice(..));
             for k in 0..MODEL_SLOTS {
-                if k == SLOT_GLASS || k == SLOT_INTERIOR || k == SLOT_STEERING || k == SLOT_DRIVER { continue; }   // the glass and the interior cast no shadows
+                if k == SLOT_GLASS || k == SLOT_INTERIOR || k == SLOT_STEERING || k == SLOT_DRIVER || k == SLOT_GLOVES { continue; }   // the glass and the interior cast no shadows
                 let (a, mut b) = mranges[k];
                 if k >= SLOT_TREE { b = if k == SLOT_GRASS { a } else { a + mnear[k].min(b - a) }; }
                 if b == a { continue; }
