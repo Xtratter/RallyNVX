@@ -54,6 +54,8 @@ fn is_cabin(n: &str) -> bool {
 fn is_wiper_l(n: &str) -> bool { n == "int_wiper_fl" }
 fn is_wiper_r(n: &str) -> bool { n == "int_wiper_fr" }
 fn is_driver(n: &str) -> bool { n.starts_with("CO_DRIVER") }
+/// The instrument cluster (backlit at night) and the RPM shift LEDs (LED_RPM_1..4, lit one by one as the revs rise).
+fn is_dash(n: &str) -> bool { n.contains("dials") || n.starts_with("LED_RPM_") }
 /// The steering wheel (its own mesh: the game turns it).
 fn is_wheel(n: &str) -> bool { n.starts_with("int_steering") }
 
@@ -312,6 +314,19 @@ fn main() {
         eprintln!("interior group: {} parts, {} triangles, {} of {} vertices textured", ps.len(), i.len() / 3, v.iter().filter(|x| x.tex.is_some()).count(), v.len());
         interior.push((v, i, budget));
     }
+    // the instrument cluster (class 16: textured, glows at night) and the RPM LEDs (class 17: the LED's number 1..4 in the green channel)
+    {
+        let ps = collect(doc, &buffers, &mut tex, &|n| is_dash(n), true);
+        let ps: Vec<_> = ps.into_iter().map(|(name, mut v, i)| {
+            let led = name.trim_end_matches(".001").strip_prefix("LED_RPM_").and_then(|k| k.parse::<u8>().ok());
+            for x in &mut v { match led { Some(k) => { x.c = [0, k, 0, 17]; x.tex = None; } None => x.c[3] = 16 } }
+            (name, v, i)
+        }).collect();
+        let (mut v, i) = merge(&ps);
+        body_xf(&mut v, ground, cr, st, ct);
+        eprintln!("dash: {} parts, {} triangles", ps.len(), i.len() / 3);
+        interior.push((v, i, 1500));
+    }
     // the wipers: the pivot is the centre of the spindle (the `_base` node), the axis the normal of the blade's plane, pointing out of the windscreen (up)
     let wiper_meta: Vec<([f32; 3], [f32; 3])> = [("int_wiper_fl_base", 3usize), ("int_wiper_fr_base", 4usize)].iter().map(|(base, g)| {
         let bp = collect(doc, &buffers, &mut tex, &|n| n == *base, true);
@@ -441,7 +456,7 @@ fn main() {
     let meta_vert = |p: [f32; 3], n: [f32; 3]| V { p, n, c: [0, 0, 0, 0], uv: [0.0; 2], tex: None };
     let (mv, mi) = (vec![meta_vert(pivot, axis), meta_vert(pivot, axis)], vec![0u32, 1, 1]);
     let mut out = b"RCA3".to_vec();
-    out.extend_from_slice(&14u32.to_le_bytes());
+    out.extend_from_slice(&15u32.to_le_bytes());
     write(&mut out, &sv, &si);
     for (v, i) in &simplified { write(&mut out, v, i); }
     write(&mut out, &cgv, &cgi);
@@ -452,7 +467,8 @@ fn main() {
     write(&mut out, &parts[3].0, &parts[3].1);   // the driver's wiper
     write(&mut out, &parts[4].0, &parts[4].1);   // the other wiper
     let wmeta: Vec<V> = wiper_meta.iter().map(|(p, a)| meta_vert(*p, *a)).collect();
-    write(&mut out, &wmeta, &[0u32, 1, 1]);        // their pivots and axes (vertex 0: the driver's, 1: the other)
+    write(&mut out, &wmeta, &[0u32, 1, 1]);
+    write(&mut out, &parts[5].0, &parts[5].1);   // the instrument cluster and the RPM LEDs        // their pivots and axes (vertex 0: the driver's, 1: the other)
     eprintln!("glass {} tris, cabin {} tris, steering wheel {} tris, driver {} tris", cgi.len() / 3, parts[0].1.len() / 3, parts[1].1.len() / 3, parts[2].1.len() / 3);
     std::fs::write(&a[2], &out).unwrap();
     eprintln!("wrote {} bytes: body {} tris / {} verts; wheel {} tris, disc {} tris, caliper {} tris, gravel wheel {} tris, snow wheel {} tris", out.len(), si.len() / 3, sv.len(), simplified[0].1.len() / 3, simplified[1].1.len() / 3, simplified[2].1.len() / 3, simplified[3].1.len() / 3, simplified[4].1.len() / 3);

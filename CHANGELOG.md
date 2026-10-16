@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.43.0 - the dash comes alive
+
+- Added: the Peugeot's instrument cluster and dials are backlit at night (they glow white against the dark cabin)
+- Added: the four RPM shift LEDs light one by one, green, green, amber, red, as the revs rise with speed
+- Changed: `rally_car.rcar` carries up to 15 meshes (the dash)
+
 ## 2.42.0 - wipers and raindrops
 
 - Added: the Peugeot's two windscreen wipers (the model's own arms and blades, each about its spindle): parked when it is dry, sweeping in the rain - slowly in a drizzle (2.6 s a wipe), quickly in a downpour (1.3 s)
