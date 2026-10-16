@@ -231,12 +231,14 @@ impl Raster {
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
         })).expect("no GPU adapter");
+        crate::loading::stage(crate::loading::GPU, 3);
         let info = adapter.get_info();
         log::info!("adapter: {} ({:?}) {}", info.name, info.backend, info.driver_info);
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("game_device"), required_features: adapter.features() & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS), required_limits: adapter.limits(),
             memory_hints: wgpu::MemoryHints::Performance,
         }, None)).expect("request_device");
+        crate::loading::stage(crate::loading::GPU, 8);
         let prof = if device.features().contains(wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS) { Some(Prof::new(&device, queue.get_timestamp_period())) } else { None };
         let caps = surface.get_capabilities(&adapter);
         let format = caps.formats.iter().copied().find(|f| !f.is_srgb()).unwrap_or(caps.formats[0]);
@@ -256,6 +258,7 @@ impl Raster {
         let smp = device.create_sampler(&wgpu::SamplerDescriptor { label: Some("shadow_smp"), mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear, compare: Some(wgpu::CompareFunction::LessEqual), ..Default::default() });
 
+        crate::loading::stage(crate::loading::TEXTURES, 10);
         // generated material maps: one texture array, 5 layers x 9 mips
         let mat_tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("materials"), size: wgpu::Extent3d { width: texgen::SIZE as u32, height: texgen::SIZE as u32, depth_or_array_layers: texgen::LAYERS as u32 },
@@ -335,9 +338,11 @@ impl Raster {
                 address_mode_u: wgpu::AddressMode::ClampToEdge, address_mode_v: wgpu::AddressMode::ClampToEdge, anisotropy_clamp: 4, ..Default::default() });
             (tex.create_view(&Default::default()), smp)
         };
+        crate::loading::stage(crate::loading::TEXTURES, 25);
         let (livery_view, livery_smp) = atlas_texture("livery", livery::LIVERY, wgpu::TextureFormat::Rgba8UnormSrgb);
         let (interior_view, interior_smp) = atlas_texture("interior", livery::INTERIOR, wgpu::TextureFormat::Rgba8UnormSrgb);
         let (normal_view, _) = atlas_texture("normal", livery::NORMAL, wgpu::TextureFormat::Rgba8Unorm);
+        crate::loading::stage(crate::loading::TEXTURES, 40);
         let dep_tex = device.create_texture(&wgpu::TextureDescriptor { label: Some("dust_layer"), size: wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1,
             dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8Unorm, usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING, view_formats: &[] });
         let dep_view = dep_tex.create_view(&Default::default());
@@ -360,6 +365,7 @@ impl Raster {
         let bg_shadow = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("raster_shadow"), layout: &bgl_shadow,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() }] });
 
+        crate::loading::stage(crate::loading::SHADERS, 45);
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("raster"), source: wgpu::ShaderSource::Wgsl(crate::shaders::raster().into()) });
         let lay_main = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[&bgl_main], push_constant_ranges: &[] });
         let lay_shadow = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[&bgl_shadow], push_constant_ranges: &[] });
@@ -382,6 +388,7 @@ impl Raster {
         let weight_layout = wgpu::VertexBufferLayout { array_stride: 4, step_mode: wgpu::VertexStepMode::Vertex, attributes: &WEIGHT_ATTRS };
         let pl_terrain = mk("terrain", &lay_main, "vs_terrain", Some("fs_terrain"), &[mesh_layout.clone(), weight_layout], depth_state(true, wgpu::CompareFunction::Less, no_bias));
         let target_blend = [Some(wgpu::ColorTargetState { format, blend: Some(wgpu::BlendState::ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })];
+        crate::loading::stage(crate::loading::SHADERS, 48);
         let pl_water = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("water"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_water"), compilation_options: Default::default(), buffers: &[mesh_layout.clone()] },
@@ -389,6 +396,7 @@ impl Raster {
             primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
         });
         let road_bias = wgpu::DepthBiasState { constant: -4, slope_scale: -2.0, clamp: 0.0 };
+        crate::loading::stage(crate::loading::SHADERS, 50);
         let pl_road = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("road"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_road"), compilation_options: Default::default(), buffers: &[mesh_layout.clone()] },
@@ -397,6 +405,7 @@ impl Raster {
         });
         const DUST_ATTRS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4];
         let dust_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<dustgen::DustInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &DUST_ATTRS };
+        crate::loading::stage(crate::loading::SHADERS, 52);
         let pl_dust = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("dust"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_dust"), compilation_options: Default::default(), buffers: &[dust_layout] },
@@ -416,12 +425,16 @@ impl Raster {
             primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
         });
         let dust_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_inst"), size: (dustgen::MAX_INST * std::mem::size_of::<dustgen::DustInst>()) as u64, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        crate::loading::stage(crate::loading::SHADERS, 54);
         let pl_terrain_sh = mk("terrain_sh", &lay_shadow, "vs_terrain_shadow", None, &[mesh_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
+        crate::loading::stage(crate::loading::SHADERS, 56);
         let pl_inst = mk("inst", &lay_main, "vs_inst", Some("fs_inst"), &[mesh_layout.clone(), inst_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
         let pl_inst_sh = mk("inst_sh", &lay_shadow, "vs_inst_shadow", None, &[mesh_layout, inst_layout], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
         let model_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<vm::Vert>() as u64, step_mode: wgpu::VertexStepMode::Vertex, attributes: &MODEL_ATTRS };
         let minst_layout = wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<MInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &MINST_ATTRS };
+        crate::loading::stage(crate::loading::SHADERS, 58);
         let pl_model = mk("model", &lay_main, "vs_model", Some("fs_model"), &[model_layout.clone(), minst_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
+        crate::loading::stage(crate::loading::SHADERS, 61);
         let pl_model_back = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("model_back"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_model"), compilation_options: Default::default(), buffers: &[model_layout.clone(), minst_layout.clone()] },
@@ -434,6 +447,7 @@ impl Raster {
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_rain"), compilation_options: Default::default(), targets: &target_blend }),
             primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
         });
+        crate::loading::stage(crate::loading::SHADERS, 63);
         let pl_glass = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("glass"), layout: Some(&lay_main),
             vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_model"), compilation_options: Default::default(), buffers: &[model_layout.clone(), minst_layout.clone()] },
@@ -441,6 +455,7 @@ impl Raster {
             primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
         });
         let pl_model_sh = mk("model_sh", &lay_shadow, "vs_model_shadow", None, &[model_layout, minst_layout], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
+        crate::loading::stage(crate::loading::SHADERS, 64);
         let pl_sky = mk("sky", &lay_main, "vs_sky", Some("fs_sky"), &[], depth_state(false, wgpu::CompareFunction::Always, no_bias));
 
         let car = vm::build_car(&crate::game::vehicle::VehicleSpec::offroader());
@@ -452,6 +467,7 @@ impl Raster {
         let mbuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("model_inst"), size: (MAX_MODEL_INST * std::mem::size_of::<MInst>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
+        crate::loading::stage(crate::loading::WORLD, 65);
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
             pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach))), wiper_state: Default::default(), wiper_time: 0.0, film: Default::default(), car_screen: car.windscreen, car_sweep: car.wiper_sweep, car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, wheel_spin_rear: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }

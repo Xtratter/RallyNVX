@@ -6,6 +6,7 @@ pub mod game;
 pub mod game_jni;
 pub mod gi;
 pub mod halton;
+pub mod loading;
 pub mod params;
 pub mod presets;
 pub mod profile;

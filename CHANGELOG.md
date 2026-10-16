@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.53.0 - a loading screen
+
+- Added: a loading screen with a progress bar and the current step (graphics, textures, shaders, world, car) instead of a long black screen; it fades out when the first frame is drawn. Most of the wait (about 4 s of 5.6 s on the test phone) is the shader compilation of the car and the glass
+
 ## 2.52.1 - the cowl panel under the wipers
 
 - Fixed: the black cowl panel between the bonnet and the windscreen (under the wipers) was missing, so the engine bay showed through; `tools/carconv` filtered it out by the word "Wipers" in its name (`x0_bonnet_Wipers_water`), it is part of the body again

@@ -83,6 +83,7 @@ object Native {
     @JvmStatic external fun gameNewLevel(seed: Long)
     /** 64 floats, layout in game::app::fill_state: [0] fps, [1] km/h, [2] seed, [4] phase, [5] time, [6] limit, [7] integrity, [8] distance, [9] bearing, [10]/[11] checkpoint, [12] result, [13] medal, [14] payout, [15] failure, [16] money, [17] kind 0 cargo/1 race, [25] signed speed, [26] hybrid, [27] auto fallback; [19]..[24] unused. */
     @JvmStatic external fun gameStats(): FloatArray
+    @JvmStatic external fun gameLoadProgress(): Int   // stage << 8 | percent of the start-up
     /** 16 floats: [0..5] fps, gpu ms, w, h, scale, path; [8..15] per-pass GPU ms (trace, gi_trace, gi_temporal, gi_atrous, temporal, atrous, composite, present). */
     @JvmStatic external fun stats(): FloatArray
 }
