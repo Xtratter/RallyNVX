@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.54.0 - a pipeline cache: a fast start
+
+- Added: the compiled GPU pipelines are kept in the app's cache folder (`pipelines.bin`, the Vulkan pipeline cache); the next start skips the shader compilation: on the test phone the start to the first frame went from 5.6 s to 1.1 s. A stale file (a driver or game update) is replaced by a fresh cache on its own
+
 ## 2.53.0 - a loading screen
 
 - Added: a loading screen with a progress bar and the current step (graphics, textures, shaders, world, car) instead of a long black screen; it fades out when the first frame is drawn. Most of the wait (about 4 s of 5.6 s on the test phone) is the shader compilation of the car and the glass

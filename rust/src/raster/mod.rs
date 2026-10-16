@@ -73,4 +73,4 @@ mod plan_tests {
 #[cfg(any(target_os = "android", feature = "desktop"))]
 mod gpu;
 #[cfg(any(target_os = "android", feature = "desktop"))]
-pub use gpu::{prof_on, set_blur, set_prof, set_shadow_quality, Raster};
+pub use gpu::{prof_on, set_blur, set_cache_dir, set_prof, set_shadow_quality, Raster};

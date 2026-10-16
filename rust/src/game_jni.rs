@@ -185,6 +185,11 @@ mod android {
     /// The camera view: 0 chase, 1 bonnet, 2 bumper, 3 roof, 4 orbit, with its distance scale (zoom) and height offset (tilt).
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameCameraView(_e: JNIEnv, _c: JClass, view: jint, dist: jfloat, height: jfloat) { send(GCmd::CameraView(view, dist, height)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameInCity(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::InCity(mode)); }
+    /// The app's cache folder, for the compiled pipelines (call before `gameStart`).
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameCacheDir(mut env: JNIEnv, _c: JClass, dir: jni::objects::JString) {
+        let d: String = env.get_string(&dir).map(|s| s.into()).unwrap_or_default();
+        crate::raster::set_cache_dir(&d);
+    }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameQuality(_e: JNIEnv, _c: JClass, level: jint) { send(GCmd::Quality(level)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameRenderMode(_e: JNIEnv, _c: JClass, m: jint) { send(GCmd::RenderMode(m)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAutoFallback(_e: JNIEnv, _c: JClass, on: jboolean) { send(GCmd::AutoFallback(on != 0)); }
