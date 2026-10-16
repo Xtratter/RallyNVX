@@ -98,6 +98,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         drive = DriveControls(this).also { it.onChange = { thr, steer, brake, amt -> if (autopilotOn && (thr != 0f || steer != 0f || brake)) setAutopilot(false); carThr = thr; carSteer = steer; carBrake = brake; carAmt = amt; sendInput() } }
         drive?.onCamera = { dx, dy -> if (running) { val (sx, sy) = CamMath.dragSigns(Controls.camInvert(this)); Native.gameCamera(dx * 0.006f * sx, -dy * 0.004f * sy) } }   // drag right = the camera swings round, drag down = lower
         drive?.onCameraUp = { if (running) Native.gameCameraUp() }
+        drive?.onCameraReset = { changeCamera(1f, 0f); if (running) Native.gameCameraReset() }   // a double tap: the default distance and height, the orbit dropped, the free camera behind the car
         drive?.onCameraPinch = { ratio, dy -> if (CamMath.free(camView)) { if (running) Native.gameCameraFly(CamMath.flyForward(ratio), CamMath.flyUp(dy, resources.displayMetrics.density)) } else changeCamera(CamMath.pinchFor(camView, camDist, ratio), CamMath.height(camView, camHeight, dy, resources.displayMetrics.density)) }   // spread = closer, both fingers up = higher
         root.addView(drive, FrameLayout.LayoutParams(-1, -1))
         hud = Hud(this)

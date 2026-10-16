@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.55.1 - a double tap resets the camera
+
+- Added: a double tap on free space (not on a control) puts the camera back to its default: the current view's default distance and height, the orbit turn dropped, and the Free camera returns behind the car looking at it. A drag or a long press is not a tap
+
 ## 2.55.0 - PBR surfaces per material
 
 - Added: roughness and metal per material. The source model has no metallic-roughness maps, so `tools/carconv` tells carbon, painted alloy (the rims) and bare metal (screws, exhaust) from plastic and chrome by material name (new classes 19-21), and every class has its own roughness range in which the texture's brightness picks the spot (darker areas are dirtier and rougher). The rims are now painted alloy under a clear coat instead of bare chrome, the carbon is clear-coated, rubber and plastic are rougher than the paint, chrome is a polished mirror
