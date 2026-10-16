@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.46.0 - clear coat
+
+- Added: the Peugeot's paint is lit as a base under a clear coat: a thin glossy layer (dielectric, roughness 0.07) on the smooth surface that reflects the sun as a sharp glint and the sky crisply, stronger at grazing angles, over the paint's softer satin reflection; the livery's normal map stays under the coat
+
 ## 2.45.0 - shadow quality option
 
 - Added: Settings > Shadows: High (soft shadows with a blocker search, as before, the default), Medium (six taps turned per pixel, a fixed soft edge), Low (one filtered tap), Off (no shadow-map shadows; hills still shade the ground). Measured on a POCO F3 in daylight: High costs about 10 ms more in the main pass than the other three, which are close to each other (about 22 ms); Medium looks nearly like High, a little grainier
