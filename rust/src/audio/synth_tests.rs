@@ -8,7 +8,8 @@ fn power(buf: &[f32], freq: f32) -> f32 {
     (s1 * s1 + s2 * s2 - 2.0 * w.cos() * s1 * s2) / (buf.len() as f32 * buf.len() as f32)
 }
 fn secs(n: f32) -> usize { (n * RATE as f32) as usize }
-fn car(rpm: f32) -> AudioParams { AudioParams { machine: Machine::Car, rpm, load: 0.5, active: true, ..Default::default() } }
+/// A car whose wheels ask for `rpm` x 8000 revs, the clutch locked, half throttle.
+fn car(rpm: f32) -> AudioParams { AudioParams { machine: Machine::Car, drive_rpm: rpm * 8000.0, clutch: 1.0, load: 0.5, active: true, ..Default::default() } }
 fn run(s: &mut Synth, n: f32) -> Vec<f32> { let mut v = vec![0.0; secs(n)]; s.render_f32(&mut v); v }
 
 #[test] fn output_stays_finite_and_in_range_under_random_sweeps() {
@@ -16,22 +17,26 @@ fn run(s: &mut Synth, n: f32) -> Vec<f32> { let mut v = vec![0.0; secs(n)]; s.re
     for machine in [Machine::None, Machine::Car] {
         let mut s = Synth::new();
         for _ in 0..50 {
-            s.set_params(&AudioParams { machine, rpm: r() * 1.4 - 0.2, load: r(), roll: r(), surface: if r() > 0.5 { Surface::Water } else { Surface::Ground }, slip: r(), wind: r(), active: true });
+            s.set_params(&AudioParams { machine, drive_rpm: r() * 11000.0 - 1000.0, clutch: r(), load: r(), roll: r(), surface: if r() > 0.5 { Surface::Water } else { Surface::Ground }, slip: r(), wind: r(), active: true });
             if r() > 0.5 { s.push(Event::Crash); }
             if r() > 0.5 { s.push(Event::Splash(r())); }
             for x in run(&mut s, 0.2) { assert!(x.is_finite() && x.abs() <= 1.0, "{machine:?}: {x}"); }
         }
     }
-    let mut s = Synth::new(); s.set_params(&AudioParams { rpm: f32::NAN, load: f32::INFINITY, active: true, ..Default::default() });
+    let mut s = Synth::new(); s.set_params(&AudioParams { drive_rpm: f32::NAN, clutch: f32::NAN, load: f32::INFINITY, active: true, ..Default::default() });
     assert!(run(&mut s, 0.1).iter().all(|x| x.is_finite()));
 }
-#[test] fn engine_fundamental_follows_rpm() {
-    assert!(engine_freq(0.2) < engine_freq(0.5) && engine_freq(0.5) < engine_freq(0.9));
-    let (lo, hi) = (engine_freq(0.2), engine_freq(0.8));
-    let mut a = Synth::new(); a.set_params(&car(0.2)); run(&mut a, 0.6); let la = run(&mut a, 1.0);
-    let mut b = Synth::new(); b.set_params(&car(0.8)); run(&mut b, 0.6); let lb = run(&mut b, 1.0);
-    assert!(power(&la, lo) > 3.0 * power(&la, hi), "low rpm: {} vs {}", power(&la, lo), power(&la, hi));
-    assert!(power(&lb, hi) > 3.0 * power(&lb, lo), "high rpm: {} vs {}", power(&lb, hi), power(&lb, lo));
+#[test] fn the_engine_starts_by_itself_idles_and_follows_the_revs_the_wheels_ask() {
+    let mut s = Synth::new(); s.set_params(&AudioParams { machine: Machine::Car, active: true, ..Default::default() });
+    run(&mut s, 0.1); assert!(s.engine_rpm() > 20.0 && s.engine_rpm() < 800.0, "cranking: {}", s.engine_rpm());
+    run(&mut s, 5.0); assert!((s.engine_rpm() - 950.0).abs() < 350.0, "idling: {}", s.engine_rpm());
+    s.set_params(&AudioParams { drive_rpm: 3600.0, ..car(0.45) }); run(&mut s, 2.0);
+    assert!((s.engine_rpm() - 3600.0).abs() < 400.0, "driven: {}", s.engine_rpm());
+    s.set_params(&AudioParams { drive_rpm: 5400.0, ..car(0.675) }); run(&mut s, 2.0);
+    assert!((s.engine_rpm() - 5400.0).abs() < 500.0, "driven faster: {}", s.engine_rpm());
+    // the clutch open and the throttle wide: it runs free to the limiter
+    s.set_params(&AudioParams { clutch: 0.0, load: 1.0, ..car(0.675) }); run(&mut s, 3.0);
+    assert!(s.engine_rpm() > 6800.0 && s.engine_rpm() < 8400.0, "free: {}", s.engine_rpm());
 }
 #[test] fn inactive_and_muted_fade_to_exact_silence_and_come_back() {
     let mut s = Synth::new(); s.set_params(&car(0.5)); run(&mut s, 0.5);
@@ -78,13 +83,13 @@ fn run(s: &mut Synth, n: f32) -> Vec<f32> { let mut v = vec![0.0; secs(n)]; s.re
 
 fn rms(v: &[f32]) -> f32 { (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt() }
 #[test] fn a_crash_is_louder_than_a_loud_engine_and_the_engine_has_mid_band_body() {
-    let loud = AudioParams { machine: Machine::Car, rpm: 0.9, load: 0.9, roll: 0.8, active: true, ..Default::default() };
+    let loud = AudioParams { machine: Machine::Car, drive_rpm: 6500.0, clutch: 1.0, load: 0.9, roll: 0.8, active: true, ..Default::default() };
     let mut a = Synth::new(); a.set_params(&loud); run(&mut a, 0.5); let base = rms(&run(&mut a, 0.1));
     let mut b = Synth::new(); b.set_params(&loud); run(&mut b, 0.5); b.push(Event::Crash); let with = rms(&run(&mut b, 0.1));
     assert!(with > 1.4 * base, "crash {with} vs engine {base}");
-    let mut e = Synth::new(); e.set_params(&car(0.5)); run(&mut e, 0.6); let buf = run(&mut e, 1.0);
-    let f0 = engine_freq(0.5);
-    assert!(power(&buf, 3.0 * f0) > 0.5 * power(&buf, f0), "the 3rd harmonic must carry weight for small speakers: {} vs {}", power(&buf, 3.0 * f0), power(&buf, f0));
+    let mut e = Synth::new(); e.set_params(&car(0.5)); run(&mut e, 1.5); let buf = run(&mut e, 1.0);
+    let mids: f32 = (3..12).map(|k| power(&buf, 100.0 * k as f32)).sum(); let lows: f32 = (1..3).map(|k| power(&buf, 100.0 * k as f32)).sum();
+    assert!(mids > 0.05 * lows, "the engine has body above 300 Hz for small speakers: {mids} vs {lows}");
 }
 #[test] fn silence_clears_voices_and_the_target() {
     let mut s = Synth::new(); s.set_params(&car(0.7)); s.push(Event::Crash); run(&mut s, 0.1);

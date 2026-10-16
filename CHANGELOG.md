@@ -2,6 +2,13 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.62.0 - a simulated engine (engine model, block B)
+
+- Added: the engine's sound now comes from a simulated engine instead of a stack of harmonics. A two-litre four (85 x 88 mm, 8.5:1, firing order 1-3-4-2) runs on the audio thread at the level of the gas: every cylinder is a volume that follows the crank, the valves open by crank angle and pass the charge and the burnt gas through orifices (isentropic, subsonic and choked), the fuel burns from the spark by a Wiebe curve and the pressure pushes the crank. The pressure at the exhaust collector goes through an exhaust pipe (a waveguide that rings at its quarter-wave resonances) and out of the tail pipe; the intake plenum goes through the intake pipe and the throttle's rush; the combustion shakes the block. It follows engine-sim (MIT) in its ideas, with our own code
+- Added: it starts with the starter and idles at about 950 rpm by itself; the throttle, the clutch and the revs of the wheels drive it; at 7800 rpm the fuel is cut (the limiter); a closed throttle brakes the car's engine; the torque and power are those of a two-litre
+- Added: an automatic gearbox for the sound: six gears and a reverse, it shifts up at the top of the revs (earlier with a light foot), down when the revs fall, every shift opens the clutch for 0.22 s (the engine falls and catches), the clutch slips when pulling away, and the engine runs free when the wheels are in the air
+- Changed: the harmonic-stack engine of the earlier versions is gone. The cars' own forces are unchanged: the engine model makes the sound only for now
+
 ## 2.61.0 - the sound of the place (spatial audio, stage 3)
 
 - Added: the environment reverb from rays. 64 rays are cast round the listener (a quarter of them renewed every frame, up to 150 m): they meet the ground, rocks, the crowns of the trees, houses; their mean free path, the share that escapes into the sky and what the things they hit absorb give the tail: a street between houses rings long and loud, an open field barely at all, a forest is short and dark (the crowns take the highs). A feedback delay network of eight lines plays it, its decay time follows the rays (Eyring's formula) and moves smoothly when you drive from the field into the town
