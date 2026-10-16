@@ -214,7 +214,8 @@ impl Dust {
         }
         // emission
         let (cap, mut factor) = caps(self.level);
-        factor *= 1.0 - 0.85 * v.wet.clamp(0.0, 1.0);   // wet ground raises little dust
+        let wet = if v.wet.is_finite() { v.wet.clamp(0.0, 1.0) } else { 0.0 };
+        if !self.gpu { factor *= 1.0 - 0.85 * wet; }   // wet ground raises little dust (on the GPU the same share becomes spray and mud instead, see `gpu_emit`)
         if cap == 0 { return; }
         if self.gpu { factor *= table.dust_gpu_factor; }
         let vh = horizontal(v.vel);
@@ -223,9 +224,10 @@ impl Dust {
             let info = v.wheels[w];
             if !info.grounded || !info.speed.is_finite() || !info.slide.is_finite() || !info.lat_slip.is_finite() || !info.contact.is_finite() { self.acc[w] = 0.0; continue; }
             let d = table.dust(info.surface);
-            let roll = if info.speed > 2.0 { d.roll * 14.0 * (info.speed / 20.0).min(1.5) } else { 0.0 };
+            // a wet road is rolled over with water in it: spray from the wheels even on asphalt
+            let roll = if info.speed > 2.0 { d.roll.max(0.35 * wet) * 14.0 * (info.speed / 20.0).min(1.5) } else { 0.0 };
             let slide = d.slide * (40.0 * info.slide.min(1.5) + 18.0 * (info.lat_slip / 6.0).min(1.5));
-            let rate = (roll + slide) * factor;
+            let rate = (roll + slide) * factor * (1.0 - 0.4 * wet);
             self.acc[w] = (self.acc[w] + rate * dt).min(8.0 * if self.gpu { table.dust_gpu_factor } else { 1.0 });
             while self.acc[w] >= 1.0 {
                 self.acc[w] -= 1.0;
@@ -257,7 +259,7 @@ impl Dust {
             let speed = vh.len();
             if rear.grounded && speed > 3.0 && rear.speed.is_finite() {
                 let d = table.dust(rear.surface);
-                let rate = d.roll * 45.0 * (speed / 20.0).powi(2).min(2.2) * factor;
+                let rate = d.roll * 45.0 * (speed / 20.0).powi(2).min(2.2) * factor * (1.0 - 0.95 * wet);   // the wake raises no dust from wet ground
                 self.pick = (self.pick + rate * dt).min(8.0 * table.dust_gpu_factor);
                 let (fwd, right) = (v.forward(), v.right());
                 let (hw, hl) = (v.spec.size.x * 0.5, v.spec.size.z * 0.5);
@@ -309,6 +311,25 @@ impl Dust {
         let tone = if coarse { 0.92 } else { 1.0 };
         let pos = puff.centre + r;
         let look = gpu_look(info.surface);
+        // wet ground (rain): the wheels throw spray (a fine cold mist, fine water drops) and, off the road, mud (dark wet clods that fly in arcs) instead of dust: only a thin share of
+        // the dust is left (AP-42: unpaved roads raise no dust on wet days; wheel spray is drops under 0.5 mm in the air and splash is drops over 1 mm on ballistic paths)
+        let wet = v.wet.clamp(0.0, 1.0);
+        if wet > 0.05 && self.rand() < wet * 0.92 {
+            let loose = !matches!(info.surface, super::surface::Surface::Asphalt | super::surface::Surface::Water | super::surface::Surface::Rock);
+            if loose && self.rand() < 0.45 {
+                // a clod of mud: dark, ballistic, a few centimetres
+                let (sa, sb, sc, sd) = (self.rand(), self.rand(), self.rand(), self.rand());
+                let sp = puff.vel * (0.7 + 0.6 * sa) + v3(sb - 0.5, 0.0, sc - 0.5) * 4.0 + v3(0.0, 1.5 + 3.5 * sd * (0.5 + slide), 0.0);
+                let dark = 0.30 + 0.25 * self.rand();
+                self.push(P { pos: puff.centre + r * 0.5, vel: sp, age: 0.0, life: 1.4 + 1.2 * sa, size0: 0.03 + 0.05 * sd,
+                    color: [d.color[0] * dark, d.color[1] * dark, d.color[2] * dark], coarse: true, seed: sb, speck: true, smoke: false });
+            } else {
+                // the mist: pale, cold, hangs and sinks (class 4: smoke and coarse)
+                let sh = 0.92 + 0.12 * g2;
+                self.push(P { pos, vel: vel * 0.7, age: 0.0, life: 1.6 + 1.8 * a, size0: d.size * 1.1, color: [0.80 * sh, 0.82 * sh, 0.86 * sh], coarse: true, seed: g2, speck: false, smoke: true });
+            }
+            return;
+        }
         if look.amount < 1.0 && self.rand() > look.amount { return; }   // turf holds the soil: little dust rises
         let base = gpu_colour(d.color, look);
         if look.smoke {

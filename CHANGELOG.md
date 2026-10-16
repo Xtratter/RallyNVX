@@ -4,7 +4,7 @@
 
 ## 2.37.0 - weather
 
-- Added: weather (Settings, Weather, and the Weather button in the drive: Auto / Clear / Cloudy / Rain / Heavy rain / Fog; Auto from the level's seed): clouds thicken, the sky greys and darkens, the sun and moon discs fade, fog thickens, rain streaks fall round the camera, the ground gets wet (darker, glossy with the sky in it), the grip drops by surface (`surfaces.json` -> `wet`) and the tyres raise 85 % less dust; wet ground dries in a few minutes
+- Added: weather (Settings, Weather, and the Weather button in the drive: Auto / Clear / Cloudy / Rain / Heavy rain / Fog; Auto from the level's seed): clouds thicken, the sky greys and darkens, the sun and moon discs fade, fog thickens, rain streaks fall round the camera, the ground gets wet (darker, glossy with the sky in it), the grip drops by surface (`surfaces.json` -> `wet`) and on wet ground the wheels throw almost no dust but a pale cold spray mist (also on wet asphalt) and dark mud clods off the road, as real tyres do; wet ground dries in a few minutes
 
 ## 2.36.0 - tyre sets grip
 
