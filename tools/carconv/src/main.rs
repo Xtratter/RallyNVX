@@ -320,8 +320,8 @@ fn main() {
         let ps = collect(doc, &buffers, &mut tex, &|n| want(n), true);
         let (mut v, i) = merge(&ps);
         body_xf(&mut v, ground, cr, st, ct);
-        // the wipers are outside the cabin: black plastic in the sun, no texture
-        for x in &mut v { if wiper { x.c = [16, 16, 18, 3]; x.tex = None; } else { x.c[3] = 15; } }
+        // the wipers are outside the cabin: class 18, the interior atlas lit by the sun
+        for x in &mut v { x.c[3] = if wiper { 18 } else { 15 }; }   // the wipers keep the model's own material (its interior texture), lit by the sun like the outside
         eprintln!("interior group: {} parts, {} triangles, {} of {} vertices textured", ps.len(), i.len() / 3, v.iter().filter(|x| x.tex.is_some()).count(), v.len());
         interior.push((v, i, budget));
     }

@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.51.1 - the wipers keep the model's own look
+
+- Fixed: the moving wipers (the model's arm and blade) had been recoloured flat black; they now keep the model's own material and texture (its interior texture, lit by the sun like the paint)
+
 ## 2.51.0 - the model's own wipers, physically based raindrops
 
 - Fixed: the wipers were the blade strips only, swinging about a point on the cowl while the arms stayed put; the moving wiper is now the model's arm and blade together, turning about the arm's own spindle, each on the axis of the model's own rig, so the pair sweeps in parallel over the glass

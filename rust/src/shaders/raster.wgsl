@@ -584,6 +584,10 @@ fn bead_normal(nc: vec3<f32>, lp: vec3<f32>, wp: vec3<f32>) -> vec3<f32> {
         let ia = select(vec3<f32>(0.12), iv.rgb, has_uv);
         return vec4<f32>(shade_with(ia * occl, i.wp, n, 0.7, 0.0, 0.3) * 0.7, 1.0);
     }
+    if (m == 18) {   // a part outside the cabin that keeps the interior atlas's texture (the windscreen wipers): lit by the sun like the paint, a satin plastic
+        let ia = select(vec3<f32>(0.10), iv.rgb, has_uv);
+        return vec4<f32>(shade(ia * occl, i.wp, n, 0.5, 0.0), 1.0);
+    }
     if (m == 16) {   // the instrument cluster: like the interior, backlit when it is dark (u.disc.w)
         let ia = select(vec3<f32>(0.12), iv.rgb, has_uv);
         return vec4<f32>(shade_with(ia * occl, i.wp, n, 0.7, 0.0, 0.3) * 0.7 + finish(ia * (0.05 + 1.3 * u.disc.w)), 1.0);
