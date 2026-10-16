@@ -13,7 +13,10 @@ pub struct EngineVoice {
     exhaust: Pipe, intake: Pipe,
     lp_struct: OnePole, hp_struct: OnePole, lp_noise: OnePole, bov_lo: OnePole, bov_hi: OnePole, whoosh_lo: OnePole, whoosh_hi: OnePole,
     /// The phases of the turbo's whistle and the gearbox's whine (0..1).
-    ph_turbo: f32, ph_gear: f32, rev_s: f32, ph_flutter: f32, bov_env: f32,
+    ph_turbo: f32, ph_gear: f32, rev_s: f32, ph_flutter: f32, bov_env: f32, burned: f64,
+    /// The flame at the tail pipe, 0..1.5: the rate at which fuel burns in the exhaust (a pop, the anti-lag, a spark cut), fast to rise and 70 ms to fall.
+    pub flame: f32,
+    th_s: f32, lp_off: OnePole,
     last_sum: f64, noise: u32,
     /// The running mean of the exhaust's power: a partial leveller (as the simulator it follows has) keeps the idle audible and the roar from deafening.
     level: f32,
@@ -31,7 +34,7 @@ const BLOCK_SCALE: f64 = 1.0 / 6.0e5;
 impl EngineVoice {
     pub fn new(spec: EngineSpec) -> EngineVoice {
         EngineVoice { engine: Engine::new(spec), exhaust: Pipe::new(2.2, 0.55, -0.85, 0.35), intake: Pipe::new(0.55, 0.8, -0.7, 0.25),
-            lp_struct: OnePole::default(), hp_struct: OnePole::default(), lp_noise: OnePole::default(), bov_lo: OnePole::default(), bov_hi: OnePole::default(), whoosh_lo: OnePole::default(), whoosh_hi: OnePole::default(), ph_turbo: 0.0, ph_gear: 0.0, rev_s: 0.0, ph_flutter: 0.0, bov_env: 0.0, last_sum: 0.0, noise: 0x1357_9BDF, level: 0.01,
+            lp_struct: OnePole::default(), hp_struct: OnePole::default(), lp_noise: OnePole::default(), bov_lo: OnePole::default(), bov_hi: OnePole::default(), whoosh_lo: OnePole::default(), whoosh_hi: OnePole::default(), ph_turbo: 0.0, ph_gear: 0.0, rev_s: 0.0, ph_flutter: 0.0, bov_env: 0.0, burned: 0.0, flame: 0.0, th_s: 0.0, lp_off: OnePole::default(), last_sum: 0.0, noise: 0x1357_9BDF, level: 0.01,
             exhaust_out: 0.0, intake_out: 0.0, block_out: 0.0, turbo_out: 0.0, bov_out: 0.0, whine_out: 0.0 }
     }
 
@@ -49,7 +52,11 @@ impl EngineVoice {
         let raw = self.exhaust.process((pe * k * EXHAUST_SCALE) as f32);
         self.level += (raw * raw - self.level) * (1.0 / (0.3 * RATE as f32));
         let gain = (0.1 / self.level.sqrt().max(1e-4)).sqrt().clamp(0.5, 4.0);   // the loudness changes by the square root of what the engine really does
-        self.exhaust_out = raw * gain;
+        // on and off the throttle: a lift takes some of the exhaust's weight and its brightness (the engine drags instead of pulling), a flame in the pipe brings the sound back
+        self.th_s += (ctl.throttle as f32 - self.th_s) * 0.0006;
+        let open = (0.3 + 0.7 * self.th_s).max(self.flame.min(1.0));
+        let dull = self.lp_off.run(raw * gain, coef(3500.0 + 9000.0 * open, RATE as f32));
+        self.exhaust_out = dull * (0.72 + 0.28 * open);
         // the intake: the plenum's swing, and the rush of the air through the throttle (more when it is open and the engine is breathing hard)
         self.noise = self.noise.wrapping_mul(1664525).wrapping_add(1013904223);
         let n = (self.noise >> 8) as f32 / 8_388_608.0 - 1.0;
@@ -59,8 +66,11 @@ impl EngineVoice {
         // the block: the rate of change of the pressure in all the cylinders, taken through the walls (low-passed, with the rumble taken out)
         let d = ps * k - self.last_sum; self.last_sum = ps * k;
         let s = self.lp_struct.run((d * BLOCK_SCALE) as f32, coef(1800.0, RATE as f32));
-        self.block_out = s - self.hp_struct.run(s, coef(60.0, RATE as f32));
+        self.block_out = (s - self.hp_struct.run(s, coef(60.0, RATE as f32))) * (0.6 + 0.4 * self.th_s);
         let rate = RATE as f32;
+        let burn_rate = ((self.engine.exhaust_burned - self.burned) * RATE as f64 / 0.05) as f32;   // 0.05 mol/s of fuel burning in the exhaust is a full flame
+        self.burned = self.engine.exhaust_burned;
+        self.flame = (self.flame * 0.99968).max(burn_rate.clamp(0.0, 1.5));
         // the turbo: a whistle at the compressor's blade-pass frequency (5 blades of the shaft speed) that grows with the boost and the flow, and a whoosh of the air
         let (air, boost) = ((self.engine.air_flow / 3.0).clamp(0.0, 1.5) as f32, self.engine.boost_bar().max(0.0) as f32);
         let f_t = (self.engine.turbo_omega as f32 / std::f32::consts::TAU * 5.0).clamp(500.0, 14000.0);

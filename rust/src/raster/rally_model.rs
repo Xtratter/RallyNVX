@@ -86,7 +86,14 @@ pub fn build_rally(spec: &VehicleSpec) -> CarModel {
                 None => wipers,
             };
             let wiper_sweep = match windscreen.as_ref() { Some(s) => wipers.iter().flatten().map(|w| w.max_sweep(s)).fold(super::vehicle_models::WIPER_SWEEP, f32::min), None => super::vehicle_models::WIPER_SWEEP };
-            CarModel { body, wheel, disc, caliper, alt_wheels, glass, interior, steering, driver, wipers, gloves: if steering_ok { gloves } else { None }, windscreen, wiper_sweep }
+            // the tail pipe: the rear-most part of the bare metal of the exhaust (class 21), where the flame comes out
+            let exhaust_tip = {
+                let metal: Vec<_> = body.verts.iter().filter(|v| v.col[3] == 21 && v.pos[2] < -1.0).collect();
+                let zmin = metal.iter().map(|v| v.pos[2]).fold(f32::MAX, f32::min);
+                let tip: Vec<_> = metal.iter().filter(|v| v.pos[2] < zmin + 0.04).collect();
+                if tip.is_empty() { None } else { let n = tip.len() as f32; Some([tip.iter().map(|v| v.pos[0]).sum::<f32>() / n, tip.iter().map(|v| v.pos[1]).sum::<f32>() / n, zmin - 0.02]) }
+            };
+            CarModel { exhaust_tip, body, wheel, disc, caliper, alt_wheels, glass, interior, steering, driver, wipers, gloves: if steering_ok { gloves } else { None }, windscreen, wiper_sweep }
         }
         Err(e) => { log::error!("rally_car.rcar unusable ({e}); using the generated hatchback"); build_generated(spec) }
     }

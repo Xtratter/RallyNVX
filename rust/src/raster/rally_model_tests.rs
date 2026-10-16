@@ -95,3 +95,11 @@ fn check(m: &Mesh3, name: &str) {
     assert!(st.pivot.y > 0.6 && st.pivot.y < 1.2 && st.pivot.x > 0.2, "{:?}", st.pivot);
     assert!(m.driver.is_some() && m.interior.is_some());
 }
+
+#[test] fn the_peugeots_tail_pipe_is_found_at_the_back_of_the_car() {
+    let m = build_rally(&crate::game::vehicle::VehicleSpec::by_id("vulpes").unwrap());
+    let t = m.exhaust_tip.expect("the exhaust's tip");
+    assert!(t[2] < -1.7 && t[2] > -2.2 && t[1] > 0.1 && t[1] < 0.6 && t[0].abs() < 0.9, "{t:?}");
+    let f = crate::raster::vehicle_models::flame_mesh();
+    assert!(f.tris() >= 20 && f.verts.iter().all(|v| v.col[3] == crate::raster::vehicle_models::MAT_EMISSIVE && v.pos.iter().all(|c| c.is_finite())) && f.idx.iter().all(|&i| (i as usize) < f.verts.len()));
+}
