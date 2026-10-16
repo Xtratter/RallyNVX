@@ -1,5 +1,6 @@
 //! Procedural sound: a pure synthesiser (engine, rolling, wind, one-shot events) driven by `AudioParams` and
 //! `Event`s. No files, no dependencies; the platform glue only pulls PCM from `Synth::render`.
+pub mod acoustics;
 pub mod director;
 pub mod dsp;
 pub mod spatial;
@@ -30,15 +31,28 @@ pub const SRC_WHEEL: usize = 2;
 pub const SRC_BODY: usize = 6;
 pub const N_SRC: usize = 7;
 
+/// What stands between a source and the listener, and the ground's echo of it (worked out on the game thread, see `acoustics`).
+#[derive(Clone, Copy, Debug)]
+pub struct SrcExtra {
+    /// The loss of the low band as a gain, the cutoff (Hz) that gives the highs their loss, and the extra travel time of the bent path (s).
+    pub gain: f32, pub hz: f32, pub extra_delay: f32,
+    /// The ground's echo: the image source, the share of the sound the ground returns and its cutoff (Hz).
+    pub echo: Option<(V3, f32, f32)>,
+}
+impl Default for SrcExtra { fn default() -> Self { SrcExtra { gain: 1.0, hz: 20000.0, extra_delay: 0.0, echo: None } } }
+
 /// Where the listener (the camera) and the sources are, and what each tyre is doing. The default is a listener at the origin looking along +z with every source 8 m ahead.
 #[derive(Clone, Copy, Debug)]
 pub struct Scene {
     pub listener: V3, pub fwd: V3, pub src: [V3; N_SRC],
     /// Per tyre: 1 when it touches the ground, and its share of the squeal (0..1).
     pub wheel_on: [f32; 4], pub wheel_slip: [f32; 4],
+    pub extra: [SrcExtra; N_SRC],
+    /// The listener sits in the car's cabin: the wind is muffled (a gain and a cutoff in Hz).
+    pub wind_gain: f32, pub wind_hz: f32,
 }
 impl Default for Scene {
-    fn default() -> Scene { Scene { listener: V3::ZERO, fwd: v3(0.0, 0.0, 1.0), src: [v3(0.0, 0.0, 8.0); N_SRC], wheel_on: [1.0; 4], wheel_slip: [1.0; 4] } }
+    fn default() -> Scene { Scene { listener: V3::ZERO, fwd: v3(0.0, 0.0, 1.0), src: [v3(0.0, 0.0, 8.0); N_SRC], wheel_on: [1.0; 4], wheel_slip: [1.0; 4], extra: [SrcExtra::default(); N_SRC], wind_gain: 1.0, wind_hz: 20000.0 } }
 }
 
 /// One-shot sounds. Strengths are 0..1.

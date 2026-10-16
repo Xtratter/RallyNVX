@@ -1,5 +1,8 @@
 //! Turns the game world into `AudioParams` and one-shot `Event`s by comparing each frame with the previous one.
 use super::{AudioParams, Event, Machine, Scene, Surface, N_SRC, SRC_BAY, SRC_BODY, SRC_EXHAUST, SRC_WHEEL};
+use super::acoustics::{ground_reflection, occlusion, surface_reflection, Cabin, Kind, Obstacle, Shape};
+use super::SrcExtra;
+use crate::game::props::PropKind;
 use crate::game::{math::v3, world::World};
 
 pub struct Director {
@@ -35,7 +38,40 @@ impl Director {
             sc.wheel_slip[k] = if wi.grounded { ((wi.lat_slip - 1.5) / 3.0).clamp(0.0, 1.0) } else { 0.0 };
         }
         sc.src = src;
+        // what stands between the sources and the ears: the ground, the rocks, the crowns of the trees, the houses, and the car's own body
+        let t = &w.terrain; let water = t.water_level();
+        let ground = |x: f32, z: f32| { let h = t.height(x, z); water.map_or(h, |l| h.max(l)) };
+        let character = |x: f32, z: f32| if water.map_or(false, |l| t.height(x, z) < l) { surface_reflection(crate::game::surface::Surface::Water) } else { surface_reflection(crate::game::surface::surface_at(t, x, z)) };
+        let mut obs: Vec<Obstacle> = Vec::new();
+        for centre in [v.pos, sc.listener] {
+            for p in w.nearby_props_at(centre) {
+                match p.kind {
+                    PropKind::Rock => obs.push(Obstacle { shape: Shape::Sphere { c: p.pos + v3(0.0, p.radius * 0.5, 0.0), r: p.radius }, kind: Kind::Hard }),
+                    PropKind::Tree => obs.push(Obstacle { shape: Shape::Sphere { c: p.pos + v3(0.0, p.height + 0.5, 0.0), r: 2.2 }, kind: Kind::Foliage }),
+                }
+            }
+            for c in &w.cities { for b in c.buildings_near(centre, 60.0) { obs.push(Obstacle { shape: Shape::Aabb { min: b.min, max: b.max }, kind: Kind::Wall }); } }
+        }
+        let cabin = Self::cabin(w);
+        let inside = cabin.contains(sc.listener);
+        // the loss through the car's body (dB at 250 Hz, 1 kHz, 4 kHz) from each source to a listener inside: the engine bay is behind the firewall, the tyres under the floor
+        let through = |k: usize| if k == SRC_BAY { [6.0, 10.0, 18.0] } else if k == SRC_EXHAUST { [9.0, 15.0, 26.0] } else { [10.0, 16.0, 26.0] };
+        for k in 0..N_SRC {
+            let o = occlusion(sc.listener, sc.src[k], &ground, &obs, Some(&cabin), through(k));
+            let (gain, hz) = o.gain_and_cutoff();
+            let echo = if inside { None } else { ground_reflection(sc.listener, sc.src[k], &ground, &character).map(|r| (r.image, r.coeff, r.hz)) };
+            sc.extra[k] = SrcExtra { gain, hz, extra_delay: o.extra_delay, echo };
+        }
+        if inside { sc.wind_gain = 0.45; sc.wind_hz = 1500.0; }
         sc
+    }
+
+    /// The car's cabin as a box in the car's frame: between the axles, from the floor to the roof.
+    pub fn cabin(w: &World) -> Cabin {
+        let v = &w.vehicle; let s = &v.spec;
+        let floor = s.wheels[0].y - s.rest - s.radius;   // the road, in the car's frame
+        Cabin { centre: v.pos, x: v.rot.rotate(v3(1.0, 0.0, 0.0)), y: v.rot.rotate(v3(0.0, 1.0, 0.0)), z: v.rot.rotate(v3(0.0, 0.0, 1.0)),
+            min: v3(-0.46 * s.size.x, floor + 0.35 * s.size.y, -0.28 * s.size.z), max: v3(0.46 * s.size.x, floor + s.size.y, 0.10 * s.size.z) }
     }
 
     /// `throttle` is the player's throttle (-1..1), `active` is false while paused. Never emits events when inactive

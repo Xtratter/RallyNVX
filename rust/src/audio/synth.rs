@@ -1,6 +1,6 @@
 //! The synthesiser: smoothed continuous voices (engine, rolling, squeal, wind) plus a pool of one-shots.
 use super::dsp::{coef, frac, Noise, OnePole};
-use super::spatial::{path, Emitter};
+use super::spatial::{path, Emitter, MAX_DELAY};
 use super::{AudioParams, Event, Machine, Scene, Surface, N_SRC, RATE, SRC_BAY, SRC_BODY, SRC_EXHAUST, SRC_WHEEL};
 
 const TAU: f32 = std::f32::consts::TAU;
@@ -23,7 +23,7 @@ pub struct Synth {
     engine_phase: f32, gurgle: f32, squeal: f32,
     f_roll: [OnePole; 4], f_roll_w: [OnePole; 4], f_sq1: [OnePole; 4], f_sq2: [OnePole; 4], f_wind: OnePole, f_wind_r: OnePole,
     voices: [Voice; MAX_VOICES],
-    scene: Scene, emitters: Vec<Emitter>, block: usize,
+    scene: Scene, emitters: Vec<Emitter>, block: usize, wind_k: f32, lp_wind: [OnePole; 2],
 }
 
 /// What the sources emit at one instant, before the room and the listener's head: the exhaust, the engine bay, the four tyres, the car's body (the one-shots) and the wind at the listener's ears.
@@ -47,7 +47,7 @@ impl Synth {
             f_roll: [OnePole::default(); 4], f_roll_w: [OnePole::default(); 4], f_sq1: [OnePole::default(); 4], f_sq2: [OnePole::default(); 4],
             f_wind: OnePole::default(), f_wind_r: OnePole::default(),
             voices: [Voice::default(); MAX_VOICES],
-            scene: Scene::default(), emitters: (0..N_SRC).map(|_| Emitter::new()).collect(), block: 0,
+            scene: Scene::default(), emitters: (0..N_SRC).map(|_| Emitter::new()).collect(), block: 0, wind_k: 1.0, lp_wind: [OnePole::default(); 2],
         }
     }
 
@@ -163,11 +163,22 @@ impl Synth {
         let (l0, fwd) = (self.scene.listener, self.scene.fwd);
         for fr in out.chunks_exact_mut(2) {
             if self.block == 0 {
-                for k in 0..N_SRC { let p = path(l0, fwd, self.scene.src[k]); self.emitters[k].set_path(&p); }
+                for k in 0..N_SRC {
+                    let ex = self.scene.extra[k];
+                    let mut direct = path(l0, fwd, self.scene.src[k]).tap();
+                    direct.delay = (direct.delay + ex.extra_delay).min(MAX_DELAY); direct.gain *= ex.gain; direct.hz = direct.hz.min(ex.hz);
+                    let echo = ex.echo.map(|(image, coeff, hz)| {
+                        let mut t = path(l0, fwd, image).tap();
+                        t.delay = (t.delay + ex.extra_delay).min(MAX_DELAY); t.gain *= ex.gain * coeff; t.hz = t.hz.min(hz).min(ex.hz); t
+                    });
+                    self.emitters[k].set_taps(&direct, echo.as_ref());
+                }
+                let c = coef(self.scene.wind_hz, self.rate); self.wind_k = c;
             }
             self.block = (self.block + 1) % BLOCK;
             let f = self.frame();
-            let (mut l, mut r) = (f.wind[0], f.wind[1]);
+            let g = self.scene.wind_gain;
+            let (mut l, mut r) = (self.lp_wind[0].run(f.wind[0] * g, self.wind_k), self.lp_wind[1].run(f.wind[1] * g, self.wind_k));
             let mut add = |k: usize, x: f32| { let (a, b) = self.emitters[k].process(x); l += a; r += b; };
             add(SRC_EXHAUST, f.exhaust); add(SRC_BAY, f.bay); add(SRC_BODY, f.body);
             for k in 0..4 { add(SRC_WHEEL + k, f.wheels[k]); }

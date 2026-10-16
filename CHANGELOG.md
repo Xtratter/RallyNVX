@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.60.0 - what stands in the way of a sound (spatial audio, stage 2)
+
+- Added: the sound is blocked and bent: a ridge, a rock, a house or the car itself between a source and your ears takes the sound's highs first (a screen's diffraction, Maekawa's rule per band, with the longer path's delay); the crown of a tree dulls it a little; a wall muffles it
+- Added: in the cockpit view the outside is heard through the body: the engine bay, the exhaust and the tyres are muffled (the exhaust the most), the wind too; the view from outside has no such muffling
+- Added: the ground's echo: every source also reaches you after bouncing off the ground (an image source under it), by the surface: asphalt, rock and water return nearly all, gravel and dirt less, grass and sand dull it. The direct sound and the echo interfere, which is the hollow, comb-filtered sound of an engine heard low over a road
+
 ## 2.59.0 - stereo sound from real places (spatial audio, stage 1)
 
 - Added: the sound is stereo and every source is heard from its real place: the exhaust at the tail, the engine bay at the nose, each of the four tyres where it touches the ground, the landings, crashes and splashes at the car. The listener is the camera (so in the cockpit you hear from the driver's seat, with the free camera from wherever you fly)
