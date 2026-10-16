@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.63.1 - a natural blow-off
+
+- Fixed: the blow-off valve's hiss was a short click-like burst. The charge volume before the throttle is now 6 L (piping and the intercooler, it was 2.5) and the valve smaller, so the air leaves over about half a second; the valve opens in proportion to how far the charge is over the atmosphere, so the flow tapers off smoothly instead of stopping short. The sound is a jet of broadband turbulence: it starts sharply, is bright while the pressure behind it is high, darkens and falls away as the charge empties, and flickers a little like a real jet
+- Added: flutter. When the charge is above what the compressor delivers, the air runs back through it (surge) and chops the whistle and the air into pulses of about 14 Hz
+
 ## 2.63.0 - turbo, blow-off, anti-lag and the gearbox's voice (engine model, stage B3)
 
 - Added: the turbo. A shaft with its own inertia is spun by the exhaust flow (the turbine's power from the flow and the pressure drop) and loaded by the compressor, whose outlet pressure follows its speed; its air fills a volume before the throttle; the wastegate holds the boost at about 0.55 bar. So the boost builds with a lag (about 0.75 s to full), the torque rises to about 330 N m at 4000 rpm, and the exhaust gets louder and hotter under boost

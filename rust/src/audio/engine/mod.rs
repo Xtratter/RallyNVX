@@ -47,7 +47,7 @@ impl EngineSpec {
             plenum: 0.0028, runner: 0.0003, collector: 0.0012,
             throttle_area: 8.0e-4, idle_area: 3.0e-5, outlet_area: 9.0e-4, runner_area: 6.0e-4,
             starter_torque: 200.0,
-            charge: 0.0025, turbo_inertia: 3.0e-5, turbo_max: 15_700.0, turbo_drag: 4.0e-9, wastegate_bar: 1.55e5, bov_area: 5.0e-4,
+            charge: 0.006, turbo_inertia: 3.0e-5, turbo_max: 15_700.0, turbo_drag: 4.0e-9, wastegate_bar: 1.55e5, bov_area: 1.5e-4,
         }
     }
     pub fn displacement(&self) -> f64 { self.cylinders as f64 * std::f64::consts::PI * self.bore * self.bore / 4.0 * self.stroke }
@@ -91,6 +91,8 @@ pub struct Engine {
     pub turbo_omega: f64, pub wastegate: f64,
     /// The fuel (mol) that has burnt in the exhaust so far: the pops and the anti-lag's fire.
     pub exhaust_burned: f64,
+    /// The air flowing back through the compressor (mol/s, negative when it runs backwards: surge).
+    pub surge_flow: f64,
     /// The air blown off by the blow-off valve (mol/s) in the last step.
     pub bov_flow: f64,
     rng: u32,
@@ -102,7 +104,7 @@ impl Engine {
     pub fn new(spec: EngineSpec) -> Engine {
         let cyl = (0..spec.cylinders).map(|_| Cylinder { gas: Gas::air(spec.displacement() / spec.cylinders as f64 / (spec.compression - 1.0), P_ATM, T_ATM), runner: Gas::air(spec.runner, P_ATM, T_ATM), burn: Burn::default(), angle: 0.0, als_adv: -80.0, als_skip: false }).collect();
         Engine { spec, cyl, plenum: Gas::air(spec.plenum, P_ATM, T_ATM), collector: Gas::air(spec.collector, P_ATM, T_ATM), atmosphere: Gas::air(1000.0, P_ATM, T_ATM), comp: Gas::air(1000.0, P_ATM, 320.0), charge: Gas::air(spec.charge, P_ATM, T_ATM),
-            theta: 0.0, omega: 0.0, idle_i: 0.0, fuel_cut: false, controls: Controls::default(), gas_torque: 0.0, clutch_torque: 0.0, turbo_omega: 2500.0, wastegate: 0.0, bov_flow: 0.0, exhaust_burned: 0.0, rng: 0x2468_ACE1, air_flow: 0.0 }
+            theta: 0.0, omega: 0.0, idle_i: 0.0, fuel_cut: false, controls: Controls::default(), gas_torque: 0.0, clutch_torque: 0.0, turbo_omega: 2500.0, wastegate: 0.0, bov_flow: 0.0, surge_flow: 0.0, exhaust_burned: 0.0, rng: 0x2468_ACE1, air_flow: 0.0 }
     }
 
     pub fn rpm(&self) -> f64 { self.omega * 60.0 / TAU }
@@ -145,11 +147,14 @@ impl Engine {
         let pr = 1.0 + 1.35 * (self.turbo_omega / spec.turbo_max).powi(2);
         self.comp.e = 0.5 * gas::F_DOF * P_ATM * pr * self.comp.v; self.comp.n = self.comp.e * 2.0 / (gas::F_DOF * gas::R * 320.0); self.comp.o2 = 0.21 * self.comp.n; self.comp.fuel = 0.0;
         let moved_c = flow(&mut self.comp, &mut self.charge, 1.1e-3, dt);
+        self.surge_flow = moved_c / dt;
         let a_thr = a_throttle * 0.9 + if c.als && thr < 0.12 && rpm > 3000.0 { 0.12 * spec.throttle_area } else { 0.0 };   // anti-lag lets air past the closed throttle
         self.air_flow = flow(&mut self.charge, &mut self.plenum, a_thr, dt) / dt;
         let p_charge = self.charge.pressure();
-        let bov_open = thr < 0.25 && p_charge > 1.25e5 && self.plenum.pressure() < 0.9 * P_ATM + 0.4 * (p_charge - P_ATM);
-        self.bov_flow = if bov_open { flow(&mut self.charge, &mut self.atmosphere, spec.bov_area, dt).max(0.0) / dt } else { 0.0 };
+        // open while the throttle is shut and the plenum is in vacuum, in proportion to how far the charge is over the atmosphere: the hiss tapers off instead of stopping short
+        let vacuum = thr < 0.25 && self.plenum.pressure() < 0.9 * P_ATM + 0.4 * (p_charge - P_ATM).max(0.0);
+        let open = if vacuum { ((p_charge - 1.06 * P_ATM) / 0.25e5).clamp(0.0, 1.0) } else { 0.0 };
+        self.bov_flow = if open > 0.0 { flow(&mut self.charge, &mut self.atmosphere, spec.bov_area * open, dt).max(0.0) / dt } else { 0.0 };
         let mut exhaust_moles = 0.0;
         // the engine's torque
         let mut torque = 0.0;

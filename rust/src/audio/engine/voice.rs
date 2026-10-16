@@ -13,7 +13,7 @@ pub struct EngineVoice {
     exhaust: Pipe, intake: Pipe,
     lp_struct: OnePole, hp_struct: OnePole, lp_noise: OnePole, bov_lo: OnePole, bov_hi: OnePole, whoosh_lo: OnePole, whoosh_hi: OnePole,
     /// The phases of the turbo's whistle and the gearbox's whine (0..1).
-    ph_turbo: f32, ph_gear: f32, rev_s: f32,
+    ph_turbo: f32, ph_gear: f32, rev_s: f32, ph_flutter: f32, bov_env: f32,
     last_sum: f64, noise: u32,
     /// The running mean of the exhaust's power: a partial leveller (as the simulator it follows has) keeps the idle audible and the roar from deafening.
     level: f32,
@@ -31,7 +31,7 @@ const BLOCK_SCALE: f64 = 1.0 / 6.0e5;
 impl EngineVoice {
     pub fn new(spec: EngineSpec) -> EngineVoice {
         EngineVoice { engine: Engine::new(spec), exhaust: Pipe::new(2.2, 0.55, -0.85, 0.35), intake: Pipe::new(0.55, 0.8, -0.7, 0.25),
-            lp_struct: OnePole::default(), hp_struct: OnePole::default(), lp_noise: OnePole::default(), bov_lo: OnePole::default(), bov_hi: OnePole::default(), whoosh_lo: OnePole::default(), whoosh_hi: OnePole::default(), ph_turbo: 0.0, ph_gear: 0.0, rev_s: 0.0, last_sum: 0.0, noise: 0x1357_9BDF, level: 0.01,
+            lp_struct: OnePole::default(), hp_struct: OnePole::default(), lp_noise: OnePole::default(), bov_lo: OnePole::default(), bov_hi: OnePole::default(), whoosh_lo: OnePole::default(), whoosh_hi: OnePole::default(), ph_turbo: 0.0, ph_gear: 0.0, rev_s: 0.0, ph_flutter: 0.0, bov_env: 0.0, last_sum: 0.0, noise: 0x1357_9BDF, level: 0.01,
             exhaust_out: 0.0, intake_out: 0.0, block_out: 0.0, turbo_out: 0.0, bov_out: 0.0, whine_out: 0.0 }
     }
 
@@ -69,10 +69,19 @@ impl EngineVoice {
         let whistle = (self.ph_turbo * std::f32::consts::TAU).sin() * 0.7 + (self.ph_turbo * 2.0 * std::f32::consts::TAU).sin() * 0.2;
         let whoosh = self.whoosh_lo.run(n, coef(6000.0, rate)) - self.whoosh_hi.run(n, coef(1200.0, rate));
         self.turbo_out = (whistle * 0.030 * spool * (0.35 + 0.65 * air) + whoosh * 0.08 * spool * air) * (0.4 + boost.min(0.8));
-        // the blow-off valve: the rush of the air let out of the charge volume
-        let bov = (self.engine.bov_flow / 6.0).clamp(0.0, 1.5) as f32;
-        let hiss = self.bov_lo.run(n, coef(9000.0, rate)) - self.bov_hi.run(n, coef(2500.0, rate));
-        self.bov_out = hiss * bov.sqrt() * 0.7;
+        // the blow-off valve: a jet of the charge's air into the open, broadband turbulence ("pssh"). It starts sharply and fades with the flow; the higher the pressure behind it the faster
+        // the jet and the brighter the hiss, and as the charge empties the hiss darkens and falls away
+        let flow_n = (self.engine.bov_flow / 2.0).clamp(0.0, 1.5) as f32;
+        self.bov_env += (flow_n - self.bov_env) * if flow_n > self.bov_env { 0.01 } else { 0.0015 };   // 2 ms to rise, about 15 ms to fall
+        let bright = (0.15 + 0.85 * boost.min(0.6) / 0.6).clamp(0.1, 1.0);
+        let hiss = self.bov_lo.run(n, coef(2500.0 + 7500.0 * bright, rate)) - self.bov_hi.run(n, coef(500.0 + 1500.0 * bright, rate));
+        let grain = 0.8 + 0.2 * self.lp_noise.run(n, coef(40.0, rate)) * 6.0;   // the turbulence of the jet flickers a little
+        self.bov_out = hiss * grain * self.bov_env.powf(0.7) * 0.5;
+        // flutter: the compressor surges when the charge's pressure is above what it delivers (the air runs back through it): pulses at about 14 Hz that chop the whistle and the air
+        let surge = ((-self.engine.surge_flow) / 1.0).clamp(0.0, 1.0) as f32;
+        self.ph_flutter = (self.ph_flutter + 14.0 / rate).fract();
+        let chop = 1.0 - surge * 0.9 * (0.5 + 0.5 * (self.ph_flutter * std::f32::consts::TAU).sin().signum());
+        self.turbo_out *= chop;
         // the gearbox: spur gears whine at a multiple of the revs, louder under torque and when the clutch holds
         self.rev_s += (self.engine.rpm() as f32 / 60.0 - self.rev_s) * 0.003;   // the revs without the ripple of the firing strokes (a gear's whine is steady)
         let rev = self.rev_s;
