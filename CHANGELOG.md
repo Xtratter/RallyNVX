@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.62.2 - less hiss while driving
+
+- Fixed: while driving, something hissed like wind. Measured at 20-35 m/s, the rolling noise of the four tyres (a low-passed noise) was about as loud as the exhaust, and the intake's rush was an airy noise on top of the engine. The tyres' rolling noise is now 0.45 of what it was and the intake's rush half of what it was; the engine, the wind and the squeal are unchanged
+
 ## 2.62.1 - the engine is heard again, no more hiss
 
 - Fixed: in 2.62.0 the engine drowned in a continuous hiss. The measurement of the model's sources showed two faults: the steady pressure of the pipes (the intake's depression on a closed throttle, the exhaust's back pressure) was passed on as a huge offset that saturated the output, and the intake's rush noise was driven by that pressure instead of by the air flowing through the throttle (at idle it was fifteen times louder than the exhaust). The steady part is now filtered out of the pipes, the rush follows the air flow, and a partial leveller keeps the idle audible and the roar from deafening (the loudness changes by the square root of the engine's real change). At idle the exhaust is now the main sound, the intake and the block are a tenth of it

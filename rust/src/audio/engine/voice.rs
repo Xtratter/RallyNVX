@@ -50,7 +50,7 @@ impl EngineVoice {
         self.noise = self.noise.wrapping_mul(1664525).wrapping_add(1013904223);
         let n = (self.noise >> 8) as f32 / 8_388_608.0 - 1.0;
         let flow = (self.engine.air_flow / 4.0).clamp(0.0, 1.5) as f32;
-        let rush = self.lp_noise.run(n, coef(2500.0, RATE as f32)) * flow.powf(0.8) * 0.06;
+        let rush = self.lp_noise.run(n, coef(2500.0, RATE as f32)) * flow.powf(0.8) * 0.03;
         self.intake_out = self.intake.process((pi * k * INTAKE_SCALE) as f32) + rush;
         // the block: the rate of change of the pressure in all the cylinders, taken through the walls (low-passed, with the rumble taken out)
         let d = ps * k - self.last_sum; self.last_sum = ps * k;
