@@ -145,7 +145,9 @@ pub(crate) fn loft(stations: &[(f32, f32, f32, f32)], ring: usize, exp: f32, col
 
 pub(crate) fn scaled(st: &[(f32, f32, f32, f32)], sx: f32, sy: f32, sz: f32) -> Vec<(f32, f32, f32, f32)> { st.iter().map(|&(z, w, a, b)| (z * sz, (w * sx).max(0.06), a * sy, b * sy)).collect() }
 
-pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2], pub glass: Option<Mesh3>, pub interior: Option<Mesh3>, pub steering: Option<Steering>, pub driver: Option<Mesh3> }
+pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>, pub caliper: Option<Mesh3>, pub alt_wheels: [Option<Mesh3>; 2], pub glass: Option<Mesh3>, pub interior: Option<Mesh3>, pub steering: Option<Steering>, pub driver: Option<Mesh3>,
+    /// The windscreen wipers (the driver's side first): each mesh is stored shifted by `-pivot` so that it sweeps about the origin, `axis` is the sweep axis.
+    pub wipers: [Option<Steering>; 2] }
 
 /// The steering wheel of a car model: its mesh is stored shifted by `-pivot` so that it turns about the origin; `pivot` is where the wheel's centre is in the body frame,
 /// `axis` its axis (a unit vector towards the driver).
@@ -155,11 +157,25 @@ pub struct Steering { pub mesh: Mesh3, pub pivot: V3, pub axis: V3 }
 /// The angle the steering wheel is turned by for a front-wheel steer angle (radians): 5.5 times, never beyond 3.8 rad (about 1.2 turns lock to lock).
 pub fn steering_wheel_angle(steer: f32) -> f32 { if steer.is_finite() { (-steer * 5.5).clamp(-3.8, 3.8) } else { 0.0 } }
 
+/// How far the wipers sweep (radians) from their parked position.
+pub const WIPER_SWEEP: f32 = 1.15;
+
+/// The angle of the wipers at `time` (seconds) in `rain` (0..1): parked below a light drizzle, else a smooth back-and-forth sweep, quicker in a heavy rain (a wipe takes
+/// 2.6 s in a drizzle and 1.3 s in a downpour; the pause at the park position is part of the cycle).
+pub fn wiper_angle(time: f32, rain: f32) -> f32 {
+    if !(time.is_finite() && rain.is_finite()) || rain < 0.05 { return 0.0; }
+    let period = if rain > 0.6 { 1.3 } else { 2.6 };
+    let ph = (time / period).fract().abs();
+    let tri = if ph < 0.5 { ph * 2.0 } else { 2.0 - ph * 2.0 };   // up and back
+    let s = (tri * 1.25).min(1.0);                               // dwell at the top and at the park position
+    WIPER_SWEEP * s * s * (3.0 - 2.0 * s)
+}
+
 /// Whether the driver is drawn for a camera `dist` metres from the car's centre: not when the camera sits inside the car (the head would block the view).
 pub fn draw_driver(dist: f32) -> bool { dist >= 1.2 }
 
 impl CarModel {
-    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None], glass: None, interior: None, steering: None, driver: None } }
+    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None], glass: None, interior: None, steering: None, driver: None, wipers: [None, None] } }
     /// The wheel mesh of a wheel set (0 tarmac, 1 gravel, 2 snow); a set the model does not have shows the tarmac wheel.
     pub fn wheel_for(&self, set: u8) -> &Mesh3 {
         match set { 1 | 2 => self.alt_wheels[set as usize - 1].as_ref().unwrap_or(&self.wheel), _ => &self.wheel }

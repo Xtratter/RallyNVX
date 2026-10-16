@@ -386,7 +386,7 @@ fn sway(w: vec3<f32>, k_world: f32) -> vec3<f32> {
     return vec3<f32>(w.x + off.x, w.y, w.z + off.y);
 }
 
-struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32, @location(5) own: f32, @location(6) uv: vec2<f32>, @location(7) heat: f32 };
+struct MOut { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @location(1) n: vec3<f32>, @location(2) col: vec3<f32>, @location(3) mat: f32, @location(4) ao: f32, @location(5) own: f32, @location(6) uv: vec2<f32>, @location(7) heat: f32, @location(8) lp: vec3<f32> };
 
 fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: vec4<f32>) -> vec3<f32> {
     return (mat4x4<f32>(m0, m1, m2, m3) * vec4<f32>(p, 1.0)).xyz;
@@ -417,6 +417,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let hgt = (p.y - base) * length(m1.xyz);
     o.ao = select(1.0, mix(0.55, 1.0, smoothstep(0.0, 1.8, hgt)), tint.a > 1.5);
     o.uv = uv;
+    o.lp = p;
     o.heat = clamp((tint.a - 0.1) / 0.4, 0.0, 1.0);   // a brake disc's tint alpha carries its heat (0.1 .. 0.5)
     o.own = select(0.0, 1.0, tint.a < 0.75);   // tint.a 0.5 = the player's car: its lamps do not light it
     return o;
@@ -507,7 +508,26 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     let t = smoothstep(0.0, 1.0, clamp((dist - 4.0) / 4.0, 0.0, 1.0));
     let k = 1.0 - 0.75 * clear;
     let near = (0.2 + 0.3 * fr) * k;
-    let a = clamp(near + (0.95 - near) * t * k, 0.0, 1.0);
+    var a = clamp(near + (0.95 - near) * t * k, 0.0, 1.0);
+    // raindrops on the panes: a lattice of cells on the glass (object space, so they stay on it), each holding a drop that grows in once the wipers have passed (the cycle matches
+    // `vehicle_models::wiper_angle`) and is cleared when the sweep starts over; none on a lamp cover
+    let rain = u.wx.x;
+    if (rain > 0.05 && clear < 0.5 && dist < 12.0) {
+        let period = select(2.6, 1.3, rain > 0.6);
+        let cyc = fract(u.cr.w / period);
+        let g = vec2<f32>(i.lp.x, i.lp.y * 0.8 + i.lp.z * 0.6) / 0.05;
+        let cell = floor(g);
+        let h = hash_u3(u32(cell.x + 2000.0) * 7919u + u32(cell.y + 2000.0));
+        let c = cell + vec2<f32>(0.3 + 0.4 * h.x, 0.3 + 0.4 * h.y);
+        let rad = 0.14 + 0.2 * h.z * h.z;
+        let born = h.x * 0.9;                                   // when in the cycle this drop appears
+        let grown = smoothstep(born, born + 0.08, cyc);
+        let d = length(g - c) / rad;
+        let drop = (1.0 - smoothstep(0.7, 1.0, d)) * grown * step(h.y, 0.25 + 0.7 * rain);
+        let rim = smoothstep(0.35, 0.85, d) * (1.0 - smoothstep(0.85, 1.0, d));   // a drop is a small lens: bright rim, the sky seen through its middle
+        col += drop * (sky_gradient(r) * 0.5 + vec3<f32>(0.6) * rim * 0.5);
+        a = clamp(a + drop * 0.35, 0.0, 1.0);
+    }
     return vec4<f32>(finish(col), a);
 }
 

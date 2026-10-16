@@ -19,7 +19,7 @@ pub fn lamp_points() -> Option<super::rcar::LampPoints> {
 
 pub fn build_rally(spec: &VehicleSpec) -> CarModel {
     match super::rcar::parse_all(ASSET) {
-        Ok(super::rcar::Parts { mut body, mut wheel, mut disc, mut caliper, mut alt_wheels, mut glass, mut interior, steering, pivot, mut driver }) => {
+        Ok(super::rcar::Parts { mut body, mut wheel, mut disc, mut caliper, mut alt_wheels, mut glass, mut interior, steering, pivot, mut driver, wipers, wiper_pivots }) => {
             // the lamp units show the car's lamp state in the shader: their own material
             for v in &mut body.verts { if v.col[3] == super::vehicle_models::MAT_EMISSIVE { v.col[3] = super::vehicle_models::MAT_CARLAMP; } }
             for i in super::rcar::position_vertices(&body) { body.verts[i].col[3] = super::vehicle_models::MAT_CARPOS; }
@@ -46,7 +46,21 @@ pub fn build_rally(spec: &VehicleSpec) -> CarModel {
                 }
                 _ => None,
             };
-            CarModel { body, wheel, disc, caliper, alt_wheels, glass, interior, steering, driver }
+            // the wipers: each sweeps about its own spindle, which the pivot mesh gives (the driver's side first)
+            let wipers = match wiper_pivots {
+                Some(meta) if meta.verts.len() >= 2 => {
+                    let mut it = wipers.into_iter();
+                    std::array::from_fn(|k| it.next().flatten().map(|mut mesh| {
+                        let m = &meta.verts[k];
+                        let pivot = crate::game::math::v3(m.pos[0] * sx, m.pos[1] * sy, m.pos[2] * sz);
+                        let axis = crate::game::math::v3(m.nrm[0], m.nrm[1], m.nrm[2]).norm();
+                        for v in &mut mesh.verts { v.pos = [v.pos[0] * sx - pivot.x, v.pos[1] * sy - pivot.y, v.pos[2] * sz - pivot.z]; }
+                        super::vehicle_models::Steering { mesh, pivot, axis }
+                    }))
+                }
+                _ => [None, None],
+            };
+            CarModel { body, wheel, disc, caliper, alt_wheels, glass, interior, steering, driver, wipers }
         }
         Err(e) => { log::error!("rally_car.rcar unusable ({e}); using the generated hatchback"); build_generated(spec) }
     }

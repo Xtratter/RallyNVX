@@ -48,8 +48,11 @@ fn is_cover(n: &str) -> bool {
 /// The cabin parts and the driver of the source model (the windows, wipers, dials, LEDs and indicators are left out).
 fn is_cabin(n: &str) -> bool {
     let cabin = n.starts_with("int_") || n.starts_with("Int_");
-    cabin && !["window", "wiper", "dials", "LED", "INDICATOR", "glasspart", "notes", "steering"].iter().any(|b| n.contains(b))
+    cabin && !["window", "dials", "LED", "INDICATOR", "glasspart", "notes", "steering"].iter().any(|b| n.contains(b)) && !(n.contains("wiper") && !n.ends_with("_base"))   // the wipers' bases stay in the cabin, the blades are their own meshes
 }
+/// The windscreen wipers (arm and blade; the game sweeps them in the rain): the driver's side (`fl`, +x) and the other.
+fn is_wiper_l(n: &str) -> bool { n == "int_wiper_fl" }
+fn is_wiper_r(n: &str) -> bool { n == "int_wiper_fr" }
 fn is_driver(n: &str) -> bool { n.starts_with("CO_DRIVER") }
 /// The steering wheel (its own mesh: the game turns it).
 fn is_wheel(n: &str) -> bool { n.starts_with("int_steering") }
@@ -300,14 +303,27 @@ fn main() {
     let driver_t: usize = a.get(8).and_then(|x| x.parse().ok()).unwrap_or(3000);
     let wheel_t2: usize = a.get(9).and_then(|x| x.parse().ok()).unwrap_or(2500);
     let mut interior: Vec<(Vec<V>, Vec<u32>, usize)> = Vec::new();   // (vertices, indices, budget): the cabin, the steering wheel, the driver
-    for (want, budget) in [(is_cabin as fn(&str) -> bool, cabin_t), (is_wheel as fn(&str) -> bool, wheel_t2), (is_driver as fn(&str) -> bool, driver_t)] {
+    for (wiper, want, budget) in [(is_cabin as fn(&str) -> bool, cabin_t), (is_wheel as fn(&str) -> bool, wheel_t2), (is_driver as fn(&str) -> bool, driver_t), (is_wiper_l as fn(&str) -> bool, 900), (is_wiper_r as fn(&str) -> bool, 900)].into_iter().enumerate().map(|(k, (w, b))| (k >= 3, w, b)) {
         let ps = collect(doc, &buffers, &mut tex, &|n| want(n), true);
         let (mut v, i) = merge(&ps);
         body_xf(&mut v, ground, cr, st, ct);
-        for x in &mut v { x.c[3] = 15; }
+        // the wipers are outside the cabin: black plastic in the sun, no texture
+        for x in &mut v { if wiper { x.c = [16, 16, 18, 3]; x.tex = None; } else { x.c[3] = 15; } }
         eprintln!("interior group: {} parts, {} triangles, {} of {} vertices textured", ps.len(), i.len() / 3, v.iter().filter(|x| x.tex.is_some()).count(), v.len());
         interior.push((v, i, budget));
     }
+    // the wipers: the pivot is the centre of the spindle (the `_base` node), the axis the normal of the blade's plane, pointing out of the windscreen (up)
+    let wiper_meta: Vec<([f32; 3], [f32; 3])> = [("int_wiper_fl_base", 3usize), ("int_wiper_fr_base", 4usize)].iter().map(|(base, g)| {
+        let bp = collect(doc, &buffers, &mut tex, &|n| n == *base, true);
+        let (mut bv, _) = merge(&bp);
+        body_xf(&mut bv, ground, cr, st, ct);
+        let n = bv.len().max(1) as f32;
+        let pivot = [0, 1, 2].map(|k| bv.iter().map(|v| v.p[k]).sum::<f32>() / n);
+        let (_, mut axis) = ring_pivot(&interior[*g].0.iter().map(|v| v.p).collect::<Vec<_>>());
+        if axis[1] < 0.0 { axis = axis.map(|x| -x); }
+        eprintln!("wiper {base}: pivot ({:.3}, {:.3}, {:.3}), axis ({:.3}, {:.3}, {:.3}), {} triangles", pivot[0], pivot[1], pivot[2], axis[0], axis[1], axis[2], interior[*g].1.len() / 3);
+        (pivot, axis)
+    }).collect();
     let (pivot, axis) = ring_pivot(&interior[1].0.iter().map(|v| v.p).collect::<Vec<_>>());
     eprintln!("steering wheel: pivot ({:.3}, {:.3}, {:.3}), axis ({:.3}, {:.3}, {:.3})", pivot[0], pivot[1], pivot[2], axis[0], axis[1], axis[2]);
     {
@@ -425,7 +441,7 @@ fn main() {
     let meta_vert = |p: [f32; 3], n: [f32; 3]| V { p, n, c: [0, 0, 0, 0], uv: [0.0; 2], tex: None };
     let (mv, mi) = (vec![meta_vert(pivot, axis), meta_vert(pivot, axis)], vec![0u32, 1, 1]);
     let mut out = b"RCA3".to_vec();
-    out.extend_from_slice(&11u32.to_le_bytes());
+    out.extend_from_slice(&14u32.to_le_bytes());
     write(&mut out, &sv, &si);
     for (v, i) in &simplified { write(&mut out, v, i); }
     write(&mut out, &cgv, &cgi);
@@ -433,6 +449,10 @@ fn main() {
     write(&mut out, &parts[1].0, &parts[1].1);   // the steering wheel
     write(&mut out, &mv, &mi);                   // its pivot and axis
     write(&mut out, &parts[2].0, &parts[2].1);   // the driver
+    write(&mut out, &parts[3].0, &parts[3].1);   // the driver's wiper
+    write(&mut out, &parts[4].0, &parts[4].1);   // the other wiper
+    let wmeta: Vec<V> = wiper_meta.iter().map(|(p, a)| meta_vert(*p, *a)).collect();
+    write(&mut out, &wmeta, &[0u32, 1, 1]);        // their pivots and axes (vertex 0: the driver's, 1: the other)
     eprintln!("glass {} tris, cabin {} tris, steering wheel {} tris, driver {} tris", cgi.len() / 3, parts[0].1.len() / 3, parts[1].1.len() / 3, parts[2].1.len() / 3);
     std::fs::write(&a[2], &out).unwrap();
     eprintln!("wrote {} bytes: body {} tris / {} verts; wheel {} tris, disc {} tris, caliper {} tris, gravel wheel {} tris, snow wheel {} tris", out.len(), si.len() / 3, sv.len(), simplified[0].1.len() / 3, simplified[1].1.len() / 3, simplified[2].1.len() / 3, simplified[3].1.len() / 3, simplified[4].1.len() / 3);

@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.42.0 - wipers and raindrops
+
+- Added: the Peugeot's two windscreen wipers (the model's own arms and blades, each about its spindle): parked when it is dry, sweeping in the rain - slowly in a drizzle (2.6 s a wipe), quickly in a downpour (1.3 s)
+- Added: raindrops on the glass: small lens-like drops that grow in between wipes and are cleared when the sweep starts over; more of them the harder it rains
+- Changed: `rally_car.rcar` carries up to 14 meshes (the wipers and their spindles)
+
 ## 2.41.0 - physically based lighting
 
 - Changed: all surfaces are lit by one physically based function: a GGX specular (Smith visibility, Schlick Fresnel) for the sun, the moon and the headlights, and the sky as the environment (diffuse and reflected, blurred by roughness); the car's paint, chrome, glass, rubber and the brake discs differ by roughness and metalness, and wet ground is smooth, so it mirrors the sky and the headlights; terrain, roads and foliage stay matte and cost nothing extra
