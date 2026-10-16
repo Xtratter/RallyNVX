@@ -2,6 +2,14 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.51.0 - the model's own wipers, physically based raindrops
+
+- Fixed: the wipers were the blade strips only, swinging about a point on the cowl while the arms stayed put; the moving wiper is now the model's arm and blade together, turning about the arm's own spindle, each on the axis of the model's own rig, so the pair sweeps in parallel over the glass
+- Changed: the wipers work as car wipers do: a drizzle gets an intermittent wipe (1.6 s every 5 s), a steady rain the slow speed, a downpour the fast one; the blade swings as sin squared (slow at the turns) and parks smoothly
+- Changed: raindrops on the glass are physical: each cell of the glass is hit by the rain at its own moment, so the drops appear gradually after the rain starts and grow by coalescing; after the rain they shrink by diffusion-limited evaporation (`r^2` falls linearly with time, faster in dry, moving or sunny air; the game runs it 60 times faster than life); small drops die first
+- Added: running drops: a drop that grows past the size at which the pull of the air and of gravity beats the pinning of the water on the glass (Furmidge's criterion) runs; on the windscreen at speed the air pushes drops up the glass and across (they start moving from about 65 km/h), at rest the big ones run down; the runners sweep up the water in their path and grow, and leave the glass or are swept off by the wipers
+- Changed: the drops are drawn as domes of water that mirror the sky and flash the sun, at their real size (sub-pixel drops fade by their area); the wipers clear them where the blade passes and the water returns from that moment
+
 ## 2.50.2 - the wipers sweep the right way
 
 - Fixed: the wipers swung down under the bonnet instead of up the windscreen (the axis pointed the wrong way along the glass's normal); they now lift up the glass

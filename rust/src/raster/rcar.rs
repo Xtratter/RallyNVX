@@ -295,7 +295,7 @@ mod tests {
         assert_eq!(meta.verts.len(), 2);
         for (w, m) in [l, r].iter().zip(&meta.verts) {
             let n = w.idx.len() / 3;
-            assert!((300..=1500).contains(&n), "{n} wiper triangles");
+            assert!((300..=2500).contains(&n), "{n} wiper triangles (arm and blade)");
             let len = (m.nrm[0].powi(2) + m.nrm[1].powi(2) + m.nrm[2].powi(2)).sqrt();
             assert!((len - 1.0).abs() < 0.01 && m.nrm[1] < -0.3 && m.nrm[2] < -0.2, "the axis is a unit vector pointing down and back into the car (a positive turn lifts the blade up the glass): {:?}", m.nrm);
             let (lo, hi) = w.bounds();
@@ -304,7 +304,7 @@ mod tests {
             let axis = [m.nrm[0], m.nrm[1], m.nrm[2]];
             let (mut dmin, mut dmax) = (f32::MAX, f32::MIN);
             for v in &w.verts { let d = (v.pos[0] - m.pos[0]) * axis[0] + (v.pos[1] - m.pos[1]) * axis[1] + (v.pos[2] - m.pos[2]) * axis[2]; dmin = dmin.min(d); dmax = dmax.max(d); }
-            assert!(dmax - dmin < 0.12, "the blade lies in the plane its axis is normal to (it sweeps over the glass, not through the air): thickness {}", dmax - dmin);
+            assert!(dmax - dmin < 0.16, "the blade lies in the plane its axis is normal to (it sweeps over the glass, not through the air): thickness {}", dmax - dmin);
         }
         assert!(meta.verts[0].pos[0] > meta.verts[1].pos[0], "the driver's wiper is on the +x side");
     }

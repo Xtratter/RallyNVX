@@ -48,11 +48,11 @@ fn is_cover(n: &str) -> bool {
 /// The cabin parts and the driver of the source model (the windows, wipers, dials, LEDs and indicators are left out).
 fn is_cabin(n: &str) -> bool {
     let cabin = n.starts_with("int_") || n.starts_with("Int_");
-    cabin && !["window", "dials", "LED", "INDICATOR", "glasspart", "notes", "steering"].iter().any(|b| n.contains(b)) && !(n.contains("wiper") && !n.ends_with("_base"))   // the wipers' bases stay in the cabin, the blades are their own meshes
+    cabin && !["window", "dials", "LED", "INDICATOR", "glasspart", "notes", "steering"].iter().any(|b| n.contains(b)) && !n.contains("wiper")   // the wipers (arm and blade) are their own meshes
 }
 /// The windscreen wipers (arm and blade; the game sweeps them in the rain): the driver's side (`fl`, +x) and the other.
-fn is_wiper_l(n: &str) -> bool { n == "int_wiper_fl" }
-fn is_wiper_r(n: &str) -> bool { n == "int_wiper_fr" }
+fn is_wiper_l(n: &str) -> bool { n == "int_wiper_fl" || n == "int_wiper_fl_base" }
+fn is_wiper_r(n: &str) -> bool { n == "int_wiper_fr" || n == "int_wiper_fr_base" }
 fn is_driver(n: &str) -> bool { n.starts_with("CO_DRIVER") }
 /// The instrument cluster (backlit at night) and the RPM shift LEDs (LED_RPM_1..4, lit one by one as the revs rise).
 fn is_dash(n: &str) -> bool { n.contains("dials") || n.starts_with("LED_RPM_") }
@@ -148,6 +148,17 @@ fn sample(img: &image::RgbaImage, uv: [f32; 2]) -> [f32; 3] {
         let p = img.get_pixel(sx, sy).0; acc[0] += srgb(p[0]); acc[1] += srgb(p[1]); acc[2] += srgb(p[2]); n += 1.0;
     } }
     [acc[0] / n, acc[1] / n, acc[2] / n]
+}
+
+/// The world matrix of the first node called `name`.
+fn node_world(doc: &gltf::Document, name: &str) -> Option<M4> {
+    fn go(node: gltf::Node, parent: &M4, name: &str) -> Option<M4> {
+        let m = mul(parent, &node.transform().matrix());
+        if node.name() == Some(name) { return Some(m); }
+        node.children().find_map(|c| go(c, &m, name))
+    }
+    let id: M4 = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+    doc.scenes().find_map(|s| s.nodes().find_map(|n| go(n, &id, name)))
 }
 
 fn walk(doc: &gltf::Document, buffers: &[gltf::buffer::Data], tex: &mut Textures, node: gltf::Node, parent: &M4, want: &dyn Fn(&str) -> bool, atlas: bool, out: &mut Vec<(String, Vec<V>, Vec<u32>)>) {
@@ -305,7 +316,7 @@ fn main() {
     let driver_t: usize = a.get(8).and_then(|x| x.parse().ok()).unwrap_or(3000);
     let wheel_t2: usize = a.get(9).and_then(|x| x.parse().ok()).unwrap_or(2500);
     let mut interior: Vec<(Vec<V>, Vec<u32>, usize)> = Vec::new();   // (vertices, indices, budget): the cabin, the steering wheel, the driver
-    for (wiper, want, budget) in [(is_cabin as fn(&str) -> bool, cabin_t), (is_wheel as fn(&str) -> bool, wheel_t2), (is_driver as fn(&str) -> bool, driver_t), (is_wiper_l as fn(&str) -> bool, 900), (is_wiper_r as fn(&str) -> bool, 900)].into_iter().enumerate().map(|(k, (w, b))| (k >= 3, w, b)) {
+    for (wiper, want, budget) in [(is_cabin as fn(&str) -> bool, cabin_t), (is_wheel as fn(&str) -> bool, wheel_t2), (is_driver as fn(&str) -> bool, driver_t), (is_wiper_l as fn(&str) -> bool, 2200), (is_wiper_r as fn(&str) -> bool, 2200)].into_iter().enumerate().map(|(k, (w, b))| (k >= 3, w, b)) {
         let ps = collect(doc, &buffers, &mut tex, &|n| want(n), true);
         let (mut v, i) = merge(&ps);
         body_xf(&mut v, ground, cr, st, ct);
@@ -328,21 +339,54 @@ fn main() {
         interior.push((v, i, 1500));
     }
     // the wipers: the pivot is the centre of the spindle (the `_base` node), the axis the windscreen's normal, pointing into the car
-    let wiper_meta: Vec<([f32; 3], [f32; 3])> = [("int_wiper_fl_base", 3usize), ("int_wiper_fr_base", 4usize)].iter().map(|(base, g)| {
-        let bp = collect(doc, &buffers, &mut tex, &|n| n == *base, true);
-        let (mut bv, _) = merge(&bp);
-        body_xf(&mut bv, ground, cr, st, ct);
-        let n = bv.len().max(1) as f32;
-        let pivot = [0, 1, 2].map(|k| bv.iter().map(|v| v.p[k]).sum::<f32>() / n);
-        let _ = g;
-        // the blade sweeps in the plane of the windscreen: its axis is the glass's normal (the smallest principal axis of the front window), pointing up and out
-        let wp = collect(doc, &buffers, &mut tex, &|n| n == "int_window_f", false);
-        let (mut wv, _) = merge(&wp);
-        body_xf(&mut wv, ground, cr, st, ct);
-        let (_, mut axis) = ring_pivot(&wv.iter().map(|v| v.p).collect::<Vec<_>>());
-        if axis[1] < 0.0 { axis = axis.map(|x| -x); }
-        axis = axis.map(|x| -x);   // pointing into the car: a positive turn then lifts the blade up the glass (the other way it would sink under the bonnet)
-        eprintln!("wiper {base}: pivot ({:.3}, {:.3}, {:.3}), axis ({:.3}, {:.3}, {:.3}), {} triangles", pivot[0], pivot[1], pivot[2], axis[0], axis[1], axis[2], interior[*g].1.len() / 3);
+    // the wipers: the sweep axis is the model's own (the z axis of its rig bones `WIPER_L1` and `WIPER_R1`, lying in the plane the artist put the blades in); the spindle is the
+    // end of the long piece (the arm and blade) on the +x side: both wipers park pointing towards -x, so the end they pivot about is the +x end
+    let wiper_meta: Vec<([f32; 3], [f32; 3])> = [("WIPER_L1", 3usize), ("WIPER_R1", 4usize)].iter().map(|(bone, g)| {
+        let m = node_world(doc, bone).unwrap_or_else(|| panic!("the model has no bone {bone}"));
+        let mut pts = [V { p: tp(&m, [0.0, 0.0, 0.0]), n: [0.0; 3], c: [0; 4], uv: [0.0; 2], tex: None }, V { p: tp(&m, [0.0, 0.0, 1.0]), n: [0.0; 3], c: [0; 4], uv: [0.0; 2], tex: None }];
+        body_xf(&mut pts, ground, cr, st, ct);
+        let (p0, p1) = (pts[0].p, pts[1].p);
+        let d = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+        let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1e-9);
+        let bone_axis = [d[0] / l, d[1] / l, d[2] / l];
+        // the arm (`int_wiper_*_base`, with the round spindle cap at one end) carries the blade (`int_wiper_*`): the spindle is the end of the arm farthest from the blade
+        let (arm_name, blade_name) = if *bone == "WIPER_L1" { ("int_wiper_fl_base", "int_wiper_fl") } else { ("int_wiper_fr_base", "int_wiper_fr") };
+        let mut arm = merge(&collect(doc, &buffers, &mut tex, &|n| n == arm_name, true)).0; body_xf(&mut arm, ground, cr, st, ct);
+        let mut blade_v = merge(&collect(doc, &buffers, &mut tex, &|n| n == blade_name, true)).0; body_xf(&mut blade_v, ground, cr, st, ct);
+        let nb = blade_v.len().max(1) as f32;
+        let cb = [0, 1, 2].map(|k| blade_v.iter().map(|v| v.p[k]).sum::<f32>() / nb);
+        let dist2 = |p: [f32; 3], q: [f32; 3]| (p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2);
+        let tip = arm.iter().map(|v| v.p).max_by(|a, b| dist2(*a, cb).total_cmp(&dist2(*b, cb))).expect("the wiper arm has vertices");
+        let cap: Vec<&V> = arm.iter().filter(|v| dist2(v.p, tip) < 0.035 * 0.035).collect();
+        let nc = cap.len().max(1) as f32;
+        let pivot = [0, 1, 2].map(|k| cap.iter().map(|v| v.p[k]).sum::<f32>() / nc);
+        // the sweep axis: of the rig's own (the bone's z, the spindle's z) and the windscreen's normal, the one the blade (its rubber strip lies flat on the glass) is flattest against
+        let spindle_bone = if *bone == "WIPER_L1" { "WIPER_L" } else { "WIPER_R" };
+        let spindle_axis = node_world(doc, spindle_bone).map(|m| { let mut q = [V { p: tp(&m, [0.0, 0.0, 0.0]), n: [0.0; 3], c: [0; 4], uv: [0.0; 2], tex: None }, V { p: tp(&m, [0.0, 0.0, 1.0]), n: [0.0; 3], c: [0; 4], uv: [0.0; 2], tex: None }]; body_xf(&mut q, ground, cr, st, ct); let d = [q[1].p[0] - q[0].p[0], q[1].p[1] - q[0].p[1], q[1].p[2] - q[0].p[2]]; let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1e-9); [d[0] / l, d[1] / l, d[2] / l] });
+        let win_axis = { let wp = collect(doc, &buffers, &mut tex, &|n| n == "int_window_f", false); let (mut wv, _) = merge(&wp); body_xf(&mut wv, ground, cr, st, ct); let (_, mut a) = ring_pivot(&wv.iter().map(|v| v.p).collect::<Vec<_>>()); if a[1] > 0.0 { a = a.map(|x| -x); } a };
+        let thick = |ax: [f32; 3]| { let ds: Vec<f32> = blade_v.iter().map(|v| (v.p[0] - pivot[0]) * ax[0] + (v.p[1] - pivot[1]) * ax[1] + (v.p[2] - pivot[2]) * ax[2]).collect(); ds.iter().cloned().fold(f32::MIN, f32::max) - ds.iter().cloned().fold(f32::MAX, f32::min) };
+        let mut cands = vec![("bone", bone_axis), ("window", win_axis)];
+        if let Some(sa) = spindle_axis { cands.push(("spindle", sa)); }
+        for (name, ax) in &cands { eprintln!("  axis candidate {name}: ({:.3}, {:.3}, {:.3}) thickness {:.3}", ax[0], ax[1], ax[2], thick(*ax)); }
+        let (_, axis) = *cands.iter().min_by(|a, b| thick(a.1).total_cmp(&thick(b.1))).unwrap();
+        let blade = &interior[*g].0;
+        eprintln!("wiper {bone}: pivot ({:.3}, {:.3}, {:.3}), axis ({:.3}, {:.3}, {:.3}), {} triangles", pivot[0], pivot[1], pivot[2], axis[0], axis[1], axis[2], blade.len() / 3);
+        if let Ok(path) = std::env::var("WIPER_DUMP") {
+            // debug: the blade's and the base's triangles in the sweep plane (x along the parked blade, y across), as lines of "x0 y0 x1 y1 x2 y2"
+            let rest = { let far = blade.iter().map(|v| v.p).max_by(|a, b| ((a[0] - pivot[0]).powi(2) + (a[1] - pivot[1]).powi(2) + (a[2] - pivot[2]).powi(2)).total_cmp(&((b[0] - pivot[0]).powi(2) + (b[1] - pivot[1]).powi(2) + (b[2] - pivot[2]).powi(2)))).unwrap(); [far[0] - pivot[0], far[1] - pivot[1], far[2] - pivot[2]] };
+            let dotp = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+            let flat = { let k = dotp(rest, axis); [rest[0] - axis[0] * k, rest[1] - axis[1] * k, rest[2] - axis[2] * k] };
+            let fl = dotp(flat, flat).sqrt(); let ex = [flat[0] / fl, flat[1] / fl, flat[2] / fl];
+            let ey = [axis[1] * ex[2] - axis[2] * ex[1], axis[2] * ex[0] - axis[0] * ex[2], axis[0] * ex[1] - axis[1] * ex[0]];
+            let proj = |p: [f32; 3]| { let d = [p[0] - pivot[0], p[1] - pivot[1], p[2] - pivot[2]]; (dotp(d, ex), dotp(d, ey), dotp(d, axis)) };
+            let mut out = String::new();
+            let bn = if *bone == "WIPER_L1" { "int_wiper_fl_base" } else { "int_wiper_fr_base" };
+            let bp = collect(doc, &buffers, &mut tex, &|n| n == bn, true); let (mut bv, bi) = merge(&bp); body_xf(&mut bv, ground, cr, st, ct);
+            for (tag, vs, is) in [("blade", &interior[*g].0, &interior[*g].1), ("base", &bv, &bi)] {
+                for t in is.chunks_exact(3) { let (a, b, c) = (proj(vs[t[0] as usize].p), proj(vs[t[1] as usize].p), proj(vs[t[2] as usize].p)); out += &format!("{tag} {} {} {} {} {} {} {} {} {}\n", a.0, a.1, a.2, b.0, b.1, b.2, c.0, c.1, c.2); }
+            }
+            let _ = std::fs::write(format!("{path}_{bone}.txt"), out);
+        }
         (pivot, axis)
     }).collect();
     let (pivot, axis) = ring_pivot(&interior[1].0.iter().map(|v| v.p).collect::<Vec<_>>());
