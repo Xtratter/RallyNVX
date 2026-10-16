@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.66.0 - the test track
+
+- Added: "Test track" in the main menu: a bare, flat, endless sheet of tarmac (no trees, rocks, grass, water or roads) with white lines every 50 m (and bold ones every 250 m) to see the speed against, the car standing on it from the start. For trying the sound, the drivetrain, the flames and the handling. The ground is real tarmac for the grip, the dust and the tyre sound, and gets the wet-road look in the rain; "New level" leaves the track
+
 ## 2.65.1 - the game starts again
 
 - Fixed: 2.65.0 hung on the loading screen at "Compiling shaders 64 %". The flame added a model slot, and the check that every slot has its mesh failed at start: the game thread died and nothing drew, while the loading screen waited for ever. The flame's mesh is in the list now

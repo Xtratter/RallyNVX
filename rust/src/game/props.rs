@@ -14,6 +14,7 @@ pub struct Prop { pub kind: PropKind, pub pos: V3, pub radius: f32, pub height: 
 
 pub fn tile_props(t: &Terrain, tx: i32, tz: i32) -> Vec<Prop> {
     let mut out = Vec::new();
+    if t.is_flat_test() { return out; }   // the test track is bare
     for k in 0..PER_TILE {
         let a = hash01(t.seed ^ 0x51, tx.wrapping_mul(64).wrapping_add(k), tz);
         let b = hash01(t.seed ^ 0x52, tx, tz.wrapping_mul(64).wrapping_add(k));

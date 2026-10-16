@@ -388,6 +388,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Native.gameSigns(Controls.signs(this))
         Native.gameCameraView(camView, camDist, camHeight)
         Native.gameGearMode(if (manual) 1 else 0)
+        if (intent.getBooleanExtra("testtrack", false)) Native.gameTestTrack()   // from the main menu: a flat sheet of tarmac to try the sound and the controls
         running = true
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
         intent.getIntExtra("hybrid", -1).let { if (it >= 0) { Native.gameRenderMode(it); sentRender = it } }   // debug/test: force a render mode
