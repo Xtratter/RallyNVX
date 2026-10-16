@@ -82,13 +82,15 @@ pub struct Engine {
     pub gas_torque: f64, pub clutch_torque: f64,
     /// The boost (the pressure of the air before the throttle over the atmosphere's, 1 = none).
     pub boost: f64,
+    /// The air going through the throttle (mol/s): the rush the intake makes.
+    pub air_flow: f64,
 }
 
 impl Engine {
     pub fn new(spec: EngineSpec) -> Engine {
         let cyl = (0..spec.cylinders).map(|_| Cylinder { gas: Gas::air(spec.displacement() / spec.cylinders as f64 / (spec.compression - 1.0), P_ATM, T_ATM), runner: Gas::air(spec.runner, P_ATM, T_ATM), burn: Burn::default(), angle: 0.0 }).collect();
         Engine { spec, cyl, plenum: Gas::air(spec.plenum, P_ATM, T_ATM), collector: Gas::air(spec.collector, P_ATM, T_ATM), atmosphere: Gas::air(1000.0, P_ATM, T_ATM), supply: Gas::air(1000.0, P_ATM, T_ATM),
-            theta: 0.0, omega: 0.0, idle_i: 0.0, fuel_cut: false, controls: Controls::default(), gas_torque: 0.0, clutch_torque: 0.0, boost: 1.0 }
+            theta: 0.0, omega: 0.0, idle_i: 0.0, fuel_cut: false, controls: Controls::default(), gas_torque: 0.0, clutch_torque: 0.0, boost: 1.0, air_flow: 0.0 }
     }
 
     pub fn rpm(&self) -> f64 { self.omega * 60.0 / TAU }
@@ -130,7 +132,7 @@ impl Engine {
         self.supply.e = 0.5 * gas::F_DOF * (P_ATM * self.boost * self.supply.v) / 1.0 * 1.0;
         self.supply.n = self.supply.e * 2.0 / (gas::F_DOF * gas::R * T_ATM);
         self.supply.o2 = 0.21 * self.supply.n; self.supply.fuel = 0.0;
-        flow(&mut self.supply, &mut self.plenum, a_throttle * 0.9, dt);
+        self.air_flow = flow(&mut self.supply, &mut self.plenum, a_throttle * 0.9, dt) / dt;
         // the engine's torque
         let mut torque = 0.0;
         let a_bore = self.bore_area(); let clear = self.clearance_volume();

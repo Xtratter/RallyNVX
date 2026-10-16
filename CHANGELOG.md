@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.62.1 - the engine is heard again, no more hiss
+
+- Fixed: in 2.62.0 the engine drowned in a continuous hiss. The measurement of the model's sources showed two faults: the steady pressure of the pipes (the intake's depression on a closed throttle, the exhaust's back pressure) was passed on as a huge offset that saturated the output, and the intake's rush noise was driven by that pressure instead of by the air flowing through the throttle (at idle it was fifteen times louder than the exhaust). The steady part is now filtered out of the pipes, the rush follows the air flow, and a partial leveller keeps the idle audible and the roar from deafening (the loudness changes by the square root of the engine's real change). At idle the exhaust is now the main sound, the intake and the block are a tenth of it
+
 ## 2.62.0 - a simulated engine (engine model, block B)
 
 - Added: the engine's sound now comes from a simulated engine instead of a stack of harmonics. A two-litre four (85 x 88 mm, 8.5:1, firing order 1-3-4-2) runs on the audio thread at the level of the gas: every cylinder is a volume that follows the crank, the valves open by crank angle and pass the charge and the burnt gas through orifices (isentropic, subsonic and choked), the fuel burns from the spark by a Wiebe curve and the pressure pushes the crank. The pressure at the exhaust collector goes through an exhaust pipe (a waveguide that rings at its quarter-wave resonances) and out of the tail pipe; the intake plenum goes through the intake pipe and the throttle's rush; the combustion shakes the block. It follows engine-sim (MIT) in its ideas, with our own code
