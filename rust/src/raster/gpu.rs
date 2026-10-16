@@ -674,11 +674,15 @@ impl Raster {
             self.airflow_tried = true;
             self.airflow = airflow_gpu::AirflowGpu::new(&self.adapter, &self.device, self.config.format);
         }
+        // the headlights' beam in the air is drawn by the low-resolution dust pass, so that pass runs with the lights on even without GPU dust
+        let beam_on = wv.lights.head;
         if wv.dust_gpu.is_some() && self.dust_gpu.is_none() {
             self.dust_gpu = Some(dust_gpu::DustGpu::new(&self.device, &self.queue, &self.dep_tex));
+        }
+        if (wv.dust_gpu.is_some() || beam_on) && self.dust_render.is_none() {
             self.dust_render = Some(dust_gpu::DustRender::new(&self.device, &self.bgl_main_keep, &self.module_keep, self.config.format));
         }
-        let dust_low = wv.dust_gpu.is_some() && self.dust_render.is_some();
+        let dust_low = (wv.dust_gpu.is_some() || beam_on) && self.dust_render.is_some();
         let blur_params = blur_gpu::params(BLUR_LEVEL.load(std::sync::atomic::Ordering::Relaxed)).filter(|_| self.config.usage.contains(wgpu::TextureUsages::COPY_SRC));
         if blur_params.is_some() && self.blur.is_none() { self.blur = Some(blur_gpu::MotionBlur::new(&self.device, self.config.format)); }
         let blur_on = blur_params.is_some() && self.blur.is_some();
@@ -829,8 +833,9 @@ impl Raster {
             }
         }
         if let Some(p) = &self.prof { p.mark(&mut enc, 3); }
-        if let (true, Some(dg), Some(dr)) = (dust_low, self.dust_gpu.as_ref(), self.dust_render.as_mut()) {
-            dr.draw(&self.device, &mut enc, &view, &self.depth.1, &self.bg_main, dg.render_buffer(), dg.count(), (self.config.width, self.config.height));
+        if let (true, Some(dr)) = (dust_low, self.dust_render.as_mut()) {
+            let (buf, count) = match (self.dust_gpu.as_ref(), wv.dust_gpu.is_some()) { (Some(dg), true) => (Some(dg.render_buffer()), dg.count()), _ => (None, 0) };
+            dr.draw(&self.device, &mut enc, &view, &self.depth.1, &self.bg_main, buf, count, beam_on, (self.config.width, self.config.height));
         }
         if let Some(p) = &self.prof { p.mark(&mut enc, 4); }
         if let (Some(af), Some(_), true) = (self.airflow.as_ref(), wv.airflow.as_ref(), crate::game::airflow::debug_on()) {

@@ -91,6 +91,17 @@ pub fn beam_gain(lamp: V3, fwd: V3, right: V3, p: V3) -> f32 {
 pub fn tail_gain(tail: V3, fwd: V3, p: V3) -> f32 { smooth(0.3, 1.0, (p - tail).dot(-fwd)) }
 fn smooth(a: f32, b: f32, x: f32) -> f32 { let t = ((x - a) / (b - a)).clamp(0.0, 1.0); t * t * (3.0 - 2.0 * t) }
 
+/// Whether the light of a lamp at `lamp` reaches `p` (0..1): four samples along the ray; the terrain `height` more than 25 cm above the ray blocks it, less than 5 cm above lets it through.
+/// Mirrors `raster.wgsl::beam_visible`: a crest between the car and a point keeps the beam off the ground behind it.
+pub fn beam_visible(lamp: V3, p: V3, height: impl Fn(f32, f32) -> f32) -> f32 {
+    let mut vis = 1.0f32;
+    for k in 1..=4 {
+        let q = lamp + (p - lamp) * (k as f32 / 5.0);
+        vis = vis.min(smooth(-0.25, 0.05, q.y - height(q.x, q.z)));
+    }
+    vis
+}
+
 /// The beam of both lamps at `p`, the mean of the two.
 pub fn beam(l: &Lamps, right: V3, p: V3) -> f32 { 0.5 * (beam_gain(l.head[0], l.head_dir, right, p) + beam_gain(l.head[1], l.head_dir, right, p)) }
 

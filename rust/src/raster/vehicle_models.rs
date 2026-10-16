@@ -28,14 +28,14 @@ pub const MAT_CARINT: u8 = 15;
 pub fn near_for(dist: f32) -> f32 { if dist < 2.5 { 0.08 } else { 0.3 } }
 
 /// Beyond this camera distance (metres) the car's windows are solid dark glass and the interior is not drawn.
-pub const INTERIOR_RANGE: f32 = 16.0;
+pub const INTERIOR_RANGE: f32 = 8.0;
 /// Whether the interior is drawn for a camera `dist` metres from the car.
 pub fn draw_interior(dist: f32) -> bool { dist < INTERIOR_RANGE }
 
-/// The alpha of the car's glass: 0.2 + 0.3 fresnel near the car, rising to 0.95 between 9 and 16 m of camera distance (the cabin must not show through from afar);
+/// The alpha of the car's glass: 0.2 + 0.3 fresnel near the car, rising to 0.95 between 4 and 8 m of camera distance (the cabin must not show through from afar);
 /// a clear lamp cover (`clear` 1) is a quarter as strong. Mirrored in `raster.wgsl::fs_glass`.
 pub fn glass_alpha(dist: f32, fresnel: f32, clear: f32) -> f32 {
-    let t = ((dist - 9.0) / 7.0).clamp(0.0, 1.0); let t = t * t * (3.0 - 2.0 * t);
+    let t = ((dist - 4.0) / 4.0).clamp(0.0, 1.0); let t = t * t * (3.0 - 2.0 * t);
     let near = (0.2 + 0.3 * fresnel.clamp(0.0, 1.0)) * (1.0 - 0.75 * clear.clamp(0.0, 1.0));
     (near + (0.95 - near) * t * (1.0 - 0.75 * clear.clamp(0.0, 1.0))).clamp(0.0, 1.0)
 }
