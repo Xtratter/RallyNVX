@@ -55,7 +55,7 @@ const SLOPE: [f32; 2] = [0.0, -0.46];
     assert!(static_drop_radius(1.5, 0.0, 1.0, 0.5, 9.0) > 1.0);
 }
 
-fn screen() -> Windscreen { Windscreen { origin: [0.0, 1.1, 0.7], u: [1.0, 0.0, 0.0], v: [0.0, 0.46, -0.89], n: [0.0, 0.89, 0.46], u_range: [-0.6, 0.6], v_range: [-0.3, 0.3] } }
+fn screen() -> Windscreen { Windscreen { origin: [0.0, 1.1, 0.7], u: [1.0, 0.0, 0.0], v: [0.0, 0.46, -0.89], n: [0.0, 0.89, 0.46], u_range: [-0.6, 0.6], v_range: [-0.3, 0.3], hull: [[0.0; 2]; 24], hull_n: 0 } }
 fn nowhere(_: f32, _: f32) -> bool { false }
 
 #[test] fn the_film_wets_in_the_rain_dries_after_it_and_a_new_rain_wets_it_again() {
@@ -121,4 +121,14 @@ fn nowhere(_: f32, _: f32) -> bool { false }
     assert!(Windscreen::from_glass(&verts[4..], &[0, 1, 2, 0, 2, 3]).is_none(), "the rear window is no windscreen");
     let p = s.at(0.0, 0.0);
     assert!((p[1] - s.origin[1]).abs() < 1e-5);
+}
+
+#[test] fn the_hull_of_a_trapezoid_is_its_four_corners_and_contains_its_inside() {
+    let h = convex_hull(&[[0.0, 0.0], [1.0, 0.0], [0.8, 0.5], [0.2, 0.5], [0.5, 0.2], [0.5, 0.1]]);
+    assert_eq!(h.len(), 4, "{h:?}");
+    let mut s = screen();
+    s.hull_n = h.len();
+    for (k, p) in h.iter().enumerate() { s.hull[k] = *p; }
+    assert!(s.inside(0.5, 0.25, 0.0) && !s.inside(0.95, 0.45, 0.0) && !s.inside(-0.1, 0.1, 0.0), "the slanted sides cut the corners off");
+    assert!(!s.inside(0.5, 0.01, 0.05), "a margin keeps off the edge");
 }

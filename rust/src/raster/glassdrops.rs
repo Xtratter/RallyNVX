@@ -79,7 +79,9 @@ pub fn static_drop_radius(r0: f32, arrival: f32, water: f32, evap: f32, cap: f32
 
 /// The plane of the windscreen in the car's object space, where the running drops live.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Windscreen { pub origin: [f32; 3], pub u: [f32; 3], pub v: [f32; 3], pub n: [f32; 3], pub u_range: [f32; 2], pub v_range: [f32; 2] }
+pub struct Windscreen { pub origin: [f32; 3], pub u: [f32; 3], pub v: [f32; 3], pub n: [f32; 3], pub u_range: [f32; 2], pub v_range: [f32; 2],
+    /// The glass's outline in plane coordinates: the convex hull of its points (`hull_n` of them).
+    pub hull: [[f32; 2]; 24], pub hull_n: usize }
 
 fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] { [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
 fn dot(a: [f32; 3], b: [f32; 3]) -> f32 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
@@ -114,14 +116,65 @@ impl Windscreen {
         if v[1] < 0.0 { v = [-v[0], -v[1], -v[2]]; }   // v runs up the slope
         let (mut ur, mut vr) = ([f32::MAX, f32::MIN], [f32::MAX, f32::MIN]);
         for p in &pts { let d = sub(*p, origin); let (a, b) = (dot(d, u), dot(d, v)); ur = [ur[0].min(a), ur[1].max(a)]; vr = [vr[0].min(b), vr[1].max(b)]; }
-        Some(Windscreen { origin, u, v, n, u_range: ur, v_range: vr })
+        let mut s = Windscreen { origin, u, v, n, u_range: ur, v_range: vr, hull: [[0.0; 2]; 24], hull_n: 0 };
+        let flat: Vec<[f32; 2]> = pts.iter().map(|p| { let d = sub(*p, origin); [dot(d, u), dot(d, v)] }).collect();
+        let h = convex_hull(&flat);
+        s.hull_n = h.len().min(24);
+        for (k, p) in h.iter().take(24).enumerate() { s.hull[k] = *p; }
+        Some(s)
     }
     /// The object-space point at plane coordinates `(a, b)`.
     pub fn at(&self, a: f32, b: f32) -> [f32; 3] { [self.origin[0] + self.u[0] * a + self.v[0] * b, self.origin[1] + self.u[1] * a + self.v[1] * b, self.origin[2] + self.u[2] * a + self.v[2] * b] }
     /// A vector of the object space as components in the plane.
     pub fn project(&self, w: [f32; 3]) -> [f32; 2] { [dot(w, self.u), dot(w, self.v)] }
+    /// Whether plane coordinates are inside the glass's outline, `margin` metres in from its edge.
+    pub fn inside(&self, a: f32, b: f32, margin: f32) -> bool {
+        let n = self.hull_n;
+        if n < 3 { return self.contains(a, b, margin); }
+        (0..n).all(|k| {
+            let (p, q) = (self.hull[k], self.hull[(k + 1) % n]);
+            let (ex, ey) = (q[0] - p[0], q[1] - p[1]);
+            let len = (ex * ex + ey * ey).sqrt().max(1e-9);
+            ((b - p[1]) * ex - (a - p[0]) * ey) / len >= margin   // counter-clockwise hull: the inside is to the left of every edge
+        })
+    }
     /// Whether plane coordinates are inside the glass's bounding box (shrunk by `margin` metres).
     pub fn contains(&self, a: f32, b: f32, margin: f32) -> bool { a > self.u_range[0] + margin && a < self.u_range[1] - margin && b > self.v_range[0] + margin && b < self.v_range[1] - margin }
+}
+
+/// The outward normal of the glass near `p` (within `radius` metres): the area-weighted average of the normals of the forward-and-up facing triangles whose centre is that close.
+/// `None` when there are none. The wipers sweep about it, so they stay on the (curved) glass.
+pub fn local_normal(verts: &[[f32; 3]], idx: &[u32], p: [f32; 3], radius: f32) -> Option<[f32; 3]> {
+    let mut sum = [0.0f32; 3];
+    for t in idx.chunks_exact(3) {
+        let (a, b, c) = (verts[t[0] as usize], verts[t[1] as usize], verts[t[2] as usize]);
+        let f = cross(sub(b, a), sub(c, a));
+        let area = dot(f, f).sqrt();
+        if area < 1e-9 { continue; }
+        let mut n = [f[0] / area, f[1] / area, f[2] / area];
+        if n[1] < 0.0 { n = [-n[0], -n[1], -n[2]]; }
+        let cen = [(a[0] + b[0] + c[0]) / 3.0, (a[1] + b[1] + c[1]) / 3.0, (a[2] + b[2] + c[2]) / 3.0];
+        let d = sub(cen, p);
+        if n[1] > 0.45 && n[2] > 0.3 && dot(d, d).sqrt() < radius { for k in 0..3 { sum[k] += n[k] * area; } }
+    }
+    if dot(sum, sum) < 1e-12 { None } else { Some(norm(sum)) }
+}
+
+/// The convex hull (counter-clockwise) of 2D points, Andrew's monotone chain.
+pub fn convex_hull(pts: &[[f32; 2]]) -> Vec<[f32; 2]> {
+    let mut p: Vec<[f32; 2]> = pts.iter().cloned().filter(|q| q[0].is_finite() && q[1].is_finite()).collect();
+    p.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+    p.dedup();
+    if p.len() < 3 { return p; }
+    let cross = |o: [f32; 2], a: [f32; 2], b: [f32; 2]| (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    let mut h: Vec<[f32; 2]> = Vec::new();
+    for &q in &p { while h.len() >= 2 && cross(h[h.len() - 2], h[h.len() - 1], q) <= 0.0 { h.pop(); } h.push(q); }
+    let lower = h.len() + 1;
+    for &q in p.iter().rev().skip(1) { while h.len() >= lower && cross(h[h.len() - 2], h[h.len() - 1], q) <= 0.0 { h.pop(); } h.push(q); }
+    h.pop();
+    // thin the hull to what the fixed array holds, keeping its shape: every k-th point
+    while h.len() > 24 { h = h.iter().enumerate().filter(|(i, _)| i % 2 == 0).map(|(_, q)| *q).collect(); }
+    h
 }
 
 /// A drop that runs down (or up, or across) the windscreen.

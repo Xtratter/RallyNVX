@@ -646,7 +646,7 @@ fn drop_light(offs: vec2<f32>, rr: f32, jx: vec3<f32>, jy: vec3<f32>, nw: vec3<f
 // The time (in cycles) since a wiper blade last passed the point `lp` of the glass, or -1 where the blade never goes. The blade's angle there is the angle round the spindle from
 // the parked direction; the blade reaches it on the way up at the phase where the sweep curve (smoothstep of a clipped triangle, see `wiper_angle_at`) equals that angle,
 // and again on the way back.
-fn wiper_pass_age(lp: vec3<f32>, pivot_reach: vec4<f32>, axis: vec3<f32>, rest: vec3<f32>, cyc: f32) -> f32 {
+fn wiper_pass_age(lp: vec3<f32>, pivot_reach: vec4<f32>, axis: vec3<f32>, rest: vec3<f32>, sweep: f32, cyc: f32) -> f32 {
     if (pivot_reach.w <= 0.0) { return -1.0; }
     let r = lp - pivot_reach.xyz;
     let rp = r - axis * dot(r, axis);
@@ -655,8 +655,8 @@ fn wiper_pass_age(lp: vec3<f32>, pivot_reach: vec4<f32>, axis: vec3<f32>, rest: 
     let x = dot(rp, rest);
     let y = dot(rp, cross(axis, rest));
     let th = atan2(y, x);
-    if (th < 0.0 || th > 1.15) { return -1.0; }
-    let f = clamp(th / 1.15, 0.0, 1.0);
+    if (th < 0.0 || th > sweep) { return -1.0; }
+    let f = clamp(th / sweep, 0.0, 1.0);
     let uu = asin(sqrt(f)) / 3.14159265;                          // the sweep angle is sin^2(pi u) of the wipe's progress u: this is its inverse (up stroke; the way back is 1 - u)
     let wipe = max(u.wph.z, 0.05);
     let up = uu * wipe;
@@ -700,8 +700,8 @@ fn wiper_pass_age(lp: vec3<f32>, pivot_reach: vec4<f32>, axis: vec3<f32>, rest: 
     if (clear < 0.5 && dist < 14.0 && (water > 0.001 || u.film.w > 0.5)) {
         var wiped_s = -1.0;                                      // seconds since a blade last passed this point, where one reaches
         if (u.wph.y > 0.5) {
-            let a0 = wiper_pass_age(i.lp, u.wp0, u.wax0.xyz, u.wrs0.xyz, u.wph.x);
-            let a1 = wiper_pass_age(i.lp, u.wp1, u.wax1.xyz, u.wrs1.xyz, u.wph.x);
+            let a0 = wiper_pass_age(i.lp, u.wp0, u.wax0.xyz, u.wrs0.xyz, u.wax0.w, u.wph.x);
+            let a1 = wiper_pass_age(i.lp, u.wp1, u.wax1.xyz, u.wrs1.xyz, u.wax1.w, u.wph.x);
             if (a0 >= 0.0 && a1 >= 0.0) { wiped_s = min(a0, a1) * u.wph.w; } else if (a0 >= 0.0) { wiped_s = a0 * u.wph.w; } else if (a1 >= 0.0) { wiped_s = a1 * u.wph.w; }
         }
         var nw = normalize(i.n);

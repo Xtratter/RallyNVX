@@ -151,7 +151,9 @@ pub struct CarModel { pub body: Mesh3, pub wheel: Mesh3, pub disc: Option<Mesh3>
     /// The driver's gloves, stored shifted by the steering wheel's pivot so that they turn with the wheel.
     pub gloves: Option<Mesh3>,
     /// The windscreen's plane in the body's frame, where the running raindrops live (found from the glass mesh).
-    pub windscreen: Option<super::glassdrops::Windscreen> }
+    pub windscreen: Option<super::glassdrops::Windscreen>,
+    /// How far (radians) the wipers sweep: the largest angle at which both blades stay on the glass.
+    pub wiper_sweep: f32 }
 
 /// The steering wheel of a car model: its mesh is stored shifted by `-pivot` so that it turns about the origin; `pivot` is where the wheel's centre is in the body frame,
 /// `axis` its axis (a unit vector towards the driver).
@@ -162,7 +164,7 @@ pub struct Steering { pub mesh: Mesh3, pub pivot: V3, pub axis: V3 }
 pub fn steering_wheel_angle(steer: f32) -> f32 { if steer.is_finite() { (-steer * 5.5).clamp(-3.8, 3.8) } else { 0.0 } }
 
 /// How far the wipers sweep (radians) from their parked position.
-pub const WIPER_SWEEP: f32 = 1.15;
+pub const WIPER_SWEEP: f32 = 1.0;
 
 /// The wipers' cycle in `rain` (0..1) as `(period, wipe)`: the period in seconds and the share of it spent wiping (the rest is a pause at the park position). A drizzle gets an
 /// intermittent wipe (a 1.6 s sweep every 5 s), a steady rain the slow speed (1.8 s a cycle) and a downpour the fast one (1.15 s), as car wipers do.
@@ -210,6 +212,26 @@ impl WiperState {
 pub struct Wiper { pub mesh: Mesh3, pub pivot: V3, pub axis: V3, pub rest: V3, pub reach: f32 }
 
 impl Wiper {
+    /// The largest sweep (radians, at most `WIPER_SWEEP`) at which the whole blade stays on the glass: the arm is as long as the glass is high, and swung too far it would
+    /// point out over the pillar. Scans the blade's length at each angle against the glass's outline, 2 cm in from its edge.
+    pub fn max_sweep(&self, screen: &super::glassdrops::Windscreen) -> f32 {
+        let axis = self.axis;
+        let side = axis.cross(self.rest);
+        let mut th = WIPER_SWEEP;
+        while th > 0.2 {
+            let (c, s) = (th.cos(), th.sin());
+            let dir = self.rest * c + side * s;
+            let on_glass = (5..=10).all(|k| {   // the outer half: the arm's root sits at the glass's lower edge, off it
+                let d = self.reach * 0.1 * k as f32 * 0.93;
+                let p = self.pivot + dir * d;
+                let rel = [p.x - screen.origin[0], p.y - screen.origin[1], p.z - screen.origin[2]];
+                screen.inside(rel[0] * screen.u[0] + rel[1] * screen.u[1] + rel[2] * screen.u[2], rel[0] * screen.v[0] + rel[1] * screen.v[1] + rel[2] * screen.v[2], 0.0)
+            });
+            if on_glass { return th; }
+            th -= 0.02;
+        }
+        0.2
+    }
     /// Builds a wiper from its mesh (already shifted so the spindle is the origin), finding the rest direction and the reach from the farthest vertex.
     pub fn new(mesh: Mesh3, pivot: V3, axis: V3) -> Wiper {
         let far = mesh.verts.iter().map(|v| v3(v.pos[0], v.pos[1], v.pos[2])).max_by(|a, b| a.len().total_cmp(&b.len())).unwrap_or(v3(1.0, 0.0, 0.0));
@@ -230,7 +252,7 @@ pub fn dash_rpm(speed: f32, max_speed: f32) -> f32 {
 pub fn draw_driver(dist: f32) -> bool { dist >= 1.2 }
 
 impl CarModel {
-    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None], glass: None, interior: None, steering: None, driver: None, wipers: [None, None], gloves: None, windscreen: None } }
+    pub fn new(body: Mesh3, wheel: Mesh3) -> Self { Self { body, wheel, disc: None, caliper: None, alt_wheels: [None, None], glass: None, interior: None, steering: None, driver: None, wipers: [None, None], gloves: None, windscreen: None, wiper_sweep: WIPER_SWEEP } }
     /// The wheel mesh of a wheel set (0 tarmac, 1 gravel, 2 snow); a set the model does not have shows the tarmac wheel.
     pub fn wheel_for(&self, set: u8) -> &Mesh3 {
         match set { 1 | 2 => self.alt_wheels[set as usize - 1].as_ref().unwrap_or(&self.wheel), _ => &self.wheel }
