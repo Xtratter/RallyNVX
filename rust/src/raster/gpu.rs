@@ -308,15 +308,17 @@ impl Raster {
                 ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false } },
             wgpu::BindGroupLayoutEntry { binding: 11, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering) },
+            wgpu::BindGroupLayoutEntry { binding: 12, visibility: wgpu::ShaderStages::FRAGMENT, count: None,
+                ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false } },
         ] });
         // the rally car's atlases (JPEGs in the assets, mips built here): the livery and the interior; a missing or broken file leaves a white texel (the car keeps its vertex colours)
-        let atlas_texture = |label: &str, jpeg: &[u8]| -> (wgpu::TextureView, wgpu::Sampler) {
+        let atlas_texture = |label: &str, jpeg: &[u8], format: wgpu::TextureFormat| -> (wgpu::TextureView, wgpu::Sampler) {
             let (lw, lh, lmips) = match livery::decode(jpeg) {
                 Some((w, h, px)) => (w, h, livery::mips(&px, w, h)),
-                None => { log::warn!("{label} atlas unusable; the car keeps its vertex colours"); (1, 1, vec![(1, 1, vec![255u8; 4])]) }
+                None => { log::warn!("{label} atlas unusable; the car keeps its vertex colours"); (1, 1, vec![(1, 1, vec![128u8, 128, 255, 255])]) }
             };
             let tex = device.create_texture(&wgpu::TextureDescriptor { label: Some(label), size: wgpu::Extent3d { width: lw, height: lh, depth_or_array_layers: 1 }, mip_level_count: lmips.len() as u32, sample_count: 1,
-                dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8UnormSrgb, usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, view_formats: &[] });
+                dimension: wgpu::TextureDimension::D2, format, usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, view_formats: &[] });
             for (level, (w, h, px)) in lmips.iter().enumerate() {
                 queue.write_texture(wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: level as u32, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
                     px, wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(*h) }, wgpu::Extent3d { width: *w, height: *h, depth_or_array_layers: 1 });
@@ -325,8 +327,9 @@ impl Raster {
                 address_mode_u: wgpu::AddressMode::ClampToEdge, address_mode_v: wgpu::AddressMode::ClampToEdge, anisotropy_clamp: 4, ..Default::default() });
             (tex.create_view(&Default::default()), smp)
         };
-        let (livery_view, livery_smp) = atlas_texture("livery", livery::LIVERY);
-        let (interior_view, interior_smp) = atlas_texture("interior", livery::INTERIOR);
+        let (livery_view, livery_smp) = atlas_texture("livery", livery::LIVERY, wgpu::TextureFormat::Rgba8UnormSrgb);
+        let (interior_view, interior_smp) = atlas_texture("interior", livery::INTERIOR, wgpu::TextureFormat::Rgba8UnormSrgb);
+        let (normal_view, _) = atlas_texture("normal", livery::NORMAL, wgpu::TextureFormat::Rgba8Unorm);
         let dep_tex = device.create_texture(&wgpu::TextureDescriptor { label: Some("dust_layer"), size: wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1,
             dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8Unorm, usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING, view_formats: &[] });
         let dep_view = dep_tex.create_view(&Default::default());
@@ -344,6 +347,7 @@ impl Raster {
             wgpu::BindGroupEntry { binding: 9, resource: wgpu::BindingResource::Sampler(&livery_smp) },
             wgpu::BindGroupEntry { binding: 10, resource: wgpu::BindingResource::TextureView(&interior_view) },
             wgpu::BindGroupEntry { binding: 11, resource: wgpu::BindingResource::Sampler(&interior_smp) },
+            wgpu::BindGroupEntry { binding: 12, resource: wgpu::BindingResource::TextureView(&normal_view) },
         ] });
         let bg_shadow = device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("raster_shadow"), layout: &bgl_shadow,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() }] });

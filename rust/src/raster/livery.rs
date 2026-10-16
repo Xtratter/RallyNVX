@@ -6,6 +6,9 @@ pub const LIVERY: &[u8] = include_bytes!("../../assets/rally_car_livery.jpg");
 /// The interior atlas (the cabin and the driver), see docs/vehicles.md.
 pub const INTERIOR: &[u8] = include_bytes!("../../assets/rally_car_interior.jpg");
 
+/// The normal-map atlas (half the livery's size, the same layout; flat where a texture has no normal map), see docs/vehicles.md.
+pub const NORMAL: &[u8] = include_bytes!("../../assets/rally_car_normal.jpg");
+
 const MAX_SIDE: u32 = 8192;
 
 /// RGBA8 pixels of a JPEG: `(width, height, pixels)`; `None` for anything that is not a sane JPEG.

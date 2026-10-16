@@ -12,6 +12,7 @@ struct U {
 @group(0) @binding(9) var livery_smp: sampler;
 @group(0) @binding(10) var interior_tex: texture_2d<f32>;   // the interior atlas (the cabin and the driver, sRGB)
 @group(0) @binding(11) var interior_smp: sampler;
+@group(0) @binding(12) var normal_tex: texture_2d<f32>;   // the normal-map atlas (linear, half the livery's size, the same layout)
 @group(0) @binding(7) var dep_tex: texture_2d<f32>;   // the settled dust layer of the ground window (R = amount), 64 x 64 cells of 1 m
 @group(0) @binding(3) var mat_tex: texture_2d_array<f32>;
 @group(0) @binding(4) var mat_smp: sampler;
@@ -135,6 +136,15 @@ fn terrain_shadow(wp: vec3<f32>, sun: vec3<f32>) -> f32 {
 
 fn lit(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return shade(albedo, wp, n, 0.92, 0.0);
+}
+
+// Screen-space bump mapping (Mikkelsen): tilts `n` by the screen-space gradient of a height `h` (metres of relief), no tangents needed. Must run in uniform control flow.
+fn bump(n: vec3<f32>, wp: vec3<f32>, h: f32) -> vec3<f32> {
+    let dpx = dpdx(wp); let dpy = dpdy(wp);
+    let r1 = cross(dpy, n); let r2 = cross(n, dpx);
+    let det = dot(dpx, r1);
+    let grad = sign(det) * (dpdx(h) * r1 + dpdy(h) * r2);
+    return normalize(abs(det) * n - grad);
 }
 
 // roughness 0 (mirror) .. 1 (matte), metalness 0 (dielectric) .. 1 (metal)
@@ -368,7 +378,10 @@ fn dust_layer(wp: vec3<f32>) -> f32 {
         a = a * (1.0 - clamp((hn - i.wp.y) * 0.22, 0.0, 0.45) * conc_fade);
     }
     a = mix(a, vec3<f32>(0.72, 0.58, 0.42), 0.5 * dust_layer(i.wp));   // settled dust
-    return vec4<f32>(lit(a, i.wp, n), 1.0);
+    // micro-relief: the ground texture's brightness read as a height (3 cm swing), fading out with distance (it would shimmer) and under snow
+    let near = 1.0 - smoothstep(25.0, 70.0, distance(i.wp, u.cam.xyz));
+    let nb = bump(n, i.wp, dot(a, vec3<f32>(0.33)) * 0.03 * near * (1.0 - snow));
+    return vec4<f32>(lit(a, i.wp, nb), 1.0);
 }
 
 // foliage (material 6) bends downwind, more towards the top, with gust waves that travel with the wind and a small flutter
@@ -431,8 +444,27 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     }
     return u.light_vp * vec4<f32>(w, 1.0);
 }
+// The normal `n` tilted by a tangent-space normal map sampled at `uv` (cotangent frame from screen-space derivatives, so the mesh needs no tangents; Schueler's formulation).
+// Must run in uniform control flow. `k` scales the relief (0 = flat).
+fn map_normal(n: vec3<f32>, wp: vec3<f32>, uv: vec2<f32>, k: f32) -> vec3<f32> {
+    let tn = textureSample(normal_tex, livery_smp, clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0))).xyz * 2.0 - 1.0;
+    let dp1 = dpdx(wp); let dp2 = dpdy(wp);
+    let du1 = dpdx(uv); let du2 = dpdy(uv);
+    let dp2perp = cross(dp2, n); let dp1perp = cross(n, dp1);
+    let t = dp2perp * du1.x + dp1perp * du2.x;
+    let b = dp2perp * du1.y + dp1perp * du2.y;
+    let inv = inverseSqrt(max(max(dot(t, t), dot(b, b)), 1e-20));
+    // glTF normal maps have green up; the atlas's v runs down the image
+    let m = vec3<f32>(tn.x * k, -tn.y * k, max(tn.z, 0.2));
+    return normalize(t * inv * m.x + b * inv * m.y + n * m.z);
+}
+
 @fragment fn fs_model(i: MOut) -> @location(0) vec4<f32> {
-    let n = normalize(i.n);
+    let has_uv0 = i.uv.x < 0.9999;
+    let m0 = i32(i.mat + 0.5);
+    // the textured exterior (paint, plastic, chrome, rubber and the wheels) is bump-mapped from the normal atlas, fading out with distance
+    let nk = select(0.0, 1.0 - smoothstep(14.0, 40.0, distance(i.wp, u.cam.xyz)), has_uv0 && (m0 == 0 || m0 == 2 || m0 == 3 || m0 == 4));
+    let n = map_normal(normalize(i.n), i.wp, i.uv, nk);
     let occl = mix(1.0, i.ao, u.mode.x);
     let m = i32(i.mat + 0.5);
     own_surface = i.own;
@@ -792,7 +824,10 @@ struct RIn { @builtin(position) pos: vec4<f32>, @location(0) wp: vec3<f32>, @loc
         alpha = 1.0 - smoothstep(0.86, 1.0, ac);
     }
     col = mix(col, vec3<f32>(0.72, 0.58, 0.42), 0.5 * dust_layer(i.wp));   // settled dust
-    return vec4<f32>(lit(col, i.wp, up), alpha);
+    // micro-relief: aggregate in the asphalt (2 mm), loose gravel and ruts on the track (2 cm), fading out with distance
+    let near = 1.0 - smoothstep(12.0, 45.0, distance(i.wp, u.cam.xyz));
+    let relief = select(0.02 * vnoise2(i.wp.xz * 14.0) + 0.03 * vnoise2(i.wp.xz * 4.0), 0.002 * vnoise2(i.wp.xz * 90.0) + 0.002 * vnoise2(i.wp.xz * 30.0), asphalt);
+    return vec4<f32>(lit(col, i.wp, bump(up, i.wp, relief * near)), alpha);
 }
 
 struct DOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) c: vec4<f32>, @location(2) wp: vec3<f32>, @location(3) e: vec4<f32> };
