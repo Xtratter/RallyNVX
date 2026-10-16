@@ -16,7 +16,6 @@ pub mod garage;
 pub mod aero;
 pub mod autopilot;
 pub mod airflow;
-pub mod fluid;
 pub mod grip;
 pub mod lines;
 pub mod input;

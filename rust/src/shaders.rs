@@ -27,7 +27,6 @@ pub fn gi_temporal() -> String { join(include_str!("shaders/gi_temporal.wgsl")) 
 pub fn gi_atrous() -> String { join(include_str!("shaders/gi_atrous.wgsl")) }
 pub fn composite() -> String { join(include_str!("shaders/composite.wgsl")) }
 pub fn raster() -> String { include_str!("shaders/raster.wgsl").to_string() }
-pub fn fluid() -> String { include_str!("shaders/fluid.wgsl").to_string() }
 pub fn airflow() -> String { include_str!("shaders/airflow.wgsl").to_string() }
 pub fn blur() -> String { include_str!("shaders/blur.wgsl").to_string() }
 pub fn dust_gpu() -> String { include_str!("shaders/dust_gpu.wgsl").to_string() }
@@ -47,6 +46,25 @@ mod tests {
     use super::*;
     use super::validate_for_tests as validate;
 
+    /// Every vertex and fragment entry point the pipelines name exists in the raster shader (naga cannot tell: a removed `fn` only fails when the GPU builds the pipeline).
+    #[test]
+    fn the_raster_pipelines_name_entry_points_that_exist() {
+        let wgsl = raster();
+        for (file, src) in [("raster/gpu.rs", include_str!("raster/gpu.rs")), ("raster/dust_gpu.rs", include_str!("raster/dust_gpu.rs"))] {
+            let mut rest = src;
+            let mut n = 0;
+            while let Some(at) = rest.find("entry_point: Some(\"") {
+                rest = &rest[at + "entry_point: Some(\"".len()..];
+                let name: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
+                if name.starts_with("vs_") || name.starts_with("fs_") {
+                    n += 1;
+                    assert!(wgsl.contains(&format!("fn {name}(")), "{file} names the entry point `{name}` but raster.wgsl has no such function");
+                }
+            }
+            assert!(n > 0 || file == "raster/dust_gpu.rs", "{file}: no entry points found (the scan is broken)");
+        }
+    }
+
     #[test]
     fn shaders_validate() {
         for i in 0..crate::scene::BUILTIN.len() {
@@ -61,7 +79,6 @@ mod tests {
         validate("gi_atrous", gi_atrous());
         validate("composite", composite());
         validate("raster", raster());
-        validate("fluid", fluid());
         validate("airflow", airflow());
         validate("dust_gpu", dust_gpu());
         validate("blur", blur());

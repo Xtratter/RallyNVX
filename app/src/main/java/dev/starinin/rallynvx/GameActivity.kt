@@ -350,7 +350,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Native.gameTimeOfDay(intent.getFloatExtra("tod", -1f))   // debug/test: time of day; a launch without it clears the previous freeze (the switch starts on Auto)
         Native.gameStart(h.surface, w, hh, seed, profile, false)
         Native.gameQuality(Quality.index(this))
-        intent.getIntExtra("dust", -1).let { if (it >= 0) Controls.setDust(this, it) }   // debug/test: the dust level (3 = fluid)
+        intent.getIntExtra("dust", -1).let { if (it >= 0) Controls.setDust(this, it) }   // debug/test: the dust level (0 off, 1 normal, 2 lots)
         Native.gameDust(Controls.dust(this))
         Native.gameAero(if (Controls.aero(this)) 1 else 0)
         intent.getIntExtra("blur", -1).let { if (it >= 0) Controls.setMotionBlur(this, it) }   // debug/test: motion blur level
@@ -418,7 +418,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             (if (rows++ % 2 == 0) colA else colB).addView(r, LinearLayout.LayoutParams(px(330f), -2).apply { topMargin = px(8f) })
         }
         fun onOff(b: Boolean) = if (b) t("On", "Вкл") else t("Off", "Выкл")
-        row(t("Dust", "Пыль"), { arrayOf(t("Off", "Выкл"), t("Normal", "Обычная"), t("Lots", "Много"), t("Fluid (test)", "Жидкая (опыт)"))[Controls.dust(this)] }) { Controls.setDust(this, DriveMath.cycle(Controls.dust(this), 4)) }
+        row(t("Dust", "Пыль"), { arrayOf(t("Off", "Выкл"), t("Normal", "Обычная"), t("Lots", "Много"))[Controls.dust(this)] }) { Controls.setDust(this, DriveMath.cycle(Controls.dust(this), 3)) }
         row(t("Aerodynamics", "Аэродинамика"), { onOff(Controls.aero(this)) }) { Controls.setAero(this, !Controls.aero(this)) }
         row(t("Particle pressure", "Давление частиц"), { onOff(Controls.dustOpt(this, 1)) }) { Controls.toggleDustOpt(this, 1) }
         row(t("Exact car shape", "Точная форма кузова"), { onOff(Controls.dustOpt(this, 2)) }) { Controls.toggleDustOpt(this, 2) }

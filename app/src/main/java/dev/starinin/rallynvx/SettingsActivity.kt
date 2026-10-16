@@ -35,7 +35,7 @@ class SettingsActivity : Activity() {
         row(t("Graphics quality", "Качество графики"), { Quality.label(Quality.index(this)) + " ⟳" }) { Quality.save(this, DriveMath.cycle(Quality.index(this), Quality.NAMES.size)) }
         row(t("Render mode", "Режим рендера"), { if (Controls.renderMode(this) == 1) t("Hybrid", "Гибрид") else t("Raster", "Растр") }) { Controls.setRenderMode(this, 1 - Controls.renderMode(this)) }
         row(t("Auto fallback to Raster", "Откат на Растр"), { if (Controls.autoFallback(this)) t("On", "Вкл") else t("Off", "Выкл") }) { Controls.setAutoFallback(this, !Controls.autoFallback(this)) }
-        row(t("Dust", "Пыль"), { arrayOf(t("Off", "Выкл"), t("Normal", "Обычная"), t("Lots", "Много"), t("Fluid (test)", "Жидкая (опыт)"))[Controls.dust(this)] }) { Controls.setDust(this, DriveMath.cycle(Controls.dust(this), 4)) }
+        row(t("Dust", "Пыль"), { arrayOf(t("Off", "Выкл"), t("Normal", "Обычная"), t("Lots", "Много"))[Controls.dust(this)] }) { Controls.setDust(this, DriveMath.cycle(Controls.dust(this), 3)) }
         row(t("Camera drag inversion", "Инверсия поворота камеры"), { CamMath.invertName(Controls.camInvert(this), java.util.Locale.getDefault().language != "ru") }) { Controls.setCamInvert(this, DriveMath.cycle(Controls.camInvert(this), CamMath.INVERT_MODES)) }
         row(t("Weather", "Погода"), { WeatherMode.name(Controls.weather(this), t("en", "ru") == "en") }) { Controls.setWeather(this, WeatherMode.next(Controls.weather(this))) }
         row(t("Motion blur", "Размытие в движении"), { arrayOf(t("Off", "Выкл"), t("Low", "Слабое"), t("High", "Сильное"))[Controls.motionBlur(this)] }) { Controls.setMotionBlur(this, DriveMath.cycle(Controls.motionBlur(this), 3)) }

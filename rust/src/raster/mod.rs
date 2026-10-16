@@ -5,7 +5,6 @@ pub mod dustgen;
 pub mod airflow_gpu;
 pub mod blur_gpu;
 pub mod dust_gpu;
-pub mod fluid_gpu;
 pub mod heightatlas;
 pub mod meshes;
 pub mod models;
