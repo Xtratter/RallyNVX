@@ -10,8 +10,16 @@ class CamMathTest {
         repeat(CamMath.VIEWS) { seen += v; v = CamMath.next(v) }
         assertEquals(CamMath.VIEWS, seen.size); assertEquals(0, v)
         assertEquals("Behind", CamMath.name(0, true)); assertEquals("Капот", CamMath.name(1, false))
-        assertEquals("Cockpit", CamMath.name(99, true)); assertEquals("Салон", CamMath.name(5, false)); assertEquals("Orbit", CamMath.name(4, true)); assertEquals("Сзади", CamMath.name(-4, false))
+        assertEquals("Free", CamMath.name(99, true)); assertEquals("Свободная", CamMath.name(6, false)); assertEquals("Cockpit", CamMath.name(5, true)); assertEquals("Салон", CamMath.name(5, false)); assertEquals("Orbit", CamMath.name(4, true)); assertEquals("Сзади", CamMath.name(-4, false))
         assertEquals(0, CamMath.next(-3).minus(1))   // a wild view index is clamped before cycling
+    }
+    @Test fun theFreeCameraFliesForwardOnASpreadUpOnAnUpwardDragAndStaysBounded() {
+        assertTrue(CamMath.free(6) && !CamMath.free(4) && !CamMath.rigid(6))
+        assertTrue(CamMath.flyForward(1.3f) > 0f && CamMath.flyForward(0.7f) < 0f && CamMath.flyForward(1f) == 0f)
+        assertEquals(30f, CamMath.flyForward(1e9f), 0f); assertEquals(-30f, CamMath.flyForward(1e-9f), 0f)
+        assertEquals(0f, CamMath.flyForward(Float.NaN), 0f); assertEquals(0f, CamMath.flyForward(-1f), 0f)
+        assertTrue(CamMath.flyUp(-40f, 2.6f) > 0f && CamMath.flyUp(40f, 2.6f) < 0f && CamMath.flyUp(0f, 2.6f) == 0f)
+        assertEquals(0f, CamMath.flyUp(Float.NaN, 2.6f), 0f); assertEquals(30f, CamMath.flyUp(-1e9f, 2.6f), 0f)
     }
     @Test fun distanceAndHeightAreClampedAndGarbageBecomesTheDefault() {
         assertEquals(CamMath.DIST_MAX, CamMath.clampDist(9f), 0f); assertEquals(CamMath.DIST_MIN, CamMath.clampDist(0.01f), 0f)

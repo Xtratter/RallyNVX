@@ -120,9 +120,11 @@ fn settle_in(view: i32, dist: f32, height: f32) -> (Vehicle, Terrain, FollowCam)
     assert_eq!(CamView::from_index(4), CamView::Orbit);
     assert_eq!(CamView::from_index(-3), CamView::Chase);
     assert_eq!(CamView::from_index(5), CamView::Cockpit);
-    assert_eq!(CamView::from_index(99), CamView::Cockpit);
+    assert_eq!(CamView::from_index(6), CamView::Free);
+    assert_eq!(CamView::from_index(99), CamView::Free, "the last view");
+    assert!(!CamView::Free.rigid());
     let (_, _, mut c) = settled_car();
-    c.set_view(99, 50.0, -50.0);
+    c.set_view(5, 50.0, -50.0);
     assert_eq!(c.view, CamView::Cockpit);
     assert!(c.dist <= 2.5 && c.dist >= 0.5 && c.height >= -1.0 && c.height <= 1.0, "{} {}", c.dist, c.height);
     c.set_view(4, 50.0, -50.0);
@@ -233,4 +235,49 @@ fn settle_in(view: i32, dist: f32, height: f32) -> (Vehicle, Terrain, FollowCam)
     c2.set_view(5, 1.0, 0.0); let mut c_hood = FollowCam::new(&v2); c_hood.set_view(1, 1.0, 0.0);
     for _ in 0..30 { c2.update(&v2, &t2, 1.0 / 60.0); c_hood.update(&v2, &t2, 1.0 / 60.0); }
     assert!((c2.pos - c_hood.pos).len() < 1e-4, "the same spot as the bonnet view");
+}
+
+#[test] fn the_free_camera_starts_where_the_camera_is_and_looks_where_the_fingers_point() {
+    let (v, t, mut c) = settled_car();
+    for _ in 0..60 { c.update(&v, &t, 1.0 / 60.0); }
+    let (p0, d0) = (c.pos, (c.target - c.pos).norm());
+    c.set_view(6, 1.0, 0.0);
+    c.update(&v, &t, 1.0 / 60.0);
+    assert!((c.pos - p0).len() < 1e-3 && ((c.target - c.pos).norm() - d0).len() < 1e-3, "no jump when the free camera takes over");
+    // one finger: drag right turns the gaze to the right (towards -x for a camera looking down +z), up looks up
+    let before = c.free_dir();
+    c.drag(0.3, 0.0);
+    c.update(&v, &t, 1.0 / 60.0);
+    let cross_y = before.z * c.free_dir().x - before.x * c.free_dir().z;
+    assert!(cross_y < 0.0, "the gaze turned right: {:?} -> {:?}", before, c.free_dir());
+    let up0 = c.free_dir().y;
+    c.drag(0.0, 0.3);
+    assert!(c.free_dir().y > up0);
+    c.drag(0.0, 50.0);
+    assert!(c.free_dir().y < 1.0 && c.free_dir().y > 0.9, "the pitch stops short of straight up");
+    assert!((c.free_dir().len() - 1.0).abs() < 1e-5);
+}
+#[test] fn the_free_camera_flies_along_its_gaze_and_up_stays_above_the_ground_and_ignores_the_car() {
+    let (mut v, t, mut c) = settled_car();
+    c.set_view(6, 1.0, 0.0);
+    c.update(&v, &t, 1.0 / 60.0);
+    let p0 = c.pos;
+    let d = c.free_dir();
+    c.fly(5.0, 0.0);
+    c.update(&v, &t, 1.0 / 60.0);
+    assert!(((c.pos - p0) - d * 5.0).len() < 1e-3, "forward along the gaze");
+    c.fly(-5.0, 3.0);
+    c.update(&v, &t, 1.0 / 60.0);
+    assert!((c.pos.y - (p0.y + 3.0 + d.y * 0.0 )).abs() < 1.0 && c.pos.y > p0.y, "up");
+    c.fly(0.0, -500.0);
+    c.update(&v, &t, 1.0 / 60.0);
+    assert!(c.pos.y >= t.height(c.pos.x, c.pos.z) + 0.49, "never under the ground");
+    let held = c.pos;
+    for _ in 0..120 { v.step(&t, &[], &Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); c.update(&v, &t, 1.0 / 60.0); }
+    assert!((c.pos - held).len() < 1e-4, "the camera stays where it is while the car drives away");
+    c.fly(f32::NAN, 1.0); c.drag(f32::NAN, 0.0);
+    assert!(c.pos.is_finite() && c.free_dir().is_finite());
+    let mut other = FollowCam::new(&v);
+    let p = other.pos; other.fly(10.0, 10.0);
+    assert_eq!(other.pos, p, "flying does nothing in the other views");
 }

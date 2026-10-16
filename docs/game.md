@@ -11,7 +11,7 @@ RallyNVX has a game mode next to the scene viewer: off-road free drive on a rand
 | Throttle | gas pedal (right, taller): full gas on touch; with "Adjustable" pedal force in Settings the lower you press, the more gas | W, arrow up |
 | Brake / reverse | brake pedal (left of the gas): full brake while moving forward, reverse when stopped or rolling backwards | S, arrow down |
 | Steer | two arrow buttons (default), an on-screen wheel (drag it around its centre) or tilt of the phone (Settings) | A D, arrows |
-| Handbrake (drift) | "Handbrake" button (hold) | Left Shift |
+| Handbrake | "Handbrake" button (a tap sets it, the next tap releases it; a dot shows it is on) | Left Shift (hold) |
 | Reset (flipped car) | "Reset" button | R |
 | New random level | "New level" button | N |
 | Look around | drag a finger on free space (also while driving) | - |
@@ -36,7 +36,7 @@ The GPU dust (Aerodynamics On, levels Normal and Lots) has four options, each on
 
 ## Camera
 
-The **View** button under the status line cycles the camera views: behind the car (default), on the bonnet, low on the front bumper, high behind (roof), a free orbit (it never swings back by itself) and the **Cockpit** (the driver's eyes inside the car; a car without cockpit eyes uses the bonnet's spot). One finger turns the camera round the car as before. **Two fingers** on free space: pinching changes the distance (spreading brings the camera closer; on the bonnet, bumper and cockpit views it zooms in), moving both fingers up or down changes the height (on those views it tilts the gaze). A long press on the View button puts the current view back to its default distance and height. The view and each view's distance and height are remembered. Camera spots of a new car (bonnet and bumper, as fractions of its size) are `cameras.hood` and `cameras.bumper` in `vehicles.json`.
+The **View** button under the status line cycles the camera views: behind the car (default), on the bonnet, low on the front bumper, high behind (roof), a free orbit (it never swings back by itself) the **Cockpit** (the driver's eyes inside the car; a car without cockpit eyes uses the bonnet's spot) and the **Free** camera: it starts where the camera was and then belongs to you: one finger turns the gaze (drag right looks right, up looks up), a pinch flies it forward and back along the gaze, two fingers moving up or down raise and lower it (never under the ground); it stays where you left it while the car drives on. The handbrake locks the rear wheels (they do not turn, they hold the car on a slope, and the brake lamps do not come on). One finger turns the camera round the car as before. **Two fingers** on free space: pinching changes the distance (spreading brings the camera closer; on the bonnet, bumper and cockpit views it zooms in), moving both fingers up or down changes the height (on those views it tilts the gaze). A long press on the View button puts the current view back to its default distance and height. The view and each view's distance and height are remembered. Camera spots of a new car (bonnet and bumper, as fractions of its size) are `cameras.hood` and `cameras.bumper` in `vehicles.json`.
 
 ## Aerodynamics (dust in the airflow)
 

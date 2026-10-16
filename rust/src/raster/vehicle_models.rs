@@ -311,7 +311,8 @@ fn build_suv(spec: &VehicleSpec) -> CarModel {
     CarModel::new(body, wheel)
 }
 
-pub fn car_wheel_poses(v: &Vehicle, spin: f32) -> [(Q, V3); 4] {
+/// The wheels' poses; `spin` is how far the front wheels have turned, `rear_spin` the rear ones (they stand still while the handbrake locks them).
+pub fn car_wheel_poses(v: &Vehicle, spin: f32, rear_spin: f32) -> [(Q, V3); 4] {
     let s = &v.spec;
     let mut out = [(Q::IDENT, V3::ZERO); 4];
     for w in 0..4 {
@@ -319,7 +320,7 @@ pub fn car_wheel_poses(v: &Vehicle, spin: f32) -> [(Q, V3); 4] {
         let steer = if w < 2 { Q::axis_angle(v3(0., 1., 0.), -v.steer) } else { Q::IDENT };
         // the rally wheel mesh has its rim face on the +x side: wheels on the -x side turn the mesh around (after the spin)
         let flip = if s.style == crate::game::vehicle::CarStyle::Rally && s.wheels[w].x < 0.0 { Q::axis_angle(v3(0., 1., 0.), std::f32::consts::PI) } else { Q::IDENT };
-        out[w] = (v.rot.mul(steer).mul(Q::axis_angle(v3(1., 0., 0.), spin)).mul(flip), v.pos + v.rot.rotate(local));
+        out[w] = (v.rot.mul(steer).mul(Q::axis_angle(v3(1., 0., 0.), if w < 2 { spin } else { rear_spin })).mul(flip), v.pos + v.rot.rotate(local));
     }
     out
 }
@@ -347,7 +348,7 @@ pub fn sdf_input(car: &CarModel) -> (Vec<[f32; 3]>, Vec<u32>) {
 }
 
 /// The brake calipers: the wheels' poses with no spin (a caliper follows the steering and the suspension, not the rolling).
-pub fn car_caliper_poses(v: &Vehicle) -> [(Q, V3); 4] { car_wheel_poses(v, 0.0) }
+pub fn car_caliper_poses(v: &Vehicle) -> [(Q, V3); 4] { car_wheel_poses(v, 0.0, 0.0) }
 
 /// The body mesh is drawn 0.75 body-heights below the suspension attachment height (its own frame starts at y = 0.30)
 /// so the sills clear the ground by about half a metre; the attachment height itself sits above the centre of mass.

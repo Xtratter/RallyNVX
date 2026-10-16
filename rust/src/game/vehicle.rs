@@ -57,6 +57,8 @@ pub struct Vehicle {
     pub contacts: u8,
     /// Driver input of the last step, for the lights.
     pub braking: bool, pub reversing: bool,
+    /// The handbrake is on: the rear wheels are locked (they do not turn and hold the car against a slope); the brake lights do not come on for it.
+    pub parked: bool,
     /// Brake disc heat per wheel, 0..1 (grows with the braking power, cools with time and the air; only visual: the discs glow).
     pub brake_heat: [f32; 4],
     /// How wet the ground is, 0..1 (set by the world from the weather): the grip of every surface drops with it (`surfaces.json` -> `wet`).
@@ -73,7 +75,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -99,7 +101,8 @@ impl Vehicle {
     /// One step; `loose` is the level's loose gravel map, which the wheels on a stage wear.
     pub fn step_with(&mut self, t: &Terrain, props: &[Prop], inp: &Input, dt: f32, loose: &mut LooseMap) {
         let inp = inp.sanitized();
-        self.braking = inp.brake || inp.handbrake;
+        self.braking = inp.brake;   // the brake lights are for the pedal: a handbrake that is merely held does not light them
+        self.parked = inp.handbrake;
         self.reverse_throttle = inp.throttle < -0.05;
         self.reversing = self.reverse_throttle || self.speed() < -0.5;
         let max_a = self.spec.steer_max / (1.0 + self.vel.len() / self.spec.steer_speed_ref);
@@ -166,16 +169,29 @@ impl Vehicle {
             let tf = grip::tyre_factor(s.wheel_set, surf);   // the wheel set: the right tyres for the surface grip more
             let wf = grip::wet_factor(surf, self.wet);       // the wet ground: less grip, everywhere
             let (mu_s, lat_k, roll) = (s.mu * sg.mu * tf.0 * wf.0, s.lateral_k * sg.lateral * tf.1 * wf.1, s.rolling * sg.rolling);
-            let lat_mu = if !front && inp.handbrake { mu_s * s.handbrake_grip } else { mu_s };
+            // a locked rear tyre slides at the reduced grip of a slide, but a car that stands (or creeps) is held by the full static grip: the handbrake parks it on a slope
+            let slide = ((self.vel.x.hypot(self.vel.z) - 1.0) / 3.0).clamp(0.0, 1.0);
+            let lat_mu = if !front && inp.handbrake { mu_s * (1.0 + (s.handbrake_grip - 1.0) * slide) } else { mu_s };
             let mut fl = -vl * wheel_mass * lat_k;
             let lim_speed = if inp.throttle >= 0.0 { s.max_speed } else { s.max_speed * s.reverse_factor };
             let taper = (1.0 - (fspeed * inp.throttle.signum()).max(0.0) / lim_speed).clamp(0.0, 1.0);
-            let mut fx = inp.throttle * s.engine_force / 4.0 * taper - vf * roll;
+            let locked = inp.handbrake && !front;   // the handbrake locks the rear wheels: no drive, and the tyre holds the ground like a block of rubber
+            let mut fx = if locked { 0.0 } else { inp.throttle * s.engine_force / 4.0 * taper } - vf * roll;
             // brake pedal: scaled by how hard it is pressed (0 = legacy full force); the handbrake always bites the rear wheels fully
             let kb = if inp.brake_amt > 0.0 { inp.brake_amt.clamp(0.05, 1.0) } else { 1.0 };
             let k = if inp.handbrake && !front { 1.0 } else if inp.brake { kb } else { 0.0 };
-            if k > 0.0 {
+            if locked {
+                // a locked tyre is dry friction against the ground: it opposes the slide in whatever direction it goes with all the grip the tyre has (softened below 5 cm/s so the
+                // car comes to a stop instead of chattering), so the car also stays put on a slope
+                let slip = vf.hypot(vl);
+                let ramp = (slip / 0.05).clamp(0.0, 1.0);
+                let (ux, ul) = if slip > 1e-6 { (vf / slip, vl / slip) } else { (0.0, 0.0) };
+                fx = -ux * ramp * lat_mu * fs;
+                fl = -ul * ramp * lat_mu * fs;
+            } else if k > 0.0 {
                 fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0 * k;
+            }
+            if k > 0.0 {
                 // the braking power heats the disc (the front brakes do more of the work)
                 self.brake_heat[w] = (self.brake_heat[w] + s.brake_force / 4.0 * k * vf.abs() * if front { 1.3 } else { 0.7 } * 4.5e-6 * h).min(1.0);
             }

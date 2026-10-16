@@ -5,14 +5,22 @@ package dev.starinin.rallynvx
  * vertical two-finger move change the distance scale (zoom in the bonnet and bumper views) and the height offset (gaze tilt there).
  */
 object CamMath {
-    const val VIEWS = 6
+    const val VIEWS = 7
     const val DIST_MIN = 0.5f
     const val DIST_MAX = 2.5f
-    private val EN = arrayOf("Behind", "Bonnet", "Bumper", "Roof", "Orbit", "Cockpit")
-    private val RU = arrayOf("Сзади", "Капот", "Бампер", "Сверху", "Обзор", "Салон")
+    private val EN = arrayOf("Behind", "Bonnet", "Bumper", "Roof", "Orbit", "Cockpit", "Free")
+    private val RU = arrayOf("Сзади", "Капот", "Бампер", "Сверху", "Обзор", "Салон", "Свободная")
 
     fun name(view: Int, en: Boolean) = (if (en) EN else RU)[view.coerceIn(0, VIEWS - 1)]
     fun next(view: Int) = (view.coerceIn(0, VIEWS - 1) + 1) % VIEWS
+    /** The free camera (6): one finger turns the gaze, a pinch flies it along the gaze, two fingers up or down raise and lower it. */
+    const val FREE = 6
+    fun free(view: Int) = view == FREE
+    /** Metres to fly along the gaze for a pinch (`ratio` > 1: fingers apart = forward, < 1 = back). */
+    fun flyForward(ratio: Float): Float = if (ratio.isFinite() && ratio > 0f) (Math.log(ratio.toDouble()) * 18.0).toFloat().coerceIn(-30f, 30f) else 0f
+    /** Metres to fly up for both fingers moving by `dyPx` pixels (negative = up on the screen = up). */
+    fun flyUp(dyPx: Float, density: Float): Float = if (dyPx.isFinite()) (-dyPx * 0.03f * (2.6f / density.coerceAtLeast(0.5f))).coerceIn(-30f, 30f) else 0f
+
     /** The bonnet (1), bumper (2) and cockpit (5) views ride on the car: their "height" is a gaze tilt and their "distance" a zoom. */
     fun rigid(view: Int) = view == 1 || view == 2 || view == 5
 
