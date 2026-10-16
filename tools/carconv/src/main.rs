@@ -32,6 +32,7 @@ fn keep_body(n: &str) -> bool {
         let glass = n.ends_with("_glass") || (n.starts_with("Light_front") && n.ends_with("_turn")) || n.contains("Light_bar_glass");
         return !glass;
     }
+    if n.starts_with("x0_bonnet_Wipers_water") { return true; }   // the cowl panel under the wipers: without it the engine bay shows
     let bad = ["_int", "int_", "lock", "under", "engine", "snow", "gravel", "spare", "suspension", "wishbone", "disc", "caliper", "mud", "CO_DRIVER", "Wipers", "LED", "notes", "Sabo", "INT_", "boot_int", "undercarriage", "standard_pbr", "anagram", "exhaust_cardan", "_ints", "Light_bar_ints", "tow_hook"];
     if bad.iter().any(|b| n.contains(b)) { return false; }
     let good = ["x0_main_body", "x0_bonnet", "x0_boot", "x0_bumper_fm", "x0_bumper_bm", "x0_spoiler_b", "x0_door_f", "x0_wing_f", "x0_wing_mirror", "Light_front", "Ligth_front", "Ligth_rear", "Light_bar", "Light_2_brake", "Ligth_2_brake", "x0_exhaust_bl", "x0_f_body_part", "x0_front_anagram"];
