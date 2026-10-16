@@ -147,3 +147,26 @@ fn rms(v: &[f32]) -> f32 { (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f3
     let wet = tail(Env { rt60: 1.5, level: 0.8, damp_hz: 9000.0, ..Env::default() });
     assert!(dry < 1e-6 && wet > 1e-4, "a room rings after the sound has ended: {wet} vs {dry}");
 }
+
+#[test] fn a_step_in_the_revs_the_game_asks_for_becomes_a_ramp_not_a_stair() {
+    let mut s = Synth::new(); s.set_params(&AudioParams { drive_rpm: 3000.0, ..car(0.375) }); run(&mut s, 3.0);
+    let before = s.engine_rpm();
+    s.set_params(&AudioParams { drive_rpm: 3400.0, ..car(0.375) });
+    let mut at = Vec::new();
+    for _ in 0..8 { run(&mut s, 0.004); at.push(s.engine_rpm() - before); }   // every 4 ms for 32 ms
+    assert!(at[0] < 100.0, "no jump at once: {} rpm after 4 ms of a 400 rpm step", at[0]);
+    assert!(at.windows(2).all(|w| w[1] >= w[0] - 5.0), "it rises steadily: {at:?}");
+    assert!(at[7] > 150.0 && at[7] < 420.0, "and arrives in the end: {}", at[7]);
+}
+
+#[test] fn the_fuel_burnt_in_the_exhaust_is_reported_for_the_fire_and_only_when_it_burns() {
+    let burnt = |als: bool, load: f32| {
+        let mut s = Synth::new(); s.set_params(&AudioParams { drive_rpm: 5500.0, clutch: 1.0, load: 1.0, als, ..car(0.7) }); run(&mut s, 2.5);
+        s.take_burned_delta();
+        s.set_params(&AudioParams { drive_rpm: 5500.0, clutch: 1.0, load, als, ..car(0.7) }); run(&mut s, 0.6);
+        s.take_burned_delta()
+    };
+    assert!(burnt(false, 0.0) < 2e-5 && burnt(false, 1.0) < 2e-5, "next to no burn on a plain lift or at full throttle");
+    assert!(burnt(true, 0.0) > 1e-4, "the anti-lag burns fuel in the exhaust: {}", burnt(true, 0.0));
+    let mut s = Synth::new(); assert_eq!(s.take_burned_delta(), 0.0);
+}

@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{livery, airflow_gpu, blur_gpu, dust_gpu, sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
+use super::{livery, airflow_gpu, blur_gpu, dust_gpu, sign_models, citygen, dustgen, fire, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::scatter::{self, Bush};
@@ -116,8 +116,7 @@ const SLOT_STEERING: usize = SLOT_SIGN + 21;  // the steering wheel (turns about
 const SLOT_DRIVER: usize = SLOT_SIGN + 22;    // the driver, drawn with the interior unless the camera is inside the car
 const SLOT_WIPER: usize = SLOT_SIGN + 23;    // the two windscreen wipers (+0 the driver's side, +1 the other), sweeping in the rain
 const SLOT_GLOVES: usize = SLOT_SIGN + 25;   // the driver's gloves (turn with the steering wheel), drawn with the interior in every view
-const SLOT_FLAME: usize = SLOT_SIGN + 26;    // the flame at the tail pipe (emissive cones, drawn when fuel burns in the exhaust)
-const MODEL_SLOTS: usize = SLOT_SIGN + 27;
+const MODEL_SLOTS: usize = SLOT_SIGN + 26;
 const MAX_MODEL_INST: usize = 6144;
 const SIGN_SCALE: f32 = 2.2;   // the signs are drawn bigger than real ones so they read from a moving car
 const NEAR_SHADOW: f32 = 90.0;   // plants within this distance of the car cast shadows
@@ -186,6 +185,8 @@ pub struct Raster {
     blur: Option<blur_gpu::MotionBlur>, prev_vp: Option<[f32; 16]>, prev_cam: V3,
     dust_gpu: Option<dust_gpu::DustGpu>, dust_render: Option<dust_gpu::DustRender>, bgl_main_keep: wgpu::BindGroupLayout, module_keep: wgpu::ShaderModule,
     dust_buf: wgpu::Buffer,
+    /// The fire at the tail pipe: its parcels (simulated here, where the pipe's place is known), the instance buffer and the additive pipeline.
+    fire: fire::Fire, fire_time: f32, flame_buf: wgpu::Buffer, pl_flame: wgpu::RenderPipeline,
     cache_seed: u64,
     car_key: [u32; 13],
     car_wipers: [Option<(V3, V3, V3, f32)>; 2],
@@ -437,6 +438,14 @@ impl Raster {
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_dust_speck"), compilation_options: Default::default(), targets: &target_blend }),
             primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: pcache.as_ref(),
         });
+        let pl_flame = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("flame"), layout: Some(&lay_main),
+            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_dust"), compilation_options: Default::default(), buffers: &[wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<fire::FireInst>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: &DUST_ATTRS }] },
+            fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_flame"), compilation_options: Default::default(), targets: &[Some(wgpu::ColorTargetState { format, write_mask: wgpu::ColorWrites::ALL,
+                blend: Some(wgpu::BlendState { color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add }, alpha: wgpu::BlendComponent::OVER }) })] }),
+            primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: pcache.as_ref(),
+        });
+        let flame_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("flame_inst"), size: (fire::MAX_PARTS * std::mem::size_of::<fire::FireInst>()) as u64, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let dust_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_inst"), size: (dustgen::MAX_INST * std::mem::size_of::<dustgen::DustInst>()) as u64, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         crate::loading::stage(crate::loading::SHADERS, 54);
         let pl_terrain_sh = mk("terrain_sh", &lay_shadow, "vs_terrain_shadow", None, &[mesh_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
@@ -475,7 +484,7 @@ impl Raster {
         let nat = nature_models::build_all();
         let signs_meshes = sign_models::build_all();
         let models: Vec<ModelBuf> = [&car.body, &car.wheel].into_iter()
-            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass]).chain(signs_meshes.iter()).chain([&car.disc.clone().unwrap_or_else(placeholder_mesh), &car.caliper.clone().unwrap_or_else(placeholder_mesh), &car.interior.clone().unwrap_or_else(placeholder_mesh), &car.glass.clone().unwrap_or_else(placeholder_mesh), &car.steering.as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.driver.clone().unwrap_or_else(placeholder_mesh), &car.wipers[0].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.wipers[1].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.gloves.clone().unwrap_or_else(placeholder_mesh), &vm::flame_mesh()]).map(|m| model_buf(&device, m)).collect();
+            .chain(nat.trees.iter()).chain(nat.bushes.iter()).chain(nat.rocks.iter()).chain([&nat.grass]).chain(signs_meshes.iter()).chain([&car.disc.clone().unwrap_or_else(placeholder_mesh), &car.caliper.clone().unwrap_or_else(placeholder_mesh), &car.interior.clone().unwrap_or_else(placeholder_mesh), &car.glass.clone().unwrap_or_else(placeholder_mesh), &car.steering.as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.driver.clone().unwrap_or_else(placeholder_mesh), &car.wipers[0].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.wipers[1].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh), &car.gloves.clone().unwrap_or_else(placeholder_mesh)]).map(|m| model_buf(&device, m)).collect();
         assert_eq!(models.len(), MODEL_SLOTS, "every model slot needs its mesh in the list above (a new slot: add its mesh at the end)");
         let mbuf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("model_inst"), size: (MAX_MODEL_INST * std::mem::size_of::<MInst>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
@@ -488,7 +497,7 @@ impl Raster {
         }
         crate::loading::stage(crate::loading::WORLD, 65);
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach))), wiper_state: Default::default(), wiper_time: 0.0, car_exhaust: car.exhaust_tip, film: Default::default(), car_screen: car.windscreen, car_sweep: car.wiper_sweep, car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, wheel_spin_rear: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, fire: fire::Fire::new(), fire_time: 0.0, flame_buf, pl_flame, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach))), wiper_state: Default::default(), wiper_time: 0.0, car_exhaust: car.exhaust_tip, film: Default::default(), car_screen: car.windscreen, car_sweep: car.wiper_sweep, car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, wheel_spin_rear: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -525,7 +534,6 @@ impl Raster {
         self.models[SLOT_DRIVER] = model_buf(&self.device, &car.driver.clone().unwrap_or_else(placeholder_mesh));
         for k in 0..2 { self.models[SLOT_WIPER + k] = model_buf(&self.device, &car.wipers[k].as_ref().map(|s| s.mesh.clone()).unwrap_or_else(placeholder_mesh)); }
         self.models[SLOT_GLOVES] = model_buf(&self.device, &car.gloves.clone().unwrap_or_else(placeholder_mesh));
-        self.models[SLOT_FLAME] = model_buf(&self.device, &vm::flame_mesh());
         self.car_exhaust = car.exhaust_tip;
         self.car_gloves = car.gloves.is_some();
         self.car_wipers = std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach)));
@@ -679,17 +687,6 @@ impl Raster {
         let (bq, bp) = vm::car_body_pose(veh);
         ml[0].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] });   // alpha 0.5: the player's car (not lit by its own lamps)
         // the glass (always) and the interior (near the car only) share the body's pose
-        // the flame: where fuel burns in the exhaust the tail pipe spits fire, long and flickering with its strength (see `audio::flame_level`)
-        if let Some(tip) = self.car_exhaust {
-            let fl = crate::audio::flame_level();
-            if fl > 0.04 && (wv.cam_pos - veh.pos).len() < 90.0 {
-                let flick = 0.7 + 0.3 * ((wv.time * 63.0).sin() * (wv.time * 41.0 + 1.7).sin()).abs();
-                let (len, wid) = ((0.25 + 1.1 * fl.min(1.5)) * flick, 0.7 + 0.5 * fl.min(1.2));
-                let back = bq.rotate(v3(0.0, 0.0, -1.0)); let (x, y) = (bq.rotate(v3(1.0, 0.0, 0.0)), bq.rotate(v3(0.0, 1.0, 0.0)));
-                let p = bp + bq.rotate(v3(tip[0], tip[1], tip[2]));
-                ml[SLOT_FLAME].push(MInst { m: [x.x * wid, x.y * wid, x.z * wid, 0., y.x * wid, y.y * wid, y.z * wid, 0., back.x * len, back.y * len, back.z * len, 0., p.x, p.y, p.z, 1.], tint: [1.0, 1.0, 1.0, 0.5] });
-            }
-        }
         if self.car_parts.3 { ml[SLOT_GLASS].push(MInst { m: mmat(bq, bp), tint: [1.0, 1.0, 1.0, 0.5] }); }
         // the wipers sit on the outside of the glass: drawn with it, parked unless it rains
         let wa = vm::wiper_angle_at(self.wiper_state.phase, self.wiper_state.wipe) * self.car_sweep / vm::WIPER_SWEEP;
@@ -797,6 +794,20 @@ impl Raster {
         if !mall.is_empty() { self.queue.write_buffer(&self.mbuf, 0, bytemuck::cast_slice(&mall)); }
         let dinst = dustgen::instances(&wv.dust, wv.cam_pos);
         if !dinst.is_empty() { self.queue.write_buffer(&self.dust_buf, 0, bytemuck::cast_slice(&dinst)); }
+        // the fire: the fuel that burnt in the engine's exhaust since the last frame comes out of the tail pipe as a jet and a fireball (see `fire`)
+        let fdt = if wv.time > self.fire_time { (wv.time - self.fire_time).min(0.05) } else { 0.0 };
+        self.fire_time = wv.time;
+        {
+            let burned = crate::audio::take_burned();
+            if let (Some(tip), true) = (self.car_exhaust, burned > 0.0) {
+                let (bq, bp) = vm::car_body_pose(veh);
+                self.fire.emit(bp + bq.rotate(v3(tip[0], tip[1], tip[2])), bq.rotate(v3(0.0, 0.0, -1.0)), burned, veh.vel);
+            }
+            self.fire.update(fdt, V3::ZERO);
+        }
+        let finst = if self.fire.is_active() && (wv.cam_pos - veh.pos).len() < 120.0 { self.fire.instances() } else { Vec::new() };
+        if !finst.is_empty() { self.queue.write_buffer(&self.flame_buf, 0, bytemuck::cast_slice(&finst)); }
+        let flame_n = finst.len() as u32;
         if wv.airflow.is_some() && self.airflow.is_none() && !self.airflow_tried {
             self.airflow_tried = true;
             self.airflow = airflow_gpu::AirflowGpu::new(&self.adapter, &self.device, self.config.format);
@@ -860,7 +871,7 @@ impl Raster {
             rp.set_pipeline(&self.pl_model_sh);
             rp.set_vertex_buffer(1, self.mbuf.slice(..));
             for k in 0..MODEL_SLOTS {
-                if k == SLOT_GLASS || k == SLOT_INTERIOR || k == SLOT_STEERING || k == SLOT_DRIVER || k == SLOT_GLOVES || k == SLOT_FLAME { continue; }   // the glass, the interior and the flame cast no shadows
+                if k == SLOT_GLASS || k == SLOT_INTERIOR || k == SLOT_STEERING || k == SLOT_DRIVER || k == SLOT_GLOVES { continue; }   // the glass and the interior cast no shadows
                 let (a, mut b) = mranges[k];
                 if k >= SLOT_TREE { b = if k == SLOT_GRASS { a } else { a + mnear[k].min(b - a) }; }
                 if b == a { continue; }
@@ -958,6 +969,11 @@ impl Raster {
                 rp.set_pipeline(&self.pl_dust);
                 rp.set_vertex_buffer(0, self.dust_buf.slice(..));
                 rp.draw(0..6, 0..dust_n);
+            }
+            if flame_n > 0 {   // the fire of the exhaust: additive, glowing, over the scene
+                rp.set_pipeline(&self.pl_flame);
+                rp.set_vertex_buffer(0, self.flame_buf.slice(..));
+                rp.draw(0..6, 0..flame_n);
             }
         }
         if let Some(p) = &self.prof { p.mark(&mut enc, 3); }

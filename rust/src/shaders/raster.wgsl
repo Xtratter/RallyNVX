@@ -1185,6 +1185,29 @@ fn dust_vertex(vi: u32, ps: vec4<f32>, c: vec4<f32>, e: vec4<f32>, size: f32) ->
     return vec4<f32>(finish(col), a);
 }
 
+// The fire of the exhaust (additive): a parcel of burning gas as a turbulent, glowing blob. `c.rgb` is the colour of a black body at its temperature, `c.a` how much of the sprite glows
+// (it thins as the parcel spreads), `e.x` a random seed, `e.y` the age and `e.w` the radiated strength (about the fourth power of the temperature). The edge is ragged and flickers,
+// the heart is hotter (whiter and brighter) than the rim.
+@fragment fn fs_flame(i: DOut) -> @location(0) vec4<f32> {
+    let r = length(i.uv);
+    let n = vnoise2(i.uv * 3.2 + vec2<f32>(i.e.x * 41.0, i.e.x * 23.0 + i.e.y * 14.0));
+    let n2 = vnoise2(i.uv * 7.0 - vec2<f32>(i.e.y * 9.0, i.e.x * 13.0));
+    let edge = mix(0.40, 1.0, n * 0.7 + n2 * 0.3);
+    let shape = 1.0 - smoothstep(0.0, edge, r);
+    let core = shape * shape;
+    let a = i.c.a * core;
+    if (a < 0.002) { discard; }
+    let dcam = length(i.wp - u.cam.xyz);
+    let near = smoothstep(0.5, 2.5, dcam);   // a flame that is right at the lens does not blind it
+    let above = i.wp.y - terrain_h(i.wp.x, i.wp.z);
+    let soft = mix(0.35, 1.0, smoothstep(0.0, 0.25, above));
+    // the heart is hotter: towards the middle the colour goes to white
+    let heart = clamp(1.0 - r * 1.4, 0.0, 1.0);
+    let col = mix(i.c.rgb, vec3<f32>(1.0, 0.92, 0.75), heart * heart * 0.6) * (i.e.w * a * near * soft);
+    let f = clamp(1.0 - exp(-dcam * u.fog.x), 0.0, 1.0);
+    return vec4<f32>(finish(col) * (1.0 - f * 0.7), 1.0);
+}
+
 // The GPU dust: tens of thousands of soft, rotating, noisy-edged particles whose overlap builds the cloud. `e.w` is the light of the particle
 // (the dust above it towards the sun shades it, computed by the step pass); the puff is soft against the terrain and fades near the camera.
 fn dust_pt(i: DOut) -> vec4<f32> {
