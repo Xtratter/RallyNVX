@@ -805,6 +805,7 @@ fn dust_pt(i: DOut) -> vec4<f32> {
     return c;
 }
 
+@group(1) @binding(3) var vol_depth: texture_depth_2d;   // the scene's depth, sampled by the low-resolution dust pass (group 1 of `raster/dust_gpu.rs`)
 const DUST_DIV: f32 = 6.0;   // the low-resolution dust target is 1/DUST_DIV of the screen (= DUST_DIV in raster/dust_gpu.rs)
 // the same particle drawn into the low-resolution target: premultiplied, hidden behind and soft against the scene (the depth buffer is sampled)
 @fragment fn fs_dust_lo(i: DOut) -> @location(0) vec4<f32> {
@@ -823,81 +824,3 @@ const DUST_DIV: f32 = 6.0;   // the low-resolution dust target is 1/DUST_DIV of 
     if (c.a < 0.003) { discard; }
     return vec4<f32>(c.rgb * c.a, c.a);
 }
-
-
-// ---- the fluid dust as a volume: a ray per pixel through the wrap-around dust grid (see fluid.wgsl) ----
-struct VolParams {
-    start: vec4<i32>,   // first cell of the window (the grid is a torus, repeat addressing does the wrap)
-    dims: vec4<i32>,    // cells per axis
-    g: vec4<f32>,       // cell size dx, absorption, steps, time
-    scr: vec4<f32>,     // screen width, height
-};
-@group(1) @binding(0) var<uniform> vol: VolParams;
-@group(1) @binding(1) var vol_dens: texture_3d<f32>;
-@group(1) @binding(2) var vol_smp: sampler;
-@group(1) @binding(3) var vol_depth: texture_depth_2d;
-
-struct VOut { @builtin(position) pos: vec4<f32> };
-@vertex fn vs_volume(@builtin(vertex_index) vi: u32) -> VOut {
-    var q = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
-    var o: VOut; o.pos = vec4<f32>(q[vi], 0.0, 1.0); return o;
-}
-@fragment fn fs_volume(i: VOut) -> @location(0) vec4<f32> {
-    let px = vec2<i32>(i.pos.xy * vol.scr.w);   // the volume is drawn at 1/scr.w of the screen: the depth of the pixel it stands for
-    let ndc = vec2<f32>(i.pos.x / vol.scr.x * 2.0 - 1.0, 1.0 - i.pos.y / vol.scr.y * 2.0);
-    let wf = u.inv_vp * vec4<f32>(ndc, 1.0, 1.0);
-    let org = u.cam.xyz;
-    let dir = normalize(wf.xyz / wf.w - org);
-    // the scene in front of the dust
-    let d = textureLoad(vol_depth, px, 0);
-    var t_scene = 1.0e9;
-    if (d < 0.9999) { let ws = u.inv_vp * vec4<f32>(ndc, d, 1.0); t_scene = length(ws.xyz / ws.w - org); }
-    // the window box
-    let dx = vol.g.x;
-    let lo = vec3<f32>(vol.start.xyz) * dx;
-    let hi = lo + vec3<f32>(vol.dims.xyz) * dx;
-    let inv = vec3<f32>(1.0) / select(dir, vec3<f32>(1.0e-5), abs(dir) < vec3<f32>(1.0e-5));
-    let ta = (lo - org) * inv; let tb = (hi - org) * inv;
-    let t0 = max(max(min(ta.x, tb.x), min(ta.y, tb.y)), min(ta.z, tb.z));
-    let t1 = min(min(max(ta.x, tb.x), max(ta.y, tb.y)), max(ta.z, tb.z));
-    let tmin = max(t0, 0.1);
-    let tmax = min(min(t1, t_scene), 70.0);
-    if (tmax <= tmin) { return vec4<f32>(0.0); }
-    let steps = vol.g.z;
-    let dt = (tmax - tmin) / steps;
-    let jitter = fract(sin(dot(i.pos.xy, vec2<f32>(12.9898, 78.233)) + vol.g.w) * 43758.5453);
-    let sun = normalize(u.sun.xyz);
-    let sun_k = clamp(length(u.sun_col.rgb) / 2.6, 0.06, 1.0);
-    let ambient = mix(u.sky_hor.rgb, u.sky_top.rgb, 0.5) * 0.55;
-    let forward = pow(max(dot(dir, sun), 0.0), 6.0);   // the cloud glows when looked at against the sun
-    var acc = vec3<f32>(0.0);
-    var trans = 1.0;
-    let ext = vec3<f32>(vol.dims.xyz);
-    for (var k = 0; k < 128; k++) {
-        if (f32(k) >= steps) { break; }
-        let t = tmin + dt * (f32(k) + jitter);
-        let p = org + dir * t;
-        let s = textureSampleLevel(vol_dens, vol_smp, p / dx / ext, 0.0);
-        if (vol.scr.z > 0.5) { let a2 = min(s.a * 30.0, 1.0) * 0.4; acc = acc + trans * vec3<f32>(0.0, 1.0, 0.0) * a2; trans = trans * (1.0 - a2); }   // debug: any dust shows green
-        let dens = s.a;
-        if (dens < 0.003) { continue; }
-        let col = s.rgb / max(dens, 1.0e-4);
-        let a = (1.0 - exp(-dens * vol.g.y * dt)) * smoothstep(2.0, 14.0, t);   // thin out close to the camera instead of blinding it
-        let lit = col * (ambient * 1.5 + vec3<f32>(sun_k) * (0.9 + 1.2 * forward));
-        let fogk = clamp(1.0 - exp(-t * u.fog.x), 0.0, 1.0);
-        acc = acc + trans * a * mix(lit, u.sky_hor.rgb, fogk);
-        trans = trans * (1.0 - a);
-        if (trans < 0.03) { break; }
-    }
-    return vec4<f32>(acc, 1.0 - trans);
-}
-
-// the half-resolution dust drawn over the frame (bilinear)
-struct COut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
-@group(1) @binding(4) var comp_tex: texture_2d<f32>;
-@group(1) @binding(5) var comp_smp: sampler;
-@vertex fn vs_vcomp(@builtin(vertex_index) vi: u32) -> COut {
-    var q = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
-    var o: COut; o.pos = vec4<f32>(q[vi], 0.0, 1.0); o.uv = vec2<f32>(q[vi].x * 0.5 + 0.5, 0.5 - q[vi].y * 0.5); return o;
-}
-@fragment fn fs_vcomp(i: COut) -> @location(0) vec4<f32> { return textureSampleLevel(comp_tex, comp_smp, i.uv, 0.0); }

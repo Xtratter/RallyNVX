@@ -8,7 +8,7 @@ use ndk::native_window::NativeWindow;
 #[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-use super::{livery, airflow_gpu, blur_gpu, dust_gpu, fluid_gpu, sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
+use super::{livery, airflow_gpu, blur_gpu, dust_gpu, sign_models, citygen, dustgen, heightatlas::{self, HeightAtlas}, roadgen, watergen, meshes, nature_models, texgen, vehicle_models as vm};
 use crate::game::math::*;
 use crate::game::props::PropKind;
 use crate::game::scatter::{self, Bush};
@@ -169,7 +169,6 @@ pub struct Raster {
     pl_road: wgpu::RenderPipeline,
     pl_glass: wgpu::RenderPipeline,
     pl_rain: wgpu::RenderPipeline, pl_dust: wgpu::RenderPipeline, pl_dust_pt: wgpu::RenderPipeline, pl_dust_specks: wgpu::RenderPipeline,
-    fluid: Option<fluid_gpu::FluidGpu>,
     /// The airflow debug view: made on first use (`airflow_tried`), so nothing is allocated while it is off.
     airflow: Option<airflow_gpu::AirflowGpu>, airflow_tried: bool, adapter: wgpu::Adapter,
     /// The dust on the GPU, made on first use.
@@ -400,7 +399,6 @@ impl Raster {
             fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_dust_speck"), compilation_options: Default::default(), targets: &target_blend }),
             primitive: prim, depth_stencil: depth_state(false, wgpu::CompareFunction::Less, no_bias), multisample: wgpu::MultisampleState::default(), multiview: None, cache: None,
         });
-        let fluid = fluid_gpu::FluidGpu::new(&adapter, &device, &queue, &bgl_main, &module, format);
         let dust_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("dust_inst"), size: (dustgen::MAX_INST * std::mem::size_of::<dustgen::DustInst>()) as u64, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let pl_terrain_sh = mk("terrain_sh", &lay_shadow, "vs_terrain_shadow", None, &[mesh_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
         let pl_inst = mk("inst", &lay_main, "vs_inst", Some("fs_inst"), &[mesh_layout.clone(), inst_layout.clone()], depth_state(true, wgpu::CompareFunction::Less, no_bias));
@@ -439,7 +437,7 @@ impl Raster {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let meshes = [mesh_buf(&device, &meshes::cube()), mesh_buf(&device, &meshes::cylinder()), mesh_buf(&device, &meshes::cone()), mesh_buf(&device, &meshes::sphere())];
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, fluid, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -684,8 +682,7 @@ impl Raster {
         let blur_params = blur_gpu::params(BLUR_LEVEL.load(std::sync::atomic::Ordering::Relaxed)).filter(|_| self.config.usage.contains(wgpu::TextureUsages::COPY_SRC));
         if blur_params.is_some() && self.blur.is_none() { self.blur = Some(blur_gpu::MotionBlur::new(&self.device, self.config.format)); }
         let blur_on = blur_params.is_some() && self.blur.is_some();
-        let fluid_on = wv.fluid.is_some() && self.fluid.is_some();
-        let dust_n = if fluid_on { 0 } else { dinst.len() as u32 };
+        let dust_n = dinst.len() as u32;
         let mut all: Vec<Inst> = Vec::new();
         let mut ranges = [(0u32, 0u32); 4];
         for k in 0..4 {
@@ -706,9 +703,6 @@ impl Raster {
         };
         let mut enc = self.device.create_command_encoder(&Default::default());
         if let Some(p) = &self.prof { p.mark(&mut enc, 0); }
-        if let (true, Some(fl), Some(pk)) = (fluid_on, self.fluid.as_mut(), wv.fluid.as_ref()) {
-            fl.update(&self.device, &self.queue, &mut enc, wv.terrain, [wv.vehicle.pos.x, wv.vehicle.pos.y, wv.vehicle.pos.z], [wv.wind.x, wv.wind.y, wv.wind.z], pk, wv.time);
-        }
                 if let (Some(af), Some(fi)) = (self.airflow.as_mut(), wv.airflow.as_ref()) {
             af.update(&self.device, &self.queue, &mut enc, fi.inflow, &fi.boxes, wv.time);
         }
@@ -763,7 +757,7 @@ impl Raster {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, resolve_target: None,
                     ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: wv.daylight.sky_hor[0] as f64 * 0.7, g: wv.daylight.sky_hor[1] as f64 * 0.7, b: wv.daylight.sky_hor[2] as f64 * 0.7, a: 1.0 }), store: wgpu::StoreOp::Store } })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.depth.1,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: if fluid_on || dust_low || blur_on { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard } }), stencil_ops: None }),
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: if dust_low || blur_on { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard } }), stencil_ops: None }),
                 timestamp_writes: None, occlusion_query_set: None });
             rp.set_bind_group(0, &self.bg_main, &[]);
             rp.set_pipeline(&self.pl_sky);
@@ -834,9 +828,6 @@ impl Raster {
                 rp.draw(0..6, 0..dust_n);
             }
         }
-        if let (true, Some(fl)) = (fluid_on, self.fluid.as_mut()) {
-            fl.draw(&self.device, &self.queue, &mut enc, &view, &self.depth.1, &self.bg_main, (self.config.width, self.config.height));
-        }
         if let Some(p) = &self.prof { p.mark(&mut enc, 3); }
         if let (true, Some(dg), Some(dr)) = (dust_low, self.dust_gpu.as_ref(), self.dust_render.as_mut()) {
             dr.draw(&self.device, &mut enc, &view, &self.depth.1, &self.bg_main, dg.render_buffer(), dg.count(), (self.config.width, self.config.height));
@@ -877,7 +868,7 @@ static PROF_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::n
 pub fn set_prof(on: bool) { PROF_ON.store(on, std::sync::atomic::Ordering::Relaxed); }
 pub fn prof_on() -> bool { PROF_ON.load(std::sync::atomic::Ordering::Relaxed) }
 const PROF_N: u32 = 6;
-const PROF_NAMES: [&str; 5] = ["fluid+airflow", "dust compute", "shadow+main", "dust low+comp", "rest"];
+const PROF_NAMES: [&str; 5] = ["airflow", "dust compute", "shadow+main", "dust low+comp", "rest"];
 
 struct Prof { qs: wgpu::QuerySet, resolve: wgpu::Buffer, read: wgpu::Buffer, period: f32, frame: u32 }
 

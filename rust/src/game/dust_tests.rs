@@ -143,7 +143,7 @@ mod physics {
 
 #[test]
 fn the_gpu_dust_is_for_normal_and_lots_with_the_switch_or_the_debug_flag() {
-    for level in 0..=3 {
+    for level in 0..=2 {
         let on = matches!(level, 1 | 2);
         assert_eq!(gpu_wanted(true, false, level), on, "switch, level {level}");
         assert_eq!(gpu_wanted(false, true, level), on, "debug, level {level}");

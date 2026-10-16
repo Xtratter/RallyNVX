@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.38.0 - the fluid dust is gone
+
+- Removed: the experimental fluid dust (Settings, Dust, "Fluid (test)": a CPU fluid grid with a volume render, about 40 fps): the GPU particle dust with the airflow replaced it and looks and runs better; the Dust setting is Off / Normal / Lots; the code, the shader and the `fluid` block of `surfaces.json` are removed
+
 ## 2.37.0 - weather
 
 - Added: weather (Settings, Weather, and the Weather button in the drive: Auto / Clear / Cloudy / Rain / Heavy rain / Fog; Auto from the level's seed): clouds thicken, the sky greys and darkens, the sun and moon discs fade, fog thickens, rain streaks fall round the camera, the ground gets wet (darker, glossy with the sky in it), the grip drops by surface (`surfaces.json` -> `wet`) and on wet ground the wheels throw almost no dust but a pale cold spray mist (also on wet asphalt) and dark mud clods off the road, as real tyres do; wet ground dries in a few minutes

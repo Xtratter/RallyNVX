@@ -94,7 +94,7 @@ mod game {
         /// The camera view (see `CamView`), its distance scale or zoom and its height or tilt offset.
         pub fn camera_view(&mut self, view: i32, dist: f32, height: f32) { self.world.cam.set_view(view, dist, height); }
         /// Tyre dust: 0 off, 1 normal, 2 lots.
-        pub fn set_dust(&mut self, level: i32) { self.dust_level = level.clamp(0, 3); self.world.dust.set_level(self.dust_level); }
+        pub fn set_dust(&mut self, level: i32) { self.dust_level = level.clamp(0, 2); self.world.dust.set_level(self.dust_level); }
         /// Rally: stage 0 the special stage, 1 the city loop, -1 leaves the rally mode.
         pub fn rally(&mut self, stage: i32) { if stage < 0 { self.world.rally_stop(); } else { self.world.rally_start(stage as u32); } }
         pub fn set_signs(&mut self, on: bool) { self.world.signs_on = on; }

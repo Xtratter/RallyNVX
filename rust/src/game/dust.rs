@@ -155,7 +155,7 @@ pub fn gpu_on(level: i32) -> bool { gpu_wanted(AERO.load(std::sync::atomic::Orde
 
 fn caps(level: i32) -> (usize, f32) {
     let t = grip::table();
-    match level { 0 | 3 => (0, 0.0), 2 => (t.dust_cap_lots, 1.5), _ => (t.dust_cap_normal, 1.0) }   // 3: the fluid dust (no particles)
+    match level { 0 => (0, 0.0), 2 => (t.dust_cap_lots, 1.5), _ => (t.dust_cap_normal, 1.0) }
 }
 
 impl Dust {
@@ -177,10 +177,10 @@ impl Dust {
     /// The ring size on the GPU: the GPU holds and emits `dust.gpu_factor` times more than the CPU path.
     pub fn gpu_cap(&self) -> usize { (self.cap as f32 * grip::table().dust_gpu_factor) as usize }
 
-    /// 0 off, 1 normal, 2 lots, 3 fluid (the experiment: the particles stay off, the grid does the dust).
+    /// 0 off, 1 normal, 2 lots.
     pub fn level(&self) -> i32 { self.level }
     pub fn set_level(&mut self, level: i32) {
-        let level = level.clamp(0, 3);
+        let level = level.clamp(0, 2);
         self.level = level;
         self.cap = caps(level).0;
         if self.parts.len() > self.cap { self.parts.clear(); self.head = 0; }

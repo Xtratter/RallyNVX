@@ -26,7 +26,7 @@ object Controls {
     fun renderMode(c: Context): Int { val v = p(c).getInt("render_mode", -1); return if (v in 0..1) v else DriveMath.defaultRender(p(c).getInt("game_quality", 1)) }
     fun setRenderMode(c: Context, v: Int) = p(c).edit().putInt("render_mode", v.coerceIn(0, 1)).putInt("render_rev", renderRev(c) + 1).apply()
     fun renderRev(c: Context) = p(c).getInt("render_rev", 0)
-    fun dust(c: Context): Int = p(c).getInt("dust", 1).coerceIn(0, 3)
+    fun dust(c: Context): Int = p(c).getInt("dust", 1).coerceIn(0, 2)
     /** Signs along the stage (corner warnings, chevrons, boards). */
     fun signs(c: Context): Boolean = p(c).getBoolean("signs", true)
     fun setSigns(c: Context, v: Boolean) = p(c).edit().putBoolean("signs", v).apply()
