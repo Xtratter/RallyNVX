@@ -14,7 +14,29 @@ pub struct DustSpec { pub color: [f32; 3], pub roll: f32, pub slide: f32, pub si
 /// The numbers of `rust/surfaces.json`: one grip per surface (gravel's `mu` is the packed value), the loose gravel's
 /// own `mu` and how fast the wheels pack it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct GripTable { surfaces: [SurfaceGrip; 7], dust: [DustSpec; 7], pub gravel_loose_mu: f32, pub wear_per_metre: f32, pub dust_cap_normal: usize, pub dust_cap_lots: usize, pub dust_gpu_factor: f32, pub dust_gpu_size: f32, pub dust_gpu_life: f32, pub dust_gpu_kick: f32, pub dust_gpu_specks: f32, pub dust_gpu_lift: f32, pub dust_gpu_tint: [f32; 3], pub wind_speed: f32, pub wind_gust: f32 }
+pub struct GripTable { surfaces: [SurfaceGrip; 7], dust: [DustSpec; 7], tyres: [[(f32, f32); 7]; 3], pub gravel_loose_mu: f32, pub wear_per_metre: f32, pub dust_cap_normal: usize, pub dust_cap_lots: usize, pub dust_gpu_factor: f32, pub dust_gpu_size: f32, pub dust_gpu_life: f32, pub dust_gpu_kick: f32, pub dust_gpu_specks: f32, pub dust_gpu_lift: f32, pub dust_gpu_tint: [f32; 3], pub wind_speed: f32, pub wind_gust: f32 }
+
+/// The `tyre_sets` object of the file: per set (`tarmac`, `gravel`, `snow`) and surface two multipliers `[grip, lateral]` (0.5 to 1.5); a missing object, set or surface is 1.0.
+fn tyre_sets(v: &serde_json::Value) -> Result<[[(f32, f32); 7]; 3], String> {
+    let mut out = [[(1.0f32, 1.0f32); 7]; 3];
+    let Some(t) = v.get("tyre_sets") else { return Ok(out) };
+    let t = t.as_object().ok_or("tyre_sets must be an object")?;
+    let names = [("tarmac", 0usize), ("gravel", 1), ("snow", 2)];
+    let surfaces = [("grass", Surface::Grass), ("dirt", Surface::Dirt), ("sand", Surface::Sand), ("rock", Surface::Rock), ("gravel", Surface::Gravel), ("asphalt", Surface::Asphalt), ("water", Surface::Water)];
+    for (key, _) in t { if !names.iter().any(|(n, _)| n == key) { return Err(format!("tyre_sets: unknown set \"{key}\" (tarmac, gravel, snow)")); } }
+    for (set, si) in names {
+        let Some(o) = t.get(set) else { continue };
+        let o = o.as_object().ok_or_else(|| format!("tyre_sets.{set} must be an object"))?;
+        for (key, _) in o { if !surfaces.iter().any(|(n, _)| n == key) { return Err(format!("tyre_sets.{set}: unknown surface \"{key}\"")); } }
+        for (name, surf) in surfaces {
+            let Some(a) = o.get(name) else { continue };
+            let a = a.as_array().filter(|a| a.len() == 2).ok_or_else(|| format!("tyre_sets.{set}.{name} must be [grip, lateral]"))?;
+            let f = |i: usize| a[i].as_f64().filter(|x| x.is_finite() && (0.5..=1.5).contains(x)).map(|x| x as f32).ok_or_else(|| format!("tyre_sets.{set}.{name}: values must be between 0.5 and 1.5"));
+            out[si][index(surf)] = (f(0)?, f(1)?);
+        }
+    }
+    Ok(out)
+}
 
 /// The embedded default file.
 pub const EMBEDDED: &str = include_str!("../../surfaces.json");
@@ -49,8 +71,10 @@ impl GripTable {
         let dust_top = section("dust")?;
         let cap = |key: &str| -> Result<usize, String> { Ok(num(dust_top, "dust", key, 0.0, 4096.0)? as usize) };
         let wind_top = section("wind")?;
+        let tyres = tyre_sets(&v)?;
         Ok(GripTable {
             surfaces: [plain("grass")?, plain("dirt")?, plain("sand")?, plain("rock")?, gravel_grip, plain("asphalt")?, plain("water")?],
+            tyres,
             dust: [dust_of("grass")?, dust_of("dirt")?, dust_of("sand")?, dust_of("rock")?, dust_of("gravel")?, dust_of("asphalt")?, dust_of("water")?],
             gravel_loose_mu: loose, wear_per_metre: wear,
             dust_cap_normal: cap("cap_normal")?, dust_cap_lots: cap("cap_lots")?, dust_gpu_factor: dust_top.get("gpu_factor").and_then(|x| x.as_f64()).filter(|x| (1.0..=100.0).contains(x)).map_or(1.0, |x| x as f32),
@@ -64,6 +88,9 @@ impl GripTable {
     }
 
     pub fn dust(&self, s: Surface) -> DustSpec { self.dust[index(s)] }
+
+    /// The (grip, lateral) multipliers of a wheel set (0 tarmac, 1 gravel, 2 snow; anything else counts as tarmac) on a surface.
+    pub fn tyre(&self, set: u8, s: Surface) -> (f32, f32) { self.tyres[if set < 3 { set as usize } else { 0 }][index(s)] }
 
     /// The grip of a surface; `loose` (0 packed .. 1 loose, only used on gravel) interpolates the gravel grip.
     pub fn grip(&self, s: Surface, loose: f32) -> SurfaceGrip {
@@ -100,6 +127,9 @@ pub fn load_override(path: &std::path::Path) {
 
 /// The grip of a surface from the active table.
 pub fn grip(s: Surface, loose: f32) -> SurfaceGrip { table().grip(s, loose) }
+
+/// What a wheel set (0 tarmac, 1 gravel, 2 snow) does to the grip and the side stiffness on a surface: `(grip, lateral)` multipliers from the active table.
+pub fn tyre_factor(set: u8, s: Surface) -> (f32, f32) { table().tyre(set, s) }
 
 pub const CELL_S: f32 = 1.0;
 pub const CELL_X: f32 = 0.5;
