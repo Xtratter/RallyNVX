@@ -77,6 +77,14 @@ pub fn build_rally(spec: &VehicleSpec) -> CarModel {
                 }
                 None => wipers,
             };
+            // the sweep first with the flat arcs, then each arm's axis follows the glass's curve over that sweep, and the sweep is found again
+            let wipers = match windscreen.as_ref() {
+                Some(s) => {
+                    let flat = wipers.iter().flatten().map(|w| w.max_sweep(s)).fold(super::vehicle_models::WIPER_SWEEP, f32::min);
+                    wipers.map(|w| w.map(|w| w.follow_glass(s, flat)))
+                }
+                None => wipers,
+            };
             let wiper_sweep = match windscreen.as_ref() { Some(s) => wipers.iter().flatten().map(|w| w.max_sweep(s)).fold(super::vehicle_models::WIPER_SWEEP, f32::min), None => super::vehicle_models::WIPER_SWEEP };
             CarModel { body, wheel, disc, caliper, alt_wheels, glass, interior, steering, driver, wipers, gloves: if steering_ok { gloves } else { None }, windscreen, wiper_sweep }
         }
