@@ -76,9 +76,9 @@ mod game {
     impl Game {
         pub fn new(raster: Raster, seed: u64, stats: Arc<Mutex<[f32; STAT_LEN]>>) -> Game {
             let seed = super::level_seed(seed);
-            Game { world: World::with_roads(seed, crate::game::vehicle::VehicleSpec::offroader()), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
+            Game { world: World::with_roads(seed, crate::game::vehicle::VehicleSpec::default_car()), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::offroader(), garage: false, dust_level: 1, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false }
+                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::default_car(), garage: false, dust_level: 1, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }

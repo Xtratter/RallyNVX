@@ -36,7 +36,7 @@ impl Profile {
             if let Some(cars) = g.get("cars").and_then(Value::as_object) {
                 for (raw_id, l) in cars {
                     let id = legacy_id(raw_id);
-                    if VehicleSpec::by_id(id).is_none() { continue; }
+                    if !VehicleSpec::all().iter().any(|(i, _)| i == id) { continue; }   // unknown cars and the engine's stand-in are dropped
                     let lv = |k: &str| l.get(k).and_then(Value::as_u64).unwrap_or(0).min(MAX_LEVEL as u64) as u8;
                     let angle = l.get("wing_angle").and_then(Value::as_u64).map_or(default_levels()[7], |a| a.min(MAX_WING_ANGLE as u64) as u8);
                     let set = l.get("wheel_set").and_then(Value::as_u64).map_or(default_levels()[8], |a| a.min(MAX_WHEEL_SET as u64) as u8);

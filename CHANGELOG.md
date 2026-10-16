@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.57.0 - the Peugeot is the only car
+
+- Changed: the second car (the generated off-roader) is cut from the game: the garage and the lists show only the Peugeot, it is free and selected on a new profile, and the game starts with it. A saved profile that had the off-roader selected switches to the Peugeot. The off-roader stays in `vehicles.json` only as the engine's stand-in (tests, the world before a profile picks a car); the buying logic stays for the cars to come
+
 ## 2.56.0 - PBR ground: roughness and rain puddles
 
 - Added: the ground has its own roughness (grass, dirt, sand, rock, snow, asphalt, the painted lines) instead of one value for everything
