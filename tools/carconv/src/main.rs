@@ -56,6 +56,15 @@ fn is_cabin(n: &str) -> bool {
 /// The windscreen wipers (arm and blade; the game sweeps them in the rain): the driver's side (`fl`, +x) and the other.
 fn is_wiper_l(n: &str) -> bool { n == "int_wiper_fl" || n == "int_wiper_fl_base" }
 fn is_wiper_r(n: &str) -> bool { n == "int_wiper_fr" || n == "int_wiper_fr_base" }
+/// The class of a cabin part by its node's name: 22 soft fabric (the seats, the alcantara of the dash), 23 carbon and kevlar (the panels, the roll cage's wrap),
+/// 24 bare metal (the handbrake, the gear stick, the pedals), else 15 the hard plastic and paint of the cabin.
+fn cabin_class(n: &str) -> u8 {
+    let l = n.to_lowercase();
+    if l.contains("alcantara") || l.contains("alcnt") { 22 }
+    else if l.contains("handbrake") || l.contains("gearstick") || l.contains("int_brake") || l.contains("int_clutch") || l.contains("int_accelerator") { 24 }
+    else if l.contains("carbon") || l.ends_with("_sub1") || l.ends_with("_sub2") || l.contains("_sub1.") || l.contains("_sub2.") || (l.contains("_panel") && !l.contains("panel_part")) { 23 }
+    else { 15 }
+}
 fn is_driver(n: &str) -> bool { n.starts_with("CO_DRIVER") }
 /// The instrument cluster (backlit at night) and the RPM shift LEDs (LED_RPM_1..4, lit one by one as the revs rise).
 fn is_dash(n: &str) -> bool { n.contains("dials") || n.starts_with("LED_RPM_") }
@@ -324,10 +333,10 @@ fn main() {
     let mut interior: Vec<(Vec<V>, Vec<u32>, usize)> = Vec::new();   // (vertices, indices, budget): the cabin, the steering wheel, the driver
     for (wiper, want, budget) in [(is_cabin as fn(&str) -> bool, cabin_t), (is_wheel as fn(&str) -> bool, wheel_t2), (is_driver as fn(&str) -> bool, driver_t), (is_wiper_l as fn(&str) -> bool, 2200), (is_wiper_r as fn(&str) -> bool, 2200)].into_iter().enumerate().map(|(k, (w, b))| (k >= 3, w, b)) {
         let ps = collect(doc, &buffers, &mut tex, &|n| want(n), true);
+        // the wipers are outside the cabin: class 18, the interior atlas lit by the sun like the outside; the cabin's parts get their surface by name (`cabin_class`)
+        let ps: Vec<_> = ps.into_iter().map(|(name, mut pv, pi)| { let c = if wiper { 18 } else { cabin_class(&name) }; for x in &mut pv { x.c[3] = c; } (name, pv, pi) }).collect();
         let (mut v, i) = merge(&ps);
         body_xf(&mut v, ground, cr, st, ct);
-        // the wipers are outside the cabin: class 18, the interior atlas lit by the sun
-        for x in &mut v { x.c[3] = if wiper { 18 } else { 15 }; }   // the wipers keep the model's own material (its interior texture), lit by the sun like the outside
         eprintln!("interior group: {} parts, {} triangles, {} of {} vertices textured", ps.len(), i.len() / 3, v.iter().filter(|x| x.tex.is_some()).count(), v.len());
         interior.push((v, i, budget));
     }
@@ -556,6 +565,16 @@ mod tests {
         assert!((susp_weight(0.1, 0.4) - 0.75).abs() < 1e-6);
         assert_eq!(susp_weight(1.0, 0.0), 1.0, "a point-sized part sticks to the hub");
         assert_eq!(susp_weight(9.0, 0.4), 0.0, "never negative");
+    }
+    #[test] fn cabin_parts_get_their_surface_by_name() {
+        assert_eq!(cabin_class("int_seat_l_alcantara.001"), 22);
+        assert_eq!(cabin_class("int_main_dash_clear_alcantara"), 22);
+        assert_eq!(cabin_class("int_main_SUB1.001"), 23);
+        assert_eq!(cabin_class("int_door_fl_panel.001"), 23);
+        assert_eq!(cabin_class("int_door_fl_panel_part.001"), 15);
+        assert_eq!(cabin_class("int_handbrake.001"), 24);
+        assert_eq!(cabin_class("int_main_dash_black_plastic.001"), 15);
+        assert_eq!(cabin_class("int_main_SUB0.001"), 15);
     }
     #[test] fn surfaces_are_told_apart_by_material() {
         assert_eq!(class_of("carbon3", "x0_door_fl_carbon_parts").0, CARBON);

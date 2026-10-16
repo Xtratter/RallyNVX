@@ -267,7 +267,7 @@ mod tests {
         assert!(p.body.verts.iter().all(|v| v.col[3] != 1), "the body has no glass of its own any more");
         let t = interior.idx.len() / 3;
         assert!((12_000..=32_000).contains(&t), "{t} cabin triangles");
-        assert!(interior.verts.iter().all(|v| v.col[3] == 15), "interior is class 15");
+        assert!(interior.verts.iter().all(|v| matches!(v.col[3], 15 | 22 | 23 | 24)), "the interior is class 15 or a cabin surface (22 fabric, 23 carbon, 24 metal)");
         let textured = interior.verts.iter().filter(|v| v.uv != NO_UV).count();
         assert!(textured * 10 > interior.verts.len() * 9, "{textured} of {} interior vertices have a UV", interior.verts.len());
         // the interior sits inside the body's envelope

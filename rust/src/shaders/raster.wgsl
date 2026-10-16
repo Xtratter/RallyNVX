@@ -609,9 +609,15 @@ fn bead_normal(nc: vec3<f32>, lp: vec3<f32>, wp: vec3<f32>) -> vec3<f32> {
         let tint = select(vec3<f32>(1.0, 0.45, 0.35), vec3<f32>(1.0, 0.95, 0.85), m == 11);
         return vec4<f32>(shade(albedo * occl, i.wp, n, 0.3, 0.7) + finish(albedo * tint * on * 1.8), 1.0);
     }
-    if (m == 15) {   // the interior and the driver: the interior atlas, in the shade of the roof (a cabin factor: little sun, no shadow map inside)
+    if (m == 15 || (m >= 22 && m <= 24)) {   // the cabin and the driver: the interior atlas, in the shade of the roof (a cabin factor: little sun, no shadow map inside); each surface has its roughness range
         let ia = select(vec3<f32>(0.12), iv.rgb, has_uv);
-        return vec4<f32>(shade_with(ia * occl, i.wp, n, 0.7, 0.0, 0.3) * 0.7, 1.0);
+        let idark = select(0.5, 1.0 - sqrt(clamp(dot(iv.rgb, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.0, 1.0)), has_uv);
+        var cr = mix(0.50, 0.75, idark);          // hard plastic and the cabin's paint
+        var cm = 0.0;
+        if (m == 22) { cr = mix(0.90, 1.0, idark); }                       // fabric: alcantara and the seats' cloth, fully matte
+        if (m == 23) { cr = mix(0.22, 0.40, idark); }                      // carbon and kevlar under a clear coat
+        if (m == 24) { cr = mix(0.30, 0.55, idark); cm = 0.85; }           // bare metal: the handbrake, the gear stick, the pedals
+        return vec4<f32>(shade_with(ia * occl, i.wp, n, cr, cm, 0.3) * 0.7, 1.0);
     }
     if (m == 18) {   // a part outside the cabin that keeps the interior atlas's texture (the windscreen wipers): lit by the sun like the paint, a satin plastic
         let ia = select(vec3<f32>(0.10), iv.rgb, has_uv);

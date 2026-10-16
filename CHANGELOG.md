@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.58.0 - PBR cabin surfaces
+
+- Added: the cabin has its own surfaces by part name (new classes 22-24): soft fabric (the seats and the dash alcantara, fully matte, roughness 0.90-1.0), carbon and kevlar under a clear coat (0.22-0.40) with a glossy highlight, bare metal (the handbrake, the gear stick, the pedals; metallic 0.85, 0.30-0.55), and the hard plastic as before but with the texture's brightness varying its roughness (0.50-0.75)
+
 ## 2.57.0 - the Peugeot is the only car
 
 - Changed: the second car (the generated off-roader) is cut from the game: the garage and the lists show only the Peugeot, it is free and selected on a new profile, and the game starts with it. A saved profile that had the off-roader selected switches to the Peugeot. The off-roader stays in `vehicles.json` only as the engine's stand-in (tests, the world before a profile picks a car); the buying logic stays for the cars to come
