@@ -1,5 +1,6 @@
 //! The synthesiser: smoothed continuous voices (engine, rolling, squeal, wind) plus a pool of one-shots.
 use super::dsp::{coef, frac, Noise, OnePole};
+use super::reverb::Reverb;
 use super::spatial::{path, Emitter, MAX_DELAY};
 use super::{AudioParams, Event, Machine, Scene, Surface, N_SRC, RATE, SRC_BAY, SRC_BODY, SRC_EXHAUST, SRC_WHEEL};
 
@@ -23,7 +24,7 @@ pub struct Synth {
     engine_phase: f32, gurgle: f32, squeal: f32,
     f_roll: [OnePole; 4], f_roll_w: [OnePole; 4], f_sq1: [OnePole; 4], f_sq2: [OnePole; 4], f_wind: OnePole, f_wind_r: OnePole,
     voices: [Voice; MAX_VOICES],
-    scene: Scene, emitters: Vec<Emitter>, block: usize, wind_k: f32, lp_wind: [OnePole; 2],
+    scene: Scene, emitters: Vec<Emitter>, block: usize, wind_k: f32, lp_wind: [OnePole; 2], reverb: Reverb,
 }
 
 /// What the sources emit at one instant, before the room and the listener's head: the exhaust, the engine bay, the four tyres, the car's body (the one-shots) and the wind at the listener's ears.
@@ -47,7 +48,7 @@ impl Synth {
             f_roll: [OnePole::default(); 4], f_roll_w: [OnePole::default(); 4], f_sq1: [OnePole::default(); 4], f_sq2: [OnePole::default(); 4],
             f_wind: OnePole::default(), f_wind_r: OnePole::default(),
             voices: [Voice::default(); MAX_VOICES],
-            scene: Scene::default(), emitters: (0..N_SRC).map(|_| Emitter::new()).collect(), block: 0, wind_k: 1.0, lp_wind: [OnePole::default(); 2],
+            scene: Scene::default(), emitters: (0..N_SRC).map(|_| Emitter::new()).collect(), block: 0, wind_k: 1.0, lp_wind: [OnePole::default(); 2], reverb: Reverb::new(),
         }
     }
 
@@ -67,7 +68,7 @@ impl Synth {
     pub fn set_volume(&mut self, v: f32) { self.volume = if v.is_finite() { v.clamp(0.0, 1.0) } else { 1.0 }; }
 
     /// Stops everything at once: no one-shots, no machine, inactive (the activity left the game).
-    pub fn silence(&mut self) { self.voices = [Voice::default(); MAX_VOICES]; self.target = AudioParams::default(); self.emitters.iter_mut().for_each(|e| e.reset()); }
+    pub fn silence(&mut self) { self.voices = [Voice::default(); MAX_VOICES]; self.target = AudioParams::default(); self.emitters.iter_mut().for_each(|e| e.reset()); self.reverb.reset(); }
 
     /// Number of one-shot voices currently sounding.
     pub fn voices(&self) -> usize { self.voices.iter().filter(|v| v.live).count() }
@@ -174,6 +175,7 @@ impl Synth {
                     self.emitters[k].set_taps(&direct, echo.as_ref());
                 }
                 let c = coef(self.scene.wind_hz, self.rate); self.wind_k = c;
+                self.reverb.set_env(&self.scene.env);
             }
             self.block = (self.block + 1) % BLOCK;
             let f = self.frame();
@@ -182,7 +184,9 @@ impl Synth {
             let mut add = |k: usize, x: f32| { let (a, b) = self.emitters[k].process(x); l += a; r += b; };
             add(SRC_EXHAUST, f.exhaust); add(SRC_BAY, f.bay); add(SRC_BODY, f.body);
             for k in 0..4 { add(SRC_WHEEL + k, f.wheels[k]); }
-            fr[0] = self.finish(l); fr[1] = self.finish(r);
+            let rin = (f.exhaust + f.bay + f.body + f.wheels.iter().sum::<f32>()) * 0.5;
+            let (tl, tr) = self.reverb.process(rin);
+            fr[0] = self.finish(l + tl); fr[1] = self.finish(r + tr);
         }
     }
 

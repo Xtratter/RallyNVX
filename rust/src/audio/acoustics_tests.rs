@@ -76,3 +76,37 @@ fn l_db(o: &Occlusion) -> f32 { o.loss[1] }
     }
     assert!((pw / po - 1.0).abs() > 0.02, "the echo changes the sound: {pw} vs {po}");
 }
+
+fn rays_in(obs: &[Obstacle], ground: &dyn Fn(f32, f32) -> f32, alpha: f32) -> Vec<RayResult> {
+    sphere_dirs(256).into_iter().map(|dir| RayResult { dir, hit: trace(v3(0.0, 1.5, 0.0), dir, 150.0, ground, &|_, _| alpha, obs) }).collect()
+}
+#[test] fn rays_hit_the_ground_spheres_and_boxes_where_they_are() {
+    let g = trace(v3(0.0, 1.5, 0.0), v3(0.0, -1.0, 0.0), 50.0, &flat, &|_, _| 0.2, &[]).expect("the ground");
+    assert!((g.dist - 1.5).abs() < 0.05 && g.ground && g.alpha == 0.2, "{g:?}");
+    assert!(trace(v3(0.0, 1.5, 0.0), v3(0.0, 1.0, 0.0), 50.0, &flat, &|_, _| 0.2, &[]).is_none(), "the sky");
+    let s = Obstacle { shape: Shape::Sphere { c: v3(0.0, 1.5, 10.0), r: 2.0 }, kind: Kind::Hard };
+    let h = trace(v3(0.0, 1.5, 0.0), v3(0.0, 0.0, 1.0), 50.0, &flat, &|_, _| 0.2, &[s]).unwrap();
+    assert!((h.dist - 8.0).abs() < 1e-3 && !h.ground && h.alpha == 0.05);
+    let b = Obstacle { shape: Shape::Aabb { min: v3(-1.0, 0.0, 20.0), max: v3(1.0, 5.0, 22.0) }, kind: Kind::Wall };
+    assert!((trace(v3(0.0, 1.5, 0.0), v3(0.0, 0.0, 1.0), 50.0, &flat, &|_, _| 0.2, &[b]).unwrap().dist - 20.0).abs() < 1e-3);
+    assert!(trace(v3(0.0, 1.5, 0.0), v3(0.0, 0.0, 1.0), 15.0, &flat, &|_, _| 0.2, &[b]).is_none(), "beyond the range");
+    let d = sphere_dirs(100); assert!(d.iter().all(|v| (v.len() - 1.0).abs() < 1e-4) && d.iter().map(|v| v.y).sum::<f32>().abs() < 1.0, "even over the sphere");
+}
+#[test] fn an_open_field_has_a_short_faint_tail_a_canyon_a_long_loud_one_with_echoes_from_its_walls() {
+    use crate::audio::reverb::ECHOES;
+    let fwd = v3(0.0, 0.0, 1.0);
+    let open = environment(&rays_in(&[], &flat, 0.2), fwd);
+    assert!(open.level < 0.3 && open.rt60 < 0.6 && open.echoes.iter().all(|e| e.1 == 0.0), "{open:?}");
+    // a street: long walls 8 m to each side
+    let wall = |x0: f32, x1: f32| Obstacle { shape: Shape::Aabb { min: v3(x0, 0.0, -200.0), max: v3(x1, 20.0, 200.0) }, kind: Kind::Wall };
+    let street = environment(&rays_in(&[wall(8.0, 10.0), wall(-10.0, -8.0)], &flat, 0.03), fwd);
+    assert!(street.level > open.level + 0.05 && street.rt60 > open.rt60, "street {street:?} open {open:?}");
+    // sides: 1 right (-x), 3 left (+x); a wall 8 m away is 16 m there and back: 0.047 s
+    for k in [1usize, 3] { let e = street.echoes[k]; assert!((e.0 - 16.0 / 343.0).abs() < 0.006 && e.1 > 0.1, "side {k}: {e:?}"); }
+    assert!(street.echoes[1].2 > 0.9 && street.echoes[3].2 < -0.9, "panned to their sides");
+    let _ = ECHOES;
+    // a forest: crowns take the highs of every bounce
+    let trees: Vec<Obstacle> = (0..40).map(|i| { let a = i as f32 * 0.61; Obstacle { shape: Shape::Sphere { c: v3(a.cos() * (12.0 + (i % 5) as f32 * 6.0), 5.0, a.sin() * (12.0 + (i % 5) as f32 * 6.0)), r: 2.2 }, kind: Kind::Foliage } }).collect();
+    let forest = environment(&rays_in(&trees, &flat, 0.2), fwd);
+    assert!(forest.damp_hz < open.damp_hz + 1.0 && forest.level >= open.level, "forest {forest:?} open {open:?}");
+}

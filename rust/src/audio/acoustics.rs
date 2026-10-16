@@ -191,6 +191,98 @@ pub fn surface_reflection(s: crate::game::surface::Surface) -> (f32, f32) {
     match s { Asphalt => (0.93, 16000.0), Rock => (0.9, 16000.0), Water => (0.97, 16000.0), Gravel => (0.7, 8000.0), Dirt => (0.65, 6000.0), Sand => (0.55, 5000.0), Grass => (0.5, 3000.0) }
 }
 
+/// What a ray from the listener met: how far, how much of the sound that thing absorbs (0..1) and whether it was the ground.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RayHit { pub dist: f32, pub alpha: f32, pub ground: bool }
+
+/// A ray cast from the listener: its direction and what it met (`None`: the sky, or nothing within the range).
+#[derive(Clone, Copy, Debug)]
+pub struct RayResult { pub dir: V3, pub hit: Option<RayHit> }
+
+/// `n` directions spread evenly over the sphere (the golden spiral).
+pub fn sphere_dirs(n: usize) -> Vec<V3> {
+    let ga = std::f32::consts::PI * (3.0 - 5f32.sqrt());
+    (0..n).map(|i| { let y = 1.0 - 2.0 * (i as f32 + 0.5) / n as f32; let r = (1.0 - y * y).max(0.0).sqrt(); let t = ga * i as f32; v3(r * t.cos(), y, r * t.sin()) }).collect()
+}
+
+/// How much of the sound a thing takes with every bounce (broadband): a hard floor and walls almost none, grass and foliage a good deal.
+pub fn surface_alpha(s: crate::game::surface::Surface) -> f32 {
+    use crate::game::surface::Surface::*;
+    match s { Asphalt => 0.03, Rock => 0.03, Water => 0.02, Gravel => 0.10, Dirt => 0.12, Sand => 0.12, Grass => 0.20 }
+}
+fn kind_alpha(k: Kind) -> f32 { match k { Kind::Hard => 0.05, Kind::Foliage => 0.35, Kind::Wall => 0.06 } }
+
+/// The first thing a ray meets within `range` metres: the ground (stepped and refined), a sphere or a box.
+pub fn trace(o: V3, d: V3, range: f32, ground: &dyn Fn(f32, f32) -> f32, ground_alpha: &dyn Fn(f32, f32) -> f32, obs: &[Obstacle]) -> Option<RayHit> {
+    let mut best: Option<RayHit> = None;
+    // the ground: steps of 2 m, then a bisection
+    let step = 2.0;
+    let mut t = 0.0; let mut prev_above = o.y >= ground(o.x, o.z);
+    while t < range {
+        let t2 = (t + step).min(range);
+        let p = o + d * t2;
+        let above = p.y >= ground(p.x, p.z);
+        if prev_above && !above {
+            let (mut lo, mut hi) = (t, t2);
+            for _ in 0..6 { let m = 0.5 * (lo + hi); let q = o + d * m; if q.y >= ground(q.x, q.z) { lo = m; } else { hi = m; } }
+            let q = o + d * hi;
+            best = Some(RayHit { dist: hi, alpha: ground_alpha(q.x, q.z), ground: true });
+            break;
+        }
+        prev_above = above; t = t2;
+    }
+    let far = o + d * range;
+    for ob in obs {
+        let hit = match ob.shape {
+            Shape::Sphere { c, r } => {
+                let oc = o - c; let b = oc.dot(d); let cc = oc.dot(oc) - r * r;
+                let disc = b * b - cc;
+                if disc < 0.0 || cc < 0.0 { None } else { let t = -b - disc.sqrt(); if t > 0.0 && t < range { Some(t) } else { None } }
+            }
+            Shape::Aabb { min, max } => match seg_box(o, far, min, max) { Some((t0, _)) if t0 > 0.0 => Some(t0 * range), _ => None },
+        };
+        if let Some(t) = hit { if best.map_or(true, |b| t < b.dist) { best = Some(RayHit { dist: t, alpha: kind_alpha(ob.kind), ground: false }); } }
+    }
+    best
+}
+
+/// The tail and the echoes the rays ask for. The tail's decay follows from the bounce rate: a ray travels `d` (the mean free path) between bounces, `rho = (1 - escaped) (1 - alpha)`
+/// of the energy survives each one, so the level falls 60 dB in `60 d / (c * -10 log10 rho)` seconds (Eyring, with the sky as an open window); the level of the tail is the share
+/// of rays that come back. Echoes: in each of the four sides (front, right, back, left of `fwd`) the nearest wall-like hit near the horizon.
+pub fn environment(rays: &[RayResult], fwd: V3) -> super::reverb::Env {
+    use super::reverb::{Env, ECHOES};
+    let n = rays.len().max(1) as f32;
+    let hits: Vec<&RayHit> = rays.iter().filter_map(|r| r.hit.as_ref()).collect();
+    let escaped = 1.0 - hits.len() as f32 / n;
+    let (dbar, abar) = if hits.is_empty() { (150.0, 0.5) } else { (hits.iter().map(|h| h.dist).sum::<f32>() / hits.len() as f32, hits.iter().map(|h| h.alpha).sum::<f32>() / hits.len() as f32) };
+    let rho = ((1.0 - escaped) * (1.0 - abar)).clamp(1e-3, 0.999);
+    let rt60 = (60.0 * dbar / (C * (-10.0 * rho.log10()))).clamp(0.08, 3.5);
+    let level = (0.5 * (1.0 - escaped) * (1.0 - 0.6 * abar)).clamp(0.0, 1.0);
+    let damp_hz = (14000.0 * (1.0 - 1.6 * abar)).clamp(1500.0, 14000.0);
+    let f = { let h = v3(fwd.x, 0.0, fwd.z); if h.len() > 1e-3 { h.norm() } else { v3(0.0, 0.0, 1.0) } };
+    let right = f.cross(v3(0.0, 1.0, 0.0));
+    let mut echoes = [(0.0, 0.0, 0.0); ECHOES];
+    // sector k: 0 front, 1 right, 2 back, 3 left
+    for k in 0..ECHOES {
+        let axis = [f, right, f * -1.0, right * -1.0][k];
+        let mut nearest: Option<&RayHit> = None; let mut count = 0; let mut total = 0;
+        for r in rays {
+            if r.dir.y.abs() > 0.45 { continue; }
+            let h = v3(r.dir.x, 0.0, r.dir.z); if h.len() < 1e-3 || h.norm().dot(axis) < 0.707 { continue; }
+            total += 1;
+            if let Some(hit) = &r.hit { if !hit.ground { count += 1; if nearest.map_or(true, |m| hit.dist < m.dist) { nearest = Some(hit); } } }
+        }
+        if let (Some(h), true) = (nearest, total > 0) {
+            if h.dist > 4.0 && h.dist < 120.0 {
+                let share = count as f32 / total as f32;
+                let gain = (0.7 * share * (1.0 - h.alpha) * (25.0 / h.dist).min(1.0)).clamp(0.0, 0.8);
+                echoes[k] = (2.0 * h.dist / C, gain, [0.0, 1.0, 0.0, -1.0][k]);
+            }
+        }
+    }
+    Env { rt60, level, damp_hz, echoes }
+}
+
 #[cfg(test)]
 #[path = "acoustics_tests.rs"]
 mod tests;
