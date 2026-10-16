@@ -13,6 +13,7 @@ class LoadingView(ctx: Context) : View(ctx) {
     private var shown = 0f
     private var text = ""
     private var last = 0L
+    private var fading = false
     private val dp = resources.displayMetrics.density
     private val title = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE3E8EF.toInt(); textSize = 28 * dp; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL); textAlign = Paint.Align.CENTER }
     private val sub = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFA6B0BD.toInt(); textSize = 14 * dp; textAlign = Paint.Align.CENTER }
@@ -22,12 +23,15 @@ class LoadingView(ctx: Context) : View(ctx) {
     init { setBackgroundColor(0xFF0E1218.toInt()); isClickable = true }
 
     /** The loading starts again (the game restarts after the screen came back). */
-    fun restart() { target = 0f; shown = 0f; last = 0L; text = ""; visibility = VISIBLE; alpha = 1f; invalidate() }
+    fun restart() { animate().cancel(); fading = false; target = 0f; shown = 0f; last = 0L; text = ""; visibility = VISIBLE; alpha = 1f; invalidate() }
 
     fun report(packed: Int) {
         target = LoadMath.percent(packed) / 100f
         text = LoadMath.label(packed, t("en", "ru") == "en") + " · " + LoadMath.percent(packed) + " %"
-        if (LoadMath.done(packed) && visibility == VISIBLE) animate().alpha(0f).setDuration(250).withEndAction { visibility = GONE }.start()
+        if (LoadMath.done(packed) && visibility == VISIBLE && !fading) {   // once: a restarted animation never ends, and the clickable view would keep eating the touches
+            fading = true
+            animate().alpha(0f).setDuration(250).withEndAction { visibility = GONE }.start()
+        }
         invalidate()
     }
 
