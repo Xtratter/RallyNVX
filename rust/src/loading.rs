@@ -10,6 +10,8 @@ pub const SHADERS: u32 = 3;
 pub const WORLD: u32 = 4;
 pub const CAR: u32 = 5;
 pub const FIRST_FRAME: u32 = 6;
+/// The game thread died (a panic): the UI says so instead of waiting for ever.
+pub const FAILED: u32 = 99;
 
 static STATE: AtomicU32 = AtomicU32::new(0);
 static T0: Mutex<Option<Instant>> = Mutex::new(None);
@@ -43,6 +45,8 @@ mod tests {
         stage(FIRST_FRAME, 100);
         assert_eq!(current(), (100, FIRST_FRAME));
         assert_eq!(packed(), FIRST_FRAME << 8 | 100);
+        stage(FAILED, 0);
+        assert_eq!(current(), (0, FAILED), "a failure is reported even after 100 %");
         begin();
         assert_eq!(current(), (0, 0));
     }

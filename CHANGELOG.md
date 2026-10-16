@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.65.1 - the game starts again
+
+- Fixed: 2.65.0 hung on the loading screen at "Compiling shaders 64 %". The flame added a model slot, and the check that every slot has its mesh failed at start: the game thread died and nothing drew, while the loading screen waited for ever. The flame's mesh is in the list now
+- Added: if the game thread dies, the loading screen says "Startup failed: the game stopped (see the log)" instead of waiting
+
 ## 2.65.0 - flames from the exhaust, by the physics
 
 - Added: the tail pipe spits fire exactly when the engine model burns fuel in the exhaust: the anti-lag's pops on a lift at high revs (fuel and air burning in the hot exhaust, in pulses), the flame of a hard up-shift's spark cut (the unburnt fuel the engine pumps out lights up), nothing on a plain lift or at full throttle. The flame is two emissive cones (a yellow core in an orange coat) at the real tip of the exhaust pipe found in the model (x 0.46, 0.25 m high, 1.85 m behind the centre); its length follows the burn rate and flickers, it rises at once and falls in about 70 ms with the sound of the pop

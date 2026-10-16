@@ -5,6 +5,7 @@ object LoadMath {
     const val DONE = 100
     fun percent(packed: Int): Int = (packed and 0xFF).coerceIn(0, 100)
     fun stage(packed: Int): Int = packed shr 8
+    fun failed(packed: Int): Boolean = stage(packed) == 99
     fun done(packed: Int): Boolean = percent(packed) >= DONE
 
     fun label(packed: Int, en: Boolean): String = when (stage(packed)) {
@@ -14,6 +15,7 @@ object LoadMath {
         4 -> if (en) "Building the world" else "Создание мира"
         5 -> if (en) "Loading the car" else "Загрузка машины"
         6 -> if (en) "Almost ready" else "Почти готово"
+        99 -> if (en) "Startup failed: the game stopped (see the log)" else "Сбой запуска: игра остановилась (см. лог)"
         else -> if (en) "Loading" else "Загрузка"
     }
 
