@@ -169,8 +169,12 @@ fn beam_one(lamp: vec3<f32>, fwd: vec3<f32>, right: vec3<f32>, p: vec3<f32>) -> 
     let l = d / dist;
     let z = dot(l, fwd);
     if (z <= 0.05) { return 0.0; }
-    let h = atan(dot(l, right) / z);
-    let v = atan(dot(l, cross(right, fwd)) / z);
+    // cheap rejection before the arctangents: outside about 40 degrees sideways or above the highest cut-off (about 8 degrees up) nothing is lit
+    let lx = dot(l, right);
+    let ly = dot(l, cross(right, fwd));
+    if (abs(lx) > 0.85 * z || ly > 0.16 * z) { return 0.0; }
+    let h = atan(lx / z);
+    let v = atan(ly / z);
     let cut = 0.07 * smoothstep(0.0, 0.25, h);
     let gv = 1.0 - smoothstep(cut, cut + 0.02, v);
     let gh = 1.0 - smoothstep(0.35, 0.65, abs(h));
@@ -178,13 +182,32 @@ fn beam_one(lamp: vec3<f32>, fwd: vec3<f32>, right: vec3<f32>, p: vec3<f32>) -> 
     let att = 1.0 / (1.0 + (dist / 18.0) * (dist / 18.0));
     return gv * gh * hot * att * clamp(1.0 - dist / 90.0, 0.0, 1.0) * smoothstep(0.6, 2.0, dist);
 }
+// whether the light of the headlights reaches a world point: the terrain between the lamps and the point does not block the ray (4 samples of the height atlas along it); a hill or a
+// crest between the car and the point keeps the beam off what lies behind it, so only what is really in front of the lamps is lit
+fn beam_visible(wp: vec3<f32>) -> f32 {
+    let src = u.hl_pos.xyz;
+    var vis = 1.0;
+    for (var k = 1; k <= 4; k++) {
+        let q = mix(src, wp, f32(k) / 5.0);
+        let h = terrain_h(q.x, q.z);
+        vis = min(vis, smoothstep(-0.25, 0.05, q.y - h));   // under the ground by more than 25 cm: blocked; above it: clear
+    }
+    return vis;
+}
+
 // the low beam of both headlights at a world point (0..1), mirrored in `carlights::beam`; the lamps sit `lamps.w` either side of `hl_pos` across the axis
-fn headbeam(wp: vec3<f32>) -> f32 {
+fn headbeam_raw(wp: vec3<f32>) -> f32 {
     if (u.hl_pos.w <= 0.0) { return 0.0; }
     let f = normalize(u.hl_dir.xyz);
     let r = normalize(u.rt.xyz);   // the car's own right: the beam rolls and pitches with the body
     let s = r * u.lamps.w;
     return 0.5 * (beam_one(u.hl_pos.xyz - s, f, r, wp) + beam_one(u.hl_pos.xyz + s, f, r, wp));
+}
+// the same, blocked by the terrain
+fn headbeam(wp: vec3<f32>) -> f32 {
+    let g = headbeam_raw(wp);
+    if (g < 0.01) { return 0.0; }
+    return g * beam_visible(wp);
 }
 
 // the light of the lit lamps on the car's own body: a thin soft rim of light on the bodywork right around each lamp unit (small: the car must not look lit by its own lamps) (no billboard, so nothing shows through the car)
@@ -435,7 +458,7 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
     var col = vec3<f32>(0.03, 0.05, 0.08) * (1.0 - clear) + sky_gradient(r) * fr * 0.6 + u.sun_col.rgb * pow(max(dot(r, sun), 0.0), 60.0) * 0.6;
     let f = clamp(1.0 - exp(-dist * u.fog.x), 0.0, 1.0);
     col = mix(col, u.sky_hor.rgb, f);
-    let t = smoothstep(0.0, 1.0, clamp((dist - 9.0) / 7.0, 0.0, 1.0));
+    let t = smoothstep(0.0, 1.0, clamp((dist - 4.0) / 4.0, 0.0, 1.0));
     let k = 1.0 - 0.75 * clear;
     let near = (0.2 + 0.3 * fr) * k;
     let a = clamp(near + (0.95 - near) * t * k, 0.0, 1.0);
@@ -806,7 +829,7 @@ fn dust_pt(i: DOut) -> vec4<f32> {
 }
 
 @group(1) @binding(3) var vol_depth: texture_depth_2d;   // the scene's depth, sampled by the low-resolution dust pass (group 1 of `raster/dust_gpu.rs`)
-const DUST_DIV: f32 = 6.0;   // the low-resolution dust target is 1/DUST_DIV of the screen (= DUST_DIV in raster/dust_gpu.rs)
+const DUST_DIV: f32 = 8.0;   // the low-resolution dust target is 1/DUST_DIV of the screen (= DUST_DIV in raster/dust_gpu.rs)
 // the same particle drawn into the low-resolution target: premultiplied, hidden behind and soft against the scene (the depth buffer is sampled)
 @fragment fn fs_dust_lo(i: DOut) -> @location(0) vec4<f32> {
     var c = dust_pt(i);
@@ -834,3 +857,42 @@ struct COut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     var o: COut; o.pos = vec4<f32>(q[vi], 0.0, 1.0); o.uv = vec2<f32>(q[vi].x * 0.5 + 0.5, 0.5 - q[vi].y * 0.5); return o;
 }
 @fragment fn fs_vcomp(i: COut) -> @location(0) vec4<f32> { return textureSampleLevel(comp_tex, comp_smp, i.uv, 0.0); }
+
+// The headlights' beam seen in the air (haze, rain, fog), drawn into the low-resolution dust target: per pixel a short march along the view ray up to the scene's depth; every
+// sample adds the beam's light there (`headbeam_raw`) times the air's density, with a phase that is faint from behind the beam and strong from in front.
+@fragment fn fs_beam(i: COut) -> @location(0) vec4<f32> {
+    let ndc = vec4<f32>(i.uv.x * 2.0 - 1.0, 1.0 - i.uv.y * 2.0, 1.0, 1.0);
+    let w = u.inv_vp * ndc;
+    let dir = normalize(w.xyz / w.w - u.cam.xyz);
+    let dims = textureDimensions(vol_depth);
+    let px = clamp(vec2<i32>(i.pos.xy * DUST_DIV), vec2<i32>(0), vec2<i32>(dims) - vec2<i32>(1));
+    let d = textureLoad(vol_depth, px, 0);
+    var t_end = 70.0;
+    if (d < 0.9999) {
+        let ndc2 = vec2<f32>((f32(px.x) + 0.5) / f32(dims.x) * 2.0 - 1.0, 1.0 - (f32(px.y) + 0.5) / f32(dims.y) * 2.0);
+        let ws = u.inv_vp * vec4<f32>(ndc2, d, 1.0);
+        t_end = min(t_end, length(ws.xyz / ws.w - u.cam.xyz));
+    }
+    let t0 = 0.8;
+    if (t_end <= t0 + 0.2) { return vec4<f32>(0.0); }
+    // the air: a faint haze always, thicker in fog and rain
+    let sigma = 0.0025 + 1.4 * u.fog.x + 0.006 * u.wx.x;
+    let n = 10;
+    let ratio = t_end / t0;
+    let ds_k = log(ratio) / f32(n);
+    var acc = 0.0;
+    for (var k = 0; k < n; k++) {
+        let t = t0 * pow(ratio, (f32(k) + 0.5) / f32(n));
+        let p = u.cam.xyz + dir * t;
+        let g = headbeam_raw(p);   // no terrain test per sample (cost): the shaft is faint, the lit ground is tested
+        if (g > 0.003) {
+            let ds = t * ds_k;
+            let l = normalize(p - u.hl_pos.xyz);
+            let cs = dot(l, normalize(u.cam.xyz - p));   // 1: the camera looks into the lamps along the beam, -1: from behind them
+            let phase = 0.30 + 0.70 * pow(max(0.5 + 0.5 * cs, 0.0), 3.0);
+            acc = acc + g * ds * sigma * phase;
+        }
+    }
+    let c = vec3<f32>(1.0, 0.93, 0.80) * acc * 9.0;
+    return vec4<f32>(min(c, vec3<f32>(1.5)), 0.0);   // premultiplied with no alpha: added to the dust target
+}

@@ -243,14 +243,14 @@ impl DustGpu {
 /// The GPU dust drawn at a fraction of the screen: the particles go into a small premultiplied target (hidden behind and soft against the scene, whose depth
 /// is sampled) that is then laid over the finished frame (bilinear). The clouds are soft, so a coarse target hardly shows and costs a sixteenth of the pixels.
 pub struct DustRender {
-    pl_low: wgpu::RenderPipeline, bgl_depth: wgpu::BindGroupLayout,
+    pl_low: wgpu::RenderPipeline, pl_beam: wgpu::RenderPipeline, bgl_depth: wgpu::BindGroupLayout,
     pl_comp: wgpu::RenderPipeline, bgl_comp: wgpu::BindGroupLayout, smp: wgpu::Sampler,
     low: Option<((u32, u32), wgpu::TextureView)>,
 }
 
 const LOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;   // 16-bit: soft gradients do not band
 /// The dust target is 1/DUST_DIV of the screen in each direction (= DUST_DIV in raster.wgsl).
-const DUST_DIV: u32 = 6;
+const DUST_DIV: u32 = 8;
 
 impl DustRender {
     pub fn new(dev: &wgpu::Device, bgl_main: &wgpu::BindGroupLayout, raster: &wgpu::ShaderModule, surface_format: wgpu::TextureFormat) -> DustRender {
@@ -275,11 +275,15 @@ impl DustRender {
             vertex: wgpu::VertexState { module: raster, entry_point: Some("vs_vcomp"), compilation_options: Default::default(), buffers: &[] },
             fragment: Some(wgpu::FragmentState { module: raster, entry_point: Some("fs_vcomp"), compilation_options: Default::default(), targets: &[Some(wgpu::ColorTargetState { format: surface_format, blend: Some(premul), write_mask: wgpu::ColorWrites::ALL })] }),
             primitive: wgpu::PrimitiveState::default(), depth_stencil: None, multisample: wgpu::MultisampleState::default(), multiview: None, cache: None });
-        DustRender { pl_low, bgl_depth, pl_comp, bgl_comp, smp, low: None }
+        let pl_beam = dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor { label: Some("beam"), layout: Some(&lay_low),
+            vertex: wgpu::VertexState { module: raster, entry_point: Some("vs_vcomp"), compilation_options: Default::default(), buffers: &[] },
+            fragment: Some(wgpu::FragmentState { module: raster, entry_point: Some("fs_beam"), compilation_options: Default::default(), targets: &[Some(wgpu::ColorTargetState { format: LOW_FORMAT, blend: Some(premul), write_mask: wgpu::ColorWrites::ALL })] }),
+            primitive: wgpu::PrimitiveState::default(), depth_stencil: None, multisample: wgpu::MultisampleState::default(), multiview: None, cache: None });
+        DustRender { pl_low, pl_beam, bgl_depth, pl_comp, bgl_comp, smp, low: None }
     }
 
-    /// Draws `count` particles of `buf` into the small target and lays it over `color`; `depth` is the main pass's depth buffer (it must have been stored).
-    pub fn draw(&mut self, dev: &wgpu::Device, enc: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, depth: &wgpu::TextureView, bg_main: &wgpu::BindGroup, buf: &wgpu::Buffer, count: u32, size: (u32, u32)) {
+    /// Draws the headlights' beam in the air (`beam`) and `count` particles of `buf` into the small target and lays it over `color`; `depth` is the main pass's depth buffer (it must have been stored).
+    pub fn draw(&mut self, dev: &wgpu::Device, enc: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, depth: &wgpu::TextureView, bg_main: &wgpu::BindGroup, buf: Option<&wgpu::Buffer>, count: u32, beam: bool, size: (u32, u32)) {
         let ls = ((size.0 + DUST_DIV - 1) / DUST_DIV, (size.1 + DUST_DIV - 1) / DUST_DIV);
         if self.low.as_ref().map_or(true, |h| h.0 != ls) {
             let t = dev.create_texture(&wgpu::TextureDescriptor { label: Some("dust_low"), size: wgpu::Extent3d { width: ls.0, height: ls.1, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1,
@@ -292,11 +296,17 @@ impl DustRender {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor { label: Some("dust_low"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: low, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store } })],
                 depth_stencil_attachment: None, timestamp_writes: None, occlusion_query_set: None });
-            rp.set_pipeline(&self.pl_low);
             rp.set_bind_group(0, bg_main, &[]);
             rp.set_bind_group(1, &dbg, &[]);
-            rp.set_vertex_buffer(0, buf.slice(..));
-            rp.draw(0..6, 0..count);
+            if beam {   // the headlights' light in the air first, the dust over it
+                rp.set_pipeline(&self.pl_beam);
+                rp.draw(0..3, 0..1);
+            }
+            if let (Some(buf), true) = (buf, count > 0) {
+                rp.set_pipeline(&self.pl_low);
+                rp.set_vertex_buffer(0, buf.slice(..));
+                rp.draw(0..6, 0..count);
+            }
         }
         let cbg = dev.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("dust_comp_bg"), layout: &self.bgl_comp, entries: &[
             wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(low) }, wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&self.smp) }] });

@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.39.0 - the beam is a light
+
+- Changed: the headlights light only what is really in front of them: the terrain between the lamps and a point blocks the beam (a crest keeps the beam off the ground behind it; 4 samples of the height atlas along each ray), so a nose-down car no longer paints a light pool on ground it cannot see
+- Added: the beam is visible in the air (a short ray march per low-resolution pixel along the view ray, in the dust pass): a faint shaft in clear air at night, a strong one in rain and fog, faint from behind and bright from in front
+- Changed: cheaper night lighting (an early rejection before the beam's arctangents), the dust is drawn at one eighth of the screen (was one sixth), the glass turns solid and the interior is skipped beyond 4-8 m (was 9-16 m)
+
 ## 2.38.0 - the fluid dust is gone
 
 - Removed: the experimental fluid dust (Settings, Dust, "Fluid (test)": a CPU fluid grid with a volume render, about 40 fps): the GPU particle dust with the airflow replaced it and looks and runs better; the Dust setting is Off / Normal / Lots; the code, the shader and the `fluid` block of `surfaces.json` are removed

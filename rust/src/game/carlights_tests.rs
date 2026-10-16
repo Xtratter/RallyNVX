@@ -143,3 +143,18 @@ fn vulpes() -> VehicleSpec { VehicleSpec::by_id("vulpes").expect("vulpes") }
     let l = lamps(&v);
     assert!((l.right - v.right()).len() < 1e-4 && l.right.dot(l.head_dir).abs() < 0.06, "right is across the beam axis");
 }
+
+#[test] fn a_crest_between_the_lamp_and_a_point_keeps_the_beam_off_it() {
+    let lamp = v3(0.0, 1.0, 0.0);
+    let flat = |_: f32, _: f32| 0.0;
+    assert_eq!(beam_visible(lamp, v3(0.0, 0.0, 30.0), flat), 1.0, "open ground in front");
+    // a ridge 2 m high across the road at z = 10: the ground behind it is dark, the ridge's own front is lit
+    let ridge = |_: f32, z: f32| if (8.0..14.0).contains(&z) { 2.0 } else { 0.0 };
+    assert_eq!(beam_visible(lamp, v3(0.0, 0.0, 30.0), ridge), 0.0, "behind the ridge");
+    assert!(beam_visible(lamp, v3(0.0, 2.0, 8.0), ridge) > 0.5, "the face of the ridge itself is lit");
+    // a point in the air above the ridge is lit; one below its top, behind it, is not
+    assert_eq!(beam_visible(lamp, v3(0.0, 5.0, 30.0), ridge), 1.0, "the beam passes over the ridge to a point high enough");
+    // a ray that runs just above gentle ground is not blocked by noise
+    let bumpy = |x: f32, z: f32| 0.03 * (x * 3.0 + z).sin();
+    assert!(beam_visible(lamp, v3(0.0, 0.0, 25.0), bumpy) > 0.99);
+}
