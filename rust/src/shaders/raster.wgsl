@@ -660,11 +660,13 @@ fn wiper_pass_age(lp: vec3<f32>, pivot_reach: vec4<f32>, axis: vec3<f32>, rest: 
     // (the side windows) just lose their drops once per cycle. None on a lamp cover.
     let rain = u.wx.x;
     if (rain > 0.05 && clear < 0.5 && dist < 12.0) {
-        var age = u.wph.x;
+        // where a wiper blade reaches, the film's age is the time since the blade last passed; everywhere else (the side windows, the corners of the windscreen) each drop
+        // runs its own slow life: it grows in and, some seconds later, runs off, on its own clock
+        var wiped = -1.0;
         if (u.wph.y > 0.5) {
             let a0 = wiper_pass_age(i.lp, u.wp0, u.wax0.xyz, u.wrs0.xyz, u.wph.x);
             let a1 = wiper_pass_age(i.lp, u.wp1, u.wax1.xyz, u.wrs1.xyz, u.wph.x);
-            if (a0 >= 0.0 && a1 >= 0.0) { age = min(a0, a1); } else if (a0 >= 0.0) { age = a0; } else if (a1 >= 0.0) { age = a1; }
+            if (a0 >= 0.0 && a1 >= 0.0) { wiped = min(a0, a1); } else if (a0 >= 0.0) { wiped = a0; } else if (a1 >= 0.0) { wiped = a1; }
         }
         // two lattices of 3D cells in the car's object space (7 cm for the sparse big drops, 3 cm for the many small ones): the glass slices through each cell, so a drop's size
         // varies and every pane, flat or tilted, is covered the same way
@@ -678,6 +680,7 @@ fn wiper_pass_age(lp: vec3<f32>, pivot_reach: vec4<f32>, axis: vec3<f32>, rest: 
             let c = cell + vec3<f32>(0.3 + 0.4 * h.x, 0.3 + 0.4 * h.y, 0.3 + 0.4 * h.z);
             let rad = select(0.20 + 0.18 * h.z * h.z, 0.22 + 0.18 * h.z, layer == 1);
             let born = h.x * 0.55;                              // how long after a wipe this drop appears (in cycles)
+            let age = select(fract(u.cr.w / (9.0 + 8.0 * h.z) + h.y * 7.31), wiped, wiped >= 0.0);
             let grown = smoothstep(born, born + 0.06, age);
             let d = length(g - c) / rad;
             let dens = select(0.30 + 0.5 * rain, 0.55 + 0.4 * rain, layer == 1);
