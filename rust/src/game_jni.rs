@@ -231,7 +231,7 @@ mod android {
         crate::game::api::garage_buy_upgrade(std::path::Path::new(&p), i.max(0) as usize, up.max(0) as usize) as jboolean
     }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gamePause(_e: JNIEnv, _c: JClass, p: jboolean) { send(GCmd::Pause(p != 0)); }
-    /// Audio thread: fills `buf` (PCM16 mono, 44.1 kHz) with the next samples. Never panics.
+    /// Audio thread: fills `buf` (PCM16 interleaved stereo, 44.1 kHz) with the next samples. Never panics.
     #[no_mangle]
     pub extern "system" fn Java_dev_starinin_rallynvx_Native_audioRender(env: JNIEnv, _c: JClass, buf: jni::objects::JShortArray) {
         let n = env.get_array_length(&buf).unwrap_or(0).max(0) as usize;
