@@ -178,7 +178,7 @@ fn shade(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, rough: f32, metal: f32)
 
 // Paint under a clear coat: the base (`n`, perhaps bump-mapped, a satin `rough`) lit as usual and dimmed by what the coat reflects, plus the coat's own thin glossy layer
 // (dielectric F0 0.04, roughness 0.07) on the smooth surface normal `nc`: a sharp sun glint and a crisp reflection of the sky over the paint's softer one.
-fn shade_coat(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, nc: vec3<f32>, rough: f32) -> vec3<f32> {
+fn shade_coat(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, nc: vec3<f32>, rough: f32, wet: f32) -> vec3<f32> {
     let sun = normalize(u.sun.xyz);
     var sh = shadow_at(wp, n);
     if (u.mode.x > 0.5) { sh = min(sh, mix(1.0, terrain_shadow(wp, sun), smoothstep(0.0, 0.2, dot(n, sun)))); }
@@ -186,9 +186,11 @@ fn shade_coat(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, nc: vec3<f32>, rou
     let nv = max(dot(nc, v), 0.02);
     let f0 = vec3<f32>(0.04);
     let fc = fresnel(f0, nv);                               // what the coat reflects at this angle: the base below gets the rest
-    var c = shade_with(albedo, wp, n, rough, 0.0, sh) * (vec3<f32>(1.0) - fc);
-    c = c + u.sun_col.rgb * ggx_spec(nc, v, sun, f0, 0.005) * sh;
-    c = c + sky_env(reflect(-v, nc), 0.07) * env_brdf(f0, 0.07, nv) * mix(0.35, 1.0, nc.y * 0.5 + 0.5);
+    // rain: a water film darkens the paint a little and sits on the coat, a smoother, more reflective top layer
+    let cr = mix(0.07, 0.04, wet);
+    var c = shade_with(albedo * (1.0 - 0.14 * wet), wp, n, rough, 0.0, sh) * (vec3<f32>(1.0) - fc);
+    c = c + u.sun_col.rgb * ggx_spec(nc, v, sun, f0, cr * cr) * sh * (1.0 + 0.5 * wet);
+    c = c + sky_env(reflect(-v, nc), cr) * env_brdf(f0, cr, nv) * mix(0.35, 1.0, nc.y * 0.5 + 0.5) * (1.0 + 0.4 * wet);
     return c;
 }
 
@@ -514,6 +516,26 @@ fn map_normal(n: vec3<f32>, wp: vec3<f32>, uv: vec2<f32>, k: f32) -> vec3<f32> {
     return normalize(t * inv * m.x + b * inv * m.y + n * m.z);
 }
 
+// Water beads on the paint in the rain: a lattice of cells (object space) with a small dome in some of them; the dome tilts the coat's normal, so each bead glints. Fades with distance.
+fn bead_normal(nc: vec3<f32>, lp: vec3<f32>, wp: vec3<f32>) -> vec3<f32> {
+    let wet = u.wx.y;
+    let near = 1.0 - smoothstep(6.0, 16.0, distance(wp, u.cam.xyz));
+    if (wet < 0.15 || near <= 0.0) { return nc; }
+    let g = (lp.xy + lp.zz * vec2<f32>(0.7, 1.3)) * 28.0 + lp.xz * vec2<f32>(0.0, 0.0);
+    let cell = floor(g);
+    let h = hash2(cell);
+    let ctr = cell + vec2<f32>(0.3 + 0.4 * hash2(cell + 3.0), 0.3 + 0.4 * hash2(cell + 7.0));
+    let d = g - ctr;
+    let r = length(d);
+    let rad = 0.16 + 0.14 * hash2(cell + 11.0);
+    let on = select(0.0, 1.0, h < 0.55 * wet) * (1.0 - smoothstep(rad * 0.8, rad, r)) * near;
+    // a dome of radius `rad`: the tilt grows towards its rim
+    let t = d / max(rad, 1e-3) * on * 0.9;
+    let tx = normalize(cross(nc, vec3<f32>(0.0, 1.0, 0.01)));
+    let ty = cross(nc, tx);
+    return normalize(nc - (tx * t.x + ty * t.y));
+}
+
 @fragment fn fs_model(i: MOut) -> @location(0) vec4<f32> {
     let has_uv0 = i.uv.x < 0.9999;
     let m0 = i32(i.mat + 0.5);
@@ -583,7 +605,7 @@ fn map_normal(n: vec3<f32>, wp: vec3<f32>, uv: vec2<f32>, k: f32) -> vec3<f32> {
     if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.06, 0.0), 1.0); }   // glass
     if (m == 4) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.22, 1.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
     if (m == 6) { return vec4<f32>(shade_leaf(i.col * occl, i.wp, n), 1.0); }   // foliage
-    if (m == 0 && has_uv) { return vec4<f32>(shade_coat(albedo * occl, i.wp, n, normalize(i.n), 0.30) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // the rally car's paint: clear-coated
+    if (m == 0 && has_uv) { return vec4<f32>(shade_coat(albedo * occl, i.wp, n, bead_normal(normalize(i.n), i.lp, i.wp), 0.30, u.wx.y) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // the rally car's paint: clear-coated
     if (m == 0) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.28, 0.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
     if (m == 2) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.88, 0.0), 1.0); }   // rubber
     if (i.kind > 1.5) {   // bark and rock: rough stone and wood, darker and glossier when wet

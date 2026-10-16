@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.49.0 - the car gets wet
+
+- Added: in the rain the Peugeot's paint darkens a little, its clear coat turns smoother and more reflective (a water film), and small water beads on the body glint (near the camera only)
+
 ## 2.48.0 - physically based foliage
 
 - Changed: leaves and needles have their own lighting: the diffuse term wraps round the terminator (light scatters inside a crown), a leaf lit from behind glows in its own saturated colour (transmission), a faint waxy sheen that sharpens and darkens when the leaves are wet
