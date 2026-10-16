@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.41.0 - physically based lighting
+
+- Changed: all surfaces are lit by one physically based function: a GGX specular (Smith visibility, Schlick Fresnel) for the sun, the moon and the headlights, and the sky as the environment (diffuse and reflected, blurred by roughness); the car's paint, chrome, glass, rubber and the brake discs differ by roughness and metalness, and wet ground is smooth, so it mirrors the sky and the headlights; terrain, roads and foliage stay matte and cost nothing extra
+
 ## 2.40.0 - the low beam reaches the road, not the ground under the car
 
 - Fixed: the headlights lit the ground under and just ahead of the bumper, so an airborne car still seemed to drive on the ground: the beam now fades out below its axis (between about 6 and 16 degrees down), as a real low beam does; the lit ground moves away from the car as it rises, and nothing below an airborne car is lit; the beam's axis is 1.7 degrees down (was 2.9), so the road is lit further ahead

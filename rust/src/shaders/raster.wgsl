@@ -134,20 +134,20 @@ fn terrain_shadow(wp: vec3<f32>, sun: vec3<f32>) -> f32 {
 }
 
 fn lit(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
-    return shade(albedo, wp, n, 0.0, 0.0);
+    return shade(albedo, wp, n, 0.92, 0.0);
 }
 
-// spec: 0..1 sun glint strength, sharp: glint exponent scale (0 = none)
-fn shade(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: f32) -> vec3<f32> {
+// roughness 0 (mirror) .. 1 (matte), metalness 0 (dielectric) .. 1 (metal)
+fn shade(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, rough: f32, metal: f32) -> vec3<f32> {
     let sun = normalize(u.sun.xyz);
     var sh = shadow_at(wp, n);
     if (u.mode.x > 0.5) { sh = min(sh, mix(1.0, terrain_shadow(wp, sun), smoothstep(0.0, 0.2, dot(n, sun)))); }
-    return shade_with(albedo, wp, n, spec, sharp, sh);
+    return shade_with(albedo, wp, n, rough, metal, sh);
 }
 
 // cheap variant for foliage tufts (lots of overdraw): the plain 3x3 shadow filter in every mode
 fn shade_lite(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
-    return shade_with(albedo, wp, n, 0.0, 0.0, shadow_basic(wp, n));
+    return shade_with(albedo, wp, n, 0.95, 0.0, shadow_basic(wp, n));
 }
 
 // how much the tail lights light a point (0..1): only what lies behind the rear bumper, never under the car; mirrored in `carlights::tail_gain`
@@ -232,18 +232,76 @@ fn lamp_aureole(wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return g;
 }
 
-fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: f32, sh: f32) -> vec3<f32> {
+// ---- physically based shading (Cook-Torrance: GGX distribution, Smith visibility, Schlick Fresnel; the host-tested twins are in game/pbr.rs) ----
+fn ggx_d(nh: f32, a: f32) -> f32 {
+    let a2 = a * a;
+    let d = nh * nh * (a2 - 1.0) + 1.0;
+    return a2 / max(3.14159265 * d * d, 1e-9);
+}
+// Smith-GGX height-correlated visibility, already divided by 4 n.l n.v
+fn smith_vis(nl: f32, nv: f32, a: f32) -> f32 {
+    let a2 = a * a;
+    let gv = nl * sqrt(nv * nv * (1.0 - a2) + a2);
+    let gl = nv * sqrt(nl * nl * (1.0 - a2) + a2);
+    return 0.5 / (gv + gl + 1e-5);
+}
+fn fresnel(f0: vec3<f32>, vh: f32) -> vec3<f32> { return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - vh, 5.0); }
+// the split-sum environment term (Karis' analytic fit): scale and bias of F0 for the ambient specular
+fn env_brdf(f0: vec3<f32>, rough: f32, nv: f32) -> vec3<f32> {
+    let c0 = vec4<f32>(-1.0, -0.0275, -0.572, 0.022);
+    let c1 = vec4<f32>(1.0, 0.0425, 1.04, -0.04);
+    let r = rough * c0 + c1;
+    let a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
+    let ab = vec2<f32>(-1.04, 1.04) * a004 + r.zw;
+    return f0 * ab.x + vec3<f32>(ab.y);
+}
+// the GGX specular lobe of one light: `l` towards the light, radiance in the file's usual units (diffuse is albedo * radiance * n.l)
+fn ggx_spec(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, f0: vec3<f32>, a: f32) -> vec3<f32> {
+    let nl = dot(n, l);
+    if (nl <= 0.0) { return vec3<f32>(0.0); }
+    let h = normalize(l + v);
+    let nv = max(dot(n, v), 0.02);
+    return fresnel(f0, max(dot(v, h), 0.0)) * (ggx_d(max(dot(n, h), 0.0), a) * smith_vis(nl, nv, a) * nl * 3.14159265);
+}
+// the light of the sky on a surface of a given roughness seen along `r`: the gradient, blurred towards the sky's mean for a rough surface; below the horizon the dim ground
+fn sky_env(r: vec3<f32>, rough: f32) -> vec3<f32> {
+    let sharp_c = sky_gradient(r);
+    let mean_c = mix(u.sky_hor.rgb, u.sky_top.rgb, 0.45);
+    var c = mix(sharp_c, mean_c, clamp(rough * rough * 1.6, 0.0, 1.0));
+    let ground = vec3<f32>(0.20, 0.22, 0.26) * mix(1.0, 0.12, u.disc.w) + u.sky_hor.rgb * 0.12;
+    return mix(c, ground, smoothstep(0.0, -0.25, r.y));
+}
+
+// The one lighting function of the world: albedo (linear), the point, the normal, the surface's roughness (0 mirror .. 1 matte) and metalness, the sun's shadow factor.
+fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, rough_in: f32, metal: f32, sh: f32) -> vec3<f32> {
     let sun = normalize(u.sun.xyz);
-    let diff = max(dot(n, sun), 0.0) * sh;
-    let amb = mix(vec3<f32>(0.20, 0.22, 0.26) * mix(1.0, 0.12, u.disc.w), u.sky_top.rgb * 0.55, n.y * 0.5 + 0.5);
-    // wet ground (upward-facing surfaces, not the car): darker, and glossy with the sky in it at grazing angles
+    let v = normalize(u.cam.xyz - wp);
+    let nv = max(dot(n, v), 0.02);
+    // wet ground (upward-facing surfaces, not the car): darker and smooth, the water film shows the sky and the lamps
     let wetk = u.wx.y * smoothstep(0.55, 0.9, n.y) * (1.0 - own_surface);
+    let rough = clamp(mix(rough_in, 0.22, wetk), 0.05, 1.0);
     let al = albedo * (1.0 - 0.32 * wetk);
-    var c = al * (u.sun_col.rgb * diff + amb);
+    let f0 = mix(vec3<f32>(0.04), al, metal);
+    let dcol = al * (1.0 - metal);
+    let a = rough * rough;
+    let nl = max(dot(n, sun), 0.0);
+    let amb = mix(vec3<f32>(0.20, 0.22, 0.26) * mix(1.0, 0.12, u.disc.w), u.sky_top.rgb * 0.55, n.y * 0.5 + 0.5);
+    var c = dcol * (u.sun_col.rgb * (nl * sh) + amb);
+    let glossy = rough < 0.88 || metal > 0.0;
+    if (glossy) {
+        // the sun's highlight and the sky's reflection (the ambient specular: the environment times the split-sum term; the downward-facing parts see less of the sky)
+        c = c + u.sun_col.rgb * ggx_spec(n, v, sun, f0, max(a, 0.002)) * sh;
+        c = c + sky_env(reflect(-v, n), rough) * env_brdf(f0, rough, nv) * mix(0.35, 1.0, n.y * 0.5 + 0.5);
+    }
     if (u.hl_pos.w > 0.0 && own_surface < 0.5) {
         let l = normalize(wp - u.hl_pos.xyz);
-        // a beam on a grazing surface (the ground far ahead) is weak by n.l alone: keep a floor so the beam reaches far
-        c = c + al * vec3<f32>(1.0, 0.93, 0.80) * (14.0 * headbeam(wp) * (0.25 + 0.75 * max(dot(n, -l), 0.0)));
+        let g = headbeam(wp);
+        if (g > 0.0) {
+            // a beam on a grazing surface (the ground far ahead) is weak by n.l alone: keep a floor so the beam reaches far
+            let lamp_rad = vec3<f32>(1.0, 0.93, 0.80) * (14.0 * g);
+            c = c + dcol * lamp_rad * (0.25 + 0.75 * max(dot(n, -l), 0.0));
+            if (glossy) { c = c + lamp_rad * ggx_spec(n, v, -l, f0, max(a, 0.01)) * 0.5; }
+        }
     }
     if (u.tl_col.w > 0.0 && own_surface < 0.5) {
         let dv = wp - u.tl_pos.xyz;
@@ -251,19 +309,7 @@ fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, spec: f32, sharp: 
         // only what lies behind the rear bumper is lit by the tail lights, never the ground under the car (mirrored in `carlights::tail_gain`)
         let behind = smoothstep(0.3, 1.0, dot(dv, -normalize(u.hl_dir.xyz)));
         let att = clamp(1.0 - dist / u.tl_col.w, 0.0, 1.0);
-        c = c + al * u.tl_col.rgb * (behind * att * att * (0.35 + 0.65 * max(dot(n, -dv / max(dist, 0.001)), 0.0)) * 4.0);
-    }
-    if (sharp > 0.0) {
-        let v = normalize(u.cam.xyz - wp);
-        let h = normalize(sun + v);
-        c = c + u.sun_col.rgb * 0.4 * spec * pow(max(dot(n, h), 0.0), sharp) * sh * step(0.0, dot(n, sun));
-        let fr = pow(1.0 - max(dot(n, v), 0.0), 4.0);
-        c = c + sky_gradient(reflect(-v, n)) * fr * spec * 0.5;
-    }
-    if (wetk > 0.0) {
-        let vw = normalize(u.cam.xyz - wp);
-        let frw = pow(1.0 - max(dot(n, vw), 0.0), 4.0);
-        c = c + sky_gradient(reflect(-vw, n)) * (0.04 + frw) * wetk * 0.7;
+        c = c + dcol * u.tl_col.rgb * (behind * att * att * (0.35 + 0.65 * max(dot(n, -dv / max(dist, 0.001)), 0.0)) * 4.0);
     }
     let d = length(wp - u.cam.xyz);
     let f = 1.0 - exp(-d * u.fog.x);
@@ -421,27 +467,27 @@ fn model_world(p: vec3<f32>, m0: vec4<f32>, m1: vec4<f32>, m2: vec4<f32>, m3: ve
         if (m == 11) { on = select(0.0, 1.0, u.lamps.x > 0.5); }
         else { on = max(select(0.0, 0.35, u.lamps.x > 0.5), max(select(0.0, 1.0, u.lamps.y > 0.5), select(0.0, 0.6, u.lamps.z > 0.5))); }
         let tint = select(vec3<f32>(1.0, 0.45, 0.35), vec3<f32>(1.0, 0.95, 0.85), m == 11);
-        return vec4<f32>(shade(albedo * occl, i.wp, n, 0.9, 60.0) + finish(albedo * tint * on * 1.8), 1.0);
+        return vec4<f32>(shade(albedo * occl, i.wp, n, 0.3, 0.7) + finish(albedo * tint * on * 1.8), 1.0);
     }
     if (m == 15) {   // the interior and the driver: the interior atlas, in the shade of the roof (a cabin factor: little sun, no shadow map inside)
         let ia = select(vec3<f32>(0.12), iv.rgb, has_uv);
-        return vec4<f32>(shade_with(ia * occl, i.wp, n, 0.1, 10.0, 0.3) * 0.7, 1.0);
+        return vec4<f32>(shade_with(ia * occl, i.wp, n, 0.7, 0.0, 0.3) * 0.7, 1.0);
     }
     if (m == 14) {   // a suspension part: its texture only (the vertex colour carries the weight and the corner)
         let sc = select(vec3<f32>(0.22), lv.rgb, has_uv);
-        return vec4<f32>(shade(sc * occl, i.wp, n, 0.5, 30.0), 1.0);
+        return vec4<f32>(shade(sc * occl, i.wp, n, 0.55, 0.5), 1.0);
     }
     if (m == 13) {   // a brake disc: textured metal that glows orange-red when hot (stronger in the dark)
         let hot = i.heat * i.heat;
         let glow = vec3<f32>(1.0, 0.32, 0.08) * hot * (1.2 + 3.0 * u.disc.w);
-        return vec4<f32>(shade(albedo * occl, i.wp, n, 0.9, 60.0) + finish(glow), 1.0);
+        return vec4<f32>(shade(albedo * occl, i.wp, n, 0.35, 1.0) + finish(glow), 1.0);
     }
-    if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 1.2, 90.0), 1.0); }   // glass
-    if (m == 4) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.9, 60.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
+    if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.06, 0.0), 1.0); }   // glass
+    if (m == 4) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.22, 1.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
     if (m == 6) { return vec4<f32>(shade_lite(i.col * occl, i.wp, n), 1.0); }   // foliage
-    if (m == 0) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.5, 40.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
-    if (m == 2) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.04, 8.0), 1.0); }   // rubber
-    return vec4<f32>(shade(albedo * occl, i.wp, n, 0.15, 16.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
+    if (m == 0) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.28, 0.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
+    if (m == 2) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.88, 0.0), 1.0); }   // rubber
+    return vec4<f32>(shade(albedo * occl, i.wp, n, 0.5, 0.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
 }
 
 // The car's glass, blended over the opaque scene: a dark tint, the sky reflected by Fresnel, a sun glint; see-through near the car (the interior shows), solid and dark from afar
