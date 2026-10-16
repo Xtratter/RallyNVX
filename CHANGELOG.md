@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.44.0 - micro-relief
+
+- Added: normal maps for the Peugeot (paint details, tyres, rims, plastics from the model's own maps, in a half-size atlas next to the livery); they fade out with distance
+- Added: micro-relief on the ground: the terrain's texture is read as a 3 cm height, the road gets aggregate (asphalt) and loose gravel with ruts (dirt), all fading out with distance, so low sun and headlights rake across the surface
+
 ## 2.43.0 - the dash comes alive
 
 - Added: the Peugeot's instrument cluster and dials are backlit at night (they glow white against the dark cabin)

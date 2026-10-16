@@ -435,6 +435,24 @@ fn main() {
         for y in 0..r.h { for x in 0..r.w { let p = small.get_pixel(x, y).0; atlas_img.put_pixel(r.x + x, r.y + y, image::Rgb([p[0], p[1], p[2]])); } }
         eprintln!("  atlas: image {} -> {}x{} at ({}, {})", r.id, r.w, r.h, r.x, r.y);
     }
+    // the normal atlas: the same layout as the livery, each rectangle holding the normal map of the material that uses the texture (flat where there is none); written at half size
+    if let Some(path) = a.get(10) {
+        let mut normal_of: HashMap<usize, usize> = HashMap::new();
+        for m in doc.materials() {
+            if let (Some(b), Some(n)) = (m.pbr_metallic_roughness().base_color_texture(), m.normal_texture()) { normal_of.entry(b.texture().source().index()).or_insert(n.texture().source().index()); }
+        }
+        let mut nimg = image::RgbImage::from_pixel(ATLAS_W, ATLAS_H, image::Rgb([128, 128, 255]));
+        for r in &rects {
+            let Some(&ni) = normal_of.get(&r.id) else { continue };
+            let Some(src) = tex.get(ni) else { continue };
+            let small = image::imageops::resize(src, r.w, r.h, image::imageops::FilterType::Triangle);
+            for y in 0..r.h { for x in 0..r.w { let p = small.get_pixel(x, y).0; nimg.put_pixel(r.x + x, r.y + y, image::Rgb([p[0], p[1], p[2]])); } }
+            eprintln!("  normal atlas: image {} (for {})", ni, r.id);
+        }
+        let half = image::imageops::resize(&nimg, ATLAS_W / 2, ATLAS_H / 2, image::imageops::FilterType::Triangle);
+        let f = std::fs::File::create(path).expect("create normal jpg");
+        image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::BufWriter::new(f), 92).encode_image(&half).expect("write normal jpg");
+    }
     for v in bv.iter_mut().chain(groups.iter_mut().flat_map(|g| g.0.iter_mut())) {
         if let Some(r) = v.tex.and_then(|t| rects.iter().find(|r| r.id == t)) {
             let (iw, ih) = (r.w.saturating_sub(2).max(1) as f32, r.h.saturating_sub(2).max(1) as f32);
