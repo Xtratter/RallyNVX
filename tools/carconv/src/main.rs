@@ -11,6 +11,8 @@ fn tn(m: &M4, v: [f32; 3]) -> [f32; 3] {
     let l = (r[0] * r[0] + r[1] * r[1] + r[2] * r[2]).sqrt().max(1e-9); [r[0] / l, r[1] / l, r[2] / l]
 }
 
+/// Carbon (a clear-coated weave), painted alloy (the rims) and bare metal (screws, exhaust, hooks): their own surfaces in the shader.
+const CARBON: u8 = 19; const ALLOY: u8 = 20; const METAL: u8 = 21;
 const PAINT: u8 = 0; const GLASS: u8 = 1; const RUBBER: u8 = 2; const PLASTIC: u8 = 3; const CHROME: u8 = 4; const EMISSIVE: u8 = 5;
 // the reflector interiors of the lamp units: lit by the car's state in the shader (8 = position lamp and 9, 10 = covers are made in the game); 11 = front, 12 = rear
 const INT_FRONT: u8 = 11; const INT_REAR: u8 = 12;
@@ -116,7 +118,10 @@ fn class_of(mat: &str, node: &str) -> (u8, bool) {
     if m == "discs" { return (13, false); }   // the brake discs: textured metal that glows when hot (MAT_CARDISC)
     if m == "ligths_ints" { return (if node.contains("front") || node.starts_with("Light_bar") { INT_FRONT } else { INT_REAR }, false); }
     if m == "crapaint_ext" { return (PAINT, false); }
-    if m.contains("chrome") || m == "mirrors" || m == "rims_paint" || m == "tarmac_wheel" || m == "rim_gravel" { return (CHROME, false); }
+    if m.contains("carbon") { return (CARBON, false); }
+    if m == "rims_paint" || m == "tarmac_wheel" || m == "rim_gravel" || m == "snow_wheel" || m == "spare_snow_wheel" { return (ALLOY, false); }
+    if m == "ext_screws" || m == "motor_exhaust" || m == "body_details" { return (METAL, false); }
+    if m.contains("chrome") || m == "mirrors" { return (CHROME, false); }
     if m == "rubbers" || m.starts_with("mud") || m.starts_with("ext_tyre") { return (RUBBER, false); }
     (PLASTIC, false)
 }
@@ -551,6 +556,14 @@ mod tests {
         assert!((susp_weight(0.1, 0.4) - 0.75).abs() < 1e-6);
         assert_eq!(susp_weight(1.0, 0.0), 1.0, "a point-sized part sticks to the hub");
         assert_eq!(susp_weight(9.0, 0.4), 0.0, "never negative");
+    }
+    #[test] fn surfaces_are_told_apart_by_material() {
+        assert_eq!(class_of("carbon3", "x0_door_fl_carbon_parts").0, CARBON);
+        assert_eq!(class_of("RIMS_PAINT", "x0_wheel_fl_5radios").0, ALLOY);
+        assert_eq!(class_of("Ext_screws", "x0_main_body_standard_pbr01").0, METAL);
+        assert_eq!(class_of("Ext_body_chrome", "x0_door_fl_lock").0, CHROME);
+        assert_eq!(class_of("Plastic_black", "x0_door_fl_Black_parts").0, PLASTIC);
+        assert_eq!(class_of("CRAPAINT_EXT", "x0_main_body").0, PAINT);
     }
     #[test] fn corners_come_from_the_name_suffix() {
         assert_eq!(corner_of("x0_wishbone_fl"), Some(0)); assert_eq!(corner_of("x0_suspension3_fr"), Some(1));
