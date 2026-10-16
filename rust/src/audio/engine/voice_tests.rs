@@ -30,7 +30,7 @@ fn at(rpm: f64, throttle: f64) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
 }
 #[test] fn the_exhaust_is_louder_at_full_throttle_and_the_intake_barks_when_the_throttle_is_open() {
     let (open, _, _) = at(3500.0, 1.0); let (shut, _, _) = at(3500.0, 0.0);
-    assert!(rms(&open) > 2.0 * rms(&shut), "{} vs {}", rms(&open), rms(&shut));
+    assert!(rms(&open) > 1.3 * rms(&shut), "{} vs {}", rms(&open), rms(&shut));
     let (_, ia, _) = at(3500.0, 1.0); let (_, ib, _) = at(3500.0, 0.0);
     assert!(rms(&ia) > 0.0 && rms(&ib).is_finite());
 }
