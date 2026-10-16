@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.52.1 - the cowl panel under the wipers
+
+- Fixed: the black cowl panel between the bonnet and the windscreen (under the wipers) was missing, so the engine bay showed through; `tools/carconv` filtered it out by the word "Wipers" in its name (`x0_bonnet_Wipers_water`), it is part of the body again
+
 ## 2.52.0 - free camera and a handbrake that stays on
 
 - Added: the **Free** camera view: one finger turns the gaze, a pinch flies forward and back along it, two fingers up or down raise and lower the camera; it starts where the camera was and stays put when the car drives off
