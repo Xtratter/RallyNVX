@@ -22,6 +22,7 @@ pub mod input;
 pub mod materials;
 pub mod math;
 pub mod params;
+pub mod pbr;
 pub mod meta;
 pub mod props;
 pub mod pacenotes;
