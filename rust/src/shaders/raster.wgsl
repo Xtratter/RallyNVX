@@ -176,7 +176,7 @@ fn beam_one(lamp: vec3<f32>, fwd: vec3<f32>, right: vec3<f32>, p: vec3<f32>) -> 
     let h = atan(lx / z);
     let v = atan(ly / z);
     let cut = 0.07 * smoothstep(0.0, 0.25, h);
-    let gv = 1.0 - smoothstep(cut, cut + 0.02, v);
+    let gv = (1.0 - smoothstep(cut, cut + 0.02, v)) * smoothstep(-0.28, -0.10, v);   // and below the axis the light fades out: nothing under the bumper
     let gh = 1.0 - smoothstep(0.35, 0.65, abs(h));
     let hot = 0.6 + 0.4 * exp(-(h / 0.2) * (h / 0.2));
     let att = 1.0 / (1.0 + (dist / 18.0) * (dist / 18.0));

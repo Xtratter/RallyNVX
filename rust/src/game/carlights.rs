@@ -42,7 +42,7 @@ pub fn lamps(v: &Vehicle) -> Lamps {
         pos: [at(-x, half_l), at(x, half_l)],
         tail: [at(-x, -half_l), at(x, -half_l)],
         rev: [at(-x * 0.55, -half_l), at(x * 0.55, -half_l)],
-        head_dir: v.rot.rotate(v3(0.0, -0.05, 1.0).norm()),
+        head_dir: v.rot.rotate(v3(0.0, -0.03, 1.0).norm()),
         right: v.right(),
     }
 }
@@ -63,13 +63,13 @@ fn rally_lamps(v: &Vehicle) -> Lamps {
         pos: [at(p.pos, -1.0), at(p.pos, 1.0)],
         tail: [at(p.tail, -1.0), at(p.tail, 1.0)],
         rev: [at(p.rev, -1.0), at(p.rev, 1.0)],
-        head_dir: v.rot.rotate(v3(0.0, -0.05, 1.0).norm()),
+        head_dir: v.rot.rotate(v3(0.0, -0.03, 1.0).norm()),
         right: v.right(),
     }
 }
 
 /// One headlight's low beam at point `p` (0..1): `fwd` the beam axis (slightly down), `right` across it. Wide sideways (about 35 degrees each way), a sharp upper
-/// cut-off at the axis that rises towards the right (right-hand traffic: it lights the verge), a brighter middle, 1/d^2 fall-off with a far limit. Mirrored in `raster.wgsl::beam_one`.
+/// cut-off at the axis that rises towards the right (right-hand traffic: it lights the verge), a brighter middle, a fade below the axis (nothing under the bumper), 1/d^2 fall-off with a far limit. Mirrored in `raster.wgsl::beam_one`.
 pub fn beam_gain(lamp: V3, fwd: V3, right: V3, p: V3) -> f32 {
     let d = p - lamp;
     let dist = d.len();
@@ -80,7 +80,9 @@ pub fn beam_gain(lamp: V3, fwd: V3, right: V3, p: V3) -> f32 {
     let y = l.dot(right.cross(fwd));
     let (h, v) = ((x / z).atan(), (y / z).atan());
     let cut = 0.07 * smooth(0.0, 0.25, h);
-    let gv = 1.0 - smooth(cut, cut + 0.02, v);
+    // the vertical pattern: a sharp cut-off above, and below the axis the light fades out between about 6 and 16 degrees (a real low beam does not light the road under the bumper,
+    // and an airborne car's lamps do not light the ground right below it)
+    let gv = (1.0 - smooth(cut, cut + 0.02, v)) * smooth(-0.28, -0.10, v);
     let gh = 1.0 - smooth(0.35, 0.65, h.abs());
     let hot = 0.6 + 0.4 * (-(h / 0.2) * (h / 0.2)).exp();
     let att = 1.0 / (1.0 + (dist / 18.0) * (dist / 18.0));

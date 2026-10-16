@@ -69,7 +69,7 @@ fn settled(spec: VehicleSpec) -> Vehicle {
     assert!((right_lamp - centre).len() < 0.05, "the lamp is {:.3} m from the asset's headlight", (right_lamp - centre).len());
 }
 
-fn flat_lamp() -> (V3, V3, V3) { (v3(-0.6, 0.7, 0.0), v3(0.0, -0.05, 1.0).norm(), v3(-1.0, 0.0, 0.0)) }   // the car faces +z: its right-hand side is -x (`Vehicle::right`)
+fn flat_lamp() -> (V3, V3, V3) { (v3(-0.6, 0.7, 0.0), v3(0.0, -0.03, 1.0).norm(), v3(-1.0, 0.0, 0.0)) }   // the car faces +z: its right-hand side is -x (`Vehicle::right`)
 fn vulpes() -> VehicleSpec { VehicleSpec::by_id("vulpes").expect("vulpes") }
 
 #[test] fn the_beam_is_strongest_on_the_axis_and_falls_with_distance() {
@@ -157,4 +157,18 @@ fn vulpes() -> VehicleSpec { VehicleSpec::by_id("vulpes").expect("vulpes") }
     // a ray that runs just above gentle ground is not blocked by noise
     let bumpy = |x: f32, z: f32| 0.03 * (x * 3.0 + z).sin();
     assert!(beam_visible(lamp, v3(0.0, 0.0, 25.0), bumpy) > 0.99);
+}
+
+#[test] fn the_low_beam_does_not_light_the_road_under_the_bumper_and_an_airborne_car_lights_nothing_below_it() {
+    let (l, f, r) = flat_lamp();   // the lamp 0.7 m above the ground, looking 1.7 degrees down
+    let ground = |dist: f32| beam_gain(l, f, r, v3(l.x, 0.0, l.z + dist));
+    assert!(ground(8.0) > 0.1, "the road a few metres ahead is lit: {}", ground(8.0));
+    assert!(ground(1.5) < 0.02 && ground(2.5) < ground(8.0) * 0.3, "under the bumper it is dark: 1.5 m {} 2.5 m {} 8 m {}", ground(1.5), ground(2.5), ground(8.0));
+    // the same lamp 2.5 m above the ground (the car in the air): the ground below and just ahead is dark
+    let high = v3(l.x, 2.5, 0.0);
+    let hg = |dist: f32| beam_gain(high, f, r, v3(l.x, 0.0, dist));
+    assert!(hg(2.0) < 0.01 && hg(5.0) < 0.02, "below an airborne car: {} {}", hg(2.0), hg(5.0));
+    // lit ground ahead of an airborne car lies further than for the car on the road
+    let far_lit = |lamp: V3| (1..80).map(|i| i as f32).find(|d| beam_gain(lamp, f, r, v3(l.x, 0.0, *d)) > 0.1).unwrap_or(99.0);
+    assert!(far_lit(high) > far_lit(l) + 5.0, "the pool moves away from the car as it rises: {} vs {}", far_lit(high), far_lit(l));
 }
