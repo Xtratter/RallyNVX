@@ -22,7 +22,7 @@ pub enum Surface { #[default] Ground, Water }
 
 /// What the machine is doing right now (all values 0..1 unless noted): `drive_rpm` the revs the wheels ask of the engine in rpm, `clutch` the grip of the clutch, `load` the throttle pedal. `active == false` fades everything out.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct AudioParams { pub machine: Machine, pub als: bool, pub cut: bool, pub drive_rpm: f32, pub clutch: f32, pub load: f32, pub roll: f32, pub surface: Surface, pub slip: f32, pub wind: f32, pub active: bool }
+pub struct AudioParams { pub machine: Machine, pub als: bool, pub cut: bool, pub stalled: bool, pub drive_rpm: f32, pub clutch: f32, pub load: f32, pub roll: f32, pub surface: Surface, pub slip: f32, pub wind: f32, pub active: bool }
 
 /// The sound sources of the car (indices into `Scene::src`).
 pub const SRC_EXHAUST: usize = 0;

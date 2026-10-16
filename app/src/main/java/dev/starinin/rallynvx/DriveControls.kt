@@ -17,6 +17,9 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     var onCameraUp: () -> Unit = {}
     /** A double tap on free space: the camera goes back to its default. */
     var onCameraReset: () -> Unit = {}
+    /** The manual transmission: a shift (+1 up, -1 down) and the clutch pedal (0 up .. 1 down). */
+    var onShift: (Int) -> Unit = {}
+    var onClutch: (Float) -> Unit = {}
     private val doubleTap = DoubleTap(24f * resources.displayMetrics.density)
     /** Two fingers on free space: the span between them changed by `ratio` (new / old) and their middle moved by `dy` pixels (negative = up). */
     var onCameraPinch: (Float, Float) -> Unit = { _, _ -> }
@@ -35,8 +38,13 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     private val wheel = DriveMath.Wheel()
     private val tilt = DriveMath.Tilt()
     private val wheelView = WheelView(ctx)
-    private val gasView = PedalView(ctx, true, 84f, 170f)
-    private val brakeView = PedalView(ctx, false, 84f, 120f)
+    private val gasView = PedalView(ctx, PedalView.GAS, 84f, 170f)
+    private val brakeView = PedalView(ctx, PedalView.BRAKE, 84f, 120f)
+    private val clutchView = PedalView(ctx, PedalView.CLUTCH, 84f, 120f)
+    private val shiftUp = ShiftButtonView(ctx, true)
+    private val shiftDown = ShiftButtonView(ctx, false)
+    private var manual = false
+    private var clutchId = -1; private var upId = -1; private var downId = -1; private var sentClutch = -1f
     private val leftBtn = ArrowButtonView(ctx, true)
     private val rightBtn = ArrowButtonView(ctx, false)
     private val buttons = DriveMath.Buttons()
@@ -55,7 +63,8 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     private val loop = object : Runnable { override fun run() { frame(); postOnAnimation(this) } }
 
     init {
-        addView(wheelView); addView(leftBtn); addView(rightBtn); addView(gasView); addView(brakeView)
+        addView(wheelView); addView(leftBtn); addView(rightBtn); addView(gasView); addView(brakeView); addView(clutchView); addView(shiftUp); addView(shiftDown)
+        setManual(false)
         configure(Controls.MODE_BUTTONS, 1, false, false)
     }
 
@@ -75,10 +84,24 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
         leftBtn.visibility = if (buttonsMode) VISIBLE else GONE; rightBtn.visibility = if (buttonsMode) VISIBLE else GONE
         gasView.layoutParams = lp(pedalGrav, m)
         brakeView.layoutParams = lp(pedalGrav, m + (100f * dp).toInt())
+        clutchView.layoutParams = lp(pedalGrav, m + (200f * dp).toInt())
+        fun lpUp(extra: Float) = LayoutParams(-2, -2, pedalGrav).apply { if (pedalGrav and Gravity.END == Gravity.END) setMargins(0, 0, m + (200f * dp).toInt(), m + (extra * dp).toInt()) else setMargins(m + (200f * dp).toInt(), 0, 0, m + (extra * dp).toInt()) }
+        shiftDown.layoutParams = lpUp(128f); shiftUp.layoutParams = lpUp(190f)
         wheelView.visibility = if (buttonsMode) GONE else VISIBLE
         wheelView.alpha = if (tiltMode) 0.55f else 1f   // in tilt mode the wheel only shows the steering
         requestLayout()
     }
+
+    /** The manual transmission shows its clutch pedal and shift buttons; the automatic hides them. */
+    fun setManual(on: Boolean) {
+        manual = on
+        val v = if (on) VISIBLE else GONE
+        clutchView.visibility = v; shiftUp.visibility = v; shiftDown.visibility = v
+        if (!on) { clutchId = -1; upId = -1; downId = -1; clutchView.pressure = 0f; shiftUp.held = false; shiftDown.held = false }
+        requestLayout()
+    }
+
+    private fun clutchAt(y: Float) = GearMath.clutchFromTouch(y - clutchView.top, clutchView.height.toFloat())
 
     fun calibrate() { tilt.calibrate(tiltRoll) }
 
@@ -87,7 +110,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
 
     /** Lets go of everything (activity pause, panels): no stuck throttle, brake or steer. */
     fun release() {
-        wheelId = -1; gasId = -1; brakeId = -1; leftId = -1; rightId = -1
+        wheelId = -1; gasId = -1; brakeId = -1; leftId = -1; rightId = -1; clutchId = -1; upId = -1; downId = -1; clutchView.pressure = 0f; shiftUp.held = false; shiftDown.held = false
         if (camId >= 0) { camId = -1; onCameraUp() }
         cam2Id = -1
         wheel.up(); buttons.reset(); leftBtn.down = false; rightBtn.down = false; gasView.pressure = 0f; brakeView.pressure = 0f
@@ -105,6 +128,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     }
 
     private fun report(dt: Float = 0f) {
+        if (manual && Math.abs(clutchView.pressure - sentClutch) > 0.004f) { sentClutch = clutchView.pressure; onClutch(sentClutch) }
         val steer = if (buttonsMode) buttons.step(dt, leftBtn.down, rightBtn.down, sens) else if (tiltMode) (if (tiltLive) tilt.update(tiltRoll, dt, sens) else 0f) else wheel.steer(sens)
         if (tiltMode) wheelView.angle = steer * DriveMath.WHEEL_MAX
         val cmd = DriveMath.brakeMap(brakeView.pressure, speedKmh)
@@ -129,7 +153,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
 
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
         if (visibility != VISIBLE) return false
-        val any = wheelId >= 0 || gasId >= 0 || brakeId >= 0 || leftId >= 0 || rightId >= 0 || camId >= 0 || cam2Id >= 0
+        val any = wheelId >= 0 || gasId >= 0 || brakeId >= 0 || leftId >= 0 || rightId >= 0 || camId >= 0 || cam2Id >= 0 || clutchId >= 0 || upId >= 0 || downId >= 0
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val k = e.actionIndex; val pid = e.getPointerId(k); val x = e.getX(k); val y = e.getY(k)
@@ -137,6 +161,9 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
                     leftId < 0 && inView(leftBtn, x, y) -> { leftId = pid; leftBtn.down = true }
                     rightId < 0 && inView(rightBtn, x, y) -> { rightId = pid; rightBtn.down = true }
                     wheelId < 0 && wheelMode && onWheel(x, y) -> { wheelId = pid; if (!nearHub(x, y)) wheel.down(touchAngle(x, y)) else wheel.down(90f) }
+                    manual && clutchId < 0 && inView(clutchView, x, y) -> { clutchId = pid; clutchView.pressure = clutchAt(y) }
+                    manual && upId < 0 && inView(shiftUp, x, y) -> { upId = pid; shiftUp.held = true; onShift(1) }
+                    manual && downId < 0 && inView(shiftDown, x, y) -> { downId = pid; shiftDown.held = true; onShift(-1) }
                     gasId < 0 && inView(gasView, x, y) -> { gasId = pid; gasView.pressure = pedalAt(gasView, y) }
                     brakeId < 0 && inView(brakeView, x, y) -> { brakeId = pid; brakeView.pressure = pedalAt(brakeView, y) }
                     camId < 0 -> { camId = pid; camX = x; camY = y; doubleTap.down(e.eventTime, x, y) }   // free space: a camera drag (also while the other fingers drive)
@@ -150,6 +177,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
                     val pid = e.getPointerId(i)
                     when (pid) {
                         wheelId -> { if (!nearHub(e.getX(i), e.getY(i))) wheel.move(touchAngle(e.getX(i), e.getY(i))); wheelView.angle = wheel.angle }
+                        clutchId -> clutchView.pressure = clutchAt(e.getY(i))
                         gasId -> gasView.pressure = pedalAt(gasView, e.getY(i))
                         brakeId -> brakeView.pressure = pedalAt(brakeView, e.getY(i))
                         camId -> if (cam2Id >= 0) {
@@ -173,6 +201,9 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
                 if (pid == wheelId) { wheelId = -1; wheel.up() }
                 if (pid == leftId) { leftId = -1; leftBtn.down = false }
                 if (pid == rightId) { rightId = -1; rightBtn.down = false }
+                if (pid == clutchId) { clutchId = -1; clutchView.pressure = 0f }
+                if (pid == upId) { upId = -1; shiftUp.held = false }
+                if (pid == downId) { downId = -1; shiftDown.held = false }
                 if (pid == gasId) { gasId = -1; gasView.pressure = 0f }
                 if (pid == brakeId) { brakeId = -1; brakeView.pressure = 0f }
                 if (pid == cam2Id) { cam2Id = -1 }
@@ -184,6 +215,6 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
             }
             MotionEvent.ACTION_CANCEL -> release()
         }
-        return any || wheelId >= 0 || gasId >= 0 || brakeId >= 0 || leftId >= 0 || rightId >= 0 || camId >= 0 || e.actionMasked == MotionEvent.ACTION_UP
+        return any || wheelId >= 0 || gasId >= 0 || brakeId >= 0 || leftId >= 0 || rightId >= 0 || camId >= 0 || clutchId >= 0 || e.actionMasked == MotionEvent.ACTION_UP
     }
 }

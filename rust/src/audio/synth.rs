@@ -54,7 +54,7 @@ impl Synth {
     pub fn set_params(&mut self, p: &AudioParams) {
         let c = |v: f32| if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 };
         let rpm = |v: f32| if v.is_finite() { v.clamp(0.0, 12000.0) } else { 0.0 };
-        self.target = AudioParams { machine: p.machine, als: p.als, cut: p.cut, drive_rpm: rpm(p.drive_rpm), clutch: c(p.clutch), load: c(p.load), roll: c(p.roll), surface: p.surface, slip: c(p.slip), wind: c(p.wind), active: p.active };
+        self.target = AudioParams { machine: p.machine, als: p.als, cut: p.cut, stalled: p.stalled, drive_rpm: rpm(p.drive_rpm), clutch: c(p.clutch), load: c(p.load), roll: c(p.roll), surface: p.surface, slip: c(p.slip), wind: c(p.wind), active: p.active };
     }
 
     /// Where everything is (the listener and the sources): the paths are renewed at the next block.
@@ -123,7 +123,7 @@ impl Synth {
         if self.s.car > 0.001 {
             let running = self.master > 0.0 || goal > 0.0;
             if running {
-                let ignition = t.active && !self.muted;
+                let ignition = t.active && !self.muted && !t.stalled;
                 let starter = ignition && self.voice.engine.rpm() < 350.0;   // it cranks by itself when it is not running (the first start, a stall)
                 self.voice.sample(&Controls { throttle: self.s.load as f64, starter, clutch: t.clutch as f64, drive_rpm: t.drive_rpm as f64, ignition, als: t.als, cut: t.cut });
             }

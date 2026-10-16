@@ -13,7 +13,7 @@ pub mod city;
 #[cfg(feature = "desktop")]
 pub mod desktop;
 pub mod garage;
-pub mod gearbox;
+pub mod drivetrain;
 pub mod aero;
 pub mod autopilot;
 pub mod airflow;
