@@ -14,6 +14,7 @@ class LoadMathTest {
         assertEquals("Компиляция шейдеров", LoadMath.label(3 shl 8, false))
         assertEquals("Loading", LoadMath.label(0, true))
     }
+    @Test fun aDeadGameIsReported() { assertTrue(LoadMath.failed(99 shl 8)); assertFalse(LoadMath.failed(6 shl 8)); assertTrue(LoadMath.label(99 shl 8, true).startsWith("Startup failed")) }
     @Test fun easeNeverGoesBackOrOvershoots() {
         assertEquals(0.5f, LoadMath.ease(0.5f, 0.3f, 0.1f), 0f)
         val e = LoadMath.ease(0.2f, 0.8f, 0.05f)

@@ -27,7 +27,7 @@ class LoadingView(ctx: Context) : View(ctx) {
 
     fun report(packed: Int) {
         target = LoadMath.percent(packed) / 100f
-        text = LoadMath.label(packed, t("en", "ru") == "en") + " · " + LoadMath.percent(packed) + " %"
+        text = LoadMath.label(packed, t("en", "ru") == "en") + if (LoadMath.failed(packed)) "" else " · " + LoadMath.percent(packed) + " %"
         if (LoadMath.done(packed) && visibility == VISIBLE && !fading) {   // once: a restarted animation never ends, and the clickable view would keep eating the touches
             fading = true
             animate().alpha(0f).setDuration(250).withEndAction { visibility = GONE }.start()

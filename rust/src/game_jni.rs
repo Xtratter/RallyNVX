@@ -113,6 +113,7 @@ mod android {
             if let Err(e) = res {
                 let msg = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
                 log::error!("game thread panicked, rendering stopped: {msg}");
+                crate::loading::stage(crate::loading::FAILED, 0);
             }
         }).expect("spawn");
         *ENGINE.lock().unwrap() = Some(Engine { tx, handle: Some(handle), stats });
