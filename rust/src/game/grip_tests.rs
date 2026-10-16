@@ -107,6 +107,7 @@ fn stage(len: f32) -> RoadNet {
     let t = GripTable::from_json(EMBEDDED).unwrap();
     let all = [Surface::Grass, Surface::Dirt, Surface::Sand, Surface::Rock, Surface::Gravel, Surface::Asphalt, Surface::Water];
     for set in 0..3u8 { for s in all { let (g, l) = t.tyre(set, s); assert!((0.5..=1.5).contains(&g) && (0.5..=1.5).contains(&l), "set {set} {s:?}: {g} {l}"); } }
+    for s in all { assert_eq!(t.tyre(0, s), (1.0, 1.0), "the tarmac set is the baseline the cars were tuned with: {s:?}"); }
     assert!(t.tyre(0, Surface::Asphalt).0 > t.tyre(1, Surface::Asphalt).0 && t.tyre(0, Surface::Asphalt).0 > t.tyre(2, Surface::Asphalt).0, "tarmac tyres win on asphalt");
     for loose in [Surface::Gravel, Surface::Dirt, Surface::Grass, Surface::Sand] { assert!(t.tyre(1, loose).0 > t.tyre(0, loose).0, "gravel tyres win on {loose:?}"); }
     assert!(t.tyre(2, Surface::Asphalt).0 < t.tyre(1, Surface::Asphalt).0, "snow tyres are the worst on asphalt");

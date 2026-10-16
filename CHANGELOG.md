@@ -4,7 +4,7 @@
 
 ## 2.36.0 - tyre sets grip
 
-- Changed: the wheel set now matters on the road: gravel tyres grip best on gravel, dirt, grass and sand (and worst on asphalt among the good sets), tarmac tyres best on asphalt, snow tyres are a compromise and the worst on asphalt; the numbers are in `surfaces.json` -> `tyre_sets` (grip and side stiffness per set and surface, editable)
+- Changed: the wheel set now matters on the road: gravel tyres grip 4-8 % better on gravel, dirt, grass and sand and 10 % worse on asphalt than the tarmac set (the baseline the cars were tuned with), snow tyres are a compromise and the worst on asphalt; the numbers are in `surfaces.json` -> `tyre_sets` (grip and side stiffness per set and surface, editable)
 
 ## 2.35.0 - the cockpit
 
