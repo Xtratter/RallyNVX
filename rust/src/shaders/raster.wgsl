@@ -85,6 +85,19 @@ fn shadow_at(wp: vec3<f32>, n: vec3<f32>) -> f32 {
         }
         return mix(1.0, s / 9.0, inside);
     }
+    let q = i32(u.cam_tile.w + 0.5);
+    if (q >= 3) { return 1.0; }                              // shadows off
+    if (q == 2) { return textureSampleCompareLevel(shadow_tex, shadow_smp, uv, p.z - 0.002); }   // low: one hardware-filtered tap
+    if (q == 1) {   // medium: six taps of the Poisson disc, turned per pixel (interleaved gradient noise), a fixed soft edge
+        let ang = 6.2831853 * fract(52.9829189 * fract(dot(vec2<f32>(0.06711056, 0.00583715), floor(uv * 2048.0))));
+        let cs = vec2<f32>(cos(ang), sin(ang));
+        var m = textureSampleCompareLevel(shadow_tex, shadow_smp, uv, p.z - 0.003);
+        for (var k = 0; k < 5; k++) {
+            let o = POISSON[k * 3];
+            m += textureSampleCompareLevel(shadow_tex, shadow_smp, uv + vec2<f32>(o.x * cs.x - o.y * cs.y, o.x * cs.y + o.y * cs.x) * (3.0 * texel), p.z - 0.003);
+        }
+        return m / 6.0;
+    }
     // hybrid: percentage-closer soft shadows (blocker search, penumbra from the blocker distance, 12-tap PCF)
     if (inside < 0.5) { return 1.0; }
     let sun_n = normalize(u.sun.xyz);

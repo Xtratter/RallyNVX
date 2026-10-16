@@ -355,6 +355,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Native.gameAero(if (Controls.aero(this)) 1 else 0)
         intent.getIntExtra("blur", -1).let { if (it >= 0) Controls.setMotionBlur(this, it) }   // debug/test: motion blur level
         intent.getIntExtra("dustopts", -1).let { if (it >= 0) Controls.setDustOpts(this, it) }   // debug/test: the GPU dust options as bits
+        intent.getIntExtra("shadows", -1).let { if (it >= 0) Controls.setShadows(this, it) }   // debug/test: the shadow quality
+        Native.gameShadows(Controls.shadows(this))
         Native.gameMotionBlur(Controls.motionBlur(this))
         Native.gameDustOpts(Controls.dustOpts(this))
         Native.gameSigns(Controls.signs(this))
@@ -407,7 +409,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val colB = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val list = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; addView(colA, LinearLayout.LayoutParams(px(330f), -2)); addView(colB, LinearLayout.LayoutParams(px(330f), -2).apply { marginStart = px(16f) }) }
         var rows = 0
-        fun applyLive() { if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0); Native.gameDustOpts(Controls.dustOpts(this)); Native.gameMotionBlur(Controls.motionBlur(this)); Native.gameWeather(Controls.weather(this)) }; refreshers.forEach { it() } }
+        fun applyLive() { if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0); Native.gameDustOpts(Controls.dustOpts(this)); Native.gameMotionBlur(Controls.motionBlur(this)); Native.gameShadows(Controls.shadows(this)); Native.gameWeather(Controls.weather(this)) }; refreshers.forEach { it() } }
         fun row(text: String, value: () -> String, onClick: () -> Unit) {
             val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             r.addView(TextView(this).apply { this.text = text; textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -458,7 +460,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun applyControls() {
         applyRender()
         Native.audioVolume(Controls.volume(this))
-        if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0); Native.gameMotionBlur(Controls.motionBlur(this)); Native.gameDustOpts(Controls.dustOpts(this)) }
+        if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0); Native.gameMotionBlur(Controls.motionBlur(this)); Native.gameShadows(Controls.shadows(this)); Native.gameDustOpts(Controls.dustOpts(this)) }
         val d = drive ?: return
         d.configure(Controls.mode(this), Controls.sens(this), Controls.pedalsLeft(this), Controls.pedalsAnalog(this))
         applyControlLayout()
