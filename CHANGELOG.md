@@ -2,6 +2,13 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.47.0 - physically based water and sky
+
+- Changed: the sky's clouds are lit as a participating medium: optical depth grows with density (Beer-Lambert), the sun's light is attenuated by the density towards the sun and scattered forward (Henyey-Greenstein), so cloud edges glow silver and dense cores and bases are dark; crisper edges, smaller billows, a thin cirrus veil above; the sun's glow is a Mie forward-scattering lobe
+- Changed: water uses water's real reflectance (F0 0.02, Fresnel), a roughness that follows the waves and the rain, the sky's blurred reflection, a GGX sun glint, finer waves that fade out with distance, and the headlights glitter on it
+- Added: rain makes rings spread over the water
+- Added: debug file `lookup` (with `gpuprof 1`) raises the camera target to look at the sky
+
 ## 2.46.0 - clear coat
 
 - Added: the Peugeot's paint is lit as a base under a clear coat: a thin glossy layer (dielectric, roughness 0.07) on the smooth surface that reflects the sun as a sharp glint and the sky crisply, stronger at grazing angles, over the paint's softer satin reflection; the livery's normal map stays under the coat
