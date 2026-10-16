@@ -68,7 +68,7 @@ The main menu and the pause panel open **Settings**: graphics quality (applies a
 
 ## Sound
 
-All sound is synthesised in code (mono, 44.1 kHz, no files). The car has an engine whose pitch follows the speed and throttle, rolling noise on the ground and in water and tyre squeal in slides; wind grows with speed. One-shot sounds: touchdown, crash, splash, checkpoint chime, mission success and failure tunes. The 🔊/🔇 button at the top left (under the pause button) switches sound off and on and remembers the choice; the sound fades out while the game is paused or the screen is left. There is no music and no desktop sound yet; a volume slider comes with the settings screen.
+All sound is synthesised in code (stereo, 44.1 kHz, no files; every source is heard from its real place, see `docs/superpowers/specs/2026-10-16-spatial-audio-design.md`). The car has an engine whose pitch follows the speed and throttle, rolling noise on the ground and in water and tyre squeal in slides; wind grows with speed. One-shot sounds: touchdown, crash, splash, checkpoint chime, mission success and failure tunes. The 🔊/🔇 button at the top left (under the pause button) switches sound off and on and remembers the choice; the sound fades out while the game is paused or the screen is left. There is no music and no desktop sound yet; a volume slider comes with the settings screen.
 
 ## City
 

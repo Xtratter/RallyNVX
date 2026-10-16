@@ -1,6 +1,7 @@
 //! The synthesiser: smoothed continuous voices (engine, rolling, squeal, wind) plus a pool of one-shots.
 use super::dsp::{coef, frac, Noise, OnePole};
-use super::{AudioParams, Event, Machine, Surface, RATE};
+use super::spatial::{path, Emitter};
+use super::{AudioParams, Event, Machine, Scene, Surface, N_SRC, RATE, SRC_BAY, SRC_BODY, SRC_EXHAUST, SRC_WHEEL};
 
 const TAU: f32 = std::f32::consts::TAU;
 const MAX_VOICES: usize = 8;
@@ -18,11 +19,20 @@ struct Smoothed { rpm: f32, load: f32, roll: f32, water: f32, slip: f32, wind: f
 
 pub struct Synth {
     target: AudioParams, s: Smoothed, master: f32, muted: bool, volume: f32, vol_s: f32,
-    noise: Noise, rate: f32, a: f32,
+    noise: Noise, noise_w: [Noise; 4], noise_wind: Noise, rate: f32, a: f32,
     engine_phase: f32, gurgle: f32, squeal: f32,
-    f_roll: OnePole, f_roll_w: OnePole, f_sq1: OnePole, f_sq2: OnePole, f_wind: OnePole,
+    f_roll: [OnePole; 4], f_roll_w: [OnePole; 4], f_sq1: [OnePole; 4], f_sq2: [OnePole; 4], f_wind: OnePole, f_wind_r: OnePole,
     voices: [Voice; MAX_VOICES],
+    scene: Scene, emitters: Vec<Emitter>, block: usize,
 }
+
+/// What the sources emit at one instant, before the room and the listener's head: the exhaust, the engine bay, the four tyres, the car's body (the one-shots) and the wind at the listener's ears.
+#[derive(Clone, Copy, Default)]
+pub struct Frame { pub exhaust: f32, pub bay: f32, pub wheels: [f32; 4], pub body: f32, pub wind: [f32; 2] }
+impl Frame { fn mono(&self) -> f32 { self.exhaust + self.bay + self.wheels.iter().sum::<f32>() + self.body + 0.5 * (self.wind[0] + self.wind[1]) } }
+
+/// Samples per block between two updates of the paths.
+const BLOCK: usize = 128;
 
 impl Default for Synth { fn default() -> Self { Synth::new() } }
 
@@ -31,11 +41,13 @@ impl Synth {
         let rate = RATE as f32;
         Synth {
             target: AudioParams::default(), s: Smoothed::default(), master: 0.0, muted: false, volume: 1.0, vol_s: 1.0,
-            noise: Noise::new(0x1234_5678), rate, a: 1.0 - (-1.0 / (SMOOTH * rate)).exp(),
+            noise: Noise::new(0x1234_5678), noise_w: [Noise::new(0x2345_6789), Noise::new(0x3456_789A), Noise::new(0x4567_89AB), Noise::new(0x5678_9ABC)], noise_wind: Noise::new(0x6789_ABCD),
+            rate, a: 1.0 - (-1.0 / (SMOOTH * rate)).exp(),
             engine_phase: 0.0, gurgle: 0.0, squeal: 0.0,
-            f_roll: OnePole::default(), f_roll_w: OnePole::default(), f_sq1: OnePole::default(), f_sq2: OnePole::default(),
-            f_wind: OnePole::default(),
+            f_roll: [OnePole::default(); 4], f_roll_w: [OnePole::default(); 4], f_sq1: [OnePole::default(); 4], f_sq2: [OnePole::default(); 4],
+            f_wind: OnePole::default(), f_wind_r: OnePole::default(),
             voices: [Voice::default(); MAX_VOICES],
+            scene: Scene::default(), emitters: (0..N_SRC).map(|_| Emitter::new()).collect(), block: 0,
         }
     }
 
@@ -44,12 +56,18 @@ impl Synth {
         self.target = AudioParams { machine: p.machine, rpm: c(p.rpm), load: c(p.load), roll: c(p.roll), surface: p.surface, slip: c(p.slip), wind: c(p.wind), active: p.active };
     }
 
+    /// Where everything is (the listener and the sources): the paths are renewed at the next block.
+    pub fn set_scene(&mut self, sc: &Scene) {
+        let ok = |v: crate::game::math::V3| v.x.is_finite() && v.y.is_finite() && v.z.is_finite();
+        if ok(sc.listener) && ok(sc.fwd) && sc.src.iter().all(|p| ok(*p)) { self.scene = *sc; }
+    }
+
     pub fn set_muted(&mut self, m: bool) { self.muted = m; }
     /// Master volume 0..1 (applied after the soft clip, smoothed).
     pub fn set_volume(&mut self, v: f32) { self.volume = if v.is_finite() { v.clamp(0.0, 1.0) } else { 1.0 }; }
 
     /// Stops everything at once: no one-shots, no machine, inactive (the activity left the game).
-    pub fn silence(&mut self) { self.voices = [Voice::default(); MAX_VOICES]; self.target = AudioParams::default(); }
+    pub fn silence(&mut self) { self.voices = [Voice::default(); MAX_VOICES]; self.target = AudioParams::default(); self.emitters.iter_mut().for_each(|e| e.reset()); }
 
     /// Number of one-shot voices currently sounding.
     pub fn voices(&self) -> usize { self.voices.iter().filter(|v| v.live).count() }
@@ -81,55 +99,87 @@ impl Synth {
         out * (0.25 + 0.75 * v.strength).min(1.0) * 0.55
     }
 
-    /// Renders float samples in -1..1 (kept for tests; `render` converts).
-    pub fn render_f32(&mut self, out: &mut [f32]) {
+    /// One instant of every source (the smoothing, the voices, the master fade run here). `y` of the mix is `finish(frame.mono())`.
+    pub fn frame(&mut self) -> Frame {
         let (rate, a) = (self.rate, self.a);
         let c_roll = coef(1500.0, rate); let c_roll_w = coef(600.0, rate);
         let (c_s1, c_s2) = (coef(1400.0, rate), coef(900.0, rate));
         let c_wind = coef(500.0, rate);
         let fade = 1.0 / (FADE * rate);
-        for o in out.iter_mut() {
-            let t = self.target;
-            self.s.rpm += (t.rpm - self.s.rpm) * a; self.s.load += (t.load - self.s.load) * a;
-            self.s.roll += (t.roll - self.s.roll) * a; self.s.slip += (t.slip - self.s.slip) * a; self.s.wind += (t.wind - self.s.wind) * a;
-            self.s.water += ((t.surface == Surface::Water) as u8 as f32 - self.s.water) * a;
-            self.s.car += ((t.machine == Machine::Car) as u8 as f32 - self.s.car) * a;
-            let goal = if self.muted || !t.active { 0.0 } else { 1.0 };
-            self.master = if self.master < goal { (self.master + fade).min(goal) } else { (self.master - fade).max(goal) };
-            let n = self.noise.next();
-            let mut x = 0.0f32;
-            // car: engine stack, rolling noise, squeal
-            if self.s.car > 0.001 {
-                self.engine_phase = frac(self.engine_phase + engine_freq(self.s.rpm) / rate);
-                let p = self.engine_phase * TAU;
-                let w = [0.6f32, 0.7, 1.0, 0.8, 0.6, 0.4];   // the mids carry the sound on a phone speaker
-                let mut e = 0.0; for (k, wk) in w.iter().enumerate() { e += (p * (k + 1) as f32).sin() * wk; }
-                let engine = (e * 0.30 + n * 0.04) * (0.10 + 0.22 * self.s.load);
-                self.gurgle = frac(self.gurgle + 3.0 / rate);
-                let ground = self.f_roll.run(n, c_roll) * 0.35;
-                let wet = self.f_roll_w.run(n, c_roll_w) * 0.45 * (0.7 + 0.3 * (self.gurgle * TAU).sin());
-                let roll = (ground * (1.0 - self.s.water) + wet * self.s.water) * self.s.roll;
-                self.squeal = frac(self.squeal + 9.0 / rate);
-                let band = self.f_sq1.run(n, c_s1) - self.f_sq2.run(n, c_s2);
-                let squeal = band * self.s.slip * 0.9 * (0.6 + 0.4 * (self.squeal * TAU).sin());
-                x += (engine + roll + squeal) * self.s.car;
+        let t = self.target;
+        self.s.rpm += (t.rpm - self.s.rpm) * a; self.s.load += (t.load - self.s.load) * a;
+        self.s.roll += (t.roll - self.s.roll) * a; self.s.slip += (t.slip - self.s.slip) * a; self.s.wind += (t.wind - self.s.wind) * a;
+        self.s.water += ((t.surface == Surface::Water) as u8 as f32 - self.s.water) * a;
+        self.s.car += ((t.machine == Machine::Car) as u8 as f32 - self.s.car) * a;
+        let goal = if self.muted || !t.active { 0.0 } else { 1.0 };
+        self.master = if self.master < goal { (self.master + fade).min(goal) } else { (self.master - fade).max(goal) };
+        let n = self.noise.next();
+        let mut f = Frame::default();
+        // car: the engine's pulses (the exhaust carries the low harmonics, the engine bay the upper ones), the tyres' rolling noise and squeal
+        if self.s.car > 0.001 {
+            self.engine_phase = frac(self.engine_phase + engine_freq(self.s.rpm) / rate);
+            let p = self.engine_phase * TAU;
+            let w = [0.6f32, 0.7, 1.0, 0.8, 0.6, 0.4];   // the mids carry the sound on a phone speaker
+            let (mut lo, mut hi) = (0.0, 0.0);
+            for (k, wk) in w.iter().enumerate() { let h = (p * (k + 1) as f32).sin() * wk; if k < 3 { lo += h; } else { hi += h; } }
+            let amp = 0.10 + 0.22 * self.s.load;
+            f.exhaust = (lo * 0.30 + n * 0.04) * amp * self.s.car;
+            f.bay = hi * 0.30 * amp * self.s.car;
+            self.gurgle = frac(self.gurgle + 3.0 / rate);
+            self.squeal = frac(self.squeal + 9.0 / rate);
+            let wobble = 0.6 + 0.4 * (self.squeal * TAU).sin();
+            let gur = 0.7 + 0.3 * (self.gurgle * TAU).sin();
+            for k in 0..4 {
+                let nk = self.noise_w[k].next();
+                let ground = self.f_roll[k].run(nk, c_roll) * 0.35;
+                let wet = self.f_roll_w[k].run(nk, c_roll_w) * 0.45 * gur;
+                let roll = (ground * (1.0 - self.s.water) + wet * self.s.water) * self.s.roll * self.scene.wheel_on[k];
+                let band = self.f_sq1[k].run(nk, c_s1) - self.f_sq2[k].run(nk, c_s2);
+                let squeal = band * self.s.slip * self.scene.wheel_slip[k] * 0.9 * wobble;
+                f.wheels[k] = (roll + squeal) * 0.5 * self.s.car;   // four incoherent tyres: half the amplitude each keeps the total power of one
             }
-            // wind
-            x += self.f_wind.run(n, c_wind) * self.s.wind * 0.3;
-            // one-shots
-            let mut shots = 0.0;
-            for v in self.voices.iter_mut() { if v.live { shots += Self::voice_sample(v, n, rate); } }
-            self.vol_s += (self.volume - self.vol_s) * a;
-            if self.volume == 0.0 && self.vol_s < 1e-4 { self.vol_s = 0.0; }
-            let y = ((x + shots) * 0.9).tanh() * self.master * self.vol_s;
-            *o = if y.is_finite() { y.clamp(-1.0, 1.0) } else { 0.0 };
+        }
+        // wind at the ears: two decorrelated streams
+        let nw = self.noise_wind.next();
+        f.wind = [self.f_wind.run(n, c_wind) * self.s.wind * 0.3, self.f_wind_r.run(nw, c_wind) * self.s.wind * 0.3];
+        // one-shots, from the car's body
+        let mut shots = 0.0;
+        for v in self.voices.iter_mut() { if v.live { shots += Self::voice_sample(v, n, rate); } }
+        f.body = shots;
+        self.vol_s += (self.volume - self.vol_s) * a;
+        if self.volume == 0.0 && self.vol_s < 1e-4 { self.vol_s = 0.0; }
+        f
+    }
+
+    fn finish(&self, x: f32) -> f32 { let y = (x * 0.9).tanh() * self.master * self.vol_s; if y.is_finite() { y.clamp(-1.0, 1.0) } else { 0.0 } }
+
+    /// Renders float samples in -1..1, mono, straight from the sources (no distance, no head): kept for tests; the game plays `render_stereo`.
+    pub fn render_f32(&mut self, out: &mut [f32]) {
+        for o in out.iter_mut() { let f = self.frame(); *o = self.finish(f.mono()); }
+    }
+
+    /// Interleaved stereo samples in -1..1 (`out.len()` / 2 frames): each source is heard along its own path (travel time, distance, the head).
+    pub fn render_stereo_f32(&mut self, out: &mut [f32]) {
+        let (l0, fwd) = (self.scene.listener, self.scene.fwd);
+        for fr in out.chunks_exact_mut(2) {
+            if self.block == 0 {
+                for k in 0..N_SRC { let p = path(l0, fwd, self.scene.src[k]); self.emitters[k].set_path(&p); }
+            }
+            self.block = (self.block + 1) % BLOCK;
+            let f = self.frame();
+            let (mut l, mut r) = (f.wind[0], f.wind[1]);
+            let mut add = |k: usize, x: f32| { let (a, b) = self.emitters[k].process(x); l += a; r += b; };
+            add(SRC_EXHAUST, f.exhaust); add(SRC_BAY, f.bay); add(SRC_BODY, f.body);
+            for k in 0..4 { add(SRC_WHEEL + k, f.wheels[k]); }
+            fr[0] = self.finish(l); fr[1] = self.finish(r);
         }
     }
 
+    /// Interleaved stereo PCM16.
     pub fn render(&mut self, out: &mut [i16]) {
         let mut buf = [0.0f32; 512];
         for chunk in out.chunks_mut(buf.len()) {
-            self.render_f32(&mut buf[..chunk.len()]);
+            self.render_stereo_f32(&mut buf[..chunk.len()]);
             for (o, s) in chunk.iter_mut().zip(&buf) { *o = (s * 32767.0) as i16; }
         }
     }

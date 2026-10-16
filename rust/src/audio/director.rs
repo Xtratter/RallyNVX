@@ -1,5 +1,5 @@
 //! Turns the game world into `AudioParams` and one-shot `Event`s by comparing each frame with the previous one.
-use super::{AudioParams, Event, Machine, Surface};
+use super::{AudioParams, Event, Machine, Scene, Surface, N_SRC, SRC_BAY, SRC_BODY, SRC_EXHAUST, SRC_WHEEL};
 use crate::game::{math::v3, world::World};
 
 pub struct Director {
@@ -13,6 +13,29 @@ impl Default for Director { fn default() -> Self { Director::new() } }
 impl Director {
     pub fn new() -> Director {
         Director { started: false, time: 0.0, seed: 0, grounded: true, wet: false, hspeed: 0.0, vy: 0.0, air_time: 0.0, quiet_until: 0.0 }
+    }
+
+    /// Where the listener (the camera) and the sound sources of the car are: the exhaust at the tail, the engine bay at the nose, the four tyres where they touch the ground.
+    pub fn scene(&self, w: &World) -> Scene {
+        let v = &w.vehicle;
+        let size = v.spec.size;
+        let at = |x: f32, y: f32, z: f32| v.pos + v.rot.rotate(v3(x, y, z));
+        let mut sc = Scene::default();
+        sc.listener = w.cam.pos;
+        let g = w.cam.target - w.cam.pos;
+        sc.fwd = if g.len() > 1e-3 { g.norm() } else { v3(0.0, 0.0, 1.0) };
+        let mut src = [v.pos; N_SRC];
+        src[SRC_EXHAUST] = at(0.30, -0.25, -0.5 * size.z);
+        src[SRC_BAY] = at(0.0, 0.05, 0.30 * size.z);
+        src[SRC_BODY] = v.pos;
+        for k in 0..4 {
+            let wi = &v.wheels[k];
+            src[SRC_WHEEL + k] = if wi.grounded { wi.contact } else { v.pos + v.rot.rotate(v.spec.wheels[k]) };
+            sc.wheel_on[k] = wi.grounded as u8 as f32;
+            sc.wheel_slip[k] = if wi.grounded { ((wi.lat_slip - 1.5) / 3.0).clamp(0.0, 1.0) } else { 0.0 };
+        }
+        sc.src = src;
+        sc
     }
 
     /// `throttle` is the player's throttle (-1..1), `active` is false while paused. Never emits events when inactive

@@ -90,3 +90,18 @@ fn settled() -> World { let mut w = World::new(7); for _ in 0..120 { w.step(&Inp
     let head = d.update(&w, 1.0, true).0.wind;
     assert!(head > tail * 1.15, "driving into the wind is noisier than with it: head {head} tail {tail}");
 }
+
+#[test] fn the_scene_puts_the_listener_at_the_camera_and_the_sources_on_the_car() {
+    use super::{SRC_BAY, SRC_BODY, SRC_EXHAUST, SRC_WHEEL};
+    let mut w = settled(); let d = Director::new();
+    for _ in 0..30 { w.cam.update(&w.vehicle, &w.terrain, 1.0 / 60.0); }
+    let sc = d.scene(&w);
+    assert_eq!(sc.listener, w.cam.pos);
+    assert!((sc.fwd.len() - 1.0).abs() < 1e-3);
+    let c = w.vehicle.pos; let fwd = w.vehicle.forward();
+    let along = |p: crate::game::math::V3| (p - c).dot(fwd);
+    assert!(along(sc.src[SRC_EXHAUST]) < -1.0 && along(sc.src[SRC_BAY]) > 0.5, "the exhaust is at the tail, the engine bay at the nose");
+    assert!((sc.src[SRC_BODY] - c).len() < 1e-4);
+    for k in 0..4 { assert!((sc.src[SRC_WHEEL + k] - c).len() < 3.0, "tyre {k}"); assert!(sc.wheel_on[k] == 1.0, "settled on the ground"); }
+    assert!(sc.src.iter().all(|p| p.x.is_finite() && p.y.is_finite() && p.z.is_finite()));
+}

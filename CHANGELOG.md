@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.59.0 - stereo sound from real places (spatial audio, stage 1)
+
+- Added: the sound is stereo and every source is heard from its real place: the exhaust at the tail, the engine bay at the nose, each of the four tyres where it touches the ground, the landings, crashes and splashes at the car. The listener is the camera (so in the cockpit you hear from the driver's seat, with the free camera from wherever you fly)
+- Added: the sound takes time to arrive (distance / 343 m/s): a passing car bends its pitch (the Doppler effect comes out of the delay itself), the 1/r law makes it quieter with distance, the air dulls the highs, and the head gives the interaural time and level differences (the ear turned away hears it later and duller)
+- Next stages: occlusion and diffraction by rays, the ground reflection, the reverb of the environment, then the engine model (see `docs/superpowers/specs/2026-10-16-spatial-audio-design.md`)
+
 ## 2.58.0 - PBR cabin surfaces
 
 - Added: the cabin has its own surfaces by part name (new classes 22-24): soft fabric (the seats and the dash alcantara, fully matte, roughness 0.90-1.0), carbon and kevlar under a clear coat (0.22-0.40) with a glossy highlight, bare metal (the handbrake, the gear stick, the pedals; metallic 0.85, 0.30-0.55), and the hard plastic as before but with the texture's brightness varying its roughness (0.50-0.75)

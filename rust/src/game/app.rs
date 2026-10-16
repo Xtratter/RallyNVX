@@ -167,7 +167,8 @@ mod game {
             }
             let throttle = self.input.throttle;
             let (params, events) = self.director.update(&self.world, throttle, !self.paused);
-            crate::audio::feed(&params, &events);
+            let scene = self.director.scene(&self.world);
+            crate::audio::feed(&params, &events, &scene);
             let t0 = Instant::now();
             self.raster.render(&mut self.world);
             self.frame_ms = t0.elapsed().as_secs_f32() * 1000.0;

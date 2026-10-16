@@ -8,7 +8,7 @@ import android.media.AudioManager
 import android.media.AudioTrack
 import android.os.Process
 
-/** Streams the procedural sound from [Native.audioRender] to an AudioTrack on a daemon thread. */
+/** Streams the procedural stereo sound from [Native.audioRender] to an AudioTrack on a daemon thread. */
 class AudioEngine(ctx: Context) {
     private var track: AudioTrack? = null
     private var thread: Thread? = null
@@ -49,12 +49,12 @@ class AudioEngine(ctx: Context) {
         if (alive) return
         Native.audioMute(muted)
         val rate = 44100
-        val min = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val min = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT)
         if (min <= 0) return
         val t = try {
             AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
-                .setAudioFormat(AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                .setAudioFormat(AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build())
                 .setBufferSizeInBytes(maxOf(min * 4, 8192)).setTransferMode(AudioTrack.MODE_STREAM).build()
         } catch (e: Exception) { return }   // no sound is better than a crash
         if (t.state != AudioTrack.STATE_INITIALIZED) { t.release(); return }
@@ -65,7 +65,7 @@ class AudioEngine(ctx: Context) {
         alive = true
         thread = Thread({
             Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
-            val buf = ShortArray(1024)
+            val buf = ShortArray(2048)   // 1024 stereo frames, interleaved
             try {
                 while (alive) {
                     if (paused) { Thread.sleep(20); continue }

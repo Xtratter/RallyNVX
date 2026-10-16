@@ -68,12 +68,12 @@ fn run(s: &mut Synth, n: f32) -> Vec<f32> { let mut v = vec![0.0; secs(n)]; s.re
 
 #[test] fn the_global_synth_survives_empty_buffers_and_renders_what_the_game_feeds() {
     render_into(&mut []);
-    feed(&car(0.6), &[Event::Touchdown(0.5)]);
+    feed(&car(0.6), &[Event::Touchdown(0.5)], &Scene::default());
     let mut buf = vec![0i16; 4410];
     render_into(&mut buf);
     render_into(&mut buf);
     assert!(buf.iter().any(|x| *x != 0));
-    feed(&AudioParams::default(), &[]); set_muted(false);
+    feed(&AudioParams::default(), &[], &Scene::default()); set_muted(false);
 }
 
 fn rms(v: &[f32]) -> f32 { (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt() }
@@ -102,4 +102,28 @@ fn rms(v: &[f32]) -> f32 { (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f3
     let half = rms_at(0.5);
     assert!((half / full - 0.5).abs() < 0.05, "{half} vs {full}");
     assert_eq!(rms_at(5.0), full); assert_eq!(rms_at(f32::NAN), full);
+}
+
+#[test] fn the_stereo_render_puts_a_source_on_its_side_and_the_scene_moves_it() {
+    use crate::game::math::v3;
+    let run_st = |s: &mut Synth, n: f32| { let mut v = vec![0.0f32; secs(n) * 2]; s.render_stereo_f32(&mut v); v };
+    let side = |v: &[f32]| { let (mut l, mut r) = (0.0f32, 0.0f32); for c in v.chunks_exact(2) { l += c[0] * c[0]; r += c[1] * c[1]; } (l, r) };
+    let mut s = Synth::new(); s.set_params(&car(0.6));
+    // the whole car 8 m to the right of a listener looking along +z (the right is -x)
+    let mut sc = Scene::default(); sc.src = [v3(-8.0, 0.0, 0.0); N_SRC]; s.set_scene(&sc);
+    run_st(&mut s, 0.6);
+    let (l, r) = side(&run_st(&mut s, 0.5));
+    assert!(r > 2.0 * l, "on the right: {r} vs {l}");
+    sc.src = [v3(8.0, 0.0, 0.0); N_SRC]; s.set_scene(&sc);
+    run_st(&mut s, 2.0);
+    let (l, r) = side(&run_st(&mut s, 0.5));
+    assert!(l > 2.0 * r, "on the left: {l} vs {r}");
+    // twice the distance is quieter, and the output stays in range
+    let mut near = Synth::new(); near.set_params(&car(0.6)); let mut sc = Scene::default(); sc.src = [v3(0.0, 0.0, 6.0); N_SRC]; near.set_scene(&sc); run_st(&mut near, 0.6);
+    let mut far = Synth::new(); far.set_params(&car(0.6)); sc.src = [v3(0.0, 0.0, 48.0); N_SRC]; far.set_scene(&sc); run_st(&mut far, 0.6);
+    let (a, b) = (rms(&run_st(&mut near, 0.5)), rms(&run_st(&mut far, 0.5)));
+    assert!(a > 3.0 * b && run_st(&mut far, 0.1).iter().all(|x| x.abs() <= 1.0), "near {a} far {b}");
+    // a scene with a NaN is ignored
+    let mut bad = Scene::default(); bad.listener = v3(f32::NAN, 0.0, 0.0); s.set_scene(&bad);
+    assert!(run_st(&mut s, 0.1).iter().all(|x| x.is_finite()));
 }
