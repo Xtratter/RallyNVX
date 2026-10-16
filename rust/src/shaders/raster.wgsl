@@ -666,16 +666,25 @@ fn wiper_pass_age(lp: vec3<f32>, pivot_reach: vec4<f32>, axis: vec3<f32>, rest: 
             let a1 = wiper_pass_age(i.lp, u.wp1, u.wax1.xyz, u.wrs1.xyz, u.wph.x);
             if (a0 >= 0.0 && a1 >= 0.0) { age = min(a0, a1); } else if (a0 >= 0.0) { age = a0; } else if (a1 >= 0.0) { age = a1; }
         }
-        let g = vec2<f32>(i.lp.x, i.lp.y * 0.8 + i.lp.z * 0.6) / 0.05;
-        let cell = floor(g);
-        let h = hash_u3(u32(cell.x + 2000.0) * 7919u + u32(cell.y + 2000.0));
-        let c = cell + vec2<f32>(0.3 + 0.4 * h.x, 0.3 + 0.4 * h.y);
-        let rad = 0.10 + 0.16 * h.z * h.z;
-        let born = h.x * 0.55;                                  // how long after a wipe this drop appears (in cycles)
-        let grown = smoothstep(born, born + 0.06, age);
-        let d = length(g - c) / rad;
-        let drop = (1.0 - smoothstep(0.7, 1.0, d)) * grown * step(h.y, 0.25 + 0.7 * rain);
-        let rim = smoothstep(0.35, 0.85, d) * (1.0 - smoothstep(0.85, 1.0, d));   // a drop is a small lens: bright rim, the sky seen through its middle
+        // two lattices of 3D cells in the car's object space (7 cm for the sparse big drops, 3 cm for the many small ones): the glass slices through each cell, so a drop's size
+        // varies and every pane, flat or tilted, is covered the same way
+        var drop = 0.0;
+        var rim = 0.0;
+        for (var layer = 0; layer < 2; layer++) {
+            let cs = select(0.07, 0.03, layer == 1);
+            let g = i.lp / cs;
+            let cell = floor(g);
+            let h = hash_u3(u32(cell.x + 2000.0) * 7919u + u32(cell.y + 2000.0) * 104729u + u32(cell.z + 2000.0) + u32(layer) * 15485863u);
+            let c = cell + vec3<f32>(0.3 + 0.4 * h.x, 0.3 + 0.4 * h.y, 0.3 + 0.4 * h.z);
+            let rad = select(0.20 + 0.18 * h.z * h.z, 0.22 + 0.18 * h.z, layer == 1);
+            let born = h.x * 0.55;                              // how long after a wipe this drop appears (in cycles)
+            let grown = smoothstep(born, born + 0.06, age);
+            let d = length(g - c) / rad;
+            let dens = select(0.30 + 0.5 * rain, 0.55 + 0.4 * rain, layer == 1);
+            let dr = (1.0 - smoothstep(0.6, 1.0, d)) * grown * step(h.y, dens);
+            drop = max(drop, dr);
+            rim = max(rim, smoothstep(0.35, 0.85, d) * (1.0 - smoothstep(0.85, 1.0, d)) * step(0.001, dr));
+        }
         col += drop * (sky_gradient(r) * 0.45 + vec3<f32>(0.6) * rim * 0.25);
         a = clamp(a + drop * 0.4, 0.0, 1.0);
     }
