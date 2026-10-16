@@ -37,6 +37,12 @@ pub struct Autopilot {
 }
 
 /// The speed limits for a car on a road of the given kind (loose gravel is the worst case on the stage).
+/// The share of the planned speed the autopilot keeps on ground that is `wet` (0..1) soaked: the square root of the grip left, because a corner's speed goes with the root of the
+/// grip (and the braking distance, which goes with speed squared over grip, stays what it was). Never below half.
+pub fn wet_speed_scale(surface: super::surface::Surface, wet: f32) -> f32 {
+    super::grip::wet_factor(surface, wet).0.max(0.0).sqrt().clamp(0.5, 1.0)
+}
+
 pub fn limits_for(car: &VehicleSpec, surface: super::surface::Surface, v_max: f32, stop_at_end: bool) -> Limits {
     Limits { mu: car.mu * grip(surface, 1.0).mu, v_max: v_max.min(car.max_speed), accel: 0.5 * car.engine_force / car.mass, stop_at_end }
 }
@@ -127,6 +133,7 @@ impl Autopilot {
     pub fn progress(&self) -> f32 { self.route.s[self.idx] }
 
     pub fn drive(&mut self, v: &Vehicle, dt: f32) -> AutoCmd {
+        let wet_scale = wet_speed_scale(v.surface, v.wet);
         let mut cmd = AutoCmd::default();
         let (lo, hi) = (self.idx.saturating_sub(15), self.idx + 80);
         let (mut i, mut d) = self.route.nearest_in(v.pos.x, v.pos.z, lo, hi);
@@ -145,7 +152,7 @@ impl Autopilot {
         // the profile's target a few points ahead (a crawl is kept until the last 12 m so the car does not stall short of the finish)
         let want = self.route.speed[(i + 4).min(self.route.len() - 1)].max(if remaining > 12.0 { 3.5 } else { 0.0 });
         let tame = self.joined_at.map_or(f32::MAX, |s0| if self.route.s[i] - s0 < 80.0 { self.cfg.field_speed * 1.25 } else { f32::MAX });
-        let want = want.min(tame);
+        let want = want.min(tame) * wet_scale;
         // off the line: slow down in proportion to how far into the road's edge the car has drifted
         let half = self.route.half[i];
         let want = if half > 1.0 && d > 0.55 * half { want * (1.0 - (d - 0.55 * half) / (0.6 * half)).clamp(0.45, 1.0) } else { want };
