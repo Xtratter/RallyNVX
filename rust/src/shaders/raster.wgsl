@@ -173,6 +173,22 @@ fn shade(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, rough: f32, metal: f32)
     return shade_with(albedo, wp, n, rough, metal, sh);
 }
 
+// Paint under a clear coat: the base (`n`, perhaps bump-mapped, a satin `rough`) lit as usual and dimmed by what the coat reflects, plus the coat's own thin glossy layer
+// (dielectric F0 0.04, roughness 0.07) on the smooth surface normal `nc`: a sharp sun glint and a crisp reflection of the sky over the paint's softer one.
+fn shade_coat(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, nc: vec3<f32>, rough: f32) -> vec3<f32> {
+    let sun = normalize(u.sun.xyz);
+    var sh = shadow_at(wp, n);
+    if (u.mode.x > 0.5) { sh = min(sh, mix(1.0, terrain_shadow(wp, sun), smoothstep(0.0, 0.2, dot(n, sun)))); }
+    let v = normalize(u.cam.xyz - wp);
+    let nv = max(dot(nc, v), 0.02);
+    let f0 = vec3<f32>(0.04);
+    let fc = fresnel(f0, nv);                               // what the coat reflects at this angle: the base below gets the rest
+    var c = shade_with(albedo, wp, n, rough, 0.0, sh) * (vec3<f32>(1.0) - fc);
+    c = c + u.sun_col.rgb * ggx_spec(nc, v, sun, f0, 0.005) * sh;
+    c = c + sky_env(reflect(-v, nc), 0.07) * env_brdf(f0, 0.07, nv) * mix(0.35, 1.0, nc.y * 0.5 + 0.5);
+    return c;
+}
+
 // cheap variant for foliage tufts (lots of overdraw): the plain 3x3 shadow filter in every mode
 fn shade_lite(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return shade_with(albedo, wp, n, 0.95, 0.0, shadow_basic(wp, n));
@@ -546,6 +562,7 @@ fn map_normal(n: vec3<f32>, wp: vec3<f32>, uv: vec2<f32>, k: f32) -> vec3<f32> {
     if (m == 1) { return vec4<f32>(shade(i.col * occl, i.wp, n, 0.06, 0.0), 1.0); }   // glass
     if (m == 4) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.22, 1.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // chrome
     if (m == 6) { return vec4<f32>(shade_lite(i.col * occl, i.wp, n), 1.0); }   // foliage
+    if (m == 0 && has_uv) { return vec4<f32>(shade_coat(albedo * occl, i.wp, n, normalize(i.n), 0.30) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // the rally car's paint: clear-coated
     if (m == 0) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.28, 0.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0); }   // paint
     if (m == 2) { return vec4<f32>(shade(albedo * occl, i.wp, n, 0.88, 0.0), 1.0); }   // rubber
     return vec4<f32>(shade(albedo * occl, i.wp, n, 0.5, 0.0) + own_surface * finish(lamp_aureole(i.wp, n)), 1.0);   // plastic
