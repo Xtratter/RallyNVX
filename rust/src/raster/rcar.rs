@@ -297,7 +297,7 @@ mod tests {
             let n = w.idx.len() / 3;
             assert!((300..=1500).contains(&n), "{n} wiper triangles");
             let len = (m.nrm[0].powi(2) + m.nrm[1].powi(2) + m.nrm[2].powi(2)).sqrt();
-            assert!((len - 1.0).abs() < 0.01 && m.nrm[1] > 0.3, "the axis is a unit vector pointing up and out of the glass: {:?}", m.nrm);
+            assert!((len - 1.0).abs() < 0.01 && m.nrm[1] < -0.3 && m.nrm[2] < -0.2, "the axis is a unit vector pointing down and back into the car (a positive turn lifts the blade up the glass): {:?}", m.nrm);
             let (lo, hi) = w.bounds();
             assert!(m.pos[0] >= lo.x - 0.5 && m.pos[0] <= hi.x + 0.5 && m.pos[1] > 0.6 && m.pos[1] < 1.2, "the spindle is at the foot of the windscreen: {:?}", m.pos);
             assert!(hi.x - lo.x > 0.2, "a wiper is a long blade");

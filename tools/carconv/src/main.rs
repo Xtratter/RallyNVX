@@ -327,7 +327,7 @@ fn main() {
         eprintln!("dash: {} parts, {} triangles", ps.len(), i.len() / 3);
         interior.push((v, i, 1500));
     }
-    // the wipers: the pivot is the centre of the spindle (the `_base` node), the axis the normal of the blade's plane, pointing out of the windscreen (up)
+    // the wipers: the pivot is the centre of the spindle (the `_base` node), the axis the windscreen's normal, pointing into the car
     let wiper_meta: Vec<([f32; 3], [f32; 3])> = [("int_wiper_fl_base", 3usize), ("int_wiper_fr_base", 4usize)].iter().map(|(base, g)| {
         let bp = collect(doc, &buffers, &mut tex, &|n| n == *base, true);
         let (mut bv, _) = merge(&bp);
@@ -341,6 +341,7 @@ fn main() {
         body_xf(&mut wv, ground, cr, st, ct);
         let (_, mut axis) = ring_pivot(&wv.iter().map(|v| v.p).collect::<Vec<_>>());
         if axis[1] < 0.0 { axis = axis.map(|x| -x); }
+        axis = axis.map(|x| -x);   // pointing into the car: a positive turn then lifts the blade up the glass (the other way it would sink under the bonnet)
         eprintln!("wiper {base}: pivot ({:.3}, {:.3}, {:.3}), axis ({:.3}, {:.3}, {:.3}), {} triangles", pivot[0], pivot[1], pivot[2], axis[0], axis[1], axis[2], interior[*g].1.len() / 3);
         (pivot, axis)
     }).collect();

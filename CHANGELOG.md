@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.50.2 - the wipers sweep the right way
+
+- Fixed: the wipers swung down under the bonnet instead of up the windscreen (the axis pointed the wrong way along the glass's normal); they now lift up the glass
+- Fixed: after a wipe the drops vanished on every window at once; now only the cells a blade has passed over are cleared, and everywhere else (the side windows, the corners of the windscreen) each drop grows in and runs off on its own clock
+
 ## 2.50.1 - the wipers sweep over the glass
 
 - Fixed: the wipers swung about the wrong axis (found from the blade's own shape, which lay along the glass), so they poked out of the windscreen into the air; the axis is now the windscreen's normal, and the blade is checked to lie in the plane it sweeps
