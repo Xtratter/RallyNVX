@@ -105,3 +105,21 @@ fn settled() -> World { let mut w = World::new(7); for _ in 0..120 { w.step(&Inp
     for k in 0..4 { assert!((sc.src[SRC_WHEEL + k] - c).len() < 3.0, "tyre {k}"); assert!(sc.wheel_on[k] == 1.0, "settled on the ground"); }
     assert!(sc.src.iter().all(|p| p.x.is_finite() && p.y.is_finite() && p.z.is_finite()));
 }
+
+#[test] fn the_cockpit_hears_the_world_through_the_body_and_the_chase_camera_does_not() {
+    use super::{SRC_BAY, SRC_EXHAUST};
+    let mut w = World::new_with(7, crate::game::vehicle::VehicleSpec::by_id("vulpes").unwrap()); for _ in 0..120 { w.step(&Input::default(), 1.0 / 60.0); }
+    let d = Director::new();
+    for _ in 0..60 { w.cam.update(&w.vehicle, &w.terrain, 1.0 / 60.0); }
+    let out = d.scene(&w);
+    assert!(out.wind_gain == 1.0 && out.extra[SRC_EXHAUST].gain > 0.9, "the chase camera is outside: {:?}", out.extra[SRC_EXHAUST]);
+    w.cam.set_view(5, 1.0, 0.0);
+    for _ in 0..60 { w.cam.update(&w.vehicle, &w.terrain, 1.0 / 60.0); }
+    let inside = d.scene(&w);
+    assert!(Director::cabin(&w).contains(inside.listener), "the driver's eyes are in the cabin: {:?}", inside.listener);
+    assert!(inside.wind_gain < 0.6 && inside.wind_hz < 3000.0, "the wind is muffled");
+    let ex = inside.extra[SRC_EXHAUST];
+    assert!(ex.gain < out.extra[SRC_EXHAUST].gain * 0.5 && ex.hz < 4000.0 && ex.echo.is_none(), "the exhaust is heard through the body: {ex:?}");
+    assert!(inside.extra[SRC_BAY].gain > ex.gain, "the engine bay is nearer and louder than the tail pipe");
+    assert!(out.extra[SRC_EXHAUST].echo.is_some(), "outside, the ground echoes the exhaust");
+}

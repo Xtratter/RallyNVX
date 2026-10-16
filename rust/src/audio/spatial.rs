@@ -50,57 +50,80 @@ pub fn path(listener: V3, fwd: V3, src: V3) -> Path {
     Path { delay: (dist / C).min(MAX_DELAY), gain: (CHASE_DIST / dist.max(REF_DIST)).min(MAX_GAIN), pan: s, air_hz, itd }
 }
 
-/// One source on the audio thread: a delay line (its length is the travel time, so the Doppler shift is free), the air and the head.
-pub struct Emitter {
-    line: FracDelay,
-    delay: f32, gain: f32, pan: f32, itd: f32, air: f32,            // smoothed, in samples / 0..1
-    t_delay: f32, t_gain: f32, t_pan: f32, t_itd: f32, t_air: f32,   // targets
-    lp_air: OnePole, lp_far_l: OnePole, lp_far_r: OnePole,
-    a: f32, a_delay: f32, fresh: bool,
+/// One path of the sound to the ears as the audio thread plays it: the direct sound, or an echo off the ground.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Tap { pub delay: f32, pub gain: f32, pub pan: f32, pub itd: f32, pub hz: f32 }
+
+impl Path {
+    pub fn tap(&self) -> Tap { Tap { delay: self.delay, gain: self.gain, pan: self.pan, itd: self.itd, hz: self.air_hz } }
 }
+
+/// A tap's smoothed state (samples / 0..1 / filter coefficients) and its two ear filters.
+#[derive(Clone, Copy, Default)]
+struct TapState { delay: f32, gain: f32, pan: f32, itd: f32, hz: f32, t_delay: f32, t_gain: f32, t_pan: f32, t_itd: f32, t_hz: f32, lp_l: OnePole, lp_r: OnePole, live: bool }
+
+const TAPS: usize = 2;
+
+/// One source on the audio thread: a delay line (its length is the travel time, so the Doppler shift is free), a direct tap and an echo tap, each with the air, the head and
+/// whatever stands in the way (the cutoff `hz`).
+pub struct Emitter { line: FracDelay, taps: [TapState; TAPS], a: f32, a_delay: f32, fresh: bool }
 
 impl Default for Emitter { fn default() -> Self { Emitter::new() } }
 
 impl Emitter {
     pub fn new() -> Emitter {
         let rate = RATE as f32;
-        Emitter { line: FracDelay::new(17), delay: 0.0, gain: 0.0, pan: 0.0, itd: 0.0, air: coef(16000.0, rate),
-            t_delay: 0.0, t_gain: 0.0, t_pan: 0.0, t_itd: 0.0, t_air: coef(16000.0, rate),
-            lp_air: OnePole::default(), lp_far_l: OnePole::default(), lp_far_r: OnePole::default(),
-            a: 1.0 - (-1.0 / (0.03 * rate)).exp(), a_delay: 1.0 - (-1.0 / (0.12 * rate)).exp(), fresh: true }
+        Emitter { line: FracDelay::new(17), taps: [TapState::default(); TAPS], a: 1.0 - (-1.0 / (0.03 * rate)).exp(), a_delay: 1.0 - (-1.0 / (0.12 * rate)).exp(), fresh: true }
     }
 
-    /// New targets (call per block). A jump of the position (a reset, a teleport, the first call) is taken at once: gliding would sound like a swoop.
-    pub fn set_path(&mut self, p: &Path) {
+    /// New targets (call per block): the direct sound and, maybe, the ground's echo. A jump of the position (a reset, a teleport, the first call) is taken at once:
+    /// gliding would sound like a swoop.
+    pub fn set_taps(&mut self, direct: &Tap, echo: Option<&Tap>) {
         let rate = RATE as f32;
-        self.t_delay = p.delay * rate; self.t_gain = p.gain; self.t_pan = p.pan; self.t_itd = p.itd * rate; self.t_air = coef(p.air_hz, rate);
-        if self.fresh || (self.t_delay - self.delay).abs() > 0.06 * rate {
-            self.delay = self.t_delay; self.gain = self.t_gain; self.pan = self.t_pan; self.itd = self.t_itd; self.air = self.t_air;
-            self.fresh = false;
+        for (k, t) in [Some(direct), echo].into_iter().enumerate() {
+            let s = &mut self.taps[k];
+            match t {
+                Some(t) => {
+                    s.t_delay = t.delay * rate; s.t_gain = t.gain; s.t_pan = t.pan; s.t_itd = t.itd * rate; s.t_hz = t.hz;
+                    if !s.live || self.fresh || (s.t_delay - s.delay).abs() > 0.06 * rate {
+                        s.delay = s.t_delay; s.gain = s.t_gain; s.pan = s.t_pan; s.itd = s.t_itd; s.hz = s.t_hz; s.live = true;
+                    }
+                }
+                None => { s.t_gain = 0.0; }
+            }
         }
+        self.fresh = false;
     }
+
+    /// The direct sound only (what a source without an echo has).
+    pub fn set_path(&mut self, p: &Path) { self.set_taps(&p.tap(), None); }
 
     /// Stops the sound at once and forgets the path (a new level).
-    pub fn reset(&mut self) { self.line.clear(); self.fresh = true; self.gain = 0.0; self.t_gain = 0.0; }
+    pub fn reset(&mut self) { self.line.clear(); self.fresh = true; for s in self.taps.iter_mut() { s.gain = 0.0; s.t_gain = 0.0; s.live = false; } }
 
     /// One input sample in, the (left, right) ear signals out.
     pub fn process(&mut self, x: f32) -> (f32, f32) {
         let (a, ad) = (self.a, self.a_delay);
-        self.delay += (self.t_delay - self.delay) * ad;     // slow: a moving car bends the pitch smoothly (no zipper noise)
-        self.gain += (self.t_gain - self.gain) * a; self.pan += (self.t_pan - self.pan) * a;
-        self.itd += (self.t_itd - self.itd) * a; self.air += (self.t_air - self.air) * a;
-        let xin = self.lp_air.run(x, self.air);
-        self.line.push(xin);
-        // the far ear hears it `itd` later: the right ear leads when `itd > 0`
-        let (dl, dr) = (self.delay + self.itd.max(0.0), self.delay + (-self.itd).max(0.0));
-        let (l, r) = (self.line.read(dl), self.line.read(dr));
-        // equal-power panning (1 at the centre) and the head's shadow: the ear turned away loses its highs
-        let p = (self.pan.clamp(-1.0, 1.0) + 1.0) * 0.25 * std::f32::consts::PI;
-        let (gl, gr) = (p.cos() * std::f32::consts::SQRT_2, p.sin() * std::f32::consts::SQRT_2);
-        let shadow = |s: f32| coef(13000.0 - 10500.0 * s.clamp(0.0, 1.0), RATE as f32);   // the ear on the sound's side keeps all, the far one down to 2.5 kHz
-        let l = self.lp_far_l.run(l, shadow(self.pan));        // pan > 0: the sound is on the right: the left ear is the far one
-        let r = self.lp_far_r.run(r, shadow(-self.pan));
-        (l * gl * self.gain, r * gr * self.gain)
+        self.line.push(x);
+        let rate = RATE as f32;
+        let (mut l, mut r) = (0.0f32, 0.0f32);
+        for s in self.taps.iter_mut() {
+            if !s.live { continue; }
+            s.delay += (s.t_delay - s.delay) * ad;     // slow: a moving car bends the pitch smoothly (no zipper noise)
+            s.gain += (s.t_gain - s.gain) * a; s.pan += (s.t_pan - s.pan) * a; s.itd += (s.t_itd - s.itd) * a; s.hz += (s.t_hz - s.hz) * a;
+            if s.gain < 1e-5 && s.t_gain == 0.0 { s.live = false; continue; }
+            // the far ear hears it `itd` later: the right ear leads when `itd > 0`
+            let (dl, dr) = (s.delay + s.itd.max(0.0), s.delay + (-s.itd).max(0.0));
+            let (xl, xr) = (self.line.read(dl), self.line.read(dr));
+            // equal-power panning (1 at the centre); the head's shadow: the ear turned away loses its highs (the right one is the far one when the sound is on the left)
+            let p = (s.pan.clamp(-1.0, 1.0) + 1.0) * 0.25 * std::f32::consts::PI;
+            let (gl, gr) = (p.cos() * std::f32::consts::SQRT_2, p.sin() * std::f32::consts::SQRT_2);
+            let shadow = |side: f32| 13000.0 - 10500.0 * side.clamp(0.0, 1.0);   // the near ear keeps all, the far one down to 2.5 kHz
+            let (hl, hr) = (s.hz.min(shadow(s.pan)), s.hz.min(shadow(-s.pan)));
+            l += s.lp_l.run(xl, coef(hl, rate)) * gl * s.gain;
+            r += s.lp_r.run(xr, coef(hr, rate)) * gr * s.gain;
+        }
+        (l, r)
     }
 }
 
