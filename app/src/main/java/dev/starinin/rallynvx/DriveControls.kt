@@ -38,9 +38,11 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     private val wheel = DriveMath.Wheel()
     private val tilt = DriveMath.Tilt()
     private val wheelView = WheelView(ctx)
-    private val gasView = PedalView(ctx, PedalView.GAS, 84f, 170f)
-    private val brakeView = PedalView(ctx, PedalView.BRAKE, 84f, 120f)
-    private val clutchView = PedalView(ctx, PedalView.CLUTCH, 84f, 120f)
+    private val gasView = PedalView(ctx, PedalView.GAS, 72f, 170f)
+    private val brakeView = PedalView(ctx, PedalView.BRAKE, 100f, 116f)
+    private val clutchView = PedalView(ctx, PedalView.CLUTCH, 100f, 116f)
+    /** The instrument cluster (the tachometer, the boost, the gear), above the steering buttons. */
+    val cluster = GearView(ctx)
     private val shiftUp = ShiftButtonView(ctx, true)
     private val shiftDown = ShiftButtonView(ctx, false)
     private var manual = false
@@ -63,7 +65,7 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
     private val loop = object : Runnable { override fun run() { frame(); postOnAnimation(this) } }
 
     init {
-        addView(wheelView); addView(leftBtn); addView(rightBtn); addView(gasView); addView(brakeView); addView(clutchView); addView(shiftUp); addView(shiftDown)
+        addView(wheelView); addView(leftBtn); addView(rightBtn); addView(gasView); addView(brakeView); addView(clutchView); addView(shiftUp); addView(shiftDown); addView(cluster)
         setManual(false)
         configure(Controls.MODE_BUTTONS, 1, false, false)
     }
@@ -78,15 +80,22 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
         fun lp(g: Int, along: Int) = LayoutParams(-2, -2, g).apply {
             if (g and Gravity.END == Gravity.END) setMargins(0, 0, along, m) else setMargins(along, 0, 0, m)
         }
+        // the pedals stand against the edge of the screen like real ones: the gas outermost, the brake beside it, the clutch (the manual) next
+        val e = (6f * dp).toInt(); val pb = (14f * dp).toInt()
+        fun lpe(g: Int, along: Float, bottom: Float) = LayoutParams(-2, -2, g).apply {
+            val a = e + (along * dp).toInt(); val bt = pb + (bottom * dp).toInt()
+            if (g and Gravity.END == Gravity.END) setMargins(0, 0, a, bt) else setMargins(a, 0, 0, bt)
+        }
         wheelView.layoutParams = lp(wheelGrav, m)
-        leftBtn.layoutParams = lp(wheelGrav, m)
-        rightBtn.layoutParams = lp(wheelGrav, m + (112f * dp).toInt())
+        leftBtn.layoutParams = lp(wheelGrav, (12f * dp).toInt())
+        rightBtn.layoutParams = lp(wheelGrav, (170f * dp).toInt())
         leftBtn.visibility = if (buttonsMode) VISIBLE else GONE; rightBtn.visibility = if (buttonsMode) VISIBLE else GONE
-        gasView.layoutParams = lp(pedalGrav, m)
-        brakeView.layoutParams = lp(pedalGrav, m + (100f * dp).toInt())
-        clutchView.layoutParams = lp(pedalGrav, m + (200f * dp).toInt())
-        fun lpUp(extra: Float) = LayoutParams(-2, -2, pedalGrav).apply { if (pedalGrav and Gravity.END == Gravity.END) setMargins(0, 0, m + (200f * dp).toInt(), m + (extra * dp).toInt()) else setMargins(m + (200f * dp).toInt(), 0, 0, m + (extra * dp).toInt()) }
-        shiftDown.layoutParams = lpUp(128f); shiftUp.layoutParams = lpUp(190f)
+        gasView.layoutParams = lpe(pedalGrav, 0f, 0f)
+        brakeView.layoutParams = lpe(pedalGrav, 80f, 0f)
+        clutchView.layoutParams = lpe(pedalGrav, 188f, 0f)
+        shiftDown.layoutParams = lpe(pedalGrav, 188f, 124f); shiftUp.layoutParams = lpe(pedalGrav, 188f, 186f)
+        // the cluster over the pair of steering buttons (a little above the wheel, in the wheel and tilt modes)
+        cluster.layoutParams = LayoutParams(-2, -2, wheelGrav).apply { val a = (62f * dp).toInt(); val bt = (130f * dp).toInt(); if (wheelGrav and Gravity.END == Gravity.END) setMargins(0, 0, a, bt) else setMargins(a, 0, 0, bt) }
         wheelView.visibility = if (buttonsMode) GONE else VISIBLE
         wheelView.alpha = if (tiltMode) 0.55f else 1f   // in tilt mode the wheel only shows the steering
         requestLayout()

@@ -69,13 +69,11 @@ class DriveMathTest {
         assertEquals(0f, DriveMath.pedal(Float.NaN, 100f), 0f)
     }
 
-    @Test fun brakePedalBrakesWhileMovingAndReversesWhenStopped() {
+    @Test fun brakePedalAlwaysBrakesAndNeverReverses() {
         val moving = DriveMath.brakeMap(0.6f, 20f)
         assertTrue(moving.brake); assertEquals(0.6f, moving.amt, eps); assertEquals(0f, moving.throttle, 0f)
         val stopped = DriveMath.brakeMap(0.6f, 1f)
-        assertFalse(stopped.brake); assertEquals(-0.6f, stopped.throttle, eps)
-        assertFalse(DriveMath.brakeMap(0.6f, 3f).brake)         // exactly the threshold reverses
-        assertTrue(DriveMath.brakeMap(0.6f, 3.01f).brake)
+        assertTrue(stopped.brake); assertEquals(0f, stopped.throttle, 0f)   // a car that stands is held
         assertEquals(DriveMath.BrakeCmd(false, 0f, 0f), DriveMath.brakeMap(0f, 50f))
         assertEquals(DriveMath.BrakeCmd(false, 0f, 0f), DriveMath.brakeMap(Float.NaN, 50f))
     }
@@ -106,8 +104,8 @@ class DriveMathTest {
 
 class DriveMathReviewTest {
     @Test fun reversingContinuesWhenTheSignedSpeedIsNegative() {
-        val c = DriveMath.brakeMap(0.8f, -12f)        // rolling backwards fast: the pedal keeps reversing, it never brakes
-        assertFalse(c.brake); assertEquals(-0.8f, c.throttle, 1e-3f)
+        val c = DriveMath.brakeMap(0.8f, -12f)        // rolling backwards fast: the pedal brakes, the reverse is chosen by hand
+        assertTrue(c.brake); assertEquals(0f, c.throttle, 1e-3f)
     }
     @Test fun tiltResetForgetsTheCentreAndTheSmoothing() {
         val t = DriveMath.Tilt()

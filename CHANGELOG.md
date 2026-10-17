@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.70.0 - a clean driving screen, pedals as pedals, the reverse only by hand
+- Changed: the settings no longer hang all over the driving screen. The view, the quick settings, the time, the weather, the sound, the gearbox, the car menu and "New level" are in one **menu** (the button with three bars, top left under the status line); the screen keeps the status line, the autopilot, the reset, the cluster, the steering buttons and the pedals
+- Changed: the pedals are drawn as pedals (a metal plate and a ribbed rubber pad that sinks as it is pressed and takes the accent colour from the bottom up; the gas is the tall organ pedal with a hinge) and stand against the edge of the screen: the gas outermost, the brake beside it, the clutch (the manual) next, the handbrake above the brake, the D / R selector where the clutch is (the automatic has none)
+- Changed: the instrument cluster (the tachometer, the boost, the gear) is above the steering buttons, which are a little further apart
+- Changed: the automatic never picks the reverse by itself: not from the brake pedal at a standstill (the brake pedal only brakes now, and holds a car that stands) and not from a negative throttle; the reverse is chosen by hand (R in the automatic, the gear in the manual); only the autopilot reverses as before
 ## 2.69.0 - the car menu (aids and tuning), an instrument cluster, and a start that cannot hang on the sound
 
 - Added: the **Car** button (top left, right of D / R) opens a menu. On the left the driver aids, each on or off: anti-lag, ABS, traction control, the downshift blip, the flat shift (spark cut), the rev limiter and the blow-off valve. On the right the power of every part in steps of 10 %: engine power (30-200 %), turbo boost (0-200 %), brakes (30-250 %), tyre grip (60-150 %), suspension (50-180 %), downforce (0-300 %) and the final drive (70-130 %). It is kept, "Reset tuning" puts everything back. No sliders: a minus, the value and a plus

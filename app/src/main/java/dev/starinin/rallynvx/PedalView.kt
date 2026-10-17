@@ -2,39 +2,53 @@ package dev.starinin.rallynvx
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Shader
 import android.view.View
 import io.github.xtratter.uikit.M3
 
-/** A pedal: a rounded pad filled from the bottom by [pressure] (0..1) with a gas arrow or a brake square. */
+/**
+ * A pedal drawn as a pedal: a metal plate with a rubber pad that sinks as it is pressed ([pressure] 0..1) and takes the accent colour from the bottom up. The gas is the tall
+ * organ pedal with a hinge and ridges across, the brake and the clutch the wide rubber pads (the clutch with a ring for the disc).
+ */
 class PedalView(ctx: Context, private val kind: Int, private val w: Float, private val h: Float) : View(ctx) {
     companion object { const val GAS = 0; const val BRAKE = 1; const val CLUTCH = 2 }
     var pressure = 0f
         set(v) { if (v != field) { field = v; invalidate() } }
     private val dp = ctx.resources.displayMetrics.density
-    private val pad = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0x44000000 }
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = M3.primary; alpha = 200 }
-    private val icon = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0xFFFFFFFF.toInt(); alpha = 230 }
-    private val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f * dp; color = M3.primary; alpha = 220 }
+    private val fillP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val accent = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = M3.primary }
 
     override fun onMeasure(wm: Int, hm: Int) { setMeasuredDimension((w * dp).toInt(), (h * dp).toInt()) }
 
     override fun onDraw(c: Canvas) {
-        val r = RectF(2f * dp, 2f * dp, width - 2f * dp, height - 2f * dp); val cr = 16f * dp
-        c.drawRoundRect(r, cr, cr, pad)
-        if (pressure > 0f) {
-            c.save(); c.clipRect(0f, height * (1f - pressure), width.toFloat(), height.toFloat())
-            c.drawRoundRect(r, cr, cr, fill); c.restore()
+        val W = width.toFloat(); val H = height.toFloat()
+        // the metal plate (the arm), with a bright edge
+        val plate = RectF(W * 0.10f, H * 0.03f, W * 0.90f, H * 0.97f)
+        fillP.shader = LinearGradient(0f, plate.top, 0f, plate.bottom, 0xFF515861.toInt(), 0xFF22262B.toInt(), Shader.TileMode.CLAMP)
+        c.drawRoundRect(plate, 12f * dp, 12f * dp, fillP)
+        line.strokeWidth = 1.6f * dp; line.color = 0xAAB8C2CE.toInt(); c.drawRoundRect(plate, 12f * dp, 12f * dp, line)
+        // the rubber pad sinks with the pressure
+        val sink = pressure * 7f * dp
+        val pad = RectF(plate.left + 6f * dp, plate.top + 8f * dp + sink, plate.right - 6f * dp, plate.bottom - (if (kind == GAS) 22f else 8f) * dp + sink * 0.4f)
+        fillP.shader = LinearGradient(0f, pad.top, 0f, pad.bottom, 0xFF34383E.toInt(), 0xFF0F1114.toInt(), Shader.TileMode.CLAMP)
+        c.drawRoundRect(pad, 8f * dp, 8f * dp, fillP)
+        fillP.shader = null
+        // the ribs of the rubber
+        line.strokeWidth = 2.2f * dp; line.color = 0x55FFFFFF
+        val step = if (kind == GAS) 13f * dp else 16f * dp
+        var y = pad.top + step * 0.7f
+        while (y < pad.bottom - 4f * dp) { c.drawLine(pad.left + 8f * dp, y, pad.right - 8f * dp, y, line); y += step }
+        if (kind == CLUTCH) { line.strokeWidth = 3f * dp; line.color = 0xAAFFFFFF.toInt(); c.drawCircle(pad.centerX(), pad.centerY(), pad.width() * 0.2f, line) }
+        // the pressure: the accent comes up from the bottom of the pad
+        if (pressure > 0.02f) {
+            c.save(); c.clipRect(pad.left, pad.bottom - pad.height() * pressure, pad.right, pad.bottom)
+            accent.alpha = 150; c.drawRoundRect(pad, 8f * dp, 8f * dp, accent); c.restore()
         }
-        c.drawRoundRect(r, cr, cr, rim)
-        val cx = width / 2f; val cy = height / 2f; val s = width * 0.22f
-        if (kind == GAS) {
-            val p = Path().apply { moveTo(cx, cy - s); lineTo(cx + s, cy + s * 0.6f); lineTo(cx - s, cy + s * 0.6f); close() }
-            c.drawPath(p, icon)
-        } else if (kind == CLUTCH) {   // the clutch: a ring (the disc)
-            c.drawCircle(cx, cy, s * 0.9f, rim); c.drawCircle(cx, cy, s * 0.35f, icon)
-        } else c.drawRect(cx - s * 0.8f, cy - s * 0.8f, cx + s * 0.8f, cy + s * 0.8f, icon)
+        // the hinge of the organ pedal
+        if (kind == GAS) { fillP.color = 0xFF9AA4B0.toInt(); c.drawCircle(W / 2f, H - 12f * dp, 6f * dp, fillP); fillP.color = 0xFF2A2E34.toInt(); c.drawCircle(W / 2f, H - 12f * dp, 2.6f * dp, fillP) }
     }
 }

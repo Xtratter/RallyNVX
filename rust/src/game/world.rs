@@ -306,7 +306,8 @@ impl World {
         {
             use super::drivetrain::{DriveIn, Mode};
             let want = if self.manual && self.autopilot.is_none() && !counting { Mode::Manual } else { Mode::Auto };
-            if self.autopilot.is_some() { self.drivetrain.reverse_sel = false; }   // the autopilot asks for the reverse with the sign of its throttle
+            self.drivetrain.auto_reverse = self.autopilot.is_some();   // only the autopilot asks for the reverse with the sign of its throttle; the driver picks R by hand
+            if self.autopilot.is_some() { self.drivetrain.reverse_sel = false; }
             if want != self.drivetrain.mode { self.drivetrain.set_mode(want); if want == Mode::Manual && self.drivetrain.gear > 1 { /* keeps the gear it was in */ } }
             let fwd = self.vehicle.vel.dot(self.vehicle.forward());
             let out = self.drivetrain.step(dt, &DriveIn { throttle: inp.throttle, speed: fwd, wheel_r: self.vehicle.spec.radius, airborne: self.vehicle.contacts == 0 });
