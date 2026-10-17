@@ -79,6 +79,8 @@ pub struct Drivetrain {
     omega: f32,
     /// The clutch pedal of the manual, 0 (up, the clutch is closed) .. 1 (down, open).
     pub clutch_pedal: f32,
+    /// The automatic's selector: false drive (D), true reverse (R): in R the gas pedal drives backwards.
+    pub reverse_sel: bool,
     running: bool, starting: f32, stalled_for: f32,
     shift: f32, shift_up: bool, limiter: bool, boost: f32, idle_i: f32,
     pub last: DriveOut,
@@ -95,7 +97,7 @@ pub fn rpm_in_gear(speed: f32, r: f32, gear: i32) -> f32 { speed.abs() / r.max(0
 impl Drivetrain {
     pub fn new() -> Drivetrain {
         let rpm = IDLE_RPM;
-        Drivetrain { mode: Mode::Auto, gear: 1, omega: rpm * std::f32::consts::TAU / 60.0, clutch_pedal: 0.0, running: true, starting: 0.0, stalled_for: 0.0,
+        Drivetrain { mode: Mode::Auto, gear: 1, omega: rpm * std::f32::consts::TAU / 60.0, clutch_pedal: 0.0, reverse_sel: false, running: true, starting: 0.0, stalled_for: 0.0,
             shift: 0.0, shift_up: true, limiter: false, boost: 0.0, idle_i: 0.1,
             last: DriveOut { force: 0.0, rpm, gear: 1, grip: 0.0, torque: 0.0, throttle: 0.0, cut: false, stalled: false } }
     }
@@ -104,7 +106,7 @@ impl Drivetrain {
     pub fn running(&self) -> bool { self.running }
 
     /// A new start (a reset, a new level): first gear, the engine at the idle.
-    pub fn reset(&mut self) { let mode = self.mode; *self = Drivetrain::new(); self.mode = mode; if mode == Mode::Manual { self.gear = 0; } }
+    pub fn reset(&mut self) { let mode = self.mode; let sel = self.reverse_sel; *self = Drivetrain::new(); self.reverse_sel = sel; self.mode = mode; if mode == Mode::Manual { self.gear = 0; } }
 
     pub fn set_mode(&mut self, m: Mode) { if m != self.mode { self.mode = m; if m == Mode::Auto && self.gear == 0 { self.gear = 1; } } }
 
@@ -119,8 +121,9 @@ impl Drivetrain {
 
     /// The automatic's choice of the gear.
     fn auto_gear(&mut self, i: &DriveIn, thr: f32, rpm: f32) {
-        let reversing = i.speed < -0.5 || (i.throttle < -0.1 && i.speed < 1.0);
-        if reversing { if self.gear != -1 { self.gear = -1; } return; }
+        // R is chosen, or the throttle asks for the reverse at a standstill; a car that merely rolls back in D takes the first gear as soon as the gas is pressed
+        let holding = self.gear == -1 && i.speed < -0.5 && thr < 0.05;
+        if self.reverse_sel || (i.throttle < -0.1 && i.speed < 1.0) || holding { if self.gear != -1 { self.gear = -1; } return; }
         if self.gear <= 0 { self.gear = 1; return; }
         if self.shift > 0.0 { return; }
         let up_at = 4600.0 + 2800.0 * thr;
@@ -137,7 +140,7 @@ impl Drivetrain {
         let gas = i.throttle.max(0.0);
         if auto { self.auto_gear(i, gas, rpm0); }
         // the pedal the engine feels: in the reverse of the automatic the negative throttle is the gas
-        let pedal = if auto { if self.gear < 0 { (-i.throttle).max(0.0) } else { gas } } else { i.throttle.clamp(0.0, 1.0) };
+        let pedal = if auto { if self.gear < 0 { if self.reverse_sel { gas.max((-i.throttle).max(0.0)) } else { (-i.throttle).max(0.0) } } else { gas } } else { i.throttle.clamp(0.0, 1.0) };
         // the throttle the engine gets: the pedal, the idle governor holding the idle, and the blip of the automatic's down-shift
         let mut thr = pedal;
         if self.running {

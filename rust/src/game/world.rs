@@ -296,12 +296,13 @@ impl World {
         {
             use super::drivetrain::{DriveIn, Mode};
             let want = if self.manual && self.autopilot.is_none() && !counting { Mode::Manual } else { Mode::Auto };
+            if self.autopilot.is_some() { self.drivetrain.reverse_sel = false; }   // the autopilot asks for the reverse with the sign of its throttle
             if want != self.drivetrain.mode { self.drivetrain.set_mode(want); if want == Mode::Manual && self.drivetrain.gear > 1 { /* keeps the gear it was in */ } }
             let fwd = self.vehicle.vel.dot(self.vehicle.forward());
             let out = self.drivetrain.step(dt, &DriveIn { throttle: inp.throttle, speed: fwd, wheel_r: self.vehicle.spec.radius, airborne: self.vehicle.contacts == 0 });
             self.vehicle.drive_force = Some(out.force);
             // the reverse gear of the manual: the pedal asks for backwards (the lamps and the camera follow it)
-            if want == Mode::Manual && out.gear < 0 { inp.throttle = -inp.throttle.abs(); } else if want == Mode::Manual { inp.throttle = inp.throttle.abs(); }
+            if out.gear < 0 && (want == Mode::Manual || self.drivetrain.reverse_sel) { inp.throttle = -inp.throttle.abs(); } else if want == Mode::Manual { inp.throttle = inp.throttle.abs(); }
         }
         self.vehicle.step_with(&self.terrain, &near, &inp, dt, &mut self.loose);
         self.dust.set_gpu(super::dust::gpu_on(self.dust.level()));

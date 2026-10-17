@@ -37,7 +37,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var camBtn: View? = null
     private var gearView: GearView? = null
     private var gearBtn: View? = null
+    private var reverseBtn: View? = null
     private var manual = false
+    private var reverseSel = false
     private var todMode = 0   // the quick time-of-day switch (see TimeOfDay); every launch starts on Auto
     private var todBtn: View? = null
     private var weatherBtn: View? = null
@@ -113,7 +115,13 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         gearBtn = M3Widgets.button(this, gearLabel(), M3Widgets.ButtonKind.TONAL) {
             manual = !manual; Controls.setManual(this, manual); drive?.setManual(manual); if (running) Native.gameGearMode(if (manual) 1 else 0)
             (gearBtn as? android.widget.TextView)?.text = gearLabel()
+            reverseSel = false; Native.gameReverse(0); updateReverseBtn()
         }.also { root.addView(it, FrameLayout.LayoutParams(px(132f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(76f), px(140f), 0, 0) }) }
+        // the automatic's selector: D (drive) or R (reverse): in R the gas pedal drives backwards, so a car rolling back can be pulled out at once
+        reverseBtn = M3Widgets.button(this, "D", M3Widgets.ButtonKind.TONAL) {
+            reverseSel = !reverseSel; if (running) Native.gameReverse(if (reverseSel) 1 else 0); updateReverseBtn()
+        }.also { root.addView(it, FrameLayout.LayoutParams(px(56f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(216f), px(140f), 0, 0) }) }
+        updateReverseBtn()
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
         fun button(label: String, gravity: Int, top: Float, end: Float, w: Float = 120f, onClick: () -> Unit) =
@@ -388,6 +396,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Native.gameSigns(Controls.signs(this))
         Native.gameCameraView(camView, camDist, camHeight)
         Native.gameGearMode(if (manual) 1 else 0)
+        Native.gameReverse(if (reverseSel && !manual) 1 else 0)
         if (intent.getBooleanExtra("testtrack", false)) Native.gameTestTrack()   // from the main menu: a flat sheet of tarmac to try the sound and the controls
         running = true
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
@@ -476,6 +485,12 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun camLabel() = t("View: ", "Вид: ") + CamMath.name(camView, java.util.Locale.getDefault().language != "ru")
 
     /** Takes the distance (zoom) and height (tilt) of the current view, keeps them for next time and sends them to the game. */
+    private fun updateReverseBtn() {
+        (reverseBtn as? android.widget.TextView)?.text = if (reverseSel) "R" else "D"
+        reverseBtn?.visibility = if (manual) View.GONE else View.VISIBLE
+        reverseBtn?.alpha = if (reverseSel) 1f else 0.85f
+    }
+
     private fun gearLabel() = if (manual) t("Gearbox: manual", "Коробка: МКПП") else t("Gearbox: auto", "Коробка: АКПП")
 
     private fun changeCamera(dist: Float, height: Float) {
