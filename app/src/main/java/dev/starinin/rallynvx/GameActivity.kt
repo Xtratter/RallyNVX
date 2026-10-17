@@ -39,6 +39,11 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var gearBtn: View? = null
     private var reverseBtn: View? = null
     private var carPanel: View? = null
+    private var quickBtn: View? = null
+    private var carBtn: View? = null
+    private var soundBtn: View? = null
+    private var menuPanel: View? = null
+    private var rallyMode = false
     private var diagBtn: View? = null
     private var loadStartMs = 0L
     private var manual = false
@@ -124,7 +129,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         drive?.onClutch = { p -> if (running) Native.gameClutch(p) }
         manual = Controls.manual(this); drive?.setManual(manual)
         root.addView(drive, FrameLayout.LayoutParams(-1, -1))
-        gearView = GearView(this).also { root.addView(it, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { setMargins(0, 0, 0, px(24f)) }) }
+        gearView = drive?.cluster   // the instrument cluster stands above the steering buttons (it is part of the controls)
         // the gearbox: a tap switches the automatic and the manual (the clutch pedal and the shift buttons appear); the choice is kept
         gearBtn = M3Widgets.button(this, gearLabel(), M3Widgets.ButtonKind.TONAL) {
             manual = !manual; Controls.setManual(this, manual); drive?.setManual(manual); if (running) Native.gameGearMode(if (manual) 1 else 0)
@@ -134,11 +139,11 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         // the automatic's selector: D (drive) or R (reverse): in R the gas pedal drives backwards, so a car rolling back can be pulled out at once
         reverseBtn = M3Widgets.button(this, "D", M3Widgets.ButtonKind.TONAL) {
             reverseSel = !reverseSel; if (running) Native.gameReverse(if (reverseSel) 1 else 0); updateReverseBtn()
-        }.also { root.addView(it, FrameLayout.LayoutParams(px(56f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(216f), px(140f), 0, 0) }) }
+        }.also { root.addView(it, FrameLayout.LayoutParams(px(88f), px(64f), Gravity.BOTTOM or Gravity.END)) }
         updateReverseBtn()
         // the car's menu: the driver aids on and off, and the power of every part
         M3Widgets.button(this, t("Car", "Машина"), M3Widgets.ButtonKind.TONAL) { showCarPanel() }
-            .also { root.addView(it, FrameLayout.LayoutParams(px(108f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(280f), px(140f), 0, 0) }) }
+            .also { carBtn = it; root.addView(it, FrameLayout.LayoutParams(px(108f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(280f), px(140f), 0, 0) }) }
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
         fun button(label: String, gravity: Int, top: Float, end: Float, w: Float = 120f, onClick: () -> Unit) =
@@ -147,7 +152,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             }
         button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { autopilotOn = false; showAutopilot(); setHandbrake(false); Native.gameReset() }
         newLevelBtn = button(t("New level", "Новый уровень"), Gravity.TOP or Gravity.END, 24f, 150f) { autopilotOn = false; showAutopilot(); setHandbrake(false); seed = System.nanoTime() and 0xFFFFFFL; Native.gameNewLevel(seed) }
-        autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, if (rallyIdx > 0) 150f else 284f, 168f) { setAutopilot(!autopilotOn) }
+        autopilotBtn = button(t("Autopilot", "Автопилот"), Gravity.TOP or Gravity.END, 24f, 150f, 168f) { setAutopilot(!autopilotOn) }
         autopilotBtn?.setOnLongClickListener { showAutopilotPanel(); true }   // long press: the autopilot settings
         // the camera view button under the status line: a tap cycles the views, a long press puts the current view back to its default distance and height
         intent.getIntExtra("weather", -1).let { if (it >= 0) Controls.setWeather(this, it) }   // debug/test: the weather mode
@@ -160,6 +165,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         }
         // the quick settings: a gear next to the View button opens a panel of the dust and effect options that applies at once, while driving
         M3Widgets.button(this, "⚙", M3Widgets.ButtonKind.TONAL) { showSettingsPanel() }.also {
+            quickBtn = it
             root.addView(it, FrameLayout.LayoutParams(px(56f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(174f), px(88f), 0, 0) })
         }
         // the time of day: a tap cycles Auto, Day, Evening, Night at once (it freezes the sky at that phase; Auto gives the level's own clock back)
@@ -210,11 +216,49 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         }
         // sound on/off (kept in SharedPreferences)
         audio = AudioEngine(this)
-        val soundBtn = M3Widgets.button(this, if (audio.muted) "🔇" else "🔊", M3Widgets.ButtonKind.TONAL) {}
-        soundBtn.setOnClickListener { audio.muted = !audio.muted; (soundBtn as? android.widget.TextView)?.text = if (audio.muted) "🔇" else "🔊" }
-        root.addView(soundBtn, FrameLayout.LayoutParams(px(52f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(140f), 0, 0) })
+        val soundB = M3Widgets.button(this, if (audio.muted) "🔇" else "🔊", M3Widgets.ButtonKind.TONAL) {}
+        soundBtn = soundB
+        soundB.setOnClickListener { audio.muted = !audio.muted; (soundB as? android.widget.TextView)?.text = if (audio.muted) "🔇" else "🔊" }
+        root.addView(soundB, FrameLayout.LayoutParams(px(52f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(140f), 0, 0) })
         loadingView = LoadingView(this).also { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }   // over everything until the first frame
+        // the settings stay out of the way while driving: one menu button opens them
+        menuItems = listOfNotNull(camBtn, quickBtn, todBtn, weatherBtn, soundBtn, gearBtn, carBtn, if (rallyIdx > 0) null else newLevelBtn)
+        listOfNotNull(camBtn, quickBtn, todBtn, weatherBtn, soundBtn, gearBtn, carBtn, newLevelBtn).forEach { it.visibility = View.GONE }
+        M3Widgets.button(this, "☰", M3Widgets.ButtonKind.TONAL) { showMenuPanel() }
+            .also { root.addView(it, FrameLayout.LayoutParams(px(56f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(88f), 0, 0) }) }
+        applyControlLayout()
         setContentView(root)
+    }
+
+    private var menuItems: List<View> = emptyList()
+
+    /** The menu: every setting that stood on the screen (the view, the quick settings, the time, the weather, the sound, the gearbox, the car, a new level) as one list of buttons. */
+    private fun showMenuPanel() {
+        menuPanel?.let { it.visibility = View.VISIBLE; (it.tag as? () -> Unit)?.invoke(); return }
+        val dp = resources.displayMetrics.density
+        fun px(v: Float) = (v * dp).toInt()
+        val refreshers = ArrayList<() -> Unit>()
+        val colA = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val colB = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        var n = 0
+        lateinit var p: FrameLayout
+        for (v in menuItems) {
+            val tv = v as? TextView ?: continue
+            val btn = M3Widgets.button(this, tv.text.toString(), M3Widgets.ButtonKind.TONAL) {}
+            val opensPanel = v === quickBtn || v === carBtn || v === newLevelBtn
+            btn.setOnClickListener { if (opensPanel) p.visibility = View.GONE; v.performClick(); (btn as? TextView)?.text = tv.text }
+            refreshers.add { (btn as? TextView)?.text = tv.text }
+            (if (n++ % 2 == 0) colA else colB).addView(btn, LinearLayout.LayoutParams(px(250f), px(50f)).apply { topMargin = px(8f) })
+        }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; addView(colA, LinearLayout.LayoutParams(px(250f), -2)); addView(colB, LinearLayout.LayoutParams(px(250f), -2).apply { marginStart = px(16f) }) }
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        content.addView(label(t("Menu", "Меню"), 22f))
+        content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(236f)))
+        p = panel(content)
+        content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(8f) })
+        p.tag = { refreshers.forEach { it() } }
+        p.visibility = View.VISIBLE
+        menuPanel = p
     }
 
     private fun panel(content: LinearLayout): FrameLayout {
@@ -441,11 +485,13 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
 
     /** Puts the handbrake button above the pedals (on the pedal side set in the settings). */
     private fun applyControlLayout() {
-        val b = handbrakeBtn ?: return
         val dp = resources.displayMetrics.density
         val left = Controls.pedalsLeft(this)
-        b.layoutParams = FrameLayout.LayoutParams((120f * dp).toInt(), (48f * dp).toInt(), Gravity.BOTTOM or (if (left) Gravity.START else Gravity.END))
-            .apply { if (left) setMargins((28f * dp).toInt(), 0, 0, (214f * dp).toInt()) else setMargins(0, 0, (28f * dp).toInt(), (214f * dp).toInt()) }
+        fun at(w: Float, h: Float, side: Float, bottom: Float) = FrameLayout.LayoutParams((w * dp).toInt(), (h * dp).toInt(), Gravity.BOTTOM or (if (left) Gravity.START else Gravity.END))
+            .apply { val s = (side * dp).toInt(); val bt = (bottom * dp).toInt(); if (left) setMargins(s, 0, 0, bt) else setMargins(0, 0, s, bt) }
+        // the pedals stand at the edge: the handbrake above the brake, the D / R selector where the clutch is (the automatic has none)
+        handbrakeBtn?.layoutParams = at(100f, 48f, 86f, 138f)
+        reverseBtn?.layoutParams = at(88f, 64f, 194f, 14f)
     }
 
     /** Sends the render mode and the fallback option to a running game (only when they changed). */

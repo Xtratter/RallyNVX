@@ -11,7 +11,7 @@ object DriveMath {
     val VOLUME = floatArrayOf(0f, 0.25f, 0.5f, 0.75f, 1f)
     const val WHEEL_MAX = 120f        // degrees of lock either way
     const val WHEEL_RETURN = 400f     // degrees per second back to the centre
-    const val REVERSE_KMH = 3f        // at or below this speed the brake pedal reverses
+    const val REVERSE_KMH = 3f        // (not used by the brake any more: the reverse is chosen by hand, R in the automatic or the gear in the manual)
 
     fun cycle(i: Int, n: Int) = (i + 1) % n
     /** Default render mode by quality index: hybrid (1) on High (2), raster (0) otherwise. */
@@ -51,13 +51,11 @@ object DriveMath {
     /** Pedal pressure from the touch height [y] inside a pedal of height [h] (top light, bottom full); 0 outside. */
     fun pedal(y: Float, h: Float): Float = if (!y.isFinite() || !h.isFinite() || h <= 0f || y < 0f || y > h) 0f else 0.15f + 0.85f * (y / h)
 
-    /** What the brake pedal does: brake while moving, reverse (negative throttle) when nearly stopped. */
+    /** What the brake pedal does: it brakes, at any speed (it holds a car that stands; the reverse is chosen by hand, not by the pedal). */
     data class BrakeCmd(val brake: Boolean, val amt: Float, val throttle: Float)
-    fun brakeMap(pressure: Float, kmh: Float): BrakeCmd = when {
-        !(pressure > 0f) -> BrakeCmd(false, 0f, 0f)
-        kmh > REVERSE_KMH -> BrakeCmd(true, pressure.coerceIn(0.05f, 1f), 0f)
-        else -> BrakeCmd(false, 0f, -pressure.coerceIn(0f, 1f))
-    }
+    @Suppress("UNUSED_PARAMETER")
+    fun brakeMap(pressure: Float, kmh: Float): BrakeCmd =
+        if (!(pressure > 0f)) BrakeCmd(false, 0f, 0f) else BrakeCmd(true, pressure.coerceIn(0.05f, 1f), 0f)
 
     /** Steering by two buttons: the value ramps towards full lock while a button is held and back to centre on release. */
     class Buttons {

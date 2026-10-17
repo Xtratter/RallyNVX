@@ -94,7 +94,7 @@ impl Car {
     d.run(1.0, 0.5); d.dt.shift(1); let o = d.step(1.0); assert!(o.cut, "the flat shift");
 }
 #[test] fn the_reverse_goes_backwards_in_the_automatic_and_stays_finite_through_abuse() {
-    let mut c = Car::new();
+    let mut c = Car::new(); c.dt.auto_reverse = true;   // the autopilot asks for the reverse with a negative throttle
     c.run(0.0, 1.0); c.run(-1.0, 3.0);
     assert!(c.v < -1.0 && c.dt.gear == -1, "backing: {} m/s gear {}", c.v, c.dt.gear);
     let mut a = Drivetrain::new(); let mut seed = 3u32;
@@ -117,5 +117,8 @@ impl Car {
     assert!(o.gear >= 1 && o.force > 500.0, "D while rolling back: gear {} force {} N", o.gear, o.force);
     assert!(d.v > -2.5, "the car slows its roll back: {}", d.v);
     // D and no gas while rolling back: it stays in reverse until it stops (no lurch), and the negative throttle still reverses at rest
-    let mut e = Car::new(); e.run(0.0, 0.5); e.run(-1.0, 3.0); assert_eq!(e.dt.gear, -1);
+    let mut e = Car::new(); e.dt.auto_reverse = true; e.run(0.0, 0.5); e.run(-1.0, 3.0); assert_eq!(e.dt.gear, -1);
+    // the driver in D never gets the reverse by himself: a negative throttle at a standstill does nothing
+    let mut f = Car::new(); f.run(0.0, 0.5); f.run(-1.0, 3.0);
+    assert!(f.dt.gear >= 1 && f.v >= -0.1, "D stays in drive: gear {} v {}", f.dt.gear, f.v);
 }
