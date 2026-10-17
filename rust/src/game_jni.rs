@@ -33,7 +33,7 @@ mod android {
     use crate::game::{app::{Game, STAT_LEN}, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Rally(i32), Signs(bool), Camera(f32, f32), CameraUp, CameraReset, TestTrack, Reverse(bool), Shift(i32), Manual(bool), Clutch(f32), CameraFly(f32, f32), CameraView(i32, f32, f32), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
+    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Rally(i32), Signs(bool), Camera(f32, f32), CameraUp, CameraReset, TestTrack, Reverse(bool), Assists(u32), Tuning(i32, f32), Shift(i32), Manual(bool), Clutch(f32), CameraFly(f32, f32), CameraView(i32, f32, f32), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -89,6 +89,8 @@ mod android {
                             Ok(GCmd::CameraReset) => g.camera_reset(),
                             Ok(GCmd::TestTrack) => g.test_track(),
                             Ok(GCmd::Reverse(r)) => g.set_reverse(r),
+                            Ok(GCmd::Assists(m)) => g.set_assists(m),
+                            Ok(GCmd::Tuning(i, v)) => g.set_tuning(i.max(0) as usize, v),
                             Ok(GCmd::Shift(d)) => g.shift(d),
                             Ok(GCmd::Manual(m)) => g.set_manual(m),
                             Ok(GCmd::Clutch(c)) => g.set_clutch(c),
@@ -115,6 +117,7 @@ mod android {
             if let Err(e) = res {
                 let msg = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
                 log::error!("game thread panicked, rendering stopped: {msg}");
+                crate::loading::set_error(&msg);
                 crate::loading::stage(crate::loading::FAILED, 0);
             }
         }).expect("spawn");
@@ -193,8 +196,13 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameShift(_e: JNIEnv, _c: JClass, dir: jint) { send(GCmd::Shift(dir)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameGearMode(_e: JNIEnv, _c: JClass, manual: jint) { send(GCmd::Manual(manual != 0)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameClutch(_e: JNIEnv, _c: JClass, pedal: jfloat) { send(GCmd::Clutch(pedal)); }
+    /// The aids as bits (anti-lag, ABS, traction control, the blip, the flat shift, the limiter, the blow-off valve) and one part of the tuning (0 engine, 1 turbo, 2 brakes, 3 tyres, 4 suspension, 5 downforce, 6 gearing) as a multiplier.
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAssists(_e: JNIEnv, _c: JClass, mask: jint) { send(GCmd::Assists(mask as u32)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameTuning(_e: JNIEnv, _c: JClass, part: jint, v: jfloat) { send(GCmd::Tuning(part, v)); }
     /// The automatic's selector: 0 drive, 1 reverse.
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameReverse(_e: JNIEnv, _c: JClass, on: jint) { send(GCmd::Reverse(on != 0)); }
+    /// The message of the panic that stopped the game thread (empty when it did not).
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameLastError<'a>(mut e: JNIEnv<'a>, _c: JClass) -> jni::objects::JString<'a> { e.new_string(crate::loading::last_error()).unwrap_or_default() }
     /// The test track: a flat sheet of tarmac.
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameTestTrack(_e: JNIEnv, _c: JClass) { send(GCmd::TestTrack); }
     /// A double tap: the camera goes back to its default.

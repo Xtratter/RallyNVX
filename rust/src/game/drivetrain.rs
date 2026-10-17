@@ -66,12 +66,20 @@ pub struct DriveOut {
     pub rpm: f32, pub gear: i32,
     /// How firmly the clutch is closed (its capacity over the largest, 0 open .. 1 closed), the engine's net torque and the throttle the engine got (with the idle governor and a blip).
     pub grip: f32, pub torque: f32, pub throttle: f32,
+    /// The boost pressure over the atmosphere, bar.
+    pub boost_bar: f32,
     /// The spark is cut (a flat shift or the limiter), the engine is off (stalled).
     pub cut: bool, pub stalled: bool,
 }
 
+/// What the driver and the tuning change in the drivetrain: the engine's torque, the turbo's boost and the final drive as multipliers, and the aids.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DriveOpts { pub engine: f32, pub turbo: f32, pub gearing: f32, pub flat_shift: bool, pub blip: bool, pub limiter: bool }
+impl Default for DriveOpts { fn default() -> DriveOpts { DriveOpts { engine: 1.0, turbo: 1.0, gearing: 1.0, flat_shift: true, blip: true, limiter: true } } }
+
 #[derive(Clone, Debug)]
 pub struct Drivetrain {
+    pub opts: DriveOpts,
     pub mode: Mode,
     /// -1 reverse, 0 neutral, 1..6.
     pub gear: i32,
@@ -97,16 +105,16 @@ pub fn rpm_in_gear(speed: f32, r: f32, gear: i32) -> f32 { speed.abs() / r.max(0
 impl Drivetrain {
     pub fn new() -> Drivetrain {
         let rpm = IDLE_RPM;
-        Drivetrain { mode: Mode::Auto, gear: 1, omega: rpm * std::f32::consts::TAU / 60.0, clutch_pedal: 0.0, reverse_sel: false, running: true, starting: 0.0, stalled_for: 0.0,
+        Drivetrain { opts: DriveOpts::default(), mode: Mode::Auto, gear: 1, omega: rpm * std::f32::consts::TAU / 60.0, clutch_pedal: 0.0, reverse_sel: false, running: true, starting: 0.0, stalled_for: 0.0,
             shift: 0.0, shift_up: true, limiter: false, boost: 0.0, idle_i: 0.1,
-            last: DriveOut { force: 0.0, rpm, gear: 1, grip: 0.0, torque: 0.0, throttle: 0.0, cut: false, stalled: false } }
+            last: DriveOut { force: 0.0, rpm, gear: 1, grip: 0.0, torque: 0.0, throttle: 0.0, boost_bar: 0.0, cut: false, stalled: false } }
     }
 
     pub fn rpm(&self) -> f32 { self.omega * 60.0 / std::f32::consts::TAU }
     pub fn running(&self) -> bool { self.running }
 
     /// A new start (a reset, a new level): first gear, the engine at the idle.
-    pub fn reset(&mut self) { let mode = self.mode; let sel = self.reverse_sel; *self = Drivetrain::new(); self.reverse_sel = sel; self.mode = mode; if mode == Mode::Manual { self.gear = 0; } }
+    pub fn reset(&mut self) { let mode = self.mode; let sel = self.reverse_sel; let opts = self.opts; *self = Drivetrain::new(); self.reverse_sel = sel; self.opts = opts; self.mode = mode; if mode == Mode::Manual { self.gear = 0; } }
 
     pub fn set_mode(&mut self, m: Mode) { if m != self.mode { self.mode = m; if m == Mode::Auto && self.gear == 0 { self.gear = 1; } } }
 
@@ -129,7 +137,7 @@ impl Drivetrain {
         let up_at = 4600.0 + 2800.0 * thr;
         let down_at = 2300.0 + 600.0 * thr;
         if rpm > up_at && self.gear < 6 { self.gear += 1; self.shift = SHIFT_AUTO; self.shift_up = true; }
-        else if rpm < down_at && self.gear > 1 && rpm_in_gear(i.speed, i.wheel_r, self.gear - 1) < 6600.0 { self.gear -= 1; self.shift = SHIFT_AUTO; self.shift_up = false; }
+        else if rpm < down_at && self.gear > 1 && rpm_in_gear(i.speed, i.wheel_r, self.gear - 1) * self.opts.gearing < 6600.0 { self.gear -= 1; self.shift = SHIFT_AUTO; self.shift_up = false; }
     }
 
     pub fn step(&mut self, dt: f32, i: &DriveIn) -> DriveOut {
@@ -148,10 +156,10 @@ impl Drivetrain {
             self.idle_i = (self.idle_i + err * dt * 0.6).clamp(0.0, 0.4);
             thr = thr.max((self.idle_i + 0.5 * err).clamp(0.0, 0.4));
         }
-        if auto && self.shift > 0.0 && !self.shift_up { thr = thr.max(0.55); }
+        if auto && self.shift > 0.0 && !self.shift_up && self.opts.blip { thr = thr.max(0.55); }
         let reverse_dir = if self.gear < 0 { -1.0 } else { 1.0 };
-        let g = ratio(self.gear);
-        let cut_shift = self.shift > 0.0 && self.shift_up && pedal > 0.6;
+        let g = ratio(self.gear) * self.opts.gearing;
+        let cut_shift = self.opts.flat_shift && self.shift > 0.0 && self.shift_up && pedal > 0.6;
         // the clutch's capacity (N m): the automatic's rises with the revs (it bites like a centrifugal clutch and slips at the launch), the manual's follows the pedal; none in neutral or in a shift
         let cap = if g == 0.0 || self.shift > 0.0 || i.airborne { 0.0 }
             else if auto { (10.0 + (CLUTCH_MAX - 10.0) * smooth(1300.0, 3000.0, rpm0)).min(CLUTCH_MAX) }
@@ -163,10 +171,11 @@ impl Drivetrain {
             if self.starting <= 0.0 && self.stalled_for > 0.8 && free { self.starting = 1.0; }
         }
         let w_in = (i.speed / i.wheel_r.max(0.05) * g * reverse_dir).max(-1e4);
+        let opts = self.opts;
         let (n, h) = (8, dt / 8.0);
         let (mut f_sum, mut tq_sum, mut tc_last) = (0.0f32, 0.0f32, 0.0f32);
         // the limiter: fuel cut above the limit until the revs fall a little
-        if rpm0 > LIMITER_RPM { self.limiter = true; } else if rpm0 < LIMITER_RPM - 150.0 { self.limiter = false; }
+        if !opts.limiter { self.limiter = false; } else if rpm0 > LIMITER_RPM { self.limiter = true; } else if rpm0 < LIMITER_RPM - 150.0 { self.limiter = false; }
         let cut = self.limiter || cut_shift || !self.running;
         for _ in 0..n {
             let rpm = self.omega * 60.0 / std::f32::consts::TAU;
@@ -174,7 +183,10 @@ impl Drivetrain {
             let want = if thr > 0.5 && rpm > 2200.0 { 1.0 } else { 0.0 };
             self.boost += (want - self.boost) * (h / if want > self.boost { 0.45 } else { 0.25 }).min(1.0);
             let mut t_e = if cut { engine_torque(rpm, 0.0) } else { engine_torque(rpm, thr) };
-            if !cut && t_e > 0.0 { t_e *= 0.62 + 0.38 * self.boost; }
+            if !cut && t_e > 0.0 { t_e *= (0.62 + 0.38 * self.boost * opts.turbo) * opts.engine; }
+            else if !cut { t_e *= 1.0 + (opts.engine - 1.0) * 0.3; }   // the engine braking changes a little with the engine
+            // no limiter: the power gives out by itself above 7500 rpm and the friction wins at about 9000
+            if !opts.limiter && !cut && rpm > 7500.0 { t_e = t_e.min(engine_torque(7500.0, thr) * (1.0 - (rpm - 7500.0) / 1500.0) * opts.engine).max(-60.0); }
             if !self.running { t_e = -engine_torque(rpm.max(1000.0), 0.0).abs() * (rpm / 1000.0).clamp(0.0, 1.0); }
             if self.starting > 0.0 && rpm < 650.0 { t_e += 140.0; }   // the starter turns it until it fires (about 450 rpm)
             let t_c = (GRIP_K * (self.omega - w_in)).clamp(-cap, cap);
@@ -186,7 +198,7 @@ impl Drivetrain {
         if self.running && rpm < 280.0 && !(self.starting > 0.0) { self.running = false; self.stalled_for = 0.0; }
         if self.starting > 0.0 && rpm > 450.0 { self.starting = 0.0; self.running = true; self.stalled_for = 0.0; self.idle_i = 0.12; }
         let _ = tc_last;
-        self.last = DriveOut { force: f_sum / n as f32, rpm, gear: self.gear, grip: (cap / CLUTCH_MAX).clamp(0.0, 1.0), torque: tq_sum / n as f32, throttle: thr, cut, stalled: !self.running };
+        self.last = DriveOut { force: f_sum / n as f32, rpm, gear: self.gear, grip: (cap / CLUTCH_MAX).clamp(0.0, 1.0), torque: tq_sum / n as f32, throttle: thr, boost_bar: self.boost * 0.55 * opts.turbo, cut, stalled: !self.running };
         self.last
     }
 }

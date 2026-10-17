@@ -5,11 +5,13 @@ use super::{Controls, Engine, EngineSpec};
 use crate::audio::dsp::{coef, OnePole};
 use crate::audio::RATE;
 
-/// Simulation steps per output sample.
+/// Simulation steps per output sample: 2 normally, 1 when the phone is too slow to keep up (see `Synth::render`).
 pub const SUBSTEPS: usize = 2;
 
 pub struct EngineVoice {
     pub engine: Engine,
+    /// The steps per output sample in use (1 or 2).
+    pub substeps: usize,
     exhaust: Pipe, intake: Pipe,
     lp_struct: OnePole, hp_struct: OnePole, lp_noise: OnePole, bov_lo: OnePole, bov_hi: OnePole, whoosh_lo: OnePole, whoosh_hi: OnePole,
     /// The phases of the turbo's whistle and the gearbox's whine (0..1).
@@ -33,7 +35,7 @@ const BLOCK_SCALE: f64 = 1.0 / 6.0e5;
 
 impl EngineVoice {
     pub fn new(spec: EngineSpec) -> EngineVoice {
-        EngineVoice { engine: Engine::new(spec), exhaust: Pipe::new(2.2, 0.55, -0.85, 0.35), intake: Pipe::new(0.55, 0.8, -0.7, 0.25),
+        EngineVoice { engine: Engine::new(spec), substeps: SUBSTEPS, exhaust: Pipe::new(2.2, 0.55, -0.85, 0.35), intake: Pipe::new(0.55, 0.8, -0.7, 0.25),
             lp_struct: OnePole::default(), hp_struct: OnePole::default(), lp_noise: OnePole::default(), bov_lo: OnePole::default(), bov_hi: OnePole::default(), whoosh_lo: OnePole::default(), whoosh_hi: OnePole::default(), ph_turbo: 0.0, ph_gear: 0.0, rev_s: 0.0, ph_flutter: 0.0, bov_env: 0.0, burned: 0.0, flame: 0.0, th_s: 0.0, lp_off: OnePole::default(), last_sum: 0.0, noise: 0x1357_9BDF, level: 0.01,
             exhaust_out: 0.0, intake_out: 0.0, block_out: 0.0, turbo_out: 0.0, bov_out: 0.0, whine_out: 0.0 }
     }
@@ -45,10 +47,11 @@ impl EngineVoice {
     /// One output sample (44.1 kHz): advances the engine by `SUBSTEPS` steps with the controls and works out the three sounds.
     pub fn sample(&mut self, ctl: &Controls) {
         self.engine.controls = *ctl;
-        let dt = 1.0 / (RATE as f64 * SUBSTEPS as f64);
+        let sub = self.substeps.clamp(1, SUBSTEPS);
+        let dt = 1.0 / (RATE as f64 * sub as f64);
         let (mut pe, mut pi, mut ps) = (0.0, 0.0, 0.0);
-        for _ in 0..SUBSTEPS { self.engine.step(dt); pe += self.engine.exhaust_pressure(); pi += self.engine.intake_pressure(); ps += self.engine.cylinder_pressure_sum(); }
-        let k = 1.0 / SUBSTEPS as f64;
+        for _ in 0..sub { self.engine.step(dt); pe += self.engine.exhaust_pressure(); pi += self.engine.intake_pressure(); ps += self.engine.cylinder_pressure_sum(); }
+        let k = 1.0 / sub as f64;
         let raw = self.exhaust.process((pe * k * EXHAUST_SCALE) as f32);
         self.level += (raw * raw - self.level) * (1.0 / (0.3 * RATE as f32));
         let gain = (0.1 / self.level.sqrt().max(1e-4)).sqrt().clamp(0.5, 4.0);   // the loudness changes by the square root of what the engine really does

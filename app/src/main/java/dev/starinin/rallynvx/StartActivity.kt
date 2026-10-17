@@ -53,6 +53,20 @@ class StartActivity : Activity() {
         col.setBackgroundColor(M3.base)
         setContentView(android.widget.ScrollView(this).apply { isFillViewport = true; setBackgroundColor(M3.base); addView(col, android.widget.FrameLayout.LayoutParams(-1, -1)) })
         refresh()
+        showLastCrash()
+    }
+
+    /** A crash of the last run is shown once, with a button that copies it (to paste it where it can be read). */
+    private fun showLastCrash() {
+        val f = Diag.crashFile(this)
+        if (!f.exists()) return
+        val text = try { f.readText() } catch (_: Exception) { "" }
+        f.delete()
+        if (text.isEmpty()) return
+        android.app.AlertDialog.Builder(this).setTitle(t("The last run crashed", "Прошлый запуск завершился ошибкой"))
+            .setMessage(text.take(1800))
+            .setPositiveButton(t("Copy", "Копировать")) { _, _ -> Diag.copy(this, text + "\n--- log ---\n" + Diag.logTail()) }
+            .setNegativeButton(t("Close", "Закрыть"), null).show()
     }
 
     override fun onResume() { super.onResume(); refresh() }

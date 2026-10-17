@@ -2,7 +2,15 @@ package dev.starinin.rallynvx
 
 /** The gear indicator's text and the revs' bar. */
 object GearMath {
-    const val LIMIT = 7800f
+    const val LIMIT = 8000f
+    /** The red zone of the tachometer starts here. */
+    const val REDLINE = 7000f
+    /** The dials: they start at the lower left (150 degrees clockwise from 3 o'clock) and sweep 240 degrees. */
+    const val DIAL_START = 150f
+    const val DIAL_SWEEP = 240f
+    const val BOOST_MAX = 0.6f
+    /** The share of the boost arc a pressure (bar over the atmosphere) fills. */
+    fun boostFraction(bar: Float): Float = if (bar.isFinite()) (bar / BOOST_MAX).coerceIn(0f, 1f) else 0f
     fun label(gear: Int): String = when { gear < 0 -> "R"; gear == 0 -> "N"; else -> gear.toString() }
     fun mode(manual: Boolean, en: Boolean): String = if (manual) (if (en) "manual" else "МКПП") else (if (en) "auto" else "АКПП")
     /** The share of the bar the revs fill: from 0 at a standstill to 1 at the limiter. */

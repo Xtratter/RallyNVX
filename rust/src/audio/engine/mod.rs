@@ -75,8 +75,10 @@ pub struct Controls {
     pub als: bool,
     /// The spark is cut (a flat shift, a rev limiter of a rally car): the fuel goes on, unburnt, into the exhaust.
     pub cut: bool,
+    /// The blow-off valve is fitted (false: the pressure goes back through the compressor).
+    pub bov: bool,
 }
-impl Default for Controls { fn default() -> Controls { Controls { throttle: 0.0, starter: false, clutch: 0.0, drive_rpm: 0.0, ignition: true, als: false, cut: false } } }
+impl Default for Controls { fn default() -> Controls { Controls { throttle: 0.0, starter: false, clutch: 0.0, drive_rpm: 0.0, ignition: true, als: false, cut: false, bov: true } } }
 
 pub struct Engine {
     pub spec: EngineSpec,
@@ -154,7 +156,7 @@ impl Engine {
         // open while the throttle is shut and the plenum is in vacuum, in proportion to how far the charge is over the atmosphere: the hiss tapers off instead of stopping short
         let vacuum = thr < 0.25 && self.plenum.pressure() < 0.9 * P_ATM + 0.4 * (p_charge - P_ATM).max(0.0);
         let open = if vacuum { ((p_charge - 1.06 * P_ATM) / 0.25e5).clamp(0.0, 1.0) } else { 0.0 };
-        self.bov_flow = if open > 0.0 { flow(&mut self.charge, &mut self.atmosphere, spec.bov_area * open, dt).max(0.0) / dt } else { 0.0 };
+        self.bov_flow = if open > 0.0 { flow(&mut self.charge, &mut self.atmosphere, spec.bov_area * open * if c.bov { 1.0 } else { 0.0 }, dt).max(0.0) / dt } else { 0.0 };
         let mut exhaust_moles = 0.0;
         // the engine's torque
         let mut torque = 0.0;

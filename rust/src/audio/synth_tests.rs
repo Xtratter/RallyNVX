@@ -17,7 +17,7 @@ fn run(s: &mut Synth, n: f32) -> Vec<f32> { let mut v = vec![0.0; secs(n)]; s.re
     for machine in [Machine::None, Machine::Car] {
         let mut s = Synth::new();
         for _ in 0..50 {
-            s.set_params(&AudioParams { machine, als: r() > 0.5, cut: r() > 0.8, stalled: r() > 0.9, drive_rpm: r() * 11000.0 - 1000.0, clutch: r(), load: r(), roll: r(), surface: if r() > 0.5 { Surface::Water } else { Surface::Ground }, slip: r(), wind: r(), active: true });
+            s.set_params(&AudioParams { machine, als: r() > 0.5, cut: r() > 0.8, stalled: r() > 0.9, no_bov: r() > 0.7, drive_rpm: r() * 11000.0 - 1000.0, clutch: r(), load: r(), roll: r(), surface: if r() > 0.5 { Surface::Water } else { Surface::Ground }, slip: r(), wind: r(), active: true });
             if r() > 0.5 { s.push(Event::Crash); }
             if r() > 0.5 { s.push(Event::Splash(r())); }
             for x in run(&mut s, 0.2) { assert!(x.is_finite() && x.abs() <= 1.0, "{machine:?}: {x}"); }
@@ -169,4 +169,22 @@ fn rms(v: &[f32]) -> f32 { (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f3
     assert!(burnt(false, 0.0) < 2e-5 && burnt(false, 1.0) < 2e-5, "next to no burn on a plain lift or at full throttle");
     assert!(burnt(true, 0.0) > 1e-4, "the anti-lag burns fuel in the exhaust: {}", burnt(true, 0.0));
     let mut s = Synth::new(); assert_eq!(s.take_burned_delta(), 0.0);
+}
+
+#[test] fn the_game_never_waits_for_the_audio_thread() {
+    // the audio thread holds the synth's lock while it renders; feeding, muting and the volume must not wait for it
+    let h = std::thread::spawn(|| { let mut buf = vec![0i16; 2048]; for _ in 0..40 { render_into(&mut buf); } });
+    let t0 = std::time::Instant::now();
+    for _ in 0..2000 { feed(&car(0.5), &[Event::Touchdown(0.2)], &Scene::default()); set_volume(0.8); set_muted(false); }
+    silence();
+    assert!(t0.elapsed().as_millis() < 500, "feeding took {:?} while the audio thread rendered", t0.elapsed());
+    h.join().unwrap();
+    let mut buf = vec![0i16; 2048]; render_into(&mut buf);
+}
+#[test] fn the_render_measures_its_own_load_and_keeps_the_engine_running_clean() {
+    let mut s = Synth::new(); s.set_params(&car(0.7));
+    let mut out = vec![0i16; 2048];
+    for _ in 0..20 { s.render(&mut out); }
+    let (l, sub) = s.load(); assert!(l.is_finite() && l >= 0.0 && (1..=2).contains(&sub), "{l} {sub}");
+    assert!(out.iter().any(|x| *x != 0));
 }

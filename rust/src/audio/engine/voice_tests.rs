@@ -59,7 +59,7 @@ fn at(rpm: f64, throttle: f64) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
 #[test] fn the_voice_survives_abuse() {
     let mut v = EngineVoice::new(EngineSpec::rally_four());
     for i in 0..RATE as usize * 3 {
-        let ctl = Controls { throttle: ((i / 5000) % 3) as f64 * 0.5, starter: i < 20000, clutch: ((i / 7000) % 2) as f64, drive_rpm: ((i / 9000) % 4) as f64 * 2500.0, ignition: (i / 30000) % 2 == 0, als: (i / 11000) % 2 == 0, cut: (i / 13000) % 3 == 0 };
+        let ctl = Controls { throttle: ((i / 5000) % 3) as f64 * 0.5, starter: i < 20000, clutch: ((i / 7000) % 2) as f64, drive_rpm: ((i / 9000) % 4) as f64 * 2500.0, ignition: (i / 30000) % 2 == 0, als: (i / 11000) % 2 == 0, cut: (i / 13000) % 3 == 0, bov: (i / 17000) % 2 == 0 };
         v.sample(&ctl);
         assert!(v.exhaust_out.is_finite() && v.intake_out.is_finite() && v.block_out.is_finite(), "{i}");
     }

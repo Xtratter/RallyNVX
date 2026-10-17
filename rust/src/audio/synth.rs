@@ -23,7 +23,7 @@ pub struct Synth {
     gurgle: f32, squeal: f32, voice: EngineVoice,
     f_roll: [OnePole; 4], f_roll_w: [OnePole; 4], f_sq1: [OnePole; 4], f_sq2: [OnePole; 4], f_wind: OnePole, f_wind_r: OnePole,
     voices: [Voice; MAX_VOICES],
-    scene: Scene, emitters: Vec<Emitter>, block: usize, wind_k: f32, lp_wind: [OnePole; 2], reverb: Reverb, burned_pub: f64,
+    scene: Scene, emitters: Vec<Emitter>, block: usize, wind_k: f32, lp_wind: [OnePole; 2], reverb: Reverb, burned_pub: f64, load: f32,
 }
 
 /// What the sources emit at one instant, before the room and the listener's head: the exhaust, the engine bay, the four tyres, the car's body (the one-shots) and the wind at the listener's ears.
@@ -47,14 +47,14 @@ impl Synth {
             f_roll: [OnePole::default(); 4], f_roll_w: [OnePole::default(); 4], f_sq1: [OnePole::default(); 4], f_sq2: [OnePole::default(); 4],
             f_wind: OnePole::default(), f_wind_r: OnePole::default(),
             voices: [Voice::default(); MAX_VOICES],
-            scene: Scene::default(), emitters: (0..N_SRC).map(|_| Emitter::new()).collect(), block: 0, wind_k: 1.0, lp_wind: [OnePole::default(); 2], reverb: Reverb::new(), burned_pub: 0.0,
+            scene: Scene::default(), emitters: (0..N_SRC).map(|_| Emitter::new()).collect(), block: 0, wind_k: 1.0, lp_wind: [OnePole::default(); 2], reverb: Reverb::new(), burned_pub: 0.0, load: 0.0,
         }
     }
 
     pub fn set_params(&mut self, p: &AudioParams) {
         let c = |v: f32| if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 };
         let rpm = |v: f32| if v.is_finite() { v.clamp(0.0, 12000.0) } else { 0.0 };
-        self.target = AudioParams { machine: p.machine, als: p.als, cut: p.cut, stalled: p.stalled, drive_rpm: rpm(p.drive_rpm), clutch: c(p.clutch), load: c(p.load), roll: c(p.roll), surface: p.surface, slip: c(p.slip), wind: c(p.wind), active: p.active };
+        self.target = AudioParams { machine: p.machine, als: p.als, cut: p.cut, stalled: p.stalled, no_bov: p.no_bov, drive_rpm: rpm(p.drive_rpm), clutch: c(p.clutch), load: c(p.load), roll: c(p.roll), surface: p.surface, slip: c(p.slip), wind: c(p.wind), active: p.active };
     }
 
     /// Where everything is (the listener and the sources): the paths are renewed at the next block.
@@ -131,7 +131,7 @@ impl Synth {
             if running {
                 let ignition = t.active && !self.muted && !t.stalled;
                 let starter = ignition && self.voice.engine.rpm() < 350.0;   // it cranks by itself when it is not running (the first start, a stall)
-                self.voice.sample(&Controls { throttle: self.s.load as f64, starter, clutch: t.clutch as f64, drive_rpm: self.s.drive2 as f64, ignition, als: t.als, cut: t.cut });
+                self.voice.sample(&Controls { throttle: self.s.load as f64, starter, clutch: t.clutch as f64, drive_rpm: self.s.drive2 as f64, ignition, als: t.als, cut: t.cut, bov: !t.no_bov });
             }
             f.exhaust = self.voice.exhaust_out * 0.7 * self.s.car;
             f.bay = (self.voice.intake_out * 0.35 + self.voice.block_out * 0.35 + self.voice.turbo_out + self.voice.bov_out + self.voice.whine_out) * self.s.car;
@@ -201,10 +201,21 @@ impl Synth {
 
     /// Interleaved stereo PCM16.
     pub fn render(&mut self, out: &mut [i16]) {
+        let t0 = std::time::Instant::now();
         let mut buf = [0.0f32; 512];
         for chunk in out.chunks_mut(buf.len()) {
             self.render_stereo_f32(&mut buf[..chunk.len()]);
             for (o, s) in chunk.iter_mut().zip(&buf) { *o = (s * 32767.0) as i16; }
         }
+        // a phone too slow for the engine (a block takes over half of its own length) simulates it with one step per sample instead of two; when it has room again it goes back
+        let frames = (out.len() / 2).max(1) as f32;
+        if frames >= 256.0 {
+            let load = t0.elapsed().as_secs_f32() / (frames / RATE as f32);
+            self.load = self.load * 0.8 + load * 0.2;
+            if self.load > 0.55 { self.voice.substeps = 1; } else if self.load < 0.22 { self.voice.substeps = 2; }
+        }
     }
+
+    /// How much of its own length a block takes to render (smoothed, 1 = just in time), and the engine's steps per sample in use.
+    pub fn load(&self) -> (f32, usize) { (self.load, self.voice.substeps) }
 }

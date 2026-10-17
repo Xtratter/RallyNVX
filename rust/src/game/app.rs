@@ -46,7 +46,7 @@ pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, fps: f32, fr
         out[37] = r.event.0 as f32; out[38] = r.event.2 as f32; out[39] = r.event.1; out[40] = if r.run.assisted { 1.0 } else { 0.0 }; out[41] = r.run.total();
     }
     // the drivetrain: `[80]` the gear (-1 reverse, 0 neutral), `[81]` the engine's revs, `[82]` 1 in the manual, `[83]` 1 when the engine has stalled, `[84]` how firmly the clutch grips, `[85]` the clutch pedal
-    { let d = &w.drivetrain; out[80] = d.gear as f32; out[81] = d.rpm(); out[82] = (d.mode == crate::game::drivetrain::Mode::Manual) as u8 as f32; out[83] = d.last.stalled as u8 as f32; out[84] = d.last.grip; out[85] = d.clutch_pedal; }
+    { let d = &w.drivetrain; out[80] = d.gear as f32; out[81] = d.rpm(); out[82] = (d.mode == crate::game::drivetrain::Mode::Manual) as u8 as f32; out[83] = d.last.stalled as u8 as f32; out[84] = d.last.grip; out[85] = d.clutch_pedal; out[86] = d.last.boost_bar; }
     out[25] = w.vehicle.speed() * 3.6;   // signed: negative while rolling backwards (the brake pedal reverses below 3 km/h)
 }
 
@@ -72,7 +72,7 @@ mod game {
         director: crate::audio::Director,
         car: crate::game::vehicle::VehicleSpec, garage: bool,
         dust_level: i32,
-        auto_fallback: bool, monitor: crate::game::rendermode::FallbackMonitor, fell_back: bool, manual: bool, clutch: f32, reverse: bool,
+        auto_fallback: bool, monitor: crate::game::rendermode::FallbackMonitor, fell_back: bool, manual: bool, clutch: f32, reverse: bool, assists: u32, tuning: [f32; crate::game::assists::TUNING_PARTS],
     }
 
     impl Game {
@@ -80,7 +80,7 @@ mod game {
             let seed = super::level_seed(seed);
             Game { world: World::with_roads(seed, crate::game::vehicle::VehicleSpec::default_car()), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::default_car(), garage: false, dust_level: 1, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false, manual: false, clutch: 0.0, reverse: false }
+                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::default_car(), garage: false, dust_level: 1, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false, manual: false, clutch: 0.0, reverse: false, assists: 0x7F, tuning: [1.0; crate::game::assists::TUNING_PARTS] }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
@@ -102,6 +102,9 @@ mod game {
         pub fn set_manual(&mut self, on: bool) { self.manual = on; self.world.manual = on; }
         /// The automatic's selector: false drive, true reverse.
         pub fn set_reverse(&mut self, on: bool) { self.world.drivetrain.reverse_sel = on; self.reverse = on; }
+        /// The aids (bits, see `Assists::from_mask`) and one part of the tuning (see `Tuning::set`), from the game's menu.
+        pub fn set_assists(&mut self, mask: u32) { self.assists = mask; self.world.assists = crate::game::assists::Assists::from_mask(mask); }
+        pub fn set_tuning(&mut self, part: usize, v: f32) { if part < self.tuning.len() && v.is_finite() { self.tuning[part] = v; self.world.tuning.set(part, v); } }
         pub fn set_clutch(&mut self, pedal: f32) { self.clutch = pedal; self.world.drivetrain.set_clutch(pedal); }
         pub fn camera_release(&mut self) { self.world.cam.set_dragging(false); }
         /// The camera view (see `CamView`), its distance scale or zoom and its height or tilt offset.
@@ -170,7 +173,8 @@ mod game {
             if self.garage {
                 self.world.step_garage(dt.clamp(0.0, 0.1));
             } else if !self.paused {
-                self.world.manual = self.manual; self.world.drivetrain.set_clutch(self.clutch); self.world.drivetrain.reverse_sel = self.reverse;   // a new level makes a new world: the driver's choice goes with the game
+                self.world.manual = self.manual; self.world.drivetrain.set_clutch(self.clutch); self.world.drivetrain.reverse_sel = self.reverse;
+                self.world.assists = crate::game::assists::Assists::from_mask(self.assists); for (i, v) in self.tuning.iter().enumerate() { self.world.tuning.set(i, *v); }   // a new level makes a new world: the driver's choice goes with the game
                 for _ in 0..step_budget(&mut self.acc, dt, 6) {
                     self.world.step(&self.input, STEP);
                     self.input.reset = false;

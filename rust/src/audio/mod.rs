@@ -22,7 +22,7 @@ pub enum Surface { #[default] Ground, Water }
 
 /// What the machine is doing right now (all values 0..1 unless noted): `drive_rpm` the revs the wheels ask of the engine in rpm, `clutch` the grip of the clutch, `load` the throttle pedal. `active == false` fades everything out.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct AudioParams { pub machine: Machine, pub als: bool, pub cut: bool, pub stalled: bool, pub drive_rpm: f32, pub clutch: f32, pub load: f32, pub roll: f32, pub surface: Surface, pub slip: f32, pub wind: f32, pub active: bool }
+pub struct AudioParams { pub machine: Machine, pub als: bool, pub cut: bool, pub stalled: bool, pub no_bov: bool, pub drive_rpm: f32, pub clutch: f32, pub load: f32, pub roll: f32, pub surface: Surface, pub slip: f32, pub wind: f32, pub active: bool }
 
 /// The sound sources of the car (indices into `Scene::src`).
 pub const SRC_EXHAUST: usize = 0;
@@ -66,26 +66,54 @@ pub enum Event { Touchdown(f32), Crash, Splash(f32) }
 use crate::game::math::{v3, V3};
 use std::sync::Mutex;
 
+/// The synth lives on the audio thread (it holds the lock while it renders a block); everything the game thread, the UI and the activity say to it goes through `PENDING`, a lock that is
+/// only ever held for a moment, so that a slow audio thread can never stall the game (a held lock starved the game thread on a slow phone).
 static SYNTH: Mutex<Option<Synth>> = Mutex::new(None);
+static PENDING: Mutex<Pending> = Mutex::new(Pending::new());
 
-fn with<R>(f: impl FnOnce(&mut Synth) -> R) -> R {
-    // a poisoned lock must never take the game or the audio thread down: recover the data
-    let mut g = SYNTH.lock().unwrap_or_else(|e| e.into_inner());
-    f(g.get_or_insert_with(Synth::new))
+struct Pending { params: Option<AudioParams>, scene: Option<Scene>, events: Vec<Event>, muted: Option<bool>, volume: Option<f32>, silence: bool }
+impl Pending {
+    const fn new() -> Pending { Pending { params: None, scene: None, events: Vec::new(), muted: None, volume: None, silence: false } }
 }
 
-/// Game thread: new parameters and events for the audio thread (short lock).
-pub fn feed(params: &AudioParams, events: &[Event], scene: &Scene) { with(|s| { s.set_params(params); s.set_scene(scene); for e in events { s.push(*e); } }) }
-pub fn set_muted(m: bool) { with(|s| s.set_muted(m)) }
-pub fn set_volume(v: f32) { with(|s| s.set_volume(v)) }
+fn pend(f: impl FnOnce(&mut Pending)) {
+    // a poisoned lock must never take the game or the audio thread down: recover the data
+    let mut g = PENDING.lock().unwrap_or_else(|e| e.into_inner());
+    f(&mut g)
+}
+
+/// The most one-shots kept while the audio thread is not listening.
+const MAX_PENDING_EVENTS: usize = 32;
+
+/// Game thread: new parameters and events for the audio thread (a moment's lock, never waits for a render).
+pub fn feed(params: &AudioParams, events: &[Event], scene: &Scene) {
+    pend(|p| {
+        p.params = Some(*params); p.scene = Some(*scene);
+        for e in events { if p.events.len() < MAX_PENDING_EVENTS { p.events.push(*e); } }
+    })
+}
+pub fn set_muted(m: bool) { pend(|p| p.muted = Some(m)) }
+pub fn set_volume(v: f32) { pend(|p| p.volume = Some(v)) }
 /// Stops all sound immediately (the game screen is gone).
-pub fn silence() { with(|s| s.silence()) }
+pub fn silence() { pend(|p| { *p = Pending::new(); p.silence = true; }) }
+/// Audio thread: fills `out` with interleaved stereo PCM16 samples.
+pub fn render_into(out: &mut [i16]) {
+    let pending = { let mut g = PENDING.lock().unwrap_or_else(|e| e.into_inner()); std::mem::replace(&mut *g, Pending::new()) };
+    let mut g = SYNTH.lock().unwrap_or_else(|e| e.into_inner());
+    let s = g.get_or_insert_with(Synth::new);
+    if pending.silence { s.silence(); }
+    if let Some(m) = pending.muted { s.set_muted(m); }
+    if let Some(v) = pending.volume { s.set_volume(v); }
+    if let Some(p) = &pending.params { s.set_params(p); }
+    if let Some(sc) = &pending.scene { s.set_scene(sc); }
+    for e in &pending.events { s.push(*e); }
+    s.render(out);
+    BURNED.fetch_add((s.take_burned_delta() * 1e9) as u64, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// The fuel (mol) that burnt in the engine model's exhaust since the last call: the renderer turns it into the fire at the tail pipe.
 pub fn take_burned() -> f32 { BURNED.swap(0, std::sync::atomic::Ordering::Relaxed) as f32 * 1e-9 }
 static BURNED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// Audio thread: fills `out` with interleaved stereo PCM16 samples.
-pub fn render_into(out: &mut [i16]) { with(|s| { s.render(out); BURNED.fetch_add((s.take_burned_delta() * 1e9) as u64, std::sync::atomic::Ordering::Relaxed); }) }
 
 #[cfg(test)]
 #[path = "synth_tests.rs"]
