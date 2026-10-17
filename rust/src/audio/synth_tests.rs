@@ -188,3 +188,19 @@ fn rms(v: &[f32]) -> f32 { (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f3
     let (l, sub) = s.load(); assert!(l.is_finite() && l >= 0.0 && (1..=2).contains(&sub), "{l} {sub}");
     assert!(out.iter().any(|x| *x != 0));
 }
+
+#[test] fn the_gas_that_leaves_the_exhaust_is_counted_by_flow_temperature_and_unburnt_fuel() {
+    let out = |load: f32, als: bool, drive: f32| {
+        let mut s = Synth::new(); s.set_params(&AudioParams { drive_rpm: drive, clutch: 1.0, load: 1.0, als, ..car(0.7) }); run(&mut s, 2.5);
+        s.take_exhaust_delta();
+        s.set_params(&AudioParams { drive_rpm: drive, clutch: 1.0, load, als, ..car(0.7) }); run(&mut s, 1.0);
+        s.take_exhaust_delta()
+    };
+    let (idle, wot) = (out(0.0, false, 1000.0), out(1.0, false, 5500.0));
+    assert!(idle.0 > 0.05 && wot.0 > idle.0 * 2.0, "more gas at full throttle: {} vs {} mol", wot.0, idle.0);
+    let t = wot.1 / wot.0; assert!(t > 600.0 && t < 1700.0, "a hot exhaust: {t} K");
+    let rich = out(0.0, true, 5500.0);
+    assert!(rich.2 / rich.0.max(1e-9) > wot.2 / wot.0.max(1e-9) * 2.0 || rich.2 > 1e-4, "the anti-lag sends unburnt fuel out: {} of {} mol", rich.2, rich.0);
+    let mut s = Synth::new(); assert_eq!(s.take_exhaust_delta(), (0.0, 0.0, 0.0));
+    let (m, tk, f) = crate::audio::take_exhaust(); assert!(m >= 0.0 && tk >= 0.0 && f >= 0.0);
+}
