@@ -1,7 +1,7 @@
 struct U {
     vp: mat4x4<f32>, light_vp: mat4x4<f32>, inv_vp: mat4x4<f32>,
     cam: vec4<f32>, sun: vec4<f32>, fog: vec4<f32>, sky_top: vec4<f32>, sky_hor: vec4<f32>, sun_col: vec4<f32>,
-    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>, susp: vec4<f32>, wx: vec4<f32>, cr: vec4<f32>, wp0: vec4<f32>, wp1: vec4<f32>, wax0: vec4<f32>, wax1: vec4<f32>, wrs0: vec4<f32>, wrs1: vec4<f32>, wph: vec4<f32>, film: vec4<f32>, sl: array<vec4<f32>, 64>,
+    mode: vec4<f32>, cam_tile: vec4<f32>, moon: vec4<f32>, disc: vec4<f32>, hl_pos: vec4<f32>, hl_dir: vec4<f32>, tl_pos: vec4<f32>, tl_col: vec4<f32>, wind: vec4<f32>, lamps: vec4<f32>, rt: vec4<f32>, susp: vec4<f32>, wx: vec4<f32>, cr: vec4<f32>, wp0: vec4<f32>, wp1: vec4<f32>, wax0: vec4<f32>, wax1: vec4<f32>, wrs0: vec4<f32>, wrs1: vec4<f32>, wph: vec4<f32>, film: vec4<f32>, fire_p: vec4<f32>, fire_c: vec4<f32>, sl: array<vec4<f32>, 64>,
 };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var shadow_tex: texture_depth_2d;
@@ -392,6 +392,14 @@ fn shade_with(albedo: vec3<f32>, wp: vec3<f32>, n: vec3<f32>, rough_in: f32, met
             c = c + dcol * lamp_rad * (0.25 + 0.75 * max(dot(n, -l), 0.0));
             if (glossy) { c = c + lamp_rad * ggx_spec(n, v, -l, f0, max(a, 0.01)) * 0.5; }
         }
+    }
+    if (u.fire_c.w > 0.0) {   // the fire at the tail pipe lights the ground, the car and the dust round it (a point light, falling with the square of the distance)
+        let dv = u.fire_p.xyz - wp;
+        let d2 = dot(dv, dv) + 0.4;
+        let ld = dv * inverseSqrt(max(dot(dv, dv), 1e-4));
+        let fl = u.fire_c.rgb * (u.fire_c.w / d2);
+        c = c + dcol * fl * (0.25 + 0.75 * max(dot(n, ld), 0.0));
+        if (glossy) { c = c + fl * ggx_spec(n, v, ld, f0, max(a, 0.01)) * 0.5; }
     }
     if (u.tl_col.w > 0.0 && own_surface < 0.5) {
         let dv = wp - u.tl_pos.xyz;
@@ -1194,7 +1202,7 @@ fn dust_vertex(vi: u32, ps: vec4<f32>, c: vec4<f32>, e: vec4<f32>, size: f32) ->
     let n2 = vnoise2(i.uv * 7.0 - vec2<f32>(i.e.y * 9.0, i.e.x * 13.0));
     let edge = mix(0.40, 1.0, n * 0.7 + n2 * 0.3);
     let shape = 1.0 - smoothstep(0.0, edge, r);
-    let core = shape * shape;
+    let core = shape * (0.4 + 0.6 * shape);   // a thick body: dense up to the edge, not only in the middle
     let a = i.c.a * core;
     if (a < 0.002) { discard; }
     let dcam = length(i.wp - u.cam.xyz);

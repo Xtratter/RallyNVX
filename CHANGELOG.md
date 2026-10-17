@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.68.0 - the exhaust fire as a dense cloud that lights its surroundings
+
+- Changed: the fire is no longer a spray of particles but a thick cloud, as dense as dust: up to 90 overlapping puffs (0.10 to 0.40 m wide, a body that is dense to its edge), kept at the tail pipe (they leave at 6 to 30 m/s and the air stops them within a metre or two), burning for about a third of a second and glowing stronger (the radiated power is 30 % up)
+- Added: the fire lights everything round it: a point light at the glow-weighted centre of the cloud, in its mean black-body colour, falling with the square of the distance, on the ground, the car and the dust, with its highlight on glossy surfaces; a bigger burn lights more, a pop less
+
 ## 2.67.1 - a reverse selector for the automatic
 
 - Added: a "D / R" button in the automatic (right of the gearbox button; hidden in the manual): in R the gas pedal drives backwards, so the reverse no longer needs a stop and a negative throttle first
