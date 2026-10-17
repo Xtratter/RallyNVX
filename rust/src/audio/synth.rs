@@ -23,7 +23,7 @@ pub struct Synth {
     gurgle: f32, squeal: f32, voice: EngineVoice,
     f_roll: [OnePole; 4], f_roll_w: [OnePole; 4], f_sq1: [OnePole; 4], f_sq2: [OnePole; 4], f_wind: OnePole, f_wind_r: OnePole,
     voices: [Voice; MAX_VOICES],
-    scene: Scene, emitters: Vec<Emitter>, block: usize, wind_k: f32, lp_wind: [OnePole; 2], reverb: Reverb, burned_pub: f64, load: f32,
+    scene: Scene, emitters: Vec<Emitter>, block: usize, wind_k: f32, lp_wind: [OnePole; 2], reverb: Reverb, burned_pub: f64, out_pub: (f64, f64, f64), load: f32,
 }
 
 /// What the sources emit at one instant, before the room and the listener's head: the exhaust, the engine bay, the four tyres, the car's body (the one-shots) and the wind at the listener's ears.
@@ -47,7 +47,7 @@ impl Synth {
             f_roll: [OnePole::default(); 4], f_roll_w: [OnePole::default(); 4], f_sq1: [OnePole::default(); 4], f_sq2: [OnePole::default(); 4],
             f_wind: OnePole::default(), f_wind_r: OnePole::default(),
             voices: [Voice::default(); MAX_VOICES],
-            scene: Scene::default(), emitters: (0..N_SRC).map(|_| Emitter::new()).collect(), block: 0, wind_k: 1.0, lp_wind: [OnePole::default(); 2], reverb: Reverb::new(), burned_pub: 0.0, load: 0.0,
+            scene: Scene::default(), emitters: (0..N_SRC).map(|_| Emitter::new()).collect(), block: 0, wind_k: 1.0, lp_wind: [OnePole::default(); 2], reverb: Reverb::new(), burned_pub: 0.0, out_pub: (0.0, 0.0, 0.0), load: 0.0,
         }
     }
 
@@ -64,6 +64,8 @@ impl Synth {
     }
 
     /// The fuel (mol) burnt in the exhaust since the last call.
+    /// The gas that has left the exhaust since the last call: (moles, mole-kelvins, moles of unburnt fuel).
+    pub fn take_exhaust_delta(&mut self) -> (f64, f64, f64) { let e = &self.voice.engine; let (m, h, f) = (e.out_moles, e.out_heat, e.out_fuel); let d = ((m - self.out_pub.0).max(0.0), (h - self.out_pub.1).max(0.0), (f - self.out_pub.2).max(0.0)); self.out_pub = (m, h, f); d }
     pub fn take_burned_delta(&mut self) -> f64 { let b = self.voice.engine.exhaust_burned; let d = (b - self.burned_pub).max(0.0); self.burned_pub = b; d }
 
     /// The revs of the simulated engine (rpm).

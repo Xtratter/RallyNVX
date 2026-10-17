@@ -109,11 +109,23 @@ pub fn render_into(out: &mut [i16]) {
     for e in &pending.events { s.push(*e); }
     s.render(out);
     BURNED.fetch_add((s.take_burned_delta() * 1e9) as u64, std::sync::atomic::Ordering::Relaxed);
+    let (m, h, f) = s.take_exhaust_delta();
+    EXH_MOLES.fetch_add((m * 1e9) as u64, std::sync::atomic::Ordering::Relaxed); EXH_HEAT.fetch_add((h * 1e9) as u64, std::sync::atomic::Ordering::Relaxed); EXH_FUEL.fetch_add((f * 1e9) as u64, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// The fuel (mol) that burnt in the engine model's exhaust since the last call: the renderer turns it into the fire at the tail pipe.
 pub fn take_burned() -> f32 { BURNED.swap(0, std::sync::atomic::Ordering::Relaxed) as f32 * 1e-9 }
 static BURNED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static EXH_MOLES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static EXH_HEAT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static EXH_FUEL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The gas that has left the engine model's exhaust since the last call: (moles, the mean temperature in K, moles of unburnt fuel among them): the renderer makes the plume at the tail pipe of it.
+pub fn take_exhaust() -> (f32, f32, f32) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let (m, h, f) = (EXH_MOLES.swap(0, Relaxed) as f64 * 1e-9, EXH_HEAT.swap(0, Relaxed) as f64 * 1e-9, EXH_FUEL.swap(0, Relaxed) as f64 * 1e-9);
+    (m as f32, if m > 1e-12 { (h / m) as f32 } else { 300.0 }, f as f32)
+}
 
 #[cfg(test)]
 #[path = "synth_tests.rs"]

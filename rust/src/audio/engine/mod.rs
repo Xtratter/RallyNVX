@@ -93,6 +93,8 @@ pub struct Engine {
     pub turbo_omega: f64, pub wastegate: f64,
     /// The fuel (mol) that has burnt in the exhaust so far: the pops and the anti-lag's fire.
     pub exhaust_burned: f64,
+    /// What has left the collector for the open air so far: the moles, the moles times the temperature (K) and the moles of unburnt fuel among them (the smoke at the tail pipe).
+    pub out_moles: f64, pub out_heat: f64, pub out_fuel: f64,
     /// The air flowing back through the compressor (mol/s, negative when it runs backwards: surge).
     pub surge_flow: f64,
     /// The air blown off by the blow-off valve (mol/s) in the last step.
@@ -106,7 +108,7 @@ impl Engine {
     pub fn new(spec: EngineSpec) -> Engine {
         let cyl = (0..spec.cylinders).map(|_| Cylinder { gas: Gas::air(spec.displacement() / spec.cylinders as f64 / (spec.compression - 1.0), P_ATM, T_ATM), runner: Gas::air(spec.runner, P_ATM, T_ATM), burn: Burn::default(), angle: 0.0, als_adv: -80.0, als_skip: false }).collect();
         Engine { spec, cyl, plenum: Gas::air(spec.plenum, P_ATM, T_ATM), collector: Gas::air(spec.collector, P_ATM, T_ATM), atmosphere: Gas::air(1000.0, P_ATM, T_ATM), comp: Gas::air(1000.0, P_ATM, 320.0), charge: Gas::air(spec.charge, P_ATM, T_ATM),
-            theta: 0.0, omega: 0.0, idle_i: 0.0, fuel_cut: false, controls: Controls::default(), gas_torque: 0.0, clutch_torque: 0.0, turbo_omega: 2500.0, wastegate: 0.0, bov_flow: 0.0, surge_flow: 0.0, exhaust_burned: 0.0, rng: 0x2468_ACE1, air_flow: 0.0 }
+            theta: 0.0, omega: 0.0, idle_i: 0.0, fuel_cut: false, controls: Controls::default(), gas_torque: 0.0, clutch_torque: 0.0, turbo_omega: 2500.0, wastegate: 0.0, bov_flow: 0.0, surge_flow: 0.0, exhaust_burned: 0.0, out_moles: 0.0, out_heat: 0.0, out_fuel: 0.0, rng: 0x2468_ACE1, air_flow: 0.0 }
     }
 
     pub fn rpm(&self) -> f64 { self.omega * 60.0 / TAU }
@@ -269,7 +271,11 @@ impl Engine {
     /// The boost over the atmosphere before the throttle (bar).
     pub fn boost_bar(&self) -> f64 { (self.charge.pressure() - P_ATM) / 1e5 }
 
-    fn collector_to_atmosphere(&mut self, dt: f64) { flow(&mut self.collector, &mut self.atmosphere, self.spec.outlet_area, dt); }
+    fn collector_to_atmosphere(&mut self, dt: f64) {
+        let (t, fuel_share) = (self.collector.temperature(), if self.collector.n > 1e-12 { self.collector.fuel / self.collector.n } else { 0.0 });
+        let dn = flow(&mut self.collector, &mut self.atmosphere, self.spec.outlet_area, dt).max(0.0);
+        self.out_moles += dn; self.out_heat += dn * t; self.out_fuel += dn * fuel_share;
+    }
 }
 
 /// The effective flow area of a pair of valves of diameter `dia` at the lift fraction `l`.
