@@ -105,3 +105,17 @@ impl Car {
         assert!(o.force.is_finite() && o.rpm.is_finite() && o.rpm >= 0.0 && o.rpm < 12000.0 && o.torque.is_finite(), "step {k}: {o:?}");
     }
 }
+
+#[test] fn the_automatic_has_a_reverse_selector_and_a_car_rolling_back_pulls_forward_when_the_gas_is_pressed() {
+    // R chosen: the gas drives backwards from a standstill
+    let mut c = Car::new(); c.run(0.0, 1.0); c.dt.reverse_sel = true;
+    c.run(0.6, 4.0);
+    assert!(c.v < -2.0 && c.dt.gear == -1, "R: backing with the gas: {} m/s, gear {}", c.v, c.dt.gear);
+    // D chosen while the car rolls backwards: the gas takes the first gear at once and the force is forward
+    let mut d = Car::new(); d.dt.reverse_sel = false; d.v = -2.5; d.run(0.0, 0.1);
+    let o = d.run(0.8, 0.3);
+    assert!(o.gear >= 1 && o.force > 500.0, "D while rolling back: gear {} force {} N", o.gear, o.force);
+    assert!(d.v > -2.5, "the car slows its roll back: {}", d.v);
+    // D and no gas while rolling back: it stays in reverse until it stops (no lurch), and the negative throttle still reverses at rest
+    let mut e = Car::new(); e.run(0.0, 0.5); e.run(-1.0, 3.0); assert_eq!(e.dt.gear, -1);
+}

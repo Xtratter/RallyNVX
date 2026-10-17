@@ -72,7 +72,7 @@ mod game {
         director: crate::audio::Director,
         car: crate::game::vehicle::VehicleSpec, garage: bool,
         dust_level: i32,
-        auto_fallback: bool, monitor: crate::game::rendermode::FallbackMonitor, fell_back: bool, manual: bool, clutch: f32,
+        auto_fallback: bool, monitor: crate::game::rendermode::FallbackMonitor, fell_back: bool, manual: bool, clutch: f32, reverse: bool,
     }
 
     impl Game {
@@ -80,7 +80,7 @@ mod game {
             let seed = super::level_seed(seed);
             Game { world: World::with_roads(seed, crate::game::vehicle::VehicleSpec::default_car()), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::default_car(), garage: false, dust_level: 1, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false, manual: false, clutch: 0.0 }
+                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::default_car(), garage: false, dust_level: 1, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false, manual: false, clutch: 0.0, reverse: false }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
@@ -100,6 +100,8 @@ mod game {
         /// The driver shifts (+1 up, -1 down), picks the manual or the automatic and works the clutch pedal (0 up .. 1 down).
         pub fn shift(&mut self, dir: i32) { self.world.drivetrain.shift(dir); }
         pub fn set_manual(&mut self, on: bool) { self.manual = on; self.world.manual = on; }
+        /// The automatic's selector: false drive, true reverse.
+        pub fn set_reverse(&mut self, on: bool) { self.world.drivetrain.reverse_sel = on; self.reverse = on; }
         pub fn set_clutch(&mut self, pedal: f32) { self.clutch = pedal; self.world.drivetrain.set_clutch(pedal); }
         pub fn camera_release(&mut self) { self.world.cam.set_dragging(false); }
         /// The camera view (see `CamView`), its distance scale or zoom and its height or tilt offset.
@@ -168,7 +170,7 @@ mod game {
             if self.garage {
                 self.world.step_garage(dt.clamp(0.0, 0.1));
             } else if !self.paused {
-                self.world.manual = self.manual; self.world.drivetrain.set_clutch(self.clutch);   // a new level makes a new world: the driver's choice goes with the game
+                self.world.manual = self.manual; self.world.drivetrain.set_clutch(self.clutch); self.world.drivetrain.reverse_sel = self.reverse;   // a new level makes a new world: the driver's choice goes with the game
                 for _ in 0..step_budget(&mut self.acc, dt, 6) {
                     self.world.step(&self.input, STEP);
                     self.input.reset = false;

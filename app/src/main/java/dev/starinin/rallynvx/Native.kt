@@ -85,6 +85,7 @@ object Native {
     @JvmStatic external fun gameStats(): FloatArray
     @JvmStatic external fun gameShift(dir: Int)   // the manual transmission: +1 up, -1 down
     @JvmStatic external fun gameTestTrack()   // a flat sheet of tarmac instead of a level
+    @JvmStatic external fun gameReverse(on: Int)   // the automatic's selector: 0 drive, 1 reverse
     @JvmStatic external fun gameGearMode(manual: Int)   // 0 automatic, 1 manual
     @JvmStatic external fun gameClutch(pedal: Float)   // the clutch pedal, 0 up .. 1 down
     @JvmStatic external fun gameCameraReset()   // a double tap: the camera back to its default

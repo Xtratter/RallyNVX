@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.67.1 - a reverse selector for the automatic
+
+- Added: a "D / R" button in the automatic (right of the gearbox button; hidden in the manual): in R the gas pedal drives backwards, so the reverse no longer needs a stop and a negative throttle first
+- Fixed: a car that rolls backwards in D waited for a full stop before the gas worked. Now the gas takes the first gear at once (the clutch pulls the car forward and slows the roll back); the reverse by the negative throttle at a standstill and the autopilot work as before
+
 ## 2.67.0 - real fire at the tail pipe, a smooth engine
 
 - Changed: the yellow cone is gone, the exhaust now throws real fire. The fuel that burns in the engine model's exhaust (its amount in moles, counted on the audio thread) comes out of the tail pipe as parcels of burning gas. Each one has its own temperature (about 2000 K), speed (25 to 70 m/s from the pipe's overpressure, more for a bigger burn, on top of the car's own speed), size (the volume of the hot gas, `n R T / p`: a pop of 0.002 mol is a few centimetres, a spark cut's 0.02 mol a fireball of ten) and age. They slow down by drag (a moving car leaves the fire behind in the still air), rise as hot gas does, spread as the jet takes in air and cool in the air's mixing; the colour is that of a black body at the parcel's temperature (white-yellow, orange, dull red, then out) and the glow goes with the fourth power of the temperature and thins as the parcel spreads. Drawn as additive, ragged, flickering sprites with a hotter, whiter heart; the fire lasts a quarter of a second
