@@ -2,6 +2,13 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.69.0 - the car menu (aids and tuning), an instrument cluster, and a start that cannot hang on the sound
+
+- Added: the **Car** button (top left, right of D / R) opens a menu. On the left the driver aids, each on or off: anti-lag, ABS, traction control, the downshift blip, the flat shift (spark cut), the rev limiter and the blow-off valve. On the right the power of every part in steps of 10 %: engine power (30-200 %), turbo boost (0-200 %), brakes (30-250 %), tyre grip (60-150 %), suspension (50-180 %), downforce (0-300 %) and the final drive (70-130 %). It is kept, "Reset tuning" puts everything back. No sliders: a minus, the value and a plus
+- Added: ABS and traction control that mean something. Without them a wheel braked past the peak of its grip locks and slides on 78 % of it, a wheel driven past the peak spins on 62 % of it, in every direction, so the stops get longer, the cars loses the steering in a hard stop and a launch loses time. Without the limiter the engine goes on until its own power gives out (about 9000 rpm); without the flat shift or the blip the shifts are plain; without the blow-off valve the pressure goes back through the compressor and the turbo flutters
+- Added: the instrument cluster at the bottom: a tachometer (0-8000 rpm, the needle, the red zone from 7000), a boost gauge on an inner arc (0-0.6 bar, with the number), the gear in the middle with the mode
+- Fixed: a start that could hang for ever on a slow phone. The audio thread held the synth's lock while it rendered a block and the game thread waited for the same lock every frame, so a phone that could barely keep up starved the game. The game now only leaves its message in a lock that is held for a moment; and when a block takes over half of its own length the engine is simulated with one step per sample instead of two
+- Added: for a start that does not work: after 25 s on the loading screen, or when the game thread dies, a "Copy the log" button (the device, the version, the error, the tail of the app's log) to paste where it can be read; a crash of the last run is shown on the next start in the main menu with a "Copy" button
 ## 2.68.0 - the exhaust fire as a dense cloud that lights its surroundings
 
 - Changed: the fire is no longer a spray of particles but a thick cloud, as dense as dust: up to 90 overlapping puffs (0.10 to 0.40 m wide, a body that is dense to its edge), kept at the tail pipe (they leave at 6 to 30 m/s and the air stops them within a metre or two), burning for about a third of a second and glowing stronger (the radiated power is 30 % up)

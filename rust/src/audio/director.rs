@@ -113,7 +113,7 @@ impl Director {
         p.machine = Machine::Car;
         // the engine: the game's drivetrain decides the revs, the throttle and the spark cut; the engine model on the audio thread follows them (locked to the revs) and makes the sound
         let d = w.drivetrain.last;
-        p.drive_rpm = d.rpm; p.clutch = 1.0; p.cut = d.cut && !d.stalled; p.als = true; p.stalled = d.stalled;   // a rally car: the anti-lag is always armed
+        p.drive_rpm = d.rpm; p.clutch = 1.0; p.cut = d.cut && !d.stalled; p.als = w.assists.als; p.no_bov = !w.assists.bov; p.stalled = d.stalled;
         p.load = d.throttle;
         p.load = throttle.abs();
         p.roll = if grounded { frac.sqrt() } else { 0.0 };

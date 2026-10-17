@@ -38,6 +38,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var gearView: GearView? = null
     private var gearBtn: View? = null
     private var reverseBtn: View? = null
+    private var carPanel: View? = null
+    private var diagBtn: View? = null
+    private var loadStartMs = 0L
     private var manual = false
     private var reverseSel = false
     private var todMode = 0   // the quick time-of-day switch (see TimeOfDay); every launch starts on Auto
@@ -75,8 +78,19 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             if ((s[29] > 0.5f) != autopilotOn) { autopilotOn = s[29] > 0.5f; showAutopilot() }   // it switches itself off at the finish
             if (autopilotOn && s[29].toInt() - 1 != autopilotStyle) { autopilotStyle = (s[29].toInt() - 1).coerceIn(0, 3); showAutopilot() }
             if (rallyIdx > 0) updateRally(s)
-            if (running) loadingView?.takeIf { it.visibility == View.VISIBLE }?.report(Native.gameLoadProgress())
-            gearView?.update(s[80].toInt(), s[81], s[82] > 0.5f, s[83] > 0.5f)
+            if (running) loadingView?.takeIf { it.visibility == View.VISIBLE }?.let { lv ->
+                val packed = Native.gameLoadProgress(); lv.report(packed)
+                // a start that takes too long, or a dead game thread: say what is known and offer the log to copy
+                val slow = System.currentTimeMillis() - loadStartMs > 25000
+                if (LoadMath.failed(packed)) lv.setNote(Native.gameLastError()) else if (slow) lv.setNote(t("Slow start: tap the button to copy the log", "Долгая загрузка: нажмите кнопку, чтобы скопировать журнал"))
+                if ((slow || LoadMath.failed(packed)) && diagBtn == null) {
+                    val act = this@GameActivity; val dpx = resources.displayMetrics.density
+                    diagBtn = M3Widgets.button(act, t("Copy the log", "Скопировать журнал"), M3Widgets.ButtonKind.FILLED) {
+                        Diag.copy(act, Diag.report(act)); android.widget.Toast.makeText(act, t("Copied: paste it into the chat", "Скопировано: вставьте в чат"), android.widget.Toast.LENGTH_LONG).show()
+                    }.also { root.addView(it, FrameLayout.LayoutParams((220f * dpx).toInt(), (52f * dpx).toInt(), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { setMargins(0, 0, 0, (40f * dpx).toInt()) }) }
+                }
+            }
+            gearView?.update(s[80].toInt(), s[81], s[82] > 0.5f, s[83] > 0.5f, s[86])
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
         }
@@ -122,6 +136,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             reverseSel = !reverseSel; if (running) Native.gameReverse(if (reverseSel) 1 else 0); updateReverseBtn()
         }.also { root.addView(it, FrameLayout.LayoutParams(px(56f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(216f), px(140f), 0, 0) }) }
         updateReverseBtn()
+        // the car's menu: the driver aids on and off, and the power of every part
+        M3Widgets.button(this, t("Car", "Машина"), M3Widgets.ButtonKind.TONAL) { showCarPanel() }
+            .also { root.addView(it, FrameLayout.LayoutParams(px(108f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(280f), px(140f), 0, 0) }) }
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
         fun button(label: String, gravity: Int, top: Float, end: Float, w: Float = 120f, onClick: () -> Unit) =
@@ -381,7 +398,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         intent.getIntExtra("airflow", 0).let { if (it > 0) Native.gameAirflowDebug(it) }   // debug/test: the airflow slice
         Native.gameTimeOfDay(intent.getFloatExtra("tod", -1f))   // debug/test: time of day; a launch without it clears the previous freeze (the switch starts on Auto)
         Native.gameCacheDir(cacheDir.absolutePath)
-        loadingView?.restart()
+        loadingView?.restart(); loadStartMs = System.currentTimeMillis(); diagBtn?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }; diagBtn = null
         Native.gameStart(h.surface, w, hh, seed, profile, false)
         Native.gameQuality(Quality.index(this))
         intent.getIntExtra("dust", -1).let { if (it >= 0) Controls.setDust(this, it) }   // debug/test: the dust level (0 off, 1 normal, 2 lots)
@@ -397,6 +414,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Native.gameCameraView(camView, camDist, camHeight)
         Native.gameGearMode(if (manual) 1 else 0)
         Native.gameReverse(if (reverseSel && !manual) 1 else 0)
+        Native.gameAssists(Controls.assists(this)); for (i in 0 until CarMath.PARTS) Native.gameTuning(i, Controls.tuning(this, i))
         if (intent.getBooleanExtra("testtrack", false)) Native.gameTestTrack()   // from the main menu: a flat sheet of tarmac to try the sound and the controls
         running = true
         sentRender = -1; sentAuto = -1; sentRev = -1; applyRender()   // after `running` is set: the first send must not be skipped
@@ -478,6 +496,53 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         p.tag = { refreshers.forEach { it() } }
         p.visibility = View.VISIBLE
         settingsPanel = p
+    }
+
+    /** The car's menu: on the left the aids (a tap switches each on or off), on the right the power of every part (steps of 10 %, the tuning's range in the engine). */
+    private fun showCarPanel() {
+        carPanel?.let { it.visibility = View.VISIBLE; (it.tag as? () -> Unit)?.invoke(); return }
+        val dp = resources.displayMetrics.density
+        fun px(v: Float) = (v * dp).toInt()
+        val en = t("en", "ru") == "en"
+        val refreshers = ArrayList<() -> Unit>()
+        val colA = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val colB = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        colA.addView(label(t("Driver aids", "Системы"), 17f)); colB.addView(label(t("Power of the parts", "Мощность узлов"), 17f))
+        for (bit in 0 until CarMath.AIDS) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            r.addView(TextView(this).apply { text = CarMath.aidName(bit, en); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+            fun lab() = if (CarMath.aidOn(Controls.assists(this), bit)) t("On", "Вкл") else t("Off", "Выкл")
+            val b = M3Widgets.button(this, lab(), M3Widgets.ButtonKind.TONAL) {}
+            b.setOnClickListener { val m = CarMath.toggle(Controls.assists(this), bit); Controls.setAssists(this, m); if (running) Native.gameAssists(m); (b as? TextView)?.text = lab() }
+            refreshers.add { (b as? TextView)?.text = lab() }
+            r.addView(b, LinearLayout.LayoutParams(px(90f), px(42f)))
+            colA.addView(r, LinearLayout.LayoutParams(px(330f), -2).apply { topMargin = px(6f) })
+        }
+        for (i in 0 until CarMath.PARTS) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            r.addView(TextView(this).apply { text = CarMath.partName(i, en); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+            val v = TextView(this).apply { textSize = 14f; setTextColor(M3.TEXT); gravity = Gravity.CENTER }
+            fun show() { v.text = CarMath.percent(Controls.tuning(this, i)) }
+            fun change(dir: Int) { val nv = CarMath.step(i, Controls.tuning(this, i), dir); Controls.setTuning(this, i, nv); if (running) Native.gameTuning(i, nv); show() }
+            show(); refreshers.add { show() }
+            r.addView(M3Widgets.button(this, "−", M3Widgets.ButtonKind.TONAL) { change(-1) }, LinearLayout.LayoutParams(px(44f), px(42f)))
+            r.addView(v, LinearLayout.LayoutParams(px(64f), -2))
+            r.addView(M3Widgets.button(this, "+", M3Widgets.ButtonKind.TONAL) { change(1) }, LinearLayout.LayoutParams(px(44f), px(42f)))
+            colB.addView(r, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
+        }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; addView(colA, LinearLayout.LayoutParams(px(330f), -2)); addView(colB, LinearLayout.LayoutParams(px(300f), -2).apply { marginStart = px(20f) }) }
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        content.addView(label(t("Car", "Машина"), 22f))
+        content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(250f)))
+        val p = panel(content)
+        content.addView(M3Widgets.button(this, t("Reset tuning", "Сбросить настройки"), M3Widgets.ButtonKind.TONAL) {
+            for (i in 0 until CarMath.PARTS) { Controls.setTuning(this, i, 1f); if (running) Native.gameTuning(i, 1f) }
+            Controls.setAssists(this, CarMath.ALL_AIDS); if (running) Native.gameAssists(CarMath.ALL_AIDS); refreshers.forEach { it() }
+        }, LinearLayout.LayoutParams(px(240f), px(44f)).apply { topMargin = px(8f) })
+        content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(8f) })
+        p.tag = { refreshers.forEach { it() } }
+        p.visibility = View.VISIBLE
+        carPanel = p
     }
 
     private fun weatherLabel() = t("Weather: ", "Погода: ") + WeatherMode.name(Controls.weather(this), java.util.Locale.getDefault().language != "ru")

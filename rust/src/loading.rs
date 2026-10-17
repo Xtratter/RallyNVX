@@ -13,6 +13,12 @@ pub const FIRST_FRAME: u32 = 6;
 /// The game thread died (a panic): the UI says so instead of waiting for ever.
 pub const FAILED: u32 = 99;
 
+static ERROR: Mutex<String> = Mutex::new(String::new());
+
+/// The message of the panic that killed the game thread (for the loading screen and the log the player can copy).
+pub fn set_error(m: &str) { *ERROR.lock().unwrap_or_else(|e| e.into_inner()) = m.chars().take(400).collect(); }
+pub fn last_error() -> String { ERROR.lock().unwrap_or_else(|e| e.into_inner()).clone() }
+
 static STATE: AtomicU32 = AtomicU32::new(0);
 static T0: Mutex<Option<Instant>> = Mutex::new(None);
 

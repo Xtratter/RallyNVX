@@ -32,6 +32,8 @@ pub struct World {
     pub cam: FollowCam,
     /// The engine, the clutch and the gearbox (see `drivetrain`), and whether the driver chose the manual (the autopilot always drives in the automatic).
     pub drivetrain: super::drivetrain::Drivetrain, pub manual: bool,
+    /// The aids that can be switched off and the tuning of the car's parts (see `assists`); `tuned` is the car with the tuning applied.
+    pub assists: super::assists::Assists, pub tuning: super::assists::Tuning, tuned: (super::assists::Tuning, VehicleSpec), tuned_dirty: bool,
     pub time: f32,
     pub cities: Vec<City>,
     /// The loose layer of the special stage (worn by the wheels, reset with the level).
@@ -81,7 +83,7 @@ impl World {
         let cam = FollowCam::new(&vehicle);
         let cities = terrain.sites().iter().map(|s| City::build(*s, seed)).collect();
         let loose = terrain.roads().map_or_else(LooseMap::empty, LooseMap::new);
-        World { terrain, vehicle, cam, drivetrain: super::drivetrain::Drivetrain::new(), manual: false, time: 0.0, cities, loose, dust: Dust::new(seed), climate: super::weather::Climate::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, rally: None, signs_on: true, props: HashMap::new() }
+        World { terrain, vehicle, cam, drivetrain: super::drivetrain::Drivetrain::new(), manual: false, assists: Default::default(), tuning: Default::default(), tuned: (Default::default(), car), tuned_dirty: true, time: 0.0, cities, loose, dust: Dust::new(seed), climate: super::weather::Climate::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, rally: None, signs_on: true, props: HashMap::new() }
     }
 
     /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
@@ -197,7 +199,7 @@ impl World {
     pub fn swap_car(&mut self, car: VehicleSpec) {
         let f = self.vehicle.forward();
         let (x, z) = (self.vehicle.pos.x, self.vehicle.pos.z);
-        self.car_spec = car;
+        self.car_spec = car; self.tuned_dirty = true;
         self.vehicle = Vehicle::new(car, v3(x, self.terrain.height(x, z) + 1.1, z), f.x.atan2(f.z));
         self.reset_cam();
     }
@@ -292,6 +294,14 @@ impl World {
         if self.autopilot.is_some() { if let Some(r) = self.rally.as_mut() { r.run.assisted = true; } }
         self.climate.step(dt);
         self.vehicle.wet = self.climate.weather().wet;
+        // the aids and the tuning: the tuned car (the garage's car with its brakes, tyres, springs and downforce scaled), the drivetrain's options, ABS and traction control
+        {
+            if self.tuned_dirty || self.tuned.0 != self.tuning { self.tuned = (self.tuning, self.tuning.apply(&self.car_spec)); self.tuned_dirty = false; }
+            self.vehicle.spec = self.tuned.1;
+            let (a, t) = (self.assists, self.tuning);
+            self.drivetrain.opts = super::drivetrain::DriveOpts { engine: t.engine, turbo: t.turbo, gearing: t.gearing, flat_shift: a.flat_shift, blip: a.blip, limiter: a.limiter };
+            self.vehicle.abs_on = a.abs; self.vehicle.tc_on = a.tc;
+        }
         // the drivetrain: the engine against the clutch and the gear gives the force at the wheels (the autopilot always drives the automatic)
         {
             use super::drivetrain::{DriveIn, Mode};

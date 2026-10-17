@@ -85,6 +85,9 @@ object Native {
     @JvmStatic external fun gameStats(): FloatArray
     @JvmStatic external fun gameShift(dir: Int)   // the manual transmission: +1 up, -1 down
     @JvmStatic external fun gameTestTrack()   // a flat sheet of tarmac instead of a level
+    @JvmStatic external fun gameAssists(mask: Int)   // the driver aids as bits (see CarMath)
+    @JvmStatic external fun gameTuning(part: Int, v: Float)   // one part of the tuning as a multiplier (see CarMath)
+    @JvmStatic external fun gameLastError(): String   // the panic that stopped the game thread, if it did
     @JvmStatic external fun gameReverse(on: Int)   // the automatic's selector: 0 drive, 1 reverse
     @JvmStatic external fun gameGearMode(manual: Int)   // 0 automatic, 1 manual
     @JvmStatic external fun gameClutch(pedal: Float)   // the clutch pedal, 0 up .. 1 down

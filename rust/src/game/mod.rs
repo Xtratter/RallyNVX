@@ -15,6 +15,7 @@ pub mod desktop;
 pub mod garage;
 pub mod drivetrain;
 pub mod aero;
+pub mod assists;
 pub mod autopilot;
 pub mod airflow;
 pub mod grip;

@@ -12,6 +12,7 @@ class LoadingView(ctx: Context) : View(ctx) {
     private var target = 0f
     private var shown = 0f
     private var text = ""
+    private var note = ""
     private var last = 0L
     private var fading = false
     private val dp = resources.displayMetrics.density
@@ -24,6 +25,9 @@ class LoadingView(ctx: Context) : View(ctx) {
 
     /** The loading starts again (the game restarts after the screen came back). */
     fun restart() { animate().cancel(); fading = false; target = 0f; shown = 0f; last = 0L; text = ""; visibility = VISIBLE; alpha = 1f; invalidate() }
+
+    /** A second line under the step (the game's error, a hint). */
+    fun setNote(s: String) { if (s != note) { note = s; invalidate() } }
 
     fun report(packed: Int) {
         target = LoadMath.percent(packed) / 100f
@@ -48,6 +52,7 @@ class LoadingView(ctx: Context) : View(ctx) {
         c.drawRoundRect(RectF(x, y, x + bw, y + bh), bh / 2, bh / 2, track)
         if (shown > 0.005f) c.drawRoundRect(RectF(x, y, x + bw * shown, y + bh), bh / 2, bh / 2, fill)
         c.drawText(text, w / 2, y + bh + 26 * dp, sub)
+        if (note.isNotEmpty()) c.drawText(note.take(70), w / 2, y + bh + 46 * dp, sub)
         if (visibility == VISIBLE && (shown < target - 0.001f || target < 1f)) postInvalidateOnAnimation()
     }
 }
