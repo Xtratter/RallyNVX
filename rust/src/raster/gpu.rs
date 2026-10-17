@@ -42,10 +42,10 @@ struct Uni {
     wp: [[f32; 4]; 2], wax: [[f32; 4]; 2], wrs: [[f32; 4]; 2], wph: [f32; 4],
     /// The glass film: accumulated water, evaporated amount (mm^2), the radius above which a static drop would run (mm), the number of running drops; then the running drops:
     /// position (object space) + radius (m), and direction + tail length (m).
-    film: [f32; 4], sl: [[f32; 4]; 64],
+    film: [f32; 4], fire_p: [f32; 4], fire_c: [f32; 4], sl: [[f32; 4]; 64],
 }
 /// The wipers for the glass shader (object space of the car): spindle and reach, sweep axis, parked direction of each, and the wipe's phase (0..1) with a flag for "working".
-const _: () = assert!(std::mem::size_of::<Uni>() == 1664);
+const _: () = assert!(std::mem::size_of::<Uni>() == 1696);
 
 /// One instance: model matrix, per-axis scale (for normals), colour. Matches the instance vertex layout (96 bytes).
 #[repr(C)]
@@ -622,6 +622,21 @@ impl Raster {
                 nsl += 1;
             }
         }
+        // the fire: the fuel that burnt in the engine's exhaust since the last frame comes out of the tail pipe as a jet and a fireball (see `fire`)
+        let fdt = if wv.time > self.fire_time { (wv.time - self.fire_time).min(0.05) } else { 0.0 };
+        self.fire_time = wv.time;
+        {
+            let burned = crate::audio::take_burned();
+            if let (Some(tip), true) = (self.car_exhaust, burned > 0.0) {
+                let (bq, bp) = vm::car_body_pose(wv.vehicle);
+                self.fire.emit(bp + bq.rotate(v3(tip[0], tip[1], tip[2])), bq.rotate(v3(0.0, 0.0, -1.0)), burned, wv.vehicle.vel);
+            }
+            self.fire.update(fdt, V3::ZERO);
+        }
+        let finst = if self.fire.is_active() && (wv.cam_pos - wv.vehicle.pos).len() < 120.0 { self.fire.instances() } else { Vec::new() };
+        if !finst.is_empty() { self.queue.write_buffer(&self.flame_buf, 0, bytemuck::cast_slice(&finst)); }
+        let flame_n = finst.len() as u32;
+        let (fire_p, fire_c) = self.fire.light();
         let film_u = [self.film.water, self.film.evap, rcrit, nsl as f32];
         let wv4 = |k: usize, f: fn(&(V3, V3, V3, f32)) -> ([f32; 3], f32)| self.car_wipers[k].as_ref().map_or([0.0; 4], |w| { let (a, b) = f(w); [a[0], a[1], a[2], b] });
         let uni = Uni { vp: flatten(vp), light_vp: flatten(light_vp), inv_vp: flatten(inverse(vp)),
@@ -640,7 +655,7 @@ impl Raster {
             lamps: [wv.lights.head as u8 as f32, wv.lights.brake as u8 as f32, wv.lights.reverse as u8 as f32, (wv.lamps.head[0] - wv.lamps.head[1]).len() * 0.5], rt: [wv.lamps.right.x, wv.lamps.right.y, wv.lamps.right.z, vm::dash_rpm(wv.vehicle.speed(), wv.vehicle.spec.max_speed)], susp: vm::susp_offsets(wv.vehicle),
             wx: [wv.weather.rain, wv.weather.wet, wv.weather.cloud, crate::game::weather::disc_visibility(wv.weather)], cr: [wv.vehicle.pos.x, wv.vehicle.pos.y, wv.vehicle.pos.z, wv.time],
             wp: [0, 1].map(|k| wv4(k, |w| ([w.0.x, w.0.y, w.0.z], w.3))), wax: [0, 1].map(|k| wv4(k, |w| ([w.1.x, w.1.y, w.1.z], 0.0))).map(|mut a| { a[3] = self.car_sweep; a }), wrs: [0, 1].map(|k| wv4(k, |w| ([w.2.x, w.2.y, w.2.z], 0.0))),
-            film: film_u, sl,
+            film: film_u, fire_p, fire_c, sl,
             wph: [self.wiper_state.phase, (wiping && self.car_wipers[0].is_some()) as u8 as f32, self.wiper_state.wipe, self.wiper_state.period] };
         self.queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&uni));
 
@@ -794,20 +809,6 @@ impl Raster {
         if !mall.is_empty() { self.queue.write_buffer(&self.mbuf, 0, bytemuck::cast_slice(&mall)); }
         let dinst = dustgen::instances(&wv.dust, wv.cam_pos);
         if !dinst.is_empty() { self.queue.write_buffer(&self.dust_buf, 0, bytemuck::cast_slice(&dinst)); }
-        // the fire: the fuel that burnt in the engine's exhaust since the last frame comes out of the tail pipe as a jet and a fireball (see `fire`)
-        let fdt = if wv.time > self.fire_time { (wv.time - self.fire_time).min(0.05) } else { 0.0 };
-        self.fire_time = wv.time;
-        {
-            let burned = crate::audio::take_burned();
-            if let (Some(tip), true) = (self.car_exhaust, burned > 0.0) {
-                let (bq, bp) = vm::car_body_pose(veh);
-                self.fire.emit(bp + bq.rotate(v3(tip[0], tip[1], tip[2])), bq.rotate(v3(0.0, 0.0, -1.0)), burned, veh.vel);
-            }
-            self.fire.update(fdt, V3::ZERO);
-        }
-        let finst = if self.fire.is_active() && (wv.cam_pos - veh.pos).len() < 120.0 { self.fire.instances() } else { Vec::new() };
-        if !finst.is_empty() { self.queue.write_buffer(&self.flame_buf, 0, bytemuck::cast_slice(&finst)); }
-        let flame_n = finst.len() as u32;
         if wv.airflow.is_some() && self.airflow.is_none() && !self.airflow_tried {
             self.airflow_tried = true;
             self.airflow = airflow_gpu::AirflowGpu::new(&self.adapter, &self.device, self.config.format);
