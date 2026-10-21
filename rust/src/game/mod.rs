@@ -14,6 +14,7 @@ pub mod city;
 pub mod desktop;
 pub mod garage;
 pub mod drivetrain;
+pub mod shiftlogic;
 pub mod aero;
 pub mod assists;
 pub mod autopilot;

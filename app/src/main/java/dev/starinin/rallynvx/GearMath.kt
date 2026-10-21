@@ -11,6 +11,13 @@ object GearMath {
     const val BOOST_MAX = 0.6f
     /** The share of the boost arc a pressure (bar over the atmosphere) fills. */
     fun boostFraction(bar: Float): Float = if (bar.isFinite()) (bar / BOOST_MAX).coerceIn(0f, 1f) else 0f
+    /** The manual box types (0 sequential, the real car's; 1 H-pattern with a clutch) and the automatic's characters (0 comfort, 1 sport, 2 race). */
+    const val BOXES = 2
+    const val PROFILES = 3
+    fun boxName(i: Int, en: Boolean): String = if (i == 1) (if (en) "H-pattern" else "H-коробка") else (if (en) "Sequential" else "Секвентальная")
+    fun profileName(i: Int, en: Boolean): String = when (i) { 0 -> if (en) "Comfort" else "Комфорт"; 2 -> if (en) "Race" else "Гоночный"; else -> if (en) "Sport" else "Спорт" }
+    /** The next value of a cycle of `n`; a value out of range starts it again. */
+    fun next(i: Int, n: Int): Int = if (i < 0 || i >= n - 1) 0 else i + 1
     fun label(gear: Int): String = when { gear < 0 -> "R"; gear == 0 -> "N"; else -> gear.toString() }
     fun mode(manual: Boolean, en: Boolean): String = if (manual) (if (en) "manual" else "МКПП") else (if (en) "auto" else "АКПП")
     /** The share of the bar the revs fill: from 0 at a standstill to 1 at the limiter. */

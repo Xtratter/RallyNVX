@@ -90,6 +90,7 @@ object Native {
     @JvmStatic external fun gameLastError(): String   // the panic that stopped the game thread, if it did
     @JvmStatic external fun gameReverse(on: Int)   // the automatic's selector: 0 drive, 1 reverse
     @JvmStatic external fun gameGearMode(manual: Int)   // 0 automatic, 1 manual
+    @JvmStatic external fun gameGearCfg(box: Int, profile: Int)   // the manual box type (0 sequential, 1 H-pattern) and the automatic's character (0 comfort, 1 sport, 2 race)
     @JvmStatic external fun gameClutch(pedal: Float)   // the clutch pedal, 0 up .. 1 down
     @JvmStatic external fun gameCameraReset()   // a double tap: the camera back to its default
     @JvmStatic external fun gameLoadProgress(): Int   // stage << 8 | percent of the start-up

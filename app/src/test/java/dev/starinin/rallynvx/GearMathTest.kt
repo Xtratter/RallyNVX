@@ -9,4 +9,9 @@ class GearMathTest {
     @Test fun revBar() { assertEquals(0f, GearMath.revFraction(-5f), 0f); assertEquals(1f, GearMath.revFraction(9000f), 0f); assertEquals(0.5f, GearMath.revFraction(4000f), 1e-6f); assertEquals(0f, GearMath.revFraction(Float.NaN), 0f) }
     @Test fun boostArc() { assertEquals(0f, GearMath.boostFraction(-0.3f), 0f); assertEquals(0.5f, GearMath.boostFraction(0.3f), 1e-6f); assertEquals(1f, GearMath.boostFraction(2f), 0f); assertEquals(0f, GearMath.boostFraction(Float.NaN), 0f) }
     @Test fun clutchPedalFollowsTheFinger() { assertEquals(0f, GearMath.clutchFromTouch(0f, 100f), 0f); assertEquals(1f, GearMath.clutchFromTouch(100f, 100f), 0f); assertTrue(GearMath.clutchFromTouch(50f, 100f) in 0.4f..0.6f) }
+    @Test fun boxAndProfileNames() {
+        assertEquals("Sequential", GearMath.boxName(0, true)); assertEquals("H-коробка", GearMath.boxName(1, false))
+        assertEquals("Sport", GearMath.profileName(1, true)); assertEquals("Гоночный", GearMath.profileName(2, false)); assertEquals("Sport", GearMath.profileName(99, true))
+    }
+    @Test fun nextWraps() { assertEquals(1, GearMath.next(0, GearMath.BOXES)); assertEquals(0, GearMath.next(GearMath.BOXES - 1, GearMath.BOXES)); assertEquals(0, GearMath.next(-5, 3)) }
 }
