@@ -23,3 +23,17 @@ use super::*;
     assert_eq!((cfg_style(3).lat_factor, cfg_style(3).speed_cap, cfg_style(3).slide, cfg_style(3).edge_margin), (1.0, 0.8, 1.0, 2.0));
     reset_custom();
 }
+
+#[test] fn the_learned_style_holds_the_taught_numbers_inside_the_search_bounds_and_ignores_garbage() {
+    use super::super::train::{LO, HI};
+    reset_learned();
+    assert_eq!(cfg_style(4), cfg(), "before any training the learned style is the normal one");
+    set_learned(&[9.0, -1.0, 0.6, 1.0, 7.0, 0.3]);
+    let c = cfg_style(4);
+    assert_eq!((c.lat_factor, c.brake_factor), (HI[0], LO[1]), "clamped into the bounds");
+    assert!((c.offset_max - 0.6).abs() < 1e-4 && (c.look_base - 7.0).abs() < 1e-4 && c.slide == cfg().slide);
+    set_learned(&[f32::NAN, 1.0, 1.0, 1.0, 1.0, 1.0]); set_learned(&[1.0, 2.0]);
+    assert_eq!(cfg_style(4).look_base, c.look_base, "garbage and short input change nothing");
+    assert_eq!(cfg_style(3), custom());
+    reset_learned();
+}

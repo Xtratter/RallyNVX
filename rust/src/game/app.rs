@@ -124,6 +124,8 @@ mod game {
         pub fn rally(&mut self, stage: i32) { if stage < 0 { self.world.rally_stop(); } else { self.world.rally_start(stage as u32); } }
         pub fn set_signs(&mut self, on: bool) { self.world.signs_on = on; }
         pub fn set_autopilot(&mut self, style: i32) { self.world.set_autopilot_style(style); }
+        /// Starts (or stops) the autopilot's self-training for the car in the world.
+        pub fn train(&mut self, on: bool) { if on { crate::game::autopilot::job::start(self.world.car_spec, 10); } else { crate::game::autopilot::job::stop(); } }
         pub fn place_on_road(&mut self, mode: i32) -> bool { self.world.place_on_road(mode) }
         pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }
         pub fn place_in_city(&mut self) -> bool { self.world.place_in_city() }

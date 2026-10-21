@@ -82,7 +82,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             val s = Native.gameStats()
             hud.text = (if (s[27] > 0.5f) t("Raster (auto) · ", "Растр (авто) · ") else "") + "${s[1].toInt()} km/h" + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}" + (if (s[26] > 0.5f) " · " + t("hybrid", "гибрид") else "") + " · " + arrayOf(t("grass", "трава"), t("dirt", "грунт"), t("sand", "песок"), t("rock", "скала"), t("gravel", "гравий"), t("asphalt", "асфальт"), t("water", "вода")).getOrElse(s[28].toInt()) { "" }
             if ((s[29] > 0.5f) != autopilotOn) { autopilotOn = s[29] > 0.5f; showAutopilot() }   // it switches itself off at the finish
-            if (autopilotOn && s[29].toInt() - 1 != autopilotStyle) { autopilotStyle = (s[29].toInt() - 1).coerceIn(0, 3); showAutopilot() }
+            if (autopilotOn && s[29].toInt() - 1 != autopilotStyle) { autopilotStyle = (s[29].toInt() - 1).coerceIn(0, 4); showAutopilot() }
             if (rallyIdx > 0) updateRally(s)
             if (running) loadingView?.takeIf { it.visibility == View.VISIBLE }?.let { lv ->
                 val packed = Native.gameLoadProgress(); lv.report(packed)
@@ -291,6 +291,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     }
     /** Hands the own style's numbers (settings) to the game. */
     private fun sendAutopilotTune() {
+        Controls.learned(this)?.let { Native.gameSetLearned(it) }
         fun step(key: String, list: FloatArray) = list[Controls.apStep(this, key, list.size)]
         Native.gameAutopilotTune(step("ap_lat", Controls.AP_LAT), step("ap_brake", Controls.AP_BRAKE), step("ap_cut", Controls.AP_CUT), step("ap_speed", Controls.AP_SPEED), Controls.apStep(this, "ap_slide", 2).toFloat(), step("ap_edge", Controls.AP_EDGE))
     }
@@ -404,7 +405,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             r.addView(btn, LinearLayout.LayoutParams(px(150f), px(44f)))
             list.addView(r, LinearLayout.LayoutParams(px(480f), -2).apply { topMargin = px(8f) })
         }
-        val names = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"))
+        val names = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"), t("Learned", "Обученный"))
         row(t("Style", "Стиль"), { names[Controls.autopilotStyle(this)] }) { Controls.setAutopilotStyle(this, DriveMath.cycle(Controls.autopilotStyle(this), Controls.AP_STYLES)) }
         fun apRow(text: String, key: String, size: Int, show: (Int) -> String) =
             row(text, { show(Controls.apStep(this, key, size)) }) { Controls.setApStep(this, key, DriveMath.cycle(Controls.apStep(this, key, size), size)) }
@@ -414,6 +415,41 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         apRow(t("Own: corner cutting", "Свой: срезание поворотов"), "ap_cut", Controls.AP_CUT.size) { "${(Controls.AP_CUT[it] * 100).toInt()} %" }
         apRow(t("Own: slides", "Свой: заносы"), "ap_slide", 2) { if (it == 1) t("On", "Вкл") else t("Off", "Выкл") }
         apRow(t("Own: margin to the edge", "Свой: запас до края"), "ap_edge", Controls.AP_EDGE.size) { "${Controls.AP_EDGE[it]} ${t("m", "м")}" }
+        // the self-training: the autopilot drives the stage again and again in the simulation (about ten minutes) and keeps the numbers that are faster and stay on the road
+        val trainInfo = TextView(this).apply { textSize = 13f; setTextColor(Mini.TEXT2) }
+        var wasTraining = false
+        lateinit var trainBtn: TextView
+        fun trainText(): String {
+            val st = Native.gameTrainState()
+            return if (st.size >= 4 && st[0] > 0.5f) t("Stop training", "Остановить обучение") + " (${(st[1] * 100).toInt()} %)" else t("Teach the autopilot (about 10 min)", "Обучить автопилот (около 10 мин)")
+        }
+        fun pollTraining() {
+            val st = Native.gameTrainState()
+            val busy = st.size >= 4 && st[0] > 0.5f
+            if (!busy && wasTraining) {
+                val r = Native.gameTrainResult()
+                if (r.size == 6 && r.all { it.isFinite() }) {
+                    Controls.setLearned(this, r); Native.gameSetLearned(r); Controls.setAutopilotStyle(this, 4)
+                    val gain = if (st[3] > 1f) ((st[3] - st[2]) / st[3] * 100f).toInt().coerceAtLeast(0) else 0
+                    trainInfo.text = t("Learned: the stage is about $gain % cheaper (time and mistakes). The style \"Learned\" is on.", "Обучено: этап примерно на $gain % «дешевле» (время и ошибки). Включён стиль «Обученный».")
+                    changed()
+                }
+            }
+            wasTraining = busy
+            if (busy) trainInfo.text = t("Training: the best result so far is ${st[2].toInt()} (was ${st[3].toInt()})", "Обучение: лучший результат ${st[2].toInt()} (было ${st[3].toInt()})")
+            trainBtn.text = trainText()
+        }
+        trainBtn = Mini.button(this, trainText(), M3Widgets.ButtonKind.OUTLINED) {
+            val st = Native.gameTrainState(); val busy = st.size >= 4 && st[0] > 0.5f
+            if (busy) Native.gameTrain(false) else if (running) { Native.gameTrain(true); wasTraining = true }
+            pollTraining()
+        }
+        list.addView(trainBtn, LinearLayout.LayoutParams(px(480f), px(44f)).apply { topMargin = px(14f) })
+        list.addView(trainInfo, LinearLayout.LayoutParams(px(480f), -2).apply { topMargin = px(4f) })
+        var polling = false
+        fun tick() { if (autopilotPanel?.visibility == View.VISIBLE) { pollTraining(); root.postDelayed({ tick() }, 1000) } else polling = false }
+        fun startPolling() { if (!polling) { polling = true; root.postDelayed({ tick() }, 300) } }
+        refreshers.add { pollTraining(); startPolling() }
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
         content.addView(label(t("Autopilot", "Автопилот"), 22f))
         content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(230f)))
@@ -422,9 +458,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         p.tag = { refreshers.forEach { it() } }
         p.visibility = View.VISIBLE
         autopilotPanel = p
+        startPolling()
     }
     private fun showAutopilot() {
-        val name = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"))[autopilotStyle.coerceIn(0, 3)]
+        val name = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"), t("Learned", "Обученный"))[autopilotStyle.coerceIn(0, 4)]
         (autopilotBtn as? android.widget.TextView)?.text = if (autopilotOn) "● $name" else t("Autopilot", "Автопилот")
         autopilotBtn?.alpha = if (autopilotOn) 1f else 0.85f
     }

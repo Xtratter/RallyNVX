@@ -55,7 +55,18 @@ static CFG: RwLock<Option<Styles>> = RwLock::new(None);
 
 pub fn cfg() -> AutoCfg { styles().normal }
 /// The numbers of a driving style: 0 calm, 1 normal, 2 aggressive.
-pub fn cfg_style(style: i32) -> AutoCfg { if style >= 3 { custom() } else { styles().get(style) } }
+pub fn cfg_style(style: i32) -> AutoCfg { if style >= 4 { learned() } else if style == 3 { custom() } else { styles().get(style) } }
+
+/// The numbers the autopilot taught itself (style 4); the normal style until it has learned.
+static LEARNED: RwLock<Option<AutoCfg>> = RwLock::new(None);
+pub fn learned() -> AutoCfg { (*LEARNED.read().unwrap_or_else(|e| e.into_inner())).unwrap_or_else(cfg) }
+/// Sets the learned numbers (the searched six of `train`, in its order), clamped into the search's bounds; all-NaN or short input leaves them alone.
+pub fn set_learned(g: &[f32]) {
+    if g.len() < 6 || g.iter().take(6).any(|x| !x.is_finite()) { return; }
+    let mut a = [0.0f32; 6]; for i in 0..6 { a[i] = (g[i].clamp(super::train::LO[i], super::train::HI[i]) - super::train::LO[i]) / (super::train::HI[i] - super::train::LO[i]); }
+    *LEARNED.write().unwrap_or_else(|e| e.into_inner()) = Some(super::train::to_cfg(cfg(), &a));
+}
+pub fn reset_learned() { *LEARNED.write().unwrap_or_else(|e| e.into_inner()) = None; }
 
 /// The player's own numbers (style 3), set from the settings; the normal style until they are set.
 static CUSTOM: RwLock<Option<AutoCfg>> = RwLock::new(None);
