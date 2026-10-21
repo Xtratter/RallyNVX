@@ -13,7 +13,7 @@ impl Damage {
         self.body += 0.8 * s;
         self.engine += (if front { 0.5 } else { 0.1 }) * s;
         let base = if front { 0 } else { 2 };
-        let (main, other) = if left { (base, base + 1) } else { (base + 1, base) };
+        let (main, other) = if left { (base + 1, base) } else { (base, base + 1) };   // the left wheels are 1 and 3, the right ones 0 and 2
         self.susp[main] += 0.9 * s; self.susp[other] += 0.35 * s;
         self.clamp();
     }
@@ -36,8 +36,8 @@ impl Damage {
     pub fn power(&self) -> f32 { 1.0 - 0.4 * self.engine }
     /// The spring's stiffness of wheel `w` (FL, FR, RL, RR) times this (0.7 at the worst).
     pub fn spring(&self, w: usize) -> f32 { 1.0 - 0.3 * self.susp[w.min(3)] }
-    /// How far a bent wheel points off the car's heading (radians, positive to the right): the wheels toe out, 3 degrees at the worst.
-    pub fn heading(&self, w: usize) -> f32 { let w = w.min(3); (if w % 2 == 0 { -1.0 } else { 1.0 }) * (3.0 * self.susp[w]).to_radians() }
+    /// How far a bent wheel points off the car's heading (radians, positive to the right): the wheels toe out (the right wheels 0 and 2 to the right, the left ones 1 and 3 to the left), 3 degrees at the worst.
+    pub fn heading(&self, w: usize) -> f32 { let w = w.min(3); (if w % 2 == 0 { 1.0 } else { -1.0 }) * (3.0 * self.susp[w]).to_radians() }
 }
 
 #[cfg(test)]

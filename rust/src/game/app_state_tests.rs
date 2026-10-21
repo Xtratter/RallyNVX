@@ -42,5 +42,7 @@ use crate::game::{input::Input, world::World};
     fill_state(&mut s, &w, 0, 60.0, 4.0, 7);
     assert_eq!((s[96], s[97], s[98], s[99]), (97.0, 210.0, 0.5, 0.25));
     assert_eq!([s[100], s[101], s[102], s[103]], [0.1, 0.2, 0.3, 0.4]);
-    assert_eq!(STAT_LEN, 104);
+    assert_eq!(STAT_LEN, 108);
+    w.drivetrain.fuel = crate::game::fuel::Fuel::with(12.5); w.vehicle.esc_brake[2] = 300.0; fill_state(&mut s, &w, 0, 60.0, 4.0, 7);
+    assert_eq!((s[104], s[105]), (12.5, 1.0));
 }

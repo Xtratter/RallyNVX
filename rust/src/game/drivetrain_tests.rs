@@ -103,7 +103,7 @@ impl Car {
     for k in 0..6000 {
         seed = seed.wrapping_mul(1664525).wrapping_add(1013904223); let r = (seed >> 8) as f32 / 16_777_216.0;
         if k % 97 == 0 { a.shift(if r > 0.5 { 1 } else { -1 }); a.set_clutch(r); if k % 300 == 0 { a.set_mode(if r > 0.5 { Mode::Auto } else { Mode::Manual }); } }
-        let o = a.step(1.0 / 60.0, &DriveIn { throttle: r * 2.0 - 1.0, speed: (r - 0.3) * 80.0, wheel_r: R, airborne: k % 500 < 20, brake: k % 7 == 0, lat_g: r - 0.5, slope: r - 0.5, tc_slip: r * 3.0 });
+        let o = a.step(1.0 / 60.0, &DriveIn { throttle: r * 2.0 - 1.0, speed: (r - 0.3) * 80.0, wheel_r: R, airborne: k % 500 < 20, brake: k % 7 == 0, lat_g: r - 0.5, slope: r - 0.5, tc_slip: r * 3.0, esc_cut: r });
         assert!(o.force.is_finite() && o.rpm.is_finite() && o.rpm >= 0.0 && o.rpm < 12000.0 && o.torque.is_finite(), "step {k}: {o:?}");
     }
 }

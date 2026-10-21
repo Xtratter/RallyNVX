@@ -75,6 +75,8 @@ pub struct DriveIn {
     pub lat_g: f32, pub slope: f32,
     /// The largest slip over the peak of a wheel spinning in the driving direction (0 if none): the traction control cuts the engine on it.
     pub tc_slip: f32,
+    /// The share of the engine's torque the stability control cuts (0..1).
+    pub esc_cut: f32,
 }
 
 /// What it gives.
@@ -229,7 +231,7 @@ impl Drivetrain {
         if !opts.limiter { self.limiter = false; } else if rpm0 > LIMITER_RPM { self.limiter = true; } else if rpm0 < LIMITER_RPM - 150.0 { self.limiter = false; }
         let cut = self.limiter || cut_shift || !self.running || self.fuel.empty();   // an empty tank cuts the engine
         // traction control: a wheel spinning past 1.3 times the slip of the peak cuts the engine's torque, to 15 % by 2.3 times
-        let tc_k = if opts.tc && i.tc_slip > 1.3 { 1.0 - 0.85 * ((i.tc_slip - 1.3) / 1.0).clamp(0.0, 1.0) } else { 1.0 };
+        let tc_k = (if opts.tc && i.tc_slip > 1.3 { 1.0 - 0.85 * ((i.tc_slip - 1.3) / 1.0).clamp(0.0, 1.0) } else { 1.0 }) * (1.0 - i.esc_cut.clamp(0.0, 1.0));
         let sync = (auto || seq) && self.shift > 0.0 && self.running && self.gear != 0;
         self.fr = Frame { dt, speed: i.speed, slip_w: 0.0, auto, radius: i.wheel_r.max(0.05), g, rd: reverse_dir, cap, thr, cut, tc_k, sync, n: 0, t_c: 0.0, t_e: 0.0 };
     }
