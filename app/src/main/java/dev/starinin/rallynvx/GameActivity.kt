@@ -39,7 +39,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var gearBtn: View? = null
     private var reverseBtn: View? = null
     private var carPanel: View? = null
-    private var tyreText: TextView? = null
+    private var carMenu: CarMenu? = null
     private var quickBtn: View? = null
     private var carBtn: View? = null
     private var soundBtn: View? = null
@@ -96,7 +96,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                     }.also { root.addView(it, FrameLayout.LayoutParams((220f * dpx).toInt(), (52f * dpx).toInt(), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { setMargins(0, 0, 0, (40f * dpx).toInt()) }) }
                 }
             }
-            if (carPanel?.visibility == View.VISIBLE) { val en = t("en", "ru") == "en"; tyreText?.text = CarMath.tyreLine(floatArrayOf(s[88], s[89], s[90], s[91]), floatArrayOf(s[92], s[93], s[94], s[95]), en) + "\n" + CarMath.heatLine(s[96], s[97], en) + "\n" + CarMath.damageLine(s[98], s[99], floatArrayOf(s[100], s[101], s[102], s[103]), en) + "\n" + CarMath.fuelLine(s[104], en) + (if (s[105] > 0.5f) "  ESC" else "") }
+            if (carPanel?.visibility == View.VISIBLE) carMenu?.live(s)
             gearView?.update(s[80].toInt(), s[81], s[82] > 0.5f, s[83] > 0.5f, s[86])
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
@@ -547,92 +547,15 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         settingsPanel = p
     }
 
-    /** The car's menu: on the left the aids (a tap switches each on or off), on the right the power of every part (steps of 10 %, the tuning's range in the engine). */
+    /** The car's menu (see [CarMenu]): a rail of sections on the left, the chosen section on the right. */
     private fun showCarPanel() {
         carPanel?.let { it.visibility = View.VISIBLE; (it.tag as? () -> Unit)?.invoke(); return }
-        val dp = resources.displayMetrics.density
-        fun px(v: Float) = (v * dp).toInt()
-        val en = t("en", "ru") == "en"
-        val refreshers = ArrayList<() -> Unit>()
-        val colA = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val colB = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        colA.addView(label(t("Driver aids", "Системы"), 17f)); colB.addView(label(t("Power of the parts", "Мощность узлов"), 17f))
-        for (bit in 0 until CarMath.AIDS) {
-            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { text = CarMath.aidName(bit, en); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            fun lab() = if (CarMath.aidOn(Controls.assists(this), bit)) t("On", "Вкл") else t("Off", "Выкл")
-            val b = M3Widgets.button(this, lab(), M3Widgets.ButtonKind.TONAL) {}
-            b.setOnClickListener { val m = CarMath.toggle(Controls.assists(this), bit); Controls.setAssists(this, m); if (running) Native.gameAssists(m); (b as? TextView)?.text = lab() }
-            refreshers.add { (b as? TextView)?.text = lab() }
-            r.addView(b, LinearLayout.LayoutParams(px(90f), px(42f)))
-            colA.addView(r, LinearLayout.LayoutParams(px(330f), -2).apply { topMargin = px(6f) })
-        }
-        // the gearbox: the manual's type and the automatic's character; one button each, a tap goes to the next
-        fun cycleRow(title: String, value: () -> String, onTap: () -> Unit) {
-            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { text = title; textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            val b = M3Widgets.button(this, value(), M3Widgets.ButtonKind.TONAL) {}
-            b.setOnClickListener { onTap(); (b as? TextView)?.text = value() }
-            refreshers.add { (b as? TextView)?.text = value() }
-            r.addView(b, LinearLayout.LayoutParams(px(150f), px(42f)))
-            colA.addView(r, LinearLayout.LayoutParams(px(330f), -2).apply { topMargin = px(6f) })
-        }
-        cycleRow(t("Manual box", "Ручная коробка"), { GearMath.boxName(Controls.boxType(this), en) }) { Controls.setBoxType(this, GearMath.next(Controls.boxType(this), GearMath.BOXES)); sendGearCfg() }
-        cycleRow(t("Automatic", "Автомат"), { GearMath.profileName(Controls.shiftProfile(this), en) }) { Controls.setShiftProfile(this, GearMath.next(Controls.shiftProfile(this), GearMath.PROFILES)); sendGearCfg() }
-        run {
-            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { text = t("Differentials", "Дифференциалы"); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            fun lab() = CarMath.presetName(Controls.diffPreset(this), en)
-            val b = M3Widgets.button(this, lab(), M3Widgets.ButtonKind.TONAL) {}
-            b.setOnClickListener {
-                val n = GearMath.next(Controls.diffPreset(this), CarMath.PRESET_COUNT); Controls.setDiffPreset(this, n)
-                for (k in 0 until 4) { Controls.setTuning(this, 7 + k, CarMath.PRESETS[n][k]); if (running) Native.gameTuning(7 + k, CarMath.PRESETS[n][k]) }
-                (b as? TextView)?.text = lab(); refreshers.forEach { it() }
-            }
-            refreshers.add { (b as? TextView)?.text = lab() }
-            r.addView(b, LinearLayout.LayoutParams(px(110f), px(42f)))
-            colB.addView(r, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
-        }
-        run {
-            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { text = t("Suspension", "Подвеска"); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            fun lab() = CarMath.chassisPresetName(Controls.chassisPreset(this), en)
-            val b = M3Widgets.button(this, lab(), M3Widgets.ButtonKind.TONAL) {}
-            b.setOnClickListener {
-                val n = GearMath.next(Controls.chassisPreset(this), CarMath.CHASSIS_PRESET_COUNT); Controls.setChassisPreset(this, n)
-                for (k in 0 until 6) { Controls.setTuning(this, 13 + k, CarMath.CHASSIS_PRESETS[n][k]); if (running) Native.gameTuning(13 + k, CarMath.CHASSIS_PRESETS[n][k]) }
-                (b as? TextView)?.text = lab(); refreshers.forEach { it() }
-            }
-            refreshers.add { (b as? TextView)?.text = lab() }
-            r.addView(b, LinearLayout.LayoutParams(px(110f), px(42f)))
-            colB.addView(r, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
-        }
-        for (i in 0 until CarMath.PARTS) {
-            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { text = CarMath.partName(i, en); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            val v = TextView(this).apply { textSize = 14f; setTextColor(M3.TEXT); gravity = Gravity.CENTER }
-            fun show() { v.text = CarMath.valueText(i, Controls.tuning(this, i)) }
-            fun change(dir: Int) { val nv = CarMath.step(i, Controls.tuning(this, i), dir); Controls.setTuning(this, i, nv); if (running) Native.gameTuning(i, nv); show() }
-            show(); refreshers.add { show() }
-            r.addView(M3Widgets.button(this, "−", M3Widgets.ButtonKind.TONAL) { change(-1) }, LinearLayout.LayoutParams(px(44f), px(42f)))
-            r.addView(v, LinearLayout.LayoutParams(px(64f), -2))
-            r.addView(M3Widgets.button(this, "+", M3Widgets.ButtonKind.TONAL) { change(1) }, LinearLayout.LayoutParams(px(44f), px(42f)))
-            colB.addView(r, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
-        }
-        val list = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; addView(colA, LinearLayout.LayoutParams(px(330f), -2)); addView(colB, LinearLayout.LayoutParams(px(300f), -2).apply { marginStart = px(20f) }) }
-        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
-        content.addView(label(t("Car", "Машина"), 22f))
-        content.addView(TextView(this).apply { textSize = 13f; setTextColor(M3.TEXT); gravity = Gravity.CENTER; tyreText = this }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(4f) })   // the tyres: temperature and wear, live while the panel is open
-        content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(250f)))
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val p = panel(content)
-        content.addView(M3Widgets.button(this, t("Service: repair, new tyres", "Сервис: ремонт и новые шины"), M3Widgets.ButtonKind.TONAL) { if (running) Native.gameService() }, LinearLayout.LayoutParams(px(260f), px(44f)).apply { topMargin = px(8f) })
-        content.addView(M3Widgets.button(this, t("Reset tuning", "Сбросить настройки"), M3Widgets.ButtonKind.TONAL) {
-            for (i in 0 until CarMath.PARTS) { Controls.setTuning(this, i, 1f); if (running) Native.gameTuning(i, 1f) }
-            Controls.setDiffPreset(this, 1); Controls.setChassisPreset(this, 0)
-            Controls.setAssists(this, CarMath.DEFAULT_AIDS); if (running) Native.gameAssists(CarMath.DEFAULT_AIDS); refreshers.forEach { it() }
-        }, LinearLayout.LayoutParams(px(240f), px(44f)).apply { topMargin = px(8f) })
-        content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(8f) })
-        p.tag = { refreshers.forEach { it() } }
+        val menu = CarMenu(this, t("en", "ru") == "en", { running }, { sendGearCfg() }, { p.visibility = View.GONE })
+        carMenu = menu
+        content.addView(menu.view)
+        p.tag = { menu.refresh() }
         p.visibility = View.VISIBLE
         carPanel = p
     }
