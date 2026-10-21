@@ -305,6 +305,8 @@ impl World {
             // the tyres: the cold pressure from the menu and the air's temperature from the sky (the sun, the clouds, the rain, the fog)
             self.vehicle.tyre_bar = t.tyre_bar;
             self.vehicle.chassis = t.chassis();
+            // the drivetrain feels the air's temperature and what the crashes did to the engine
+            self.drivetrain.air_c = self.vehicle.air_c; self.drivetrain.power_k = self.vehicle.damage.power();
             let wz = self.climate.weather();
             self.vehicle.air_c = crate::raster::smoke::Air::from_sky(self.sun_dir().y, wz.cloud, wz.rain, wz.fog).celsius;
         }
@@ -335,7 +337,10 @@ impl World {
         v.pos.z = v.pos.z.clamp(-WORLD_LIMIT, WORLD_LIMIT);
         if v.pos.x.abs() >= WORLD_LIMIT { v.vel.x = 0.0; }
         if v.pos.z.abs() >= WORLD_LIMIT { v.vel.z = 0.0; }
+        let v_hull = self.vehicle.vel;
         for c in &self.cities { c.resolve_hull(&mut self.vehicle.pos, &mut self.vehicle.vel, &mut self.vehicle.omega, self.vehicle.rot); }
+        let dv_hull = self.vehicle.vel - v_hull;
+        self.vehicle.register_hit(dv_hull);   // a crash into a building
         self.tracks.update(&self.vehicle, &self.terrain, dt);
         self.rally_step(dt);
         self.cam.update(&self.vehicle, &self.terrain, dt);
@@ -366,6 +371,15 @@ impl World {
     pub fn daylight(&self) -> Daylight { super::weather::apply(&daylight(self.terrain.seed, self.time), self.climate.weather()) }
     /// Unit vector towards the sun.
     pub fn sun_dir(&self) -> V3 { self.daylight().sun }
+
+    /// A service: the damage repaired, new tyres at their best temperature, the clutch and the coolant cooled down.
+    pub fn service(&mut self) {
+        self.vehicle.damage.repair();
+        let set = self.vehicle.spec.wheel_set;
+        self.vehicle.tyres = [super::tyre::Tyre::warm(set); 4];
+        self.drivetrain.clutch = super::heat::Clutch::new(self.vehicle.air_c);
+        self.drivetrain.coolant = super::heat::Coolant::new(85.0);
+    }
 }
 
 impl World {

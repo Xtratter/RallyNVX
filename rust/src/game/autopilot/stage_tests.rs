@@ -1,7 +1,7 @@
 //! The autopilot against the real generated stages (slow: ignored by default, run with `--ignored`).
 use crate::game::{input::Input, world::World, vehicle::VehicleSpec};
 
-struct Report { tyre_temp: f32, tyre_wear: f32, slide_pct: f32, max_lat: f32, seed: u64, finished: bool, time: f32, mean_kmh: f32, worst_edge: f32, flips: u32, recoveries: u32, length: f32 }
+struct Report { damage: f32, coolant: f32, clutch: f32, tyre_temp: f32, tyre_wear: f32, slide_pct: f32, max_lat: f32, seed: u64, finished: bool, time: f32, mean_kmh: f32, worst_edge: f32, flips: u32, recoveries: u32, length: f32 }
 
 fn env_style() -> i32 { std::env::var("AP_STYLE").ok().and_then(|s| s.parse().ok()).unwrap_or(1) }
 fn run(seed: u64, from_field: bool) -> Report { run_from(seed, from_field, false, env_style()) }
@@ -37,11 +37,11 @@ fn run_from(seed: u64, from_field: bool, spawn: bool, style: i32) -> Report {
         if lat > 1.0 { slide_steps += 1; }   // a side slip over 1 m/s (the real wheels, ABS and traction control hold a slide short)
         let f = w.vehicle.flipped(); if f && !was_flipped { flips += 1; } was_flipped = f;
     }
-    Report { tyre_temp: w.vehicle.tyres.iter().map(|y| y.temp).sum::<f32>() / 4.0, tyre_wear: w.vehicle.tyres.iter().map(|y| y.wear).sum::<f32>() / 4.0, slide_pct: 100.0 * slide_steps as f32 / steps.max(1) as f32, max_lat, seed, finished: !w.autopilot_on(), time: t, mean_kmh: dist / t.max(0.1) * 3.6, worst_edge: worst, flips, recoveries: 0, length }
+    Report { damage: w.vehicle.damage.total(), coolant: w.drivetrain.coolant.temp, clutch: w.drivetrain.clutch.temp, tyre_temp: w.vehicle.tyres.iter().map(|y| y.temp).sum::<f32>() / 4.0, tyre_wear: w.vehicle.tyres.iter().map(|y| y.wear).sum::<f32>() / 4.0, slide_pct: 100.0 * slide_steps as f32 / steps.max(1) as f32, max_lat, seed, finished: !w.autopilot_on(), time: t, mean_kmh: dist / t.max(0.1) * 3.6, worst_edge: worst, flips, recoveries: 0, length }
 }
 
 fn print(r: &Report) {
-    println!("seed {} finished {} t {:.0}s len {:.0} m mean {:.0} km/h worst edge {:.1} m flips {} sliding {:.0}% max side slip {:.1} m/s, tyres {:.0} C worn {:.0}%", r.seed, r.finished, r.time, r.length, r.mean_kmh, r.worst_edge, r.flips, r.slide_pct, r.max_lat, r.tyre_temp, r.tyre_wear * 100.0);
+    println!("seed {} finished {} t {:.0}s len {:.0} m mean {:.0} km/h worst edge {:.1} m flips {} sliding {:.0}% max side slip {:.1} m/s, tyres {:.0} C worn {:.0}%, coolant {:.0} C clutch {:.0} C damage {:.0}%", r.seed, r.finished, r.time, r.length, r.mean_kmh, r.worst_edge, r.flips, r.slide_pct, r.max_lat, r.tyre_temp, r.tyre_wear * 100.0, r.coolant, r.clutch, r.damage * 100.0);
 }
 fn check(r: &Report) {
     println!("seed {} finished {} t {:.0}s len {:.0} m mean {:.0} km/h worst edge {:.1} m flips {}", r.seed, r.finished, r.time, r.length, r.mean_kmh, r.worst_edge, r.flips);

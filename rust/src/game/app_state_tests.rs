@@ -35,3 +35,12 @@ use crate::game::{input::Input, world::World};
     assert_eq!((s[88], s[91], s[93]), (101.0, 33.0, 0.25));
     assert!(s[89] > 0.0 && s[90] > 0.0 && s[92] == 0.0 && s[94] == 0.0 && s[95] == 0.0);
 }
+#[test] fn the_heat_and_the_damage_are_reported_in_the_state_slots() {
+    let mut w = World::new(7); let mut s = [0.0f32; STAT_LEN];
+    w.drivetrain.coolant.temp = 97.0; w.drivetrain.clutch.temp = 210.0;
+    w.vehicle.damage = crate::game::damage::Damage { body: 0.5, susp: [0.1, 0.2, 0.3, 0.4], engine: 0.25 };
+    fill_state(&mut s, &w, 0, 60.0, 4.0, 7);
+    assert_eq!((s[96], s[97], s[98], s[99]), (97.0, 210.0, 0.5, 0.25));
+    assert_eq!([s[100], s[101], s[102], s[103]], [0.1, 0.2, 0.3, 0.4]);
+    assert_eq!(STAT_LEN, 104);
+}

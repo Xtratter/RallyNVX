@@ -589,3 +589,33 @@ fn steady_turn(setup: crate::game::chassis::Chassis) -> (f32, f32, f32) {
     row("toe-out 1.0 both", Chassis { toe_front: 1.0, toe_rear: 1.0, ..BASE });
     row("toe-in 1.0 both", Chassis { toe_front: -1.0, toe_rear: -1.0, ..BASE });
 }
+
+#[test] fn a_crash_into_a_rock_hurts_the_front_and_the_engine() {
+    let (mut v, t) = flat_car(1.1);
+    run(&mut v, &t, Input::default(), 1.0);
+    let rock = Prop { kind: PropKind::Rock, pos: v3(0., 0., 14.), radius: 1.5, height: 2.1 };
+    v.vel = v.forward() * 22.0;
+    for _ in 0..(4.0 / DT) as usize { v.step(&t, &[rock], &Input::default(), DT); }
+    let d = v.damage;
+    assert!(d.body > 0.3 && d.engine > 0.15 && d.susp[0] + d.susp[1] > 0.3, "{d:?}");
+    assert!(d.susp[2] + d.susp[3] < d.susp[0] + d.susp[1], "the rear is hurt less: {d:?}");
+}
+#[test] fn a_hard_landing_hurts_the_springs_and_a_drive_a_stop_and_a_reset_hurt_nothing() {
+    let (mut v, t) = flat_car(9.0);
+    run(&mut v, &t, Input::default(), 3.0);
+    assert!(v.damage.susp.iter().all(|s| *s > 0.05), "dropped from 9 m: {:?}", v.damage);
+    let (mut w, t) = flat_car(1.1);
+    run(&mut w, &t, Input::default(), 1.0);
+    for k in 0..60 * 20 { w.step(&t, &[], &Input { throttle: if k < 300 { 1.0 } else { 0.0 }, steer: ((k / 90) % 2) as f32 * 0.8 - 0.4, brake: k > 700, ..Default::default() }, DT); }
+    w.vel = w.forward() * 30.0; w.step(&t, &[], &Input::default(), DT);   // a speed set by hand: not a crash
+    w.reset_upright(&t); w.step(&t, &[], &Input::default(), DT);
+    assert_eq!(w.damage, crate::game::damage::Damage::default(), "{:?}", w.damage);
+}
+#[test] fn a_bent_wheel_pulls_the_car_and_a_crumpled_body_slows_it() {
+    use crate::game::damage::Damage;
+    let drift = |d: Damage| { let (mut v, t) = flat_car(1.1); v.damage = d; run(&mut v, &t, Input::default(), 1.0); v.vel = v.forward() * 25.0;
+        let x0 = v.pos.x; for _ in 0..60 * 5 { v.step(&t, &[], &Input::default(), DT); } (v.pos.x - x0).abs() };
+    assert!(drift(Damage { susp: [1.0, 0.0, 0.0, 0.0], ..Default::default() }) > drift(Damage::default()) + 1.0, "a bent front wheel pulls the car");
+    let speed = |d: Damage| { let t = Terrain::flat(); let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0., 1.1, 0.), 0.0); v.damage = d; run(&mut v, &t, Input::default(), 1.0); v.vel = v.forward() * 40.0; for _ in 0..60 * 5 { v.step(&t, &[], &Input::default(), DT); } v.speed() };
+    assert!(speed(Damage { body: 1.0, ..Default::default() }) < speed(Damage::default()) - 0.3, "the crumpled body drags more");
+}
