@@ -299,24 +299,27 @@ impl World {
             if self.tuned_dirty || self.tuned.0 != self.tuning { self.tuned = (self.tuning, self.tuning.apply(&self.car_spec)); self.tuned_dirty = false; }
             self.vehicle.spec = self.tuned.1;
             let (a, t) = (self.assists, self.tuning);
-            self.drivetrain.opts = super::drivetrain::DriveOpts { engine: t.engine, turbo: t.turbo, gearing: t.gearing, flat_shift: a.flat_shift, blip: a.blip, limiter: a.limiter };
+            self.drivetrain.opts = super::drivetrain::DriveOpts { engine: t.engine, turbo: t.turbo, gearing: t.gearing, flat_shift: a.flat_shift, blip: a.blip, limiter: a.limiter, tc: a.tc };
             self.vehicle.abs_on = a.abs; self.vehicle.tc_on = a.tc;
         }
-        // the drivetrain: the engine against the clutch and the gear gives the force at the wheels (the autopilot always drives the automatic)
+        // the drivetrain: the engine against the clutch and the gear, solved together with the wheels in the vehicle's substeps (the autopilot always drives the automatic)
         {
             use super::drivetrain::{DriveIn, Mode};
             let want = if self.manual && self.autopilot.is_none() && !counting { Mode::Manual } else { Mode::Auto };
             self.drivetrain.auto_reverse = self.autopilot.is_some();   // only the autopilot asks for the reverse with the sign of its throttle; the driver picks R by hand
             if self.autopilot.is_some() { self.drivetrain.reverse_sel = false; }
-            if want != self.drivetrain.mode { self.drivetrain.set_mode(want); if want == Mode::Manual && self.drivetrain.gear > 1 { /* keeps the gear it was in */ } }
+            if want != self.drivetrain.mode { self.drivetrain.set_mode(want); }
             let fwd = self.vehicle.vel.dot(self.vehicle.forward());
-            let out = self.drivetrain.step(dt, &DriveIn { throttle: inp.throttle, speed: fwd, wheel_r: self.vehicle.spec.radius, airborne: self.vehicle.contacts == 0, brake: inp.brake,
-                lat_g: self.vehicle.omega.dot(self.vehicle.up()) * fwd / 9.81, slope: self.vehicle.forward().y });
-            self.vehicle.drive_force = Some(out.force);
+            let tc_slip = if self.drivetrain.gear < 0 { -self.vehicle.slip.iter().cloned().fold(0.0, f32::min) } else { self.vehicle.slip.iter().cloned().fold(0.0, f32::max) };
+            let dtr = &mut self.drivetrain;
+            dtr.begin(dt, &DriveIn { throttle: inp.throttle, speed: fwd, wheel_r: self.vehicle.spec.radius, airborne: self.vehicle.contacts == 0, brake: inp.brake,
+                lat_g: self.vehicle.omega.dot(self.vehicle.up()) * fwd / 9.81, slope: self.vehicle.forward().y, tc_slip });
             // the reverse gear of the manual: the pedal asks for backwards (the lamps and the camera follow it)
-            if out.gear < 0 && (want == Mode::Manual || self.drivetrain.reverse_sel) { inp.throttle = -inp.throttle.abs(); } else if want == Mode::Manual { inp.throttle = inp.throttle.abs(); }
+            if dtr.gear < 0 && (want == Mode::Manual || dtr.reverse_sel) { inp.throttle = -inp.throttle.abs(); } else if want == Mode::Manual { inp.throttle = inp.throttle.abs(); }
+            let iw = 4.0 * super::wheel::INERTIA;
+            self.vehicle.step_driven(&self.terrain, &near, &inp, dt, &mut self.loose, Some(&mut |h, w, tyre| { let t = dtr.sub_coupled(h, (w[0] + w[1] + w[2] + w[3]) * 0.25, iw, tyre); [t * 0.25; 4] }));
+            self.drivetrain.finish();
         }
-        self.vehicle.step_with(&self.terrain, &near, &inp, dt, &mut self.loose);
         self.dust.set_gpu(super::dust::gpu_on(self.dust.level()));
         self.dust.update(&self.vehicle, &self.terrain, self.time, dt);
         let v = &mut self.vehicle;

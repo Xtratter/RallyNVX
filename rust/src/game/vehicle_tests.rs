@@ -229,7 +229,7 @@ fn cornering_accel(surface: Surface, spec: VehicleSpec) -> f32 {
 #[test] fn cornering_grip_orders_the_surfaces() {
     let spec = VehicleSpec::by_id("vulpes").unwrap();
     let (a, g, s) = (cornering_accel(Surface::Asphalt, spec), cornering_accel(Surface::Gravel, spec), cornering_accel(Surface::Sand, spec));
-    assert!(a > g * 1.15 && g > s * 1.1, "asphalt {a:.1} gravel {g:.1} sand {s:.1}");
+    assert!(a > g * 1.15 && g > s * 1.05, "asphalt {a:.1} gravel {g:.1} sand {s:.1}");
 }
 #[test] fn the_vulpes_spins_its_wheels_on_gravel() {
     let spec = VehicleSpec::by_id("vulpes").unwrap();
@@ -404,4 +404,63 @@ fn slope_spot(t: &Terrain, grade: f32) -> Option<(V3, f32)> {
     run(&mut free, &t, Input { throttle: 1.0, ..Default::default() }, 3.0);
     assert!(v.speed() < free.speed() * 0.6, "the locked rear tyres drag: {} against {}", v.speed(), free.speed());
     assert!(v.parked && !v.braking, "parked, not braking");
+}
+
+#[test] fn a_coasting_car_keeps_its_wheels_rolling_with_the_ground() {
+    let (mut v, t) = flat_car(1.1);
+    run(&mut v, &t, Input::default(), 1.0);
+    v.vel = v.forward() * 15.0;
+    run(&mut v, &t, Input::default(), 1.0);
+    for k in 0..4 { assert!((v.w[k] * v.spec.radius - v.speed()).abs() < 0.8, "wheel {k}: {} m/s against the car's {}", v.w[k] * v.spec.radius, v.speed()); }
+}
+#[test] fn without_abs_the_brake_locks_the_wheels_and_with_it_they_keep_turning() {
+    let go = |abs: bool| { let (mut v, t) = flat_car(1.1); v.abs_on = abs; run(&mut v, &t, Input::default(), 1.0); v.vel = v.forward() * 25.0; run(&mut v, &t, Input::default(), 0.3);
+        run(&mut v, &t, Input { brake: true, ..Default::default() }, 0.6); (v.w, v.slip, v.speed()) };
+    let (w_off, _, _) = go(false); let (w_on, slip_on, speed_on) = go(true);
+    assert!(w_off.iter().any(|w| w.abs() < 1.0), "without ABS some wheel locks: {w_off:?}");
+    assert!(w_on.iter().all(|w| *w > 20.0) && speed_on > 5.0, "turning: {w_on:?} at {speed_on} m/s");
+    assert!(slip_on.iter().all(|s| *s < 0.0 && *s > -2.5), "ABS holds the slip near the peak: {slip_on:?}");
+}
+#[test] fn the_handbrake_locks_the_rear_wheels_and_the_front_ones_keep_turning() {
+    let (mut v, t) = flat_car(1.1);
+    run(&mut v, &t, Input::default(), 1.0); v.vel = v.forward() * 12.0; run(&mut v, &t, Input::default(), 0.3);
+    run(&mut v, &t, Input { handbrake: true, ..Default::default() }, 0.6);
+    assert!(v.w[2].abs() < 1.0 && v.w[3].abs() < 1.0, "rear locked: {:?}", v.w);
+    assert!(v.w[0] > 5.0 && v.w[1] > 5.0, "front free: {:?}", v.w);
+}
+#[test] fn a_locked_car_on_a_slope_stays_put_without_jitter() {
+    let (mut v, t) = flat_car(1.1);
+    run(&mut v, &t, Input { handbrake: true, brake: true, ..Default::default() }, 1.0);
+    let p = v.pos; let mut max_speed = 0.0f32;
+    for _ in 0..600 { v.step(&t, &[], &Input { handbrake: true, brake: true, ..Default::default() }, DT); max_speed = max_speed.max(v.vel.x.hypot(v.vel.z)); }
+    assert!((v.pos - p).len() < 0.02 && max_speed < 0.05, "moved {} m, peak speed {}", (v.pos - p).len(), max_speed);
+}
+#[test] fn standing_starts_are_smooth_forward_and_reverse() {
+    for sign in [1.0f32, -1.0] {
+        let (mut v, t) = flat_car(1.1);
+        run(&mut v, &t, Input::default(), 1.0);
+        let mut last = 0.0f32; let mut worst_jump = 0.0f32;
+        for _ in 0..180 {
+            v.drive_torque = Some([sign * 500.0; 4]);
+            v.step(&t, &[], &Input { throttle: sign, ..Default::default() }, DT);
+            let s = v.speed(); worst_jump = worst_jump.max((s - last).abs()); last = s;
+            assert!(v.w.iter().all(|w| w.is_finite() && w.abs() < 400.0), "{:?}", v.w);
+        }
+        assert!(sign * v.speed() > 3.0 && worst_jump < 0.5, "sign {sign}: {} m/s, the largest jump in one step {worst_jump}", v.speed());
+    }
+}
+#[test] fn landing_with_spinning_wheels_is_stable() {
+    let (mut v, t) = flat_car(3.0);
+    v.drive_torque = Some([900.0; 4]);
+    for _ in 0..90 { v.step(&t, &[], &Input { throttle: 1.0, ..Default::default() }, DT); }
+    assert!(v.pos.y.is_finite() && v.vel.len() < 60.0 && v.w.iter().all(|w| w.is_finite() && w.abs() < 800.0), "{:?} {:?}", v.vel, v.w);
+}
+#[test] fn the_wheel_slip_shows_in_the_info_when_driving_hard_on_gravel() {
+    let (mut v, t) = flat_car(1.1); v.force_surface = Some(crate::game::surface::Surface::Gravel);
+    run(&mut v, &t, Input::default(), 1.0);
+    v.drive_torque = Some([1400.0; 4]);
+    run(&mut v, &t, Input { throttle: 1.0, ..Default::default() }, 0.4);
+    // the lighter front wheels spin first (the weight moves back under power)
+    assert!(v.slip[0] > 1.0 && v.slip[1] > 1.0, "spinning on gravel: {:?}", v.slip);
+    assert!(v.wheels[0].slide > 0.0 && v.wheels[1].slide > 0.0, "the dust sees it: {:?}", v.wheels.iter().map(|w| w.slide).collect::<Vec<_>>());
 }

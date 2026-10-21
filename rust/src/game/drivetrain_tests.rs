@@ -103,7 +103,7 @@ impl Car {
     for k in 0..6000 {
         seed = seed.wrapping_mul(1664525).wrapping_add(1013904223); let r = (seed >> 8) as f32 / 16_777_216.0;
         if k % 97 == 0 { a.shift(if r > 0.5 { 1 } else { -1 }); a.set_clutch(r); if k % 300 == 0 { a.set_mode(if r > 0.5 { Mode::Auto } else { Mode::Manual }); } }
-        let o = a.step(1.0 / 60.0, &DriveIn { throttle: r * 2.0 - 1.0, speed: (r - 0.3) * 80.0, wheel_r: R, airborne: k % 500 < 20, brake: k % 7 == 0, lat_g: r - 0.5, slope: r - 0.5 });
+        let o = a.step(1.0 / 60.0, &DriveIn { throttle: r * 2.0 - 1.0, speed: (r - 0.3) * 80.0, wheel_r: R, airborne: k % 500 < 20, brake: k % 7 == 0, lat_g: r - 0.5, slope: r - 0.5, tc_slip: r * 3.0 });
         assert!(o.force.is_finite() && o.rpm.is_finite() && o.rpm >= 0.0 && o.rpm < 12000.0 && o.torque.is_finite(), "step {k}: {o:?}");
     }
 }
@@ -251,4 +251,53 @@ fn seq_manual() -> Car { let mut c = Car::new(); c.dt.set_mode(Mode::Manual); c.
         let o = c.step(if k % 5 < 3 { 1.0 } else { 0.0 });
         assert!(o.force.is_finite() && o.rpm.is_finite() && o.rpm >= 0.0 && o.rpm < 12000.0, "step {k}: {o:?}");
     }
+}
+
+
+#[test] fn traction_control_cuts_the_engine_when_a_wheel_spins_and_gives_it_back() {
+    let go = |tc_on: bool, slip: f32| { let mut d = Drivetrain::new(); d.opts.tc = tc_on; let mut o = d.last;
+        for _ in 0..180 { o = d.step(1.0 / 60.0, &DriveIn { throttle: 1.0, speed: 8.0, wheel_r: R, tc_slip: slip, ..Default::default() }); } o.wheel_torque };
+    let (calm, spin_tc, spin_free) = (go(true, 0.5), go(true, 2.5), go(false, 2.5));
+    assert!(spin_tc < calm * 0.5, "cut: {spin_tc} against {calm}");
+    assert!(spin_free > calm * 0.9, "TC off does not cut: {spin_free} against {calm}");
+}
+#[test] fn the_wheel_torque_is_the_force_times_the_radius() {
+    let mut c = Car::new(); let o = c.run(1.0, 2.0);
+    assert!((o.wheel_torque - o.force * R).abs() < 1.0, "{} against {}", o.wheel_torque, o.force * R);
+}
+#[test] fn reverse_traction_control_cuts_spin_too() {
+    let run = |slip: f32| { let mut d = Drivetrain::new(); d.reverse_sel = true; let mut o = d.last;
+        for _ in 0..180 { o = d.step(1.0 / 60.0, &DriveIn { throttle: -1.0, speed: -3.0, wheel_r: R, tc_slip: slip, ..Default::default() }); } o.wheel_torque };
+    let (spin, calm) = (run(2.5), run(0.0));
+    assert!(spin < 0.0 && calm < 0.0 && spin.abs() < calm.abs() * 0.5, "{spin} against {calm}");
+}
+/// Wheels as a plain inertia with a given tyre torque against them, driven by the coupled substeps for `secs`; returns (the wheel speeds' history, the torques).
+fn spin_up(d: &mut Drivetrain, i_wheels: f32, tyre_of: impl Fn(f32) -> f32, secs: f32, w0: f32) -> (Vec<f32>, Vec<f32>) {
+    let h = 1.0 / 240.0; let (mut w, mut ws, mut ts) = (w0, Vec::new(), Vec::new());
+    for k in 0..(secs / h) as usize {
+        if k % 4 == 0 { d.begin(4.0 * h, &DriveIn { throttle: 1.0, speed: w * R, wheel_r: R, ..Default::default() }); }
+        let t = d.sub_coupled(h, w, i_wheels, tyre_of(w));
+        w += h * (t - tyre_of(w)) / i_wheels;
+        ws.push(w); ts.push(t);
+        if k % 4 == 3 { d.finish(); }
+    }
+    (ws, ts)
+}
+#[test] fn a_wheel_that_spins_freely_does_not_make_the_clutch_chatter() {
+    // no tyre torque at all (ice): the engine and the wheels accelerate together; the torque must be smooth, not alternate between its limits
+    let mut d = Drivetrain::new();
+    let (ws, ts) = spin_up(&mut d, 5.2, |_| 0.0, 3.0, 8.0);
+    assert!(ws.iter().all(|w| w.is_finite()) && ws.last().unwrap() > &ws[0], "{:?}", &ws[ws.len() - 3..]);
+    // chatter is a saw-tooth: big steps of the torque that alternate in sign; a re-engagement after a shift or a change of gear is a step followed by a smooth run
+    let dt_: Vec<f32> = ts.windows(2).skip(240).map(|p| p[1] - p[0]).collect();
+    let flips = dt_.windows(2).filter(|p| p[0].abs() > 100.0 && p[1].abs() > 100.0 && p[0] * p[1] < 0.0).count();
+    assert_eq!(flips, 0, "the torque saws {flips} times");
+}
+#[test] fn heavy_wheels_make_the_coupled_engine_agree_with_the_kinematic_one() {
+    let w = 20.0 / R;                                   // 20 m/s in third: about 4700 rpm
+    let mut a = Drivetrain::new(); a.gear = 3; let mut b = a.clone();
+    let mut oa = a.last;
+    for _ in 0..90 { oa = a.step(1.0 / 60.0, &DriveIn { throttle: 0.6, speed: 20.0, wheel_r: R, ..Default::default() }); }
+    for _ in 0..90 { b.begin(1.0 / 60.0, &DriveIn { throttle: 0.6, speed: 20.0, wheel_r: R, ..Default::default() }); for _ in 0..4 { b.sub_coupled(1.0 / 240.0, w, 1e7, 0.0); } b.finish(); }
+    assert!((a.rpm() / b.rpm() - 1.0).abs() < 0.03 && oa.gear == b.last.gear, "{} against {} rpm", a.rpm(), b.rpm());
 }

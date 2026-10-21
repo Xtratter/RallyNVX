@@ -31,7 +31,7 @@ All numbers of the vehicles live in one file, `rust/vehicles.json`, which is emb
 | `handling.rolling_resistance` | N·s/m per wheel; the tarmac value, scaled by the surface |
 | `handling.aero_drag` | air drag coefficient (force = coefficient × speed²) |
 | `handling.angular_damping` | rotation damping, 1/s |
-| `handling.handbrake_grip` | rear grip factor with the handbrake (0..1; lower = more drift) |
+| `handling.handbrake_grip` | no effect since 2.74.0 (the handbrake is a plain rear brake that locks the wheels); kept in the file for compatibility |
 | `handling.reverse_speed_factor` | top reverse speed as a fraction of `max_speed` |
 
 `look` (optional, per car): `body_color`, `accent`, `glass` (RGB 0..1, linear) and `wheel_width` (m). They only change the generated model, not the handling.
@@ -79,7 +79,7 @@ The grip of every surface and the loose gravel layer live in a second file, `rus
 | `handling.rolling_resistance` | Н·с/м на колесо; значение для асфальта, масштабируется покрытием |
 | `handling.aero_drag` | коэффициент сопротивления воздуха (сила = коэффициент × скорость²) |
 | `handling.angular_damping` | демпфирование вращения, 1/с |
-| `handling.handbrake_grip` | доля сцепления задних колёс с ручником (0..1; меньше — сильнее занос) |
+| `handling.handbrake_grip` | не действует с 2.74.0 (ручник — обычный задний тормоз, блокирующий колёса); оставлен в файле для совместимости |
 | `handling.reverse_speed_factor` | максимальная скорость заднего хода как доля `max_speed` |
 
 `look` (необязательно, у каждой машины): `body_color`, `accent`, `glass` (RGB 0..1, линейные) и `wheel_width` (м). Меняют только сгенерированную модель, не управляемость.
