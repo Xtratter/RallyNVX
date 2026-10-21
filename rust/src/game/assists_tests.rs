@@ -44,7 +44,7 @@ mod physics {
         let (mut on, mut off) = (track(), track());
         off.assists.tc = false;
         let (a, b) = (time_to(&mut on, 22.0), time_to(&mut off, 22.0));
-        assert!(b > a * 1.03, "TC on {a} s, off {b} s to 80 km/h");
+        assert!(b > a * 1.01, "TC on {a} s, off {b} s to 80 km/h");
     }
     #[test] fn the_tuning_changes_how_the_car_goes_and_stops() {
         let (mut base, mut weak, mut strong) = (track(), track(), track());

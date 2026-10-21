@@ -2,11 +2,12 @@ use super::*;
 
 const R: f32 = 0.326;
 /// A bare car: the drivetrain's force against the drag and the rolling resistance of a 1230 kg car; returns the speed.
-struct Car { dt: Drivetrain, v: f32, t: f32 }
+struct Car { dt: Drivetrain, v: f32, t: f32, brake: bool }
 impl Car {
-    fn new() -> Car { Car { dt: Drivetrain::new(), v: 0.0, t: 0.0 } }
+    fn new() -> Car { Car { dt: Drivetrain::new(), v: 0.0, t: 0.0, brake: false } }
     fn step(&mut self, thr: f32) -> DriveOut {
-        let o = self.dt.step(1.0 / 60.0, &DriveIn { throttle: thr, speed: self.v, wheel_r: R, airborne: false });
+        let o = self.dt.step(1.0 / 60.0, &DriveIn { throttle: thr, speed: self.v, wheel_r: R, airborne: false, brake: self.brake });
+        if self.brake && self.v > 0.0 { self.v = (self.v - 8.0 / 60.0).max(0.0); }   // the brakes: 8 m/s^2
         let drag = 0.5 * 1.2 * 0.62 * 2.1 * self.v * self.v.abs() + 160.0 * self.v.signum().min(1.0).max(-1.0) * (self.v.abs() / (self.v.abs() + 0.3));
         let grip = 1.2 * 1230.0 * 9.81;
         self.v += (o.force.clamp(-grip, grip) - drag) / 1230.0 / 60.0; self.t += 1.0 / 60.0;
@@ -101,7 +102,7 @@ impl Car {
     for k in 0..6000 {
         seed = seed.wrapping_mul(1664525).wrapping_add(1013904223); let r = (seed >> 8) as f32 / 16_777_216.0;
         if k % 97 == 0 { a.shift(if r > 0.5 { 1 } else { -1 }); a.set_clutch(r); if k % 300 == 0 { a.set_mode(if r > 0.5 { Mode::Auto } else { Mode::Manual }); } }
-        let o = a.step(1.0 / 60.0, &DriveIn { throttle: r * 2.0 - 1.0, speed: (r - 0.3) * 80.0, wheel_r: R, airborne: k % 500 < 20 });
+        let o = a.step(1.0 / 60.0, &DriveIn { throttle: r * 2.0 - 1.0, speed: (r - 0.3) * 80.0, wheel_r: R, airborne: k % 500 < 20, brake: k % 7 == 0 });
         assert!(o.force.is_finite() && o.rpm.is_finite() && o.rpm >= 0.0 && o.rpm < 12000.0 && o.torque.is_finite(), "step {k}: {o:?}");
     }
 }
@@ -121,4 +122,53 @@ impl Car {
     // the driver in D never gets the reverse by himself: a negative throttle at a standstill does nothing
     let mut f = Car::new(); f.run(0.0, 0.5); f.run(-1.0, 3.0);
     assert!(f.dt.gear >= 1 && f.v >= -0.1, "D stays in drive: gear {} v {}", f.dt.gear, f.v);
+}
+
+#[test] fn a_lift_in_the_automatic_keeps_the_gear_and_a_floored_pedal_kicks_down() {
+    // a lift at speed must not shift up, the box holds the gear it was in
+    let mut c = Car::new(); c.run(1.0, 6.0);
+    c.run(0.0, 0.3);
+    let (g, rpm) = (c.dt.gear, c.dt.last.rpm);
+    assert!(g >= 3 && rpm > 3500.0, "gear {g} at {rpm} rpm");
+    c.run(0.0, 2.0); assert!(c.dt.gear <= g, "a lift upshifted: {g} -> {}", c.dt.gear);
+    // a cruise at light gas in a high gear, then the floor: it drops a gear within half a second
+    let mut d = Car::new(); d.v = 22.0; d.run(0.12, 10.0);
+    let g = d.dt.gear; assert!(g >= 4 && d.dt.last.rpm < 3300.0, "cruising in gear {g} at {} rpm", d.dt.last.rpm);
+    d.run(1.0, 0.5); assert!(d.dt.gear < g, "kick-down: gear {g} -> {}", d.dt.gear);
+}
+#[test] fn the_automatic_does_not_hunt_under_a_wandering_pedal() {
+    let mut c = Car::new(); c.run(1.0, 4.0);
+    let (mut last_gear, mut last_shift, mut shifts, mut seed) = (c.dt.gear, c.t, 0, 7u32);
+    let mut pedal = 1.0f32;
+    for k in 0..60 * 90 {
+        if k % 240 == 0 { seed = seed.wrapping_mul(1664525).wrapping_add(1013904223); pedal = [0.0, 0.3, 0.6, 1.0][(seed >> 24) as usize % 4]; c.brake = pedal == 0.0 && (seed >> 16) % 2 == 0; }
+        let thr = (pedal + if k % 5 == 0 { 0.08 } else { -0.05 }).clamp(0.0, 1.0);
+        let o = c.step(thr);
+        if o.gear != last_gear {
+            assert!(c.t - last_shift > 0.3, "two shifts {} s apart (gear {last_gear} -> {})", c.t - last_shift, o.gear);
+            last_gear = o.gear; last_shift = c.t; shifts += 1;
+        }
+    }
+    assert!(shifts > 3 && shifts < 70, "{shifts} shifts in 90 s");
+}
+#[test] fn braking_takes_the_automatic_down_through_the_gears() {
+    let mut c = Car::new(); c.run(1.0, 25.0); c.run(0.0, 0.3);
+    let g = c.dt.gear; assert!(g >= 5 && c.v > 30.0, "gear {g} at {} m/s", c.v);
+    c.brake = true; c.run(0.0, 3.5);
+    assert!(c.dt.gear < g - 1, "the engine brake: gear {g} -> {} at {} m/s", c.dt.gear, c.v);
+    assert!(c.dt.last.rpm < 6700.0, "{}", c.dt.last.rpm);
+}
+#[test] fn a_shift_of_the_automatic_meets_the_new_gear_with_matching_revs() {
+    let mut c = Car::new(); let mut g0 = c.dt.gear; let mut n = 0;
+    for _ in 0..60 * 20 {
+        let before = c.dt.last.rpm; c.step(1.0);
+        if c.dt.gear > g0 {
+            let from = c.dt.gear; for _ in 0..21 { c.step(1.0); }
+            let want = rpm_in_gear(c.v, R, from); let got = c.dt.last.rpm;
+            assert!((got - want).abs() < 450.0 || c.dt.gear != from, "after the shift to {from} (from {before} rpm): {got} rpm, the wheels ask {want}");
+            n += 1;
+        }
+        g0 = c.dt.gear;
+    }
+    assert!(n >= 4, "{n} shifts seen");
 }

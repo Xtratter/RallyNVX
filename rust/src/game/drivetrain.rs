@@ -17,7 +17,7 @@ const CLUTCH_MAX: f32 = 520.0;
 pub const IDLE_RPM: f32 = 950.0;
 pub const LIMITER_RPM: f32 = 7800.0;
 /// Seconds a shift takes in the automatic and in the sequential manual box.
-const SHIFT_AUTO: f32 = 0.22;
+const SHIFT_AUTO: f32 = 0.18;
 const SHIFT_MANUAL: f32 = 0.12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,6 +56,8 @@ pub struct DriveIn {
     /// The car's speed along its heading (m/s, negative backwards) and the wheels' radius (m).
     pub speed: f32, pub wheel_r: f32,
     pub airborne: bool,
+    /// The brake pedal is down (the automatic holds a lower gear for the engine brake).
+    pub brake: bool,
 }
 
 /// What it gives.
@@ -93,6 +95,8 @@ pub struct Drivetrain {
     pub auto_reverse: bool,
     running: bool, starting: f32, stalled_for: f32,
     shift: f32, shift_up: bool, limiter: bool, boost: f32, idle_i: f32,
+    /// What the automatic remembers of the gas pedal (a press at once, a lift fades) and the seconds since its last shift.
+    load_s: f32, since_shift: f32,
     pub last: DriveOut,
 }
 
@@ -108,7 +112,7 @@ impl Drivetrain {
     pub fn new() -> Drivetrain {
         let rpm = IDLE_RPM;
         Drivetrain { opts: DriveOpts::default(), mode: Mode::Auto, gear: 1, omega: rpm * std::f32::consts::TAU / 60.0, clutch_pedal: 0.0, reverse_sel: false, auto_reverse: false, running: true, starting: 0.0, stalled_for: 0.0,
-            shift: 0.0, shift_up: true, limiter: false, boost: 0.0, idle_i: 0.1,
+            shift: 0.0, shift_up: true, limiter: false, boost: 0.0, idle_i: 0.1, load_s: 0.0, since_shift: 9.0,
             last: DriveOut { force: 0.0, rpm, gear: 1, grip: 0.0, torque: 0.0, throttle: 0.0, boost_bar: 0.0, cut: false, stalled: false } }
     }
 
@@ -130,16 +134,31 @@ impl Drivetrain {
     pub fn set_clutch(&mut self, pedal: f32) { self.clutch_pedal = if pedal.is_finite() { pedal.clamp(0.0, 1.0) } else { 0.0 }; }
 
     /// The automatic's choice of the gear.
-    fn auto_gear(&mut self, i: &DriveIn, thr: f32, rpm: f32) {
+    fn auto_gear(&mut self, i: &DriveIn, thr: f32, rpm: f32, dt: f32) {
         // R is chosen by hand (the autopilot alone asks for the reverse with a negative throttle); a car that merely rolls back in D takes the first gear as soon as the gas is pressed
         let holding = self.gear == -1 && i.speed < -0.5 && thr < 0.05;
         if self.reverse_sel || (self.auto_reverse && ((i.throttle < -0.1 && i.speed < 1.0) || holding)) { if self.gear != -1 { self.gear = -1; } return; }
-        if self.gear <= 0 { self.gear = 1; return; }
+        if self.gear <= 0 { self.gear = 1; self.since_shift = 0.0; return; }
+        // the schedule follows the pedal the box remembers: a press counts at once, a lift fades over about a second, so a lift in a corner keeps the gear and a flickering pedal does not hunt
+        self.load_s = if thr > self.load_s { thr } else { self.load_s + (thr - self.load_s) * (dt / 1.2).min(1.0) };
+        self.since_shift += dt;
         if self.shift > 0.0 { return; }
-        let up_at = 4600.0 + 2800.0 * thr;
-        let down_at = 2300.0 + 600.0 * thr;
-        if rpm > up_at && self.gear < 6 { self.gear += 1; self.shift = SHIFT_AUTO; self.shift_up = true; }
-        else if rpm < down_at && self.gear > 1 && rpm_in_gear(i.speed, i.wheel_r, self.gear - 1) * self.opts.gearing < 6600.0 { self.gear -= 1; self.shift = SHIFT_AUTO; self.shift_up = false; }
+        let (ls, gearing) = (self.load_s, self.opts.gearing);
+        let at = |g: i32| rpm_in_gear(i.speed, i.wheel_r, g) * gearing;   // the revs the wheels would give the engine in gear g
+        let braking = i.brake && i.speed > 4.0 && thr < 0.1;
+        // the gas floored at low revs asks for a lower gear (the kick-down), which may come sooner than a normal shift
+        let kick = thr > 0.85 && self.gear > 1 && rpm < 3300.0 && at(self.gear - 1) < 6600.0;
+        if self.since_shift < if kick { 0.35 } else { 0.9 } { return; }
+        let floor = 1900.0 + 1700.0 * ls;
+        let up_at = 3800.0 + 3500.0 * ls;
+        let down_at = if braking { floor.max(4300.0) } else { floor };   // braking: down through the gears for the engine brake and the power at the corner's exit
+        let lifted = thr < 0.05 && i.speed > 4.0;   // coasting: the box keeps the gear (the engine brake), it does not climb on a lift
+        if !braking && !lifted && self.gear < 6 && rpm > up_at && at(self.gear + 1) > floor + 500.0 {
+            // up only if the next gear still has the revs to pull (else it would go back down at once)
+            self.gear += 1; self.shift = SHIFT_AUTO; self.shift_up = true; self.since_shift = 0.0;
+        } else if self.gear > 1 && (kick || rpm < down_at) && at(self.gear - 1) < if braking { 5800.0 } else { 6600.0 } {
+            self.gear -= 1; self.shift = SHIFT_AUTO; self.shift_up = false; self.since_shift = 0.0;
+        }
     }
 
     pub fn step(&mut self, dt: f32, i: &DriveIn) -> DriveOut {
@@ -148,7 +167,7 @@ impl Drivetrain {
         let auto = self.mode == Mode::Auto;
         let rpm0 = self.rpm();
         let gas = i.throttle.max(0.0);
-        if auto { self.auto_gear(i, gas, rpm0); }
+        if auto { self.auto_gear(i, gas, rpm0, dt); }
         // the pedal the engine feels: in the reverse of the automatic the negative throttle is the gas
         let pedal = if auto { if self.gear < 0 { if self.reverse_sel { gas.max((-i.throttle).max(0.0)) } else { (-i.throttle).max(0.0) } } else { gas } } else { i.throttle.clamp(0.0, 1.0) };
         // the throttle the engine gets: the pedal, the idle governor holding the idle, and the blip of the automatic's down-shift
@@ -164,7 +183,8 @@ impl Drivetrain {
         let cut_shift = self.opts.flat_shift && self.shift > 0.0 && self.shift_up && pedal > 0.6;
         // the clutch's capacity (N m): the automatic's rises with the revs (it bites like a centrifugal clutch and slips at the launch), the manual's follows the pedal; none in neutral or in a shift
         let cap = if g == 0.0 || self.shift > 0.0 || i.airborne { 0.0 }
-            else if auto { (10.0 + (CLUTCH_MAX - 10.0) * smooth(1300.0, 3000.0, rpm0)).min(CLUTCH_MAX) }
+            // the automatic: the launch curve bites with the revs; on the move the lock-up closes (no slip, the engine and the wheels turn together)
+            else if auto { (10.0 + (CLUTCH_MAX - 10.0) * smooth(1300.0, 3000.0, rpm0)).max(CLUTCH_MAX * smooth(2.0, 5.0, i.speed.abs())).min(CLUTCH_MAX) }
             else { CLUTCH_MAX * smooth(0.85, 0.30, self.clutch_pedal) };
         // the starter when the engine is off: it cranks after a pause (the clutch must be open or the box in neutral in the manual)
         if !self.running {
@@ -175,6 +195,7 @@ impl Drivetrain {
         let w_in = (i.speed / i.wheel_r.max(0.05) * g * reverse_dir).max(-1e4);
         let opts = self.opts;
         let (n, h) = (8, dt / 8.0);
+        let w_idle = IDLE_RPM * std::f32::consts::TAU / 60.0;
         let (mut f_sum, mut tq_sum, mut tc_last) = (0.0f32, 0.0f32, 0.0f32);
         // the limiter: fuel cut above the limit until the revs fall a little
         if !opts.limiter { self.limiter = false; } else if rpm0 > LIMITER_RPM { self.limiter = true; } else if rpm0 < LIMITER_RPM - 150.0 { self.limiter = false; }
@@ -192,7 +213,9 @@ impl Drivetrain {
             if !self.running { t_e = -engine_torque(rpm.max(1000.0), 0.0).abs() * (rpm / 1000.0).clamp(0.0, 1.0); }
             if self.starting > 0.0 && rpm < 650.0 { t_e += 140.0; }   // the starter turns it until it fires (about 450 rpm)
             let t_c = (GRIP_K * (self.omega - w_in)).clamp(-cap, cap);
-            self.omega = (self.omega + h / INERTIA * (t_e - t_c)).max(0.0);
+            // a shift of the automatic matches the engine's revs to the new gear (the clutch-to-clutch change): the engine falls or rises to meet the wheels, so the clutch closes without a jerk
+            let t_s = if auto && self.shift > 0.0 && self.running && self.gear != 0 { (GRIP_K * 1.5 * (w_in.max(w_idle) - self.omega)).clamp(-220.0, 220.0) } else { 0.0 };
+            self.omega = (self.omega + h / INERTIA * (t_e - t_c + t_s)).max(0.0);
             tq_sum += t_e; tc_last = t_c;
             f_sum += t_c * g * reverse_dir * ETA / i.wheel_r.max(0.05);
         }

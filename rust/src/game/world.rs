@@ -310,7 +310,7 @@ impl World {
             if self.autopilot.is_some() { self.drivetrain.reverse_sel = false; }
             if want != self.drivetrain.mode { self.drivetrain.set_mode(want); if want == Mode::Manual && self.drivetrain.gear > 1 { /* keeps the gear it was in */ } }
             let fwd = self.vehicle.vel.dot(self.vehicle.forward());
-            let out = self.drivetrain.step(dt, &DriveIn { throttle: inp.throttle, speed: fwd, wheel_r: self.vehicle.spec.radius, airborne: self.vehicle.contacts == 0 });
+            let out = self.drivetrain.step(dt, &DriveIn { throttle: inp.throttle, speed: fwd, wheel_r: self.vehicle.spec.radius, airborne: self.vehicle.contacts == 0, brake: inp.brake });
             self.vehicle.drive_force = Some(out.force);
             // the reverse gear of the manual: the pedal asks for backwards (the lamps and the camera follow it)
             if out.gear < 0 && (want == Mode::Manual || self.drivetrain.reverse_sel) { inp.throttle = -inp.throttle.abs(); } else if want == Mode::Manual { inp.throttle = inp.throttle.abs(); }
