@@ -593,6 +593,20 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             r.addView(b, LinearLayout.LayoutParams(px(110f), px(42f)))
             colB.addView(r, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
         }
+        run {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            r.addView(TextView(this).apply { text = t("Suspension", "Подвеска"); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+            fun lab() = CarMath.chassisPresetName(Controls.chassisPreset(this), en)
+            val b = M3Widgets.button(this, lab(), M3Widgets.ButtonKind.TONAL) {}
+            b.setOnClickListener {
+                val n = GearMath.next(Controls.chassisPreset(this), CarMath.CHASSIS_PRESET_COUNT); Controls.setChassisPreset(this, n)
+                for (k in 0 until 6) { Controls.setTuning(this, 13 + k, CarMath.CHASSIS_PRESETS[n][k]); if (running) Native.gameTuning(13 + k, CarMath.CHASSIS_PRESETS[n][k]) }
+                (b as? TextView)?.text = lab(); refreshers.forEach { it() }
+            }
+            refreshers.add { (b as? TextView)?.text = lab() }
+            r.addView(b, LinearLayout.LayoutParams(px(110f), px(42f)))
+            colB.addView(r, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
+        }
         for (i in 0 until CarMath.PARTS) {
             val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             r.addView(TextView(this).apply { text = CarMath.partName(i, en); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -613,7 +627,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val p = panel(content)
         content.addView(M3Widgets.button(this, t("Reset tuning", "Сбросить настройки"), M3Widgets.ButtonKind.TONAL) {
             for (i in 0 until CarMath.PARTS) { Controls.setTuning(this, i, 1f); if (running) Native.gameTuning(i, 1f) }
-            Controls.setDiffPreset(this, 1)
+            Controls.setDiffPreset(this, 1); Controls.setChassisPreset(this, 0)
             Controls.setAssists(this, CarMath.ALL_AIDS); if (running) Native.gameAssists(CarMath.ALL_AIDS); refreshers.forEach { it() }
         }, LinearLayout.LayoutParams(px(240f), px(44f)).apply { topMargin = px(8f) })
         content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(8f) })

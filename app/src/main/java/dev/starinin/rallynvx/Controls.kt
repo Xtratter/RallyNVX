@@ -72,6 +72,9 @@ object Controls {
     /** The differential preset last chosen in the car menu (0 tarmac, 1 gravel, 2 snow); only the button's label, the values are the tuning parts. */
     fun diffPreset(c: Context): Int = p(c).getInt("diff_preset", 1).coerceIn(0, CarMath.PRESET_COUNT - 1)
     fun setDiffPreset(c: Context, v: Int) = p(c).edit().putInt("diff_preset", v.coerceIn(0, CarMath.PRESET_COUNT - 1)).apply()
+    /** The suspension preset last chosen in the car menu (0 as built, 1 tarmac, 2 gravel, 3 snow). */
+    fun chassisPreset(c: Context): Int = p(c).getInt("chassis_preset", 0).coerceIn(0, CarMath.CHASSIS_PRESET_COUNT - 1)
+    fun setChassisPreset(c: Context, v: Int) = p(c).edit().putInt("chassis_preset", v.coerceIn(0, CarMath.CHASSIS_PRESET_COUNT - 1)).apply()
     /** The manual box: 0 sequential (the real car's), 1 H-pattern with a clutch. */
     fun boxType(c: Context): Int = p(c).getInt("box_type", 0).coerceIn(0, GearMath.BOXES - 1)
     fun setBoxType(c: Context, v: Int) = p(c).edit().putInt("box_type", v.coerceIn(0, GearMath.BOXES - 1)).apply()
