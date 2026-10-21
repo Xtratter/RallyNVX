@@ -86,7 +86,7 @@ pub fn choose(p: Profile, m: &Memory, s: &Situation) -> Choice {
         if let Some(b) = best { if force(b) > cur * 1.12 { return Choice::Down(b); } }
     }
     // braking at speed: down to the gear whose revs are nearest to the engine brake's band
-    if braking && g > 1 && s.rpm < t.brake_rpm - 400.0 && m.since_shift >= t.dwell_down {
+    if braking && g > 1 && s.rpm < t.brake_rpm - 400.0 && m.since_shift >= 0.5 {   // hard braking cannot wait for the ordinary pause
         let target = (1..g).filter(|&h| at(h) <= t.over_rev - 600.0).min_by(|&a, &b| (at(a) - t.brake_rpm).abs().partial_cmp(&(at(b) - t.brake_rpm).abs()).unwrap_or(std::cmp::Ordering::Equal));
         if let Some(h) = target { return Choice::Down(h); }
     }

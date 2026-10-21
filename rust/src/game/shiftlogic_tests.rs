@@ -91,3 +91,10 @@ fn mem(load: f32) -> Memory { Memory { load, ..Memory::default() } }
         }
     }
 }
+#[test] fn braking_downshifts_do_not_wait_the_ordinary_pause() {
+    let mut m = mem(0.0); m.since_shift = 0.6;        // inside the 1.2 s pause of an ordinary down-shift
+    let mut s = sit(5, 24.0, 0.0); s.brake = true;    // 3800 rpm: under the band of the engine brake
+    assert_eq!(choose(Profile::Sport, &m, &s), Choice::Down(4));
+    m.since_shift = 0.2;
+    assert_eq!(choose(Profile::Sport, &m, &s), Choice::Hold, "but not twice within a blink");
+}

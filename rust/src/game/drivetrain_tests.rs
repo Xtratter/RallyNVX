@@ -6,7 +6,7 @@ struct Car { dt: Drivetrain, v: f32, t: f32, brake: bool }
 impl Car {
     fn new() -> Car { Car { dt: Drivetrain::new(), v: 0.0, t: 0.0, brake: false } }
     fn step(&mut self, thr: f32) -> DriveOut {
-        let o = self.dt.step(1.0 / 60.0, &DriveIn { throttle: thr, speed: self.v, wheel_r: R, airborne: false, brake: self.brake });
+        let o = self.dt.step(1.0 / 60.0, &DriveIn { throttle: thr, speed: self.v, wheel_r: R, brake: self.brake, ..Default::default() });
         if self.brake && self.v > 0.0 { self.v = (self.v - 8.0 / 60.0).max(0.0); }   // the brakes: 8 m/s^2
         let drag = 0.5 * 1.2 * 0.62 * 2.1 * self.v * self.v.abs() + 160.0 * self.v.signum().min(1.0).max(-1.0) * (self.v.abs() / (self.v.abs() + 0.3));
         let grip = 1.2 * 1230.0 * 9.81;
@@ -102,7 +102,7 @@ impl Car {
     for k in 0..6000 {
         seed = seed.wrapping_mul(1664525).wrapping_add(1013904223); let r = (seed >> 8) as f32 / 16_777_216.0;
         if k % 97 == 0 { a.shift(if r > 0.5 { 1 } else { -1 }); a.set_clutch(r); if k % 300 == 0 { a.set_mode(if r > 0.5 { Mode::Auto } else { Mode::Manual }); } }
-        let o = a.step(1.0 / 60.0, &DriveIn { throttle: r * 2.0 - 1.0, speed: (r - 0.3) * 80.0, wheel_r: R, airborne: k % 500 < 20, brake: k % 7 == 0 });
+        let o = a.step(1.0 / 60.0, &DriveIn { throttle: r * 2.0 - 1.0, speed: (r - 0.3) * 80.0, wheel_r: R, airborne: k % 500 < 20, brake: k % 7 == 0, lat_g: r - 0.5, slope: r - 0.5 });
         assert!(o.force.is_finite() && o.rpm.is_finite() && o.rpm >= 0.0 && o.rpm < 12000.0 && o.torque.is_finite(), "step {k}: {o:?}");
     }
 }
@@ -132,7 +132,7 @@ impl Car {
     assert!(g >= 3 && rpm > 3500.0, "gear {g} at {rpm} rpm");
     c.run(0.0, 2.0); assert!(c.dt.gear <= g, "a lift upshifted: {g} -> {}", c.dt.gear);
     // a cruise at light gas in a high gear, then the floor: it drops a gear within half a second
-    let mut d = Car::new(); d.v = 22.0; d.run(0.12, 10.0);
+    let mut d = Car::new(); d.v = 22.0; d.dt.gear = 6; d.run(0.12, 6.0);
     let g = d.dt.gear; assert!(g >= 4 && d.dt.last.rpm < 3300.0, "cruising in gear {g} at {} rpm", d.dt.last.rpm);
     d.run(1.0, 0.5); assert!(d.dt.gear < g, "kick-down: gear {g} -> {}", d.dt.gear);
 }
@@ -171,4 +171,31 @@ impl Car {
         g0 = c.dt.gear;
     }
     assert!(n >= 4, "{n} shifts seen");
+}
+
+#[test] fn a_stab_in_a_high_gear_kicks_down_several_gears() {
+    let mut d = Car::new(); d.v = 22.0; d.dt.gear = 6; d.run(0.12, 6.0);
+    let g = d.dt.gear; assert!(g >= 5, "cruising in {g}");
+    d.run(1.0, 0.6);
+    assert!(d.dt.gear <= g - 2, "kick-down skipped to {} from {g}", d.dt.gear);
+}
+#[test] fn race_holds_its_gears_longer_than_comfort() {
+    let run = |p: Profile| { let mut c = Car::new(); c.dt.profile = p; c.run(1.0, 3.0); (c.dt.gear, c.dt.last.rpm) };
+    let (comfort, race) = (run(Profile::Comfort), run(Profile::Race));
+    assert!(comfort.0 >= race.0, "comfort {comfort:?} race {race:?}");
+}
+#[test] fn brake_taps_do_not_hunt() {
+    let mut c = Car::new(); c.run(1.0, 20.0); let mut shifts = 0; let mut last = c.dt.gear;
+    for k in 0..60 * 12 {
+        c.brake = (k / 20) % 2 == 0;                    // 1/3 s on, 1/3 s off
+        let o = c.step(if c.brake { 0.0 } else { 0.4 });
+        if o.gear != last { shifts += 1; last = o.gear; }
+    }
+    assert!(shifts <= 8, "{shifts} shifts in 12 s of brake taps");
+}
+#[test] fn reverse_and_the_selector_are_untouched() {
+    let mut c = Car::new(); c.dt.reverse_sel = true; c.run(0.6, 3.0);
+    assert_eq!(c.dt.gear, -1);
+    c.dt.reverse_sel = false; c.run(0.0, 1.0);
+    assert!(c.dt.gear >= 1, "back in drive: {}", c.dt.gear);
 }

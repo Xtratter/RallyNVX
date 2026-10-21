@@ -2,6 +2,7 @@
 //! (`engine_torque.json`: net torque over revs and throttle at the spooled boost, made by `generate_torque_table`), a turbo lag and an idle governor; it turns with its own inertia against
 //! the clutch, which carries torque to the wheels through the gear. Two modes: an automatic (the gear and the clutch are decided here) and a manual (the driver shifts the gears and works the clutch).
 use std::sync::OnceLock;
+use super::shiftlogic::{choose, table as shift_table, Choice, Memory, Profile, Situation};
 
 /// The gear ratios (times the final drive below) for 1..6 and the reverse.
 pub const RATIOS: [f32; 6] = [2.92, 2.12, 1.62, 1.31, 1.08, 0.92];
@@ -17,7 +18,6 @@ const CLUTCH_MAX: f32 = 520.0;
 pub const IDLE_RPM: f32 = 950.0;
 pub const LIMITER_RPM: f32 = 7800.0;
 /// Seconds a shift takes in the automatic and in the sequential manual box.
-const SHIFT_AUTO: f32 = 0.18;
 const SHIFT_MANUAL: f32 = 0.12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,7 +49,7 @@ pub fn engine_torque(rpm: f32, thr: f32) -> f32 {
 }
 
 /// What the drivetrain is asked each step.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct DriveIn {
     /// The throttle pedal: -1..1 in the automatic (negative asks for the reverse), 0..1 in the manual.
     pub throttle: f32,
@@ -58,6 +58,8 @@ pub struct DriveIn {
     pub airborne: bool,
     /// The brake pedal is down (the automatic holds a lower gear for the engine brake).
     pub brake: bool,
+    /// The lateral acceleration (g) and the grade (the sine of the pitch, positive uphill): the automatic holds its gear in a corner and downshifts uphill.
+    pub lat_g: f32, pub slope: f32,
 }
 
 /// What it gives.
@@ -96,7 +98,7 @@ pub struct Drivetrain {
     running: bool, starting: f32, stalled_for: f32,
     shift: f32, shift_up: bool, limiter: bool, boost: f32, idle_i: f32,
     /// What the automatic remembers of the gas pedal (a press at once, a lift fades) and the seconds since its last shift.
-    load_s: f32, since_shift: f32,
+    mem: Memory, pub profile: Profile,
     pub last: DriveOut,
 }
 
@@ -112,7 +114,7 @@ impl Drivetrain {
     pub fn new() -> Drivetrain {
         let rpm = IDLE_RPM;
         Drivetrain { opts: DriveOpts::default(), mode: Mode::Auto, gear: 1, omega: rpm * std::f32::consts::TAU / 60.0, clutch_pedal: 0.0, reverse_sel: false, auto_reverse: false, running: true, starting: 0.0, stalled_for: 0.0,
-            shift: 0.0, shift_up: true, limiter: false, boost: 0.0, idle_i: 0.1, load_s: 0.0, since_shift: 9.0,
+            shift: 0.0, shift_up: true, limiter: false, boost: 0.0, idle_i: 0.1, mem: Memory::default(), profile: Profile::Sport,
             last: DriveOut { force: 0.0, rpm, gear: 1, grip: 0.0, torque: 0.0, throttle: 0.0, boost_bar: 0.0, cut: false, stalled: false } }
     }
 
@@ -120,7 +122,7 @@ impl Drivetrain {
     pub fn running(&self) -> bool { self.running }
 
     /// A new start (a reset, a new level): first gear, the engine at the idle.
-    pub fn reset(&mut self) { let mode = self.mode; let sel = self.reverse_sel; let opts = self.opts; let ar = self.auto_reverse; *self = Drivetrain::new(); self.reverse_sel = sel; self.opts = opts; self.auto_reverse = ar; self.mode = mode; if mode == Mode::Manual { self.gear = 0; } }
+    pub fn reset(&mut self) { let mode = self.mode; let sel = self.reverse_sel; let opts = self.opts; let ar = self.auto_reverse; let profile = self.profile; *self = Drivetrain::new(); self.reverse_sel = sel; self.opts = opts; self.auto_reverse = ar; self.profile = profile; self.mode = mode; if mode == Mode::Manual { self.gear = 0; } }
 
     pub fn set_mode(&mut self, m: Mode) { if m != self.mode { self.mode = m; if m == Mode::Auto && self.gear == 0 { self.gear = 1; } } }
 
@@ -133,33 +135,23 @@ impl Drivetrain {
 
     pub fn set_clutch(&mut self, pedal: f32) { self.clutch_pedal = if pedal.is_finite() { pedal.clamp(0.0, 1.0) } else { 0.0 }; }
 
-    /// The automatic's choice of the gear.
+    /// The automatic's choice of the gear (the rules are in `shiftlogic`).
     fn auto_gear(&mut self, i: &DriveIn, thr: f32, rpm: f32, dt: f32) {
         // R is chosen by hand (the autopilot alone asks for the reverse with a negative throttle); a car that merely rolls back in D takes the first gear as soon as the gas is pressed
         let holding = self.gear == -1 && i.speed < -0.5 && thr < 0.05;
         if self.reverse_sel || (self.auto_reverse && ((i.throttle < -0.1 && i.speed < 1.0) || holding)) { if self.gear != -1 { self.gear = -1; } return; }
-        if self.gear <= 0 { self.gear = 1; self.since_shift = 0.0; return; }
-        // the schedule follows the pedal the box remembers: a press counts at once, a lift fades over about a second, so a lift in a corner keeps the gear and a flickering pedal does not hunt
-        self.load_s = if thr > self.load_s { thr } else { self.load_s + (thr - self.load_s) * (dt / 1.2).min(1.0) };
-        self.since_shift += dt;
+        if self.gear <= 0 { self.gear = 1; self.mem.shifted(); return; }
+        let rate = self.mem.update(dt, thr, i.brake, i.lat_g);
         if self.shift > 0.0 { return; }
-        let (ls, gearing) = (self.load_s, self.opts.gearing);
-        let at = |g: i32| rpm_in_gear(i.speed, i.wheel_r, g) * gearing;   // the revs the wheels would give the engine in gear g
-        let braking = i.brake && i.speed > 4.0 && thr < 0.1;
-        // the gas floored at low revs asks for a lower gear (the kick-down), which may come sooner than a normal shift
-        let kick = thr > 0.85 && self.gear > 1 && rpm < 3300.0 && at(self.gear - 1) < 6600.0;
-        if self.since_shift < if kick { 0.35 } else { 0.9 } { return; }
-        let floor = 1900.0 + 1700.0 * ls;
-        let up_at = 3800.0 + 3500.0 * ls;
-        let down_at = if braking { floor.max(4300.0) } else { floor };   // braking: down through the gears for the engine brake and the power at the corner's exit
-        let lifted = thr < 0.05 && i.speed > 4.0;   // coasting: the box keeps the gear (the engine brake), it does not climb on a lift
-        if !braking && !lifted && self.gear < 6 && rpm > up_at && at(self.gear + 1) > floor + 500.0 {
-            // up only if the next gear still has the revs to pull (else it would go back down at once)
-            self.gear += 1; self.shift = SHIFT_AUTO; self.shift_up = true; self.since_shift = 0.0;
-        } else if self.gear > 1 && (kick || rpm < down_at) && at(self.gear - 1) < if braking { 5800.0 } else { 6600.0 } {
-            self.gear -= 1; self.shift = SHIFT_AUTO; self.shift_up = false; self.since_shift = 0.0;
+        let s = Situation { gear: self.gear, rpm, gas: thr, rate, brake: i.brake, speed: i.speed, wheel_r: i.wheel_r, gearing: self.opts.gearing, lat_g: i.lat_g, slope: i.slope };
+        match choose(self.profile, &self.mem, &s) {
+            Choice::Up(g) => self.begin_shift(g, true),
+            Choice::Down(g) => self.begin_shift(g, false),
+            Choice::Hold => {}
         }
     }
+
+    fn begin_shift(&mut self, g: i32, up: bool) { self.gear = g; self.shift = shift_table(self.profile).shift_time; self.shift_up = up; self.mem.shifted(); }
 
     pub fn step(&mut self, dt: f32, i: &DriveIn) -> DriveOut {
         let dt = dt.clamp(0.0, 0.05);
