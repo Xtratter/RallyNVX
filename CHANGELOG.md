@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.77.2 - the fire only after a lift
+- Fixed: the fire at the exhaust burned all the time the gas was shut (above 3000 rpm with the anti-lag on, which is the default): on a lift, on the engine brake, under braking. Found by measuring the fuel that burns in the exhaust of the engine model: 0.003 to 0.006 mol/s without a break (no fire at idle, at a steady throttle or at full throttle, and none with the anti-lag off)
+- Changed: the anti-lag now works like the real one: it fires after a lift while the turbo needs help, stops when the turbo is fast enough and starts again if it has slowed, and for three seconds at most; the fire comes in bursts after a lift (for 2 to 3 seconds, then none), not for as long as the throttle is shut. A new lift (a pulse of the throttle) arms it again
+- Changed: the fuel that burns each frame is collected into **pops** (a pop comes out at 0.0012 mol, a big one at once, the leftover is dropped after a quarter of a second without burning) instead of a small fireball every frame, which looked like a flicker. The flat-shift spark cut and the rev limiter still give their own pops
+- Tests: after a lift the burning stops within a few seconds; it is ready again for the next lift; a thin steady burn comes out as 8 to 16 pops in three seconds with the fuel conserved; a big pop at once; the leftover dropped
 ## 2.77.1 - a cheaper frame
 - Measured (on the phone, the GPU profile `gpuprof=1`, a parked car, 1080 x 2400): the main pass took 22.5 ms (the sky and the post-processing floor 3.9 ms, the terrain 10.8 ms, the models 5.5 ms, the instances, the roads, the water and the glass under 0.5 ms); the game's logic is almost free (a physics step 0.04 ms, the sound director's ray tracing 0.19 ms, the sound synthesis 17 % of one core on its own thread)
 - Changed: the terrain tiles are drawn **nearest first** (they came in a hash-map order, so the far tiles were shaded and then painted over by the near ones): the terrain costs 2.2 ms less

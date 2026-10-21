@@ -17,6 +17,19 @@ pub struct Parcel { pub pos: V3, pub vel: V3, pub temp: f32, pub size: f32, pub 
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct FireInst { pub p: [f32; 4], pub c: [f32; 4], pub e: [f32; 4] }
 
+/// The fuel that burns in the exhaust arrives every frame in tiny amounts; one frame's worth would be a fireball of a few centimetres, a flicker. It is collected into pops: a pop comes out
+/// when `MIN` mol have gathered (a big one at once), and what is left over when the burning stops for a quarter of a second is dropped.
+#[derive(Default, Debug)]
+pub struct Puffs { acc: f32, quiet: f32 }
+impl Puffs {
+    pub const MIN: f32 = 0.0012;
+    pub fn push(&mut self, burned: f32, dt: f32) -> Option<f32> {
+        if burned.is_finite() && burned > 0.0 { self.acc += burned; self.quiet = 0.0; }
+        else { self.quiet += if dt.is_finite() { dt.max(0.0) } else { 0.0 }; if self.quiet > 0.25 { self.acc = 0.0; } }
+        if self.acc >= Self::MIN { let m = self.acc; self.acc = 0.0; Some(m) } else { None }
+    }
+}
+
 #[derive(Default)]
 pub struct Fire { pub parts: Vec<Parcel>, rng: u32 }
 

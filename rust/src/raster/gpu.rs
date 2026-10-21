@@ -186,7 +186,7 @@ pub struct Raster {
     dust_gpu: Option<dust_gpu::DustGpu>, dust_render: Option<dust_gpu::DustRender>, bgl_main_keep: wgpu::BindGroupLayout, module_keep: wgpu::ShaderModule,
     dust_buf: wgpu::Buffer,
     /// The fire at the tail pipe: its parcels (simulated here, where the pipe's place is known), the instance buffer and the additive pipeline.
-    fire: fire::Fire, fire_time: f32, flame_buf: wgpu::Buffer, pl_flame: wgpu::RenderPipeline,
+    fire: fire::Fire, puffs: fire::Puffs, fire_time: f32, flame_buf: wgpu::Buffer, pl_flame: wgpu::RenderPipeline,
     /// The exhaust gas (vapour and soot) as puffs of the dust pipeline.
     smoke: smoke::Smoke, smoke_buf: wgpu::Buffer,
     cache_seed: u64,
@@ -500,7 +500,7 @@ impl Raster {
         }
         crate::loading::stage(crate::loading::WORLD, 65);
         Raster { city_radius: 450.0, surface, device, queue, config, depth, shadow, ubuf, ibuf, bg_main, bg_shadow,
-            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, fire: fire::Fire::new(), fire_time: 0.0, flame_buf, pl_flame, smoke: smoke::Smoke::new(), smoke_buf, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach))), wiper_state: Default::default(), wiper_time: 0.0, car_exhaust: car.exhaust_tip, film: Default::default(), car_screen: car.windscreen, car_sweep: car.wiper_sweep, car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, wheel_spin_rear: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
+            pl_terrain, pl_terrain_sh, pl_inst, pl_inst_sh, pl_sky, pl_model, pl_model_back, pl_model_sh, models, mbuf, pl_water, pl_road, pl_glass, pl_rain, pl_dust, pl_dust_pt, pl_dust_specks, fire: fire::Fire::new(), puffs: Default::default(), fire_time: 0.0, flame_buf, pl_flame, smoke: smoke::Smoke::new(), smoke_buf, airflow: None, airflow_tried: false, adapter: adapter.clone(), prof, blur: None, prev_vp: None, prev_cam: V3::ZERO, dust_gpu: None, dust_render: None, bgl_main_keep: bgl_main.clone(), module_keep: module.clone(), dust_buf, cache_seed: u64::MAX, car_key: car_key(&crate::game::vehicle::VehicleSpec::offroader()), car_gloves: car.gloves.is_some(), car_wipers: std::array::from_fn(|k| car.wipers[k].as_ref().map(|s| (s.pivot, s.axis, s.rest, s.reach))), wiper_state: Default::default(), wiper_time: 0.0, car_exhaust: car.exhaust_tip, film: Default::default(), car_screen: car.windscreen, car_sweep: car.wiper_sweep, car_steering: car.steering.as_ref().map(|s| (s.pivot, s.axis)), car_has_driver: car.driver.is_some(), car_parts: (car.disc.is_some(), car.caliper.is_some(), car.interior.is_some(), car.glass.is_some()), car_sdf: None, sdf_serial: 0, dep_tex, atlas: HeightAtlas::new(), atlas_tex, hybrid: false, water: HashMap::new(), roads: HashMap::new(), bush_cache: HashMap::new(), grass_cache: None, wheel_spin: 0.0, wheel_spin_rear: 0.0, last_time: 0.0, meshes, tiles: HashMap::new(), _keep: keep }
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -629,7 +629,7 @@ impl Raster {
         let fdt = if wv.time > self.fire_time { (wv.time - self.fire_time).min(0.05) } else { 0.0 };
         self.fire_time = wv.time;
         {
-            let burned = crate::audio::take_burned();
+            let burned = self.puffs.push(crate::audio::take_burned(), fdt).unwrap_or(0.0);   // collected into pops (see `fire::Puffs`)
             if let (Some(tip), true) = (self.car_exhaust, burned > 0.0) {
                 let (bq, bp) = vm::car_body_pose(wv.vehicle);
                 self.fire.emit(bp + bq.rotate(v3(tip[0], tip[1], tip[2])), bq.rotate(v3(0.0, 0.0, -1.0)), burned, wv.vehicle.vel);

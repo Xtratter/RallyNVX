@@ -91,6 +91,8 @@ pub struct Engine {
     pub gas_torque: f64, pub clutch_torque: f64,
     /// The turbo's shaft speed (rad/s) and how far the wastegate is open (0..1).
     pub turbo_omega: f64, pub wastegate: f64,
+    /// The anti-lag's controller: the seconds since the throttle closed, and whether it still asks for fire (it stops when the turbo is fast enough, and after a few seconds).
+    lift_t: f64, als_want: bool,
     /// The fuel (mol) that has burnt in the exhaust so far: the pops and the anti-lag's fire.
     pub exhaust_burned: f64,
     /// What has left the collector for the open air so far: the moles, the moles times the temperature (K) and the moles of unburnt fuel among them (the smoke at the tail pipe).
@@ -108,7 +110,7 @@ impl Engine {
     pub fn new(spec: EngineSpec) -> Engine {
         let cyl = (0..spec.cylinders).map(|_| Cylinder { gas: Gas::air(spec.displacement() / spec.cylinders as f64 / (spec.compression - 1.0), P_ATM, T_ATM), runner: Gas::air(spec.runner, P_ATM, T_ATM), burn: Burn::default(), angle: 0.0, als_adv: -80.0, als_skip: false }).collect();
         Engine { spec, cyl, plenum: Gas::air(spec.plenum, P_ATM, T_ATM), collector: Gas::air(spec.collector, P_ATM, T_ATM), atmosphere: Gas::air(1000.0, P_ATM, T_ATM), comp: Gas::air(1000.0, P_ATM, 320.0), charge: Gas::air(spec.charge, P_ATM, T_ATM),
-            theta: 0.0, omega: 0.0, idle_i: 0.0, fuel_cut: false, controls: Controls::default(), gas_torque: 0.0, clutch_torque: 0.0, turbo_omega: 2500.0, wastegate: 0.0, bov_flow: 0.0, surge_flow: 0.0, exhaust_burned: 0.0, out_moles: 0.0, out_heat: 0.0, out_fuel: 0.0, rng: 0x2468_ACE1, air_flow: 0.0 }
+            theta: 0.0, omega: 0.0, idle_i: 0.0, fuel_cut: false, controls: Controls::default(), gas_torque: 0.0, clutch_torque: 0.0, turbo_omega: 2500.0, wastegate: 0.0, lift_t: 0.0, als_want: true, bov_flow: 0.0, surge_flow: 0.0, exhaust_burned: 0.0, out_moles: 0.0, out_heat: 0.0, out_fuel: 0.0, rng: 0x2468_ACE1, air_flow: 0.0 }
     }
 
     pub fn rpm(&self) -> f64 { self.omega * 60.0 / TAU }
@@ -152,7 +154,13 @@ impl Engine {
         self.comp.e = 0.5 * gas::F_DOF * P_ATM * pr * self.comp.v; self.comp.n = self.comp.e * 2.0 / (gas::F_DOF * gas::R * 320.0); self.comp.o2 = 0.21 * self.comp.n; self.comp.fuel = 0.0;
         let moved_c = flow(&mut self.comp, &mut self.charge, 1.1e-3, dt);
         self.surge_flow = moved_c / dt;
-        let a_thr = a_throttle * 0.9 + if c.als && thr < 0.12 && rpm > 3000.0 { 0.12 * spec.throttle_area } else { 0.0 };   // anti-lag lets air past the closed throttle
+        // the anti-lag works while the turbo needs help: after a lift it fires until the turbo is fast enough (and starts again when it has slowed), for a few seconds at most, so the fire comes in
+        // bursts after a lift, not for as long as the throttle is shut
+        if thr >= 0.12 { self.lift_t = 0.0; self.als_want = true; } else { self.lift_t += dt; }
+        let spool = self.turbo_omega / spec.turbo_max;
+        if self.als_want && spool > 0.72 { self.als_want = false; } else if !self.als_want && spool < 0.5 { self.als_want = true; }
+        let als_active = c.als && thr < 0.12 && rpm > 3000.0 && self.lift_t < 3.0 && self.als_want;
+        let a_thr = a_throttle * 0.9 + if als_active { 0.12 * spec.throttle_area } else { 0.0 };   // anti-lag lets air past the closed throttle
         self.air_flow = flow(&mut self.charge, &mut self.plenum, a_thr, dt) / dt;
         let p_charge = self.charge.pressure();
         // open while the throttle is shut and the plenum is in vacuum, in proportion to how far the charge is over the atmosphere: the hiss tapers off instead of stopping short
@@ -191,7 +199,7 @@ impl Engine {
                 let n0 = cy.gas.n;
                 let moved = flow(&mut self.plenum, &mut cy.gas, a, dt);
                 if moved > 0.0 && fuelling {   // port injection: the fuel goes in with the air (a rich mixture for power under load)
-                    let phi = 0.98 + 0.14 * load + if c.als && thr < 0.12 && rpm > 3000.0 { 0.2 } else { 0.0 };
+                    let phi = 0.98 + 0.14 * load + if als_active { 0.2 } else { 0.0 };
                     cy.gas.fuel += moved * phi / AIR_PER_FUEL; cy.gas.n += moved * phi / AIR_PER_FUEL;
                     cy.gas.e += moved * phi / AIR_PER_FUEL * 0.5 * gas::F_DOF * gas::R * T_ATM;
                 }
@@ -200,7 +208,7 @@ impl Engine {
             if el > 0.0 { let a = valve_area(&spec, spec.exhaust_valve, el); flow(&mut cy.gas, &mut cy.runner, a, dt); }
             exhaust_moles += flow(&mut cy.runner, &mut self.collector, spec.runner_area, dt).max(0.0);
             // the spark: before the top dead centre, earlier with the revs, later under load; with anti-lag very late (so the fuel burns in the exhaust), sometimes not at all
-            let als_on = c.als && thr < 0.12 && rpm > 3000.0 && !self.fuel_cut;
+            let als_on = als_active && !self.fuel_cut;
             let mut adv = 10.0 + 16.0 * (rpm / 7000.0).min(1.0) + 8.0 * (1.0 - load.min(1.0));
             let (mut skip, mut rich) = (c.cut, 0.0);
             if als_on && !cy.burn.active && crossed(deg_prev % 720.0, deg % 720.0, 300.0) {   // decided once a cycle, long before the spark
