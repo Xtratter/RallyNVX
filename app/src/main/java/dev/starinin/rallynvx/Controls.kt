@@ -69,6 +69,9 @@ object Controls {
     /** The manual transmission is chosen (the clutch pedal and the shift buttons are shown). */
     fun manual(c: Context): Boolean = p(c).getBoolean("manual_gearbox", false)
     fun setManual(c: Context, v: Boolean) = p(c).edit().putBoolean("manual_gearbox", v).apply()
+    /** The differential preset last chosen in the car menu (0 tarmac, 1 gravel, 2 snow); only the button's label, the values are the tuning parts. */
+    fun diffPreset(c: Context): Int = p(c).getInt("diff_preset", 1).coerceIn(0, CarMath.PRESET_COUNT - 1)
+    fun setDiffPreset(c: Context, v: Int) = p(c).edit().putInt("diff_preset", v.coerceIn(0, CarMath.PRESET_COUNT - 1)).apply()
     /** The manual box: 0 sequential (the real car's), 1 H-pattern with a clutch. */
     fun boxType(c: Context): Int = p(c).getInt("box_type", 0).coerceIn(0, GearMath.BOXES - 1)
     fun setBoxType(c: Context, v: Int) = p(c).edit().putInt("box_type", v.coerceIn(0, GearMath.BOXES - 1)).apply()
