@@ -58,7 +58,17 @@ static CFG: RwLock<Option<Styles>> = RwLock::new(None);
 
 pub fn cfg() -> AutoCfg { styles().normal }
 /// The numbers of a driving style: 0 calm, 1 normal, 2 aggressive.
-pub fn cfg_style(style: i32) -> AutoCfg { match style { 3 => custom(), 4 => learned(), 5 => attack(), _ => styles().get(style) } }
+pub fn cfg_style(style: i32) -> AutoCfg { match style { 3 => custom(), 4 => learned(), 5 => attack(), 6 => net().map_or_else(cfg, |(_, src)| cfg_style(src)), _ => styles().get(style) } }
+
+/// The neural style (6): the net the autopilot trained on the drives of the controller of style `src` (1 normal, 5 Max Attack), which also gives the plan; the normal style's controller until a net is set.
+static NET: RwLock<Option<(std::sync::Arc<super::nn::Mlp>, i32)>> = RwLock::new(None);
+pub fn net() -> Option<(std::sync::Arc<super::nn::Mlp>, i32)> { NET.read().unwrap_or_else(|e| e.into_inner()).clone() }
+/// Sets the net from its saved parameters; `false` for a wrong size or non-finite numbers.
+pub fn set_net(w: &[f32], src: i32) -> bool {
+    let Some(m) = super::nn::Mlp::from_vec(w) else { return false };
+    *NET.write().unwrap_or_else(|e| e.into_inner()) = Some((std::sync::Arc::new(m), if src == 5 { 5 } else { 1 })); true
+}
+pub fn reset_net() { *NET.write().unwrap_or_else(|e| e.into_inner()) = None; }
 
 /// The numbers the autopilot taught itself (style 4); the normal style until it has learned.
 static LEARNED: RwLock<Option<AutoCfg>> = RwLock::new(None);

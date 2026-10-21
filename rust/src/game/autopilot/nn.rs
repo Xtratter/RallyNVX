@@ -1,0 +1,144 @@
+//! A small neural network that drives: what the geometric controller does (steering, throttle and brake, handbrake) learned from its own drives and then trained further.
+//! Plain Rust, no libraries: a fully connected net of tanh layers, trained with Adam on the mean squared error (backpropagation by hand).
+
+/// The inputs: see `Autopilot::features`.
+pub const F: usize = 24;
+/// The outputs: steering (-1..1), throttle (+) or brake (-) (-1..1), the handbrake (-1..1, over 0 = on).
+pub const O: usize = 3;
+pub const H: usize = 48;
+
+/// Layers: F -> H -> H -> O (tanh on all three).
+#[derive(Clone, Debug)]
+pub struct Mlp { pub w1: Vec<f32>, pub b1: Vec<f32>, pub w2: Vec<f32>, pub b2: Vec<f32>, pub w3: Vec<f32>, pub b3: Vec<f32> }
+
+/// Adam's moments for every parameter.
+struct Adam { m: Vec<f32>, v: Vec<f32>, t: i32 }
+
+pub struct Rng(u64);
+impl Rng {
+    pub fn new(seed: u64) -> Rng { Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1) }
+    pub fn uniform(&mut self) -> f32 { self.0 ^= self.0 << 13; self.0 ^= self.0 >> 7; self.0 ^= self.0 << 17; ((self.0 >> 40) as f32 + 0.5) / 16_777_216.0 }
+    pub fn normal(&mut self) -> f32 { let (a, b) = (self.uniform(), self.uniform()); (-2.0 * a.ln()).sqrt() * (std::f32::consts::TAU * b).cos() }
+}
+
+impl Mlp {
+    /// Small random weights (Xavier-like scale).
+    pub fn new(seed: u64) -> Mlp {
+        let mut r = Rng::new(seed);
+        let mut layer = |n_in: usize, n_out: usize| -> Vec<f32> { let s = (1.0 / n_in as f32).sqrt(); (0..n_in * n_out).map(|_| r.normal() * s).collect() };
+        Mlp { w1: layer(F, H), b1: vec![0.0; H], w2: layer(H, H), b2: vec![0.0; H], w3: layer(H, O), b3: vec![0.0; O] }
+    }
+
+    pub fn params(&self) -> usize { self.w1.len() + self.b1.len() + self.w2.len() + self.b2.len() + self.w3.len() + self.b3.len() }
+
+    /// The parameters as one vector, and back (for the optimiser and for saving).
+    pub fn to_vec(&self) -> Vec<f32> { [&self.w1, &self.b1, &self.w2, &self.b2, &self.w3, &self.b3].iter().flat_map(|v| v.iter().cloned()).collect() }
+    pub fn from_vec(x: &[f32]) -> Option<Mlp> {
+        let n = [F * H, H, H * H, H, H * O, O];
+        if x.len() != n.iter().sum::<usize>() || x.iter().any(|v| !v.is_finite()) { return None; }
+        let mut o = 0; let mut take = |k: usize| { let s = x[o..o + k].to_vec(); o += k; s };
+        Some(Mlp { w1: take(n[0]), b1: take(n[1]), w2: take(n[2]), b2: take(n[3]), w3: take(n[4]), b3: take(n[5]) })
+    }
+
+    fn layer(w: &[f32], b: &[f32], x: &[f32], n_out: usize, out: &mut [f32]) {
+        let n_in = x.len();
+        for j in 0..n_out { let mut s = b[j]; let row = &w[j * n_in..(j + 1) * n_in]; for i in 0..n_in { s += row[i] * x[i]; } out[j] = s.tanh(); }
+    }
+
+    pub fn forward(&self, x: &[f32; F]) -> [f32; O] {
+        let (mut h1, mut h2) = ([0.0f32; H], [0.0f32; H]);
+        Mlp::layer(&self.w1, &self.b1, x, H, &mut h1); Mlp::layer(&self.w2, &self.b2, &h1, H, &mut h2);
+        let mut o = [0.0f32; O]; Mlp::layer(&self.w3, &self.b3, &h2, O, &mut o);
+        o
+    }
+
+    /// One pass of the gradient of the mean squared error over a batch (weighted per sample); returns the loss and the gradient in the order of `to_vec`.
+    fn grad(&self, xs: &[[f32; F]], ys: &[[f32; O]], ws: &[f32]) -> (f32, Vec<f32>) {
+        let mut g = vec![0.0f32; self.params()];
+        let (o1, o2, o3, o4, o5) = (F * H, F * H + H, F * H + H + H * H, F * H + 2 * H + H * H, F * H + 2 * H + H * H + H * O);
+        let mut loss = 0.0; let mut wsum = 0.0;
+        for ((x, y), &sw) in xs.iter().zip(ys).zip(ws) {
+            let (mut h1, mut h2) = ([0.0f32; H], [0.0f32; H]);
+            Mlp::layer(&self.w1, &self.b1, x, H, &mut h1); Mlp::layer(&self.w2, &self.b2, &h1, H, &mut h2);
+            let mut o = [0.0f32; O]; Mlp::layer(&self.w3, &self.b3, &h2, O, &mut o);
+            let mut d3 = [0.0f32; O];
+            for k in 0..O { let e = o[k] - y[k]; loss += sw * e * e; d3[k] = 2.0 * sw * e * (1.0 - o[k] * o[k]); }
+            wsum += sw;
+            let mut d2 = [0.0f32; H];
+            for k in 0..O { for j in 0..H { g[o4 + k * H + j] += d3[k] * h2[j]; d2[j] += d3[k] * self.w3[k * H + j]; } g[o5 + k] += d3[k]; }
+            for j in 0..H { d2[j] *= 1.0 - h2[j] * h2[j]; }
+            let mut d1 = [0.0f32; H];
+            for k in 0..H { for j in 0..H { g[o2 + k * H + j] += d2[k] * h1[j]; d1[j] += d2[k] * self.w2[k * H + j]; } g[o3 + k] += d2[k]; }
+            for j in 0..H { d1[j] *= 1.0 - h1[j] * h1[j]; }
+            for k in 0..H { for j in 0..F { g[k * F + j] += d1[k] * x[j]; } g[o1 + k] += d1[k]; }
+        }
+        let n = wsum.max(1e-6);
+        for v in g.iter_mut() { *v /= n; }
+        (loss / n, g)
+    }
+
+    /// Trains on `(xs, ys)` for `epochs` passes in batches of 128 with Adam; `ws` weights each sample (the rare, important ones count more). Returns the loss of the last epoch.
+    pub fn train(&mut self, xs: &[[f32; F]], ys: &[[f32; O]], ws: &[f32], epochs: usize, lr: f32, seed: u64) -> f32 {
+        if xs.is_empty() { return 0.0; }
+        let mut p = self.to_vec();
+        let mut adam = Adam { m: vec![0.0; p.len()], v: vec![0.0; p.len()], t: 0 };
+        let mut rng = Rng::new(seed); let mut order: Vec<usize> = (0..xs.len()).collect();
+        let mut last = 0.0;
+        for _ in 0..epochs {
+            for i in (1..order.len()).rev() { let j = (rng.uniform() * (i + 1) as f32) as usize % (i + 1); order.swap(i, j); }
+            let (mut tot, mut cnt) = (0.0, 0);
+            for chunk in order.chunks(128) {
+                let bx: Vec<[f32; F]> = chunk.iter().map(|&i| xs[i]).collect(); let by: Vec<[f32; O]> = chunk.iter().map(|&i| ys[i]).collect(); let bw: Vec<f32> = chunk.iter().map(|&i| ws[i]).collect();
+                let (loss, g) = self.grad(&bx, &by, &bw);
+                adam.t += 1; let (b1, b2) = (0.9f32, 0.999f32);
+                let (c1, c2) = (1.0 - b1.powi(adam.t), 1.0 - b2.powi(adam.t));
+                for k in 0..p.len() { adam.m[k] = b1 * adam.m[k] + (1.0 - b1) * g[k]; adam.v[k] = b2 * adam.v[k] + (1.0 - b2) * g[k] * g[k]; p[k] -= lr * (adam.m[k] / c1) / ((adam.v[k] / c2).sqrt() + 1e-8); }
+                *self = Mlp::from_vec(&p).unwrap_or_else(|| self.clone());
+                tot += loss; cnt += 1;
+            }
+            last = tot / cnt.max(1) as f32;
+        }
+        last
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test] fn the_net_has_the_expected_size_and_round_trips_its_parameters() {
+        let m = Mlp::new(1);
+        assert_eq!(m.params(), F * H + H + H * H + H + H * O + O);
+        let back = Mlp::from_vec(&m.to_vec()).unwrap();
+        let x = [0.3f32; F];
+        assert_eq!(m.forward(&x), back.forward(&x));
+        assert!(Mlp::from_vec(&[0.0; 5]).is_none() && Mlp::from_vec(&vec![f32::NAN; m.params()]).is_none());
+    }
+    #[test] fn the_outputs_stay_in_range() {
+        let m = Mlp::new(2);
+        for k in 0..20 { let x = [(k as f32 - 10.0) * 3.0; F]; assert!(m.forward(&x).iter().all(|o| o.abs() <= 1.0 && o.is_finite())); }
+    }
+    #[test] fn the_gradient_matches_a_numerical_one() {
+        let m = Mlp::new(3); let mut r = Rng::new(9);
+        let xs: Vec<[f32; F]> = (0..4).map(|_| std::array::from_fn(|_| r.normal())).collect();
+        let ys: Vec<[f32; O]> = (0..4).map(|_| std::array::from_fn(|_| r.uniform() * 2.0 - 1.0)).collect();
+        let ws = vec![1.0; 4];
+        let (_, g) = m.grad(&xs, &ys, &ws);
+        let p = m.to_vec();
+        for &k in &[0usize, 7, F * H + 3, F * H + H + 11, m.params() - 1, m.params() - 40] {
+            let eps = 1e-2f32;
+            let (mut a, mut b) = (p.clone(), p.clone()); a[k] += eps; b[k] -= eps;
+            let la = Mlp::from_vec(&a).unwrap().grad(&xs, &ys, &ws).0; let lb = Mlp::from_vec(&b).unwrap().grad(&xs, &ys, &ws).0;
+            let num = (la - lb) / (2.0 * eps);
+            assert!((num - g[k]).abs() < 0.05 * num.abs().max(g[k].abs()).max(0.02), "parameter {k}: numeric {num} analytic {}", g[k]);
+        }
+    }
+    #[test] fn it_learns_a_simple_function() {
+        let mut r = Rng::new(5);
+        let xs: Vec<[f32; F]> = (0..600).map(|_| std::array::from_fn(|i| if i < 3 { r.uniform() * 2.0 - 1.0 } else { 0.0 })).collect();
+        let ys: Vec<[f32; O]> = xs.iter().map(|x| [0.8 * x[0] - 0.3 * x[1], (x[2] * 1.5).tanh() * 0.9, if x[0] > 0.0 { 0.9 } else { -0.9 }]).collect();
+        let mut m = Mlp::new(4);
+        let before = m.train(&xs, &ys, &vec![1.0; xs.len()], 1, 0.003, 1);
+        let after = m.train(&xs, &ys, &vec![1.0; xs.len()], 150, 0.003, 2);
+        assert!(after < before * 0.2 && after < 0.03, "the loss falls from {before} to {after}");
+    }
+}

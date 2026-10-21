@@ -58,6 +58,9 @@ object Native {
     @JvmStatic external fun gameTrainState(): FloatArray
     @JvmStatic external fun gameTrainResult(): FloatArray
     @JvmStatic external fun gameSetLearned(mode: Int, v: FloatArray)
+    /** The net the self-training made: `[source style, parameters...]` once, or an empty array; and a saved net given back. Training modes 3 and 4 teach the net from the normal and the Max Attack controller. */
+    @JvmStatic external fun gameNetWeights(): FloatArray
+    @JvmStatic external fun gameSetNet(src: Int, v: FloatArray)
     @JvmStatic external fun gameInCity(mode: Int)
     /** Debug/test: start every level at this time of day (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk); negative = off. */
     @JvmStatic external fun gameTimeOfDay(phase: Float)

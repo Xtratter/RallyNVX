@@ -37,10 +37,19 @@ object Controls {
     fun paceMode(c: Context): Int = p(c).getInt("pace_mode", 2).coerceIn(0, 2)
     fun setPaceMode(c: Context, v: Int) = p(c).edit().putInt("pace_mode", v.coerceIn(0, 2)).apply()
     /** Autopilot style: 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers. */
-    const val AP_STYLES = 6
+    const val AP_STYLES = 7
     /** The numbers the autopilot taught itself (seven, see the engine's `train`) for the safe ("Learned") or the Max Attack style, or null before the first training. */
     fun learned(c: Context, attack: Boolean = false): FloatArray? = p(c).getString(if (attack) "ap_attack" else "ap_learned", null)?.split(',')?.mapNotNull { it.toFloatOrNull() }?.takeIf { it.size == 7 && it.all { x -> x.isFinite() } }?.toFloatArray()
     fun setLearned(c: Context, v: FloatArray, attack: Boolean = false) = p(c).edit().putString(if (attack) "ap_attack" else "ap_learned", v.joinToString(",")).apply()
+    /** The neural net the autopilot trained: the source style and the parameters (a file in the app's folder), or null. */
+    fun net(c: Context): Pair<Int, FloatArray>? = try {
+        val f = java.io.File(c.filesDir, "autopilot_net.bin")
+        if (!f.exists()) null else { val b = java.nio.ByteBuffer.wrap(f.readBytes()).order(java.nio.ByteOrder.LITTLE_ENDIAN); val src = b.int; val w = FloatArray((b.remaining()) / 4) { b.float }; if (w.isEmpty()) null else src to w }
+    } catch (e: Exception) { null }
+    fun setNet(c: Context, src: Int, w: FloatArray) { try {
+        val b = java.nio.ByteBuffer.allocate(4 + 4 * w.size).order(java.nio.ByteOrder.LITTLE_ENDIAN); b.putInt(src); w.forEach { b.putFloat(it) }
+        java.io.File(c.filesDir, "autopilot_net.bin").writeBytes(b.array())
+    } catch (e: Exception) { } }
     fun autopilotStyle(c: Context): Int = p(c).getInt("autopilot_style", 1).coerceIn(0, AP_STYLES - 1)
     fun setAutopilotStyle(c: Context, v: Int) = p(c).edit().putInt("autopilot_style", v.coerceIn(0, AP_STYLES - 1)).apply()
     /** The own style's numbers as steps of these lists (cornering speed, braking, top speed, corner cutting, edge margin). */

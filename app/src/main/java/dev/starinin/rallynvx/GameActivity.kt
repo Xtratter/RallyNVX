@@ -32,6 +32,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var handbrake = false
     private var autopilotOn = false
     private var autopilotStyle = 1
+    private var netLoaded = false
     private var autopilotBtn: View? = null
     private var settingsPanel: View? = null
     private var camBtn: View? = null
@@ -82,7 +83,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             val s = Native.gameStats()
             hud.text = (if (s[27] > 0.5f) t("Raster (auto) · ", "Растр (авто) · ") else "") + "${s[1].toInt()} km/h" + " · ${s[0].toInt()} fps · seed ${s[2].toInt()}" + (if (s[26] > 0.5f) " · " + t("hybrid", "гибрид") else "") + " · " + arrayOf(t("grass", "трава"), t("dirt", "грунт"), t("sand", "песок"), t("rock", "скала"), t("gravel", "гравий"), t("asphalt", "асфальт"), t("water", "вода")).getOrElse(s[28].toInt()) { "" }
             if ((s[29] > 0.5f) != autopilotOn) { autopilotOn = s[29] > 0.5f; showAutopilot() }   // it switches itself off at the finish
-            if (autopilotOn && s[29].toInt() - 1 != autopilotStyle) { autopilotStyle = (s[29].toInt() - 1).coerceIn(0, 5); showAutopilot() }
+            if (autopilotOn && s[29].toInt() - 1 != autopilotStyle) { autopilotStyle = (s[29].toInt() - 1).coerceIn(0, 6); showAutopilot() }
             if (rallyIdx > 0) updateRally(s)
             if (running) loadingView?.takeIf { it.visibility == View.VISIBLE }?.let { lv ->
                 val packed = Native.gameLoadProgress(); lv.report(packed)
@@ -293,6 +294,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun sendAutopilotTune() {
         Controls.learned(this)?.let { Native.gameSetLearned(1, it) }
         Controls.learned(this, true)?.let { Native.gameSetLearned(2, it) }
+        if (!netLoaded) { netLoaded = true; Controls.net(this)?.let { Native.gameSetNet(it.first, it.second) } }
         fun step(key: String, list: FloatArray) = list[Controls.apStep(this, key, list.size)]
         Native.gameAutopilotTune(step("ap_lat", Controls.AP_LAT), step("ap_brake", Controls.AP_BRAKE), step("ap_cut", Controls.AP_CUT), step("ap_speed", Controls.AP_SPEED), Controls.apStep(this, "ap_slide", 2).toFloat(), step("ap_edge", Controls.AP_EDGE))
     }
@@ -406,7 +408,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             r.addView(btn, LinearLayout.LayoutParams(px(150f), px(44f)))
             list.addView(r, LinearLayout.LayoutParams(px(480f), -2).apply { topMargin = px(8f) })
         }
-        val names = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"), t("Learned", "Обученный"), t("Max Attack", "Max Attack"))
+        val names = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"), t("Learned", "Обученный"), t("Max Attack", "Max Attack"), t("Neural net", "Нейросеть"))
         row(t("Style", "Стиль"), { names[Controls.autopilotStyle(this)] }) { Controls.setAutopilotStyle(this, DriveMath.cycle(Controls.autopilotStyle(this), Controls.AP_STYLES)) }
         fun apRow(text: String, key: String, size: Int, show: (Int) -> String) =
             row(text, { show(Controls.apStep(this, key, size)) }) { Controls.setApStep(this, key, DriveMath.cycle(Controls.apStep(this, key, size), size)) }
@@ -424,6 +426,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             val st = Native.gameTrainState()
             val busy = st.size >= 4 && st[0] > 0.5f
             return if (busy && trainingMode == mode) t("Stop training", "Остановить обучение") + " (${(st[1] * 100).toInt()} %)"
+            else if (mode == 3) t("Teach the neural net (copies the chosen style)", "Обучить нейросеть (повторяет выбранный стиль)")
             else if (mode == 2) t("Teach Max Attack (all out, slides)", "Обучить Max Attack (на пределе, с заносами)") else t("Teach the autopilot (safe)", "Обучить автопилот (безопасно)")
         }
         fun pollTraining() {
@@ -431,6 +434,13 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             val busy = st.size >= 4 && st[0] > 0.5f
             if (!busy && wasTraining) {
                 val r = Native.gameTrainResult()
+                val nw = if (r.size == 8 && r.all { it.isFinite() }) FloatArray(0) else Native.gameNetWeights()
+                if (nw.size > 1) {
+                    val src = nw[0].toInt(); val w = nw.copyOfRange(1, nw.size)
+                    Controls.setNet(this, src, w); Native.gameSetNet(src, w); Controls.setAutopilotStyle(this, 6)
+                    trainInfo.text = t("The net has learned to drive like the ${if (src == 5) "Max Attack" else "Normal"} style. The style \"Neural net\" is on.", "Нейросеть научилась ездить как стиль «${if (src == 5) "Max Attack" else "Обычный"}». Включён стиль «Нейросеть».")
+                    changed()
+                } else
                 if (r.size == 8 && r.all { it.isFinite() }) {
                     val attack = r[0] > 1.5f; val nums = r.copyOfRange(1, 8)
                     Controls.setLearned(this, nums, attack); Native.gameSetLearned(if (attack) 2 else 1, nums); Controls.setAutopilotStyle(this, if (attack) 5 else 4)
@@ -443,10 +453,10 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             if (busy) trainInfo.text = t("Training: the best result so far is ${st[2].toInt()} (was ${st[3].toInt()})", "Обучение: лучший результат ${st[2].toInt()} (было ${st[3].toInt()})")
             trainBtns.forEach { (m, b) -> b.text = trainText(m) }
         }
-        for (m in intArrayOf(1, 2)) {
+        for (m in intArrayOf(1, 2, 3)) {
             val b = Mini.button(this, trainText(m), M3Widgets.ButtonKind.OUTLINED) {
                 val st = Native.gameTrainState(); val busy = st.size >= 4 && st[0] > 0.5f
-                if (busy) { if (trainingMode == m) Native.gameTrain(0) } else if (running) { trainingMode = m; Native.gameTrain(m); wasTraining = true }
+                if (busy) { if (trainingMode == m) Native.gameTrain(0) } else if (running) { trainingMode = m; Native.gameTrain(if (m == 3) (if (Controls.autopilotStyle(this) == 5) 4 else 3) else m); wasTraining = true }
                 pollTraining()
             }
             trainBtns.add(m to b)
@@ -468,7 +478,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         startPolling()
     }
     private fun showAutopilot() {
-        val name = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"), t("Learned", "Обученный"), t("Max Attack", "Max Attack"))[autopilotStyle.coerceIn(0, 5)]
+        val name = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"), t("Learned", "Обученный"), t("Max Attack", "Max Attack"), t("Neural net", "Нейросеть"))[autopilotStyle.coerceIn(0, 6)]
         (autopilotBtn as? android.widget.TextView)?.text = if (autopilotOn) "● $name" else t("Autopilot", "Автопилот")
         autopilotBtn?.alpha = if (autopilotOn) 1f else 0.85f
     }

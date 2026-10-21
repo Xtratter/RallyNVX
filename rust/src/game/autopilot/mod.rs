@@ -4,6 +4,8 @@ pub mod join;
 pub mod model;
 pub mod train;
 pub mod job;
+pub mod nn;
+pub mod learn;
 pub mod route;
 pub mod streets;
 #[cfg(test)]
@@ -46,6 +48,8 @@ pub struct Autopilot {
     /// What the car measured of itself, and how much of the planned cornering grip it dares to use (`k`, 0.6..1: it falls while the car slides or nears the road's edge, and
     /// recovers while all is calm); `k_planned` is the value the speed plan was last made with.
     models: Option<model::Models>, k: f32, k_planned: f32,
+    /// A neural policy that drives instead of the geometric controller (the controller still runs: it gives the labels and takes over when the car is lost), the seconds of the takeover left, and the recorded (features, expert action) pairs.
+    policy: Option<std::sync::Arc<nn::Mlp>>, nn_hold: f32, record: bool, samples: Vec<([f32; nn::F], [f32; nn::O])>, rec_step: u32,
 }
 
 /// The speed limits for a car on a road of the given kind (loose gravel is the worst case on the stage).
@@ -112,7 +116,7 @@ impl Autopilot {
     /// The same with the numbers given (the self-training tries many sets at once, so they cannot come from the global style).
     pub fn on_route_cfg(route: Route, car: VehicleSpec, v: &Vehicle, style: i32, cfg: AutoCfg) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg, style: style.clamp(0, 5), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0 }
+        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
@@ -143,6 +147,69 @@ impl Autopilot {
         Some(ap)
     }
 
+    /// One step: the geometric controller's command; with a policy set the net's command instead (the controller takes over for two seconds when the car is 6 m off the line or flipped); with recording on, the (features, controller's action) pair is kept (every third step).
+    pub fn drive(&mut self, v: &Vehicle, dt: f32) -> AutoCmd {
+        let mut cmd = self.drive_expert(v, dt);
+        if (self.policy.is_none() && !self.record) || cmd.teleport.is_some() || cmd.reset || cmd.done { return cmd; }
+        let f = self.features(v);
+        if self.record {
+            self.rec_step += 1;
+            if self.rec_step % 3 == 0 {
+                let i = cmd.input;
+                let accel = if i.brake { -(i.brake_amt.max(0.1)) } else { i.throttle };
+                self.samples.push((f, [i.steer, accel, if i.handbrake { 1.0 } else { -1.0 }]));
+            }
+        }
+        if let Some(p) = self.policy.clone() {
+            self.nn_hold = (self.nn_hold - dt).max(0.0);
+            if self.route.cross(self.idx, v.pos.x, v.pos.z) > 6.0 || v.flipped() { self.nn_hold = 2.0; }
+            if self.nn_hold <= 0.0 {
+                let o = p.forward(&f);
+                cmd.input = Input { steer: o[0], throttle: o[1].max(0.0), brake: o[1] < -0.1, brake_amt: if o[1] < -0.1 { (-o[1]).clamp(0.1, 1.0) } else { 0.0 }, handbrake: o[2] > 0.3, ..Default::default() }.sanitized();
+            }
+        }
+        cmd
+    }
+
+    /// Sets (or removes) the neural policy and turns recording on or off.
+    pub fn set_policy(&mut self, policy: Option<std::sync::Arc<nn::Mlp>>, record: bool) { self.policy = policy; self.record = record; self.nn_hold = 0.0; }
+    /// The recorded pairs since the last call.
+    pub fn take_samples(&mut self) -> Vec<([f32; nn::F], [f32; nn::O])> { std::mem::take(&mut self.samples) }
+
+    /// What the net sees: the speed, how the car sits on the line (offset, heading, yaw rate, side slip), the bend ahead as the chord's side at six distances, the planned speed at those distances and here,
+    /// the road's width and where the car is on it, the grip, the daring and whether it is on the ground.
+    pub fn features(&self, v: &Vehicle) -> [f32; nn::F] {
+        const D: [f32; 6] = [5.0, 10.0, 16.0, 24.0, 36.0, 52.0];
+        let i = self.idx.min(self.route.len() - 1);
+        let right = v.right(); let fwd = v.forward();
+        let mut f = [0.0f32; nn::F];
+        let speed = v.vel.len();
+        let (vf, vr) = (v.vel.x * fwd.x + v.vel.z * fwd.z, v.vel.x * right.x + v.vel.z * right.z);
+        f[0] = speed / 30.0;
+        let pi = self.route.p[i];
+        f[1] = (((pi.x - v.pos.x) * right.x + (pi.z - v.pos.z) * right.z) / 4.0).clamp(-1.5, 1.5);
+        let (_, t5) = self.route.ahead(i, 6.0);
+        f[2] = ((t5.x - pi.x) * right.x + (t5.z - pi.z) * right.z).atan2(((t5.x - pi.x) * fwd.x + (t5.z - pi.z) * fwd.z).max(0.1)).clamp(-1.5, 1.5);
+        f[3] = (v.omega.dot(v.up()) / 2.0).clamp(-2.0, 2.0);
+        f[4] = vr.atan2(vf.abs().max(1.0)).clamp(-1.5, 1.5);
+        for (k, d) in D.iter().enumerate() {
+            let (j, t) = self.route.ahead(i, *d);
+            let (dx, dz) = (t.x - v.pos.x, t.z - v.pos.z); let ld = dx.hypot(dz).max(1.0);
+            f[5 + k] = ((dx * right.x + dz * right.z) / ld).clamp(-1.5, 1.5);
+            f[11 + k] = self.route.speed[j] / 30.0;
+        }
+        f[17] = self.route.speed[i] / 30.0;
+        let half = self.route.half[i].max(1.0);
+        let c = self.route.c[i];
+        f[18] = (((c.x - v.pos.x) * right.x + (c.z - v.pos.z) * right.z) / half).clamp(-1.5, 1.5);
+        f[19] = half / 10.0;
+        f[20] = self.route.mu[i];
+        f[21] = self.k;
+        f[22] = if v.contacts >= 3 { 1.0 } else { 0.0 };
+        f[23] = (v.steer / self.car.steer_max.max(0.1)).clamp(-1.5, 1.5);
+        f
+    }
+
     /// Plans the speeds again with what the car measured of itself (see `model`): the route and, when a field route is being driven, the stage behind it.
     pub fn apply_models(&mut self, models: &model::Models) {
         self.models = Some(models.clone()); self.k = 1.0; self.k_planned = 1.0;
@@ -169,12 +236,12 @@ impl Autopilot {
         }
     }
 
-    /// 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers, 4 the learned ones, 5 Max Attack.
+    /// 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers, 4 the learned ones, 5 Max Attack, 6 the neural net.
     pub fn style(&self) -> i32 { self.style }
     pub fn route(&self) -> &Route { &self.route }
     pub fn progress(&self) -> f32 { self.route.s[self.idx] }
 
-    pub fn drive(&mut self, v: &Vehicle, dt: f32) -> AutoCmd {
+    fn drive_expert(&mut self, v: &Vehicle, dt: f32) -> AutoCmd {
         let wet_scale = wet_speed_scale(v.surface, v.wet);
         let mut cmd = AutoCmd::default();
         let (lo, hi) = (self.idx.saturating_sub(15), self.idx + 80);
@@ -187,7 +254,7 @@ impl Autopilot {
         if self.next.is_some() && self.route.length() - self.route.s[i] < 14.0 {
             let (stage, k) = self.next.take().unwrap();
             self.route = stage; self.idx = k; self.stuck = 0.0; self.joined_at = Some(self.route.s[k]);
-            return self.drive(v, dt);
+            return self.drive_expert(v, dt);
         }
         let remaining = self.route.length() - self.route.s[i];
         if remaining < 12.0 && speed.abs() < 1.5 { cmd.done = true; cmd.input = Input { brake: true, ..Default::default() }; return cmd; }

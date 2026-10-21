@@ -189,6 +189,16 @@ mod android {
         if let Some((m, g)) = crate::game::autopilot::job::take_result() { r[0] = if m == crate::game::autopilot::train::Mode::Attack { 2.0 } else { 1.0 }; r[1..].copy_from_slice(&g); }
         match e.new_float_array(8) { Ok(a) => { let _ = e.set_float_array_region(&a, 0, &r); a.into_raw() } Err(_) => std::ptr::null_mut() }
     }
+    /// The trained net: `[source style, parameters...]` once after a net training, or an empty array; and the saved net given back (`src`, the parameters).
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameNetWeights<'a>(e: JNIEnv<'a>, _c: JClass) -> jni::sys::jfloatArray {
+        let mut v: Vec<f32> = Vec::new();
+        if let Some((src, w)) = crate::game::autopilot::job::take_net() { v.push(src as f32); v.extend(w); }
+        match e.new_float_array(v.len() as i32) { Ok(a) => { let _ = e.set_float_array_region(&a, 0, &v); a.into_raw() } Err(_) => std::ptr::null_mut() }
+    }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameSetNet(e: JNIEnv, _c: JClass, src: jint, v: jni::objects::JFloatArray) {
+        let n = e.get_array_length(&v).unwrap_or(0) as usize; let mut b = vec![0.0f32; n];
+        if e.get_float_array_region(&v, 0, &mut b).is_ok() { crate::game::autopilot::cfg::set_net(&b, src); }
+    }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameSetLearned(e: JNIEnv, _c: JClass, mode: jint, v: jni::objects::JFloatArray) {
         let n = e.get_array_length(&v).unwrap_or(0) as usize; let mut b = vec![0.0f32; n.min(crate::game::autopilot::train::N)];
         if e.get_float_array_region(&v, 0, &mut b).is_ok() { if mode == 2 { crate::game::autopilot::cfg::set_attack(&b); } else { crate::game::autopilot::cfg::set_learned(&b); } }
