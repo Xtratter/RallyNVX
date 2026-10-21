@@ -18,10 +18,19 @@ const CLUTCH_MAX: f32 = 520.0;
 pub const IDLE_RPM: f32 = 950.0;
 pub const LIMITER_RPM: f32 = 7800.0;
 /// Seconds a shift takes in the automatic and in the sequential manual box.
-const SHIFT_MANUAL: f32 = 0.12;
+/// Seconds a shift takes in the sequential box (up with the spark cut, down with a blip) and in the H-pattern box (a synchro).
+const SEQ_UP: f32 = 0.08;
+const SEQ_DOWN: f32 = 0.10;
+const H_SHIFT: f32 = 0.20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode { Auto, Manual }
+
+/// The manual box: the sequential of the real car (shifts without the clutch pedal: the spark is cut on the way up, the throttle blipped on the way down; the pedal is only an override)
+/// or the H-pattern with a clutch that must be worked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum BoxType { #[default] Sequential, HPattern }
+impl BoxType { pub fn from_i32(v: i32) -> BoxType { if v == 1 { BoxType::HPattern } else { BoxType::Sequential } } }
 
 struct Table { rpm: Vec<f32>, thr: Vec<f32>, t: Vec<Vec<f32>> }
 
@@ -98,7 +107,7 @@ pub struct Drivetrain {
     running: bool, starting: f32, stalled_for: f32,
     shift: f32, shift_up: bool, limiter: bool, boost: f32, idle_i: f32,
     /// What the automatic remembers of the gas pedal (a press at once, a lift fades) and the seconds since its last shift.
-    mem: Memory, pub profile: Profile,
+    mem: Memory, pub profile: Profile, pub box_type: BoxType,
     pub last: DriveOut,
 }
 
@@ -114,7 +123,7 @@ impl Drivetrain {
     pub fn new() -> Drivetrain {
         let rpm = IDLE_RPM;
         Drivetrain { opts: DriveOpts::default(), mode: Mode::Auto, gear: 1, omega: rpm * std::f32::consts::TAU / 60.0, clutch_pedal: 0.0, reverse_sel: false, auto_reverse: false, running: true, starting: 0.0, stalled_for: 0.0,
-            shift: 0.0, shift_up: true, limiter: false, boost: 0.0, idle_i: 0.1, mem: Memory::default(), profile: Profile::Sport,
+            shift: 0.0, shift_up: true, limiter: false, boost: 0.0, idle_i: 0.1, mem: Memory::default(), profile: Profile::Sport, box_type: BoxType::Sequential,
             last: DriveOut { force: 0.0, rpm, gear: 1, grip: 0.0, torque: 0.0, throttle: 0.0, boost_bar: 0.0, cut: false, stalled: false } }
     }
 
@@ -122,7 +131,7 @@ impl Drivetrain {
     pub fn running(&self) -> bool { self.running }
 
     /// A new start (a reset, a new level): first gear, the engine at the idle.
-    pub fn reset(&mut self) { let mode = self.mode; let sel = self.reverse_sel; let opts = self.opts; let ar = self.auto_reverse; let profile = self.profile; *self = Drivetrain::new(); self.reverse_sel = sel; self.opts = opts; self.auto_reverse = ar; self.profile = profile; self.mode = mode; if mode == Mode::Manual { self.gear = 0; } }
+    pub fn reset(&mut self) { let mode = self.mode; let sel = self.reverse_sel; let opts = self.opts; let ar = self.auto_reverse; let profile = self.profile; let box_type = self.box_type; *self = Drivetrain::new(); self.reverse_sel = sel; self.opts = opts; self.auto_reverse = ar; self.profile = profile; self.box_type = box_type; self.mode = mode; if mode == Mode::Manual { self.gear = 0; } }
 
     pub fn set_mode(&mut self, m: Mode) { if m != self.mode { self.mode = m; if m == Mode::Auto && self.gear == 0 { self.gear = 1; } } }
 
@@ -130,7 +139,7 @@ impl Drivetrain {
     pub fn shift(&mut self, dir: i32) {
         if self.mode != Mode::Manual || self.shift > 0.0 || dir == 0 { return; }
         let g = (self.gear + dir.signum()).clamp(-1, 6);
-        if g != self.gear { self.gear = g; self.shift = SHIFT_MANUAL; self.shift_up = dir > 0; }
+        if g != self.gear { self.gear = g; self.shift = match (self.box_type, dir > 0) { (BoxType::Sequential, true) => SEQ_UP, (BoxType::Sequential, false) => SEQ_DOWN, (BoxType::HPattern, _) => H_SHIFT }; self.shift_up = dir > 0; }
     }
 
     pub fn set_clutch(&mut self, pedal: f32) { self.clutch_pedal = if pedal.is_finite() { pedal.clamp(0.0, 1.0) } else { 0.0 }; }
@@ -157,6 +166,7 @@ impl Drivetrain {
         let dt = dt.clamp(0.0, 0.05);
         if self.shift > 0.0 { self.shift = (self.shift - dt).max(0.0); }
         let auto = self.mode == Mode::Auto;
+        let seq = !auto && self.box_type == BoxType::Sequential;
         let rpm0 = self.rpm();
         let gas = i.throttle.max(0.0);
         if auto { self.auto_gear(i, gas, rpm0, dt); }
@@ -169,19 +179,23 @@ impl Drivetrain {
             self.idle_i = (self.idle_i + err * dt * 0.6).clamp(0.0, 0.4);
             thr = thr.max((self.idle_i + 0.5 * err).clamp(0.0, 0.4));
         }
-        if auto && self.shift > 0.0 && !self.shift_up && self.opts.blip { thr = thr.max(0.55); }
+        if (auto || seq) && self.shift > 0.0 && !self.shift_up && self.opts.blip { thr = thr.max(0.55); }
         let reverse_dir = if self.gear < 0 { -1.0 } else { 1.0 };
         let g = ratio(self.gear) * self.opts.gearing;
-        let cut_shift = self.opts.flat_shift && self.shift > 0.0 && self.shift_up && pedal > 0.6;
+        let cut_shift = self.opts.flat_shift && self.shift > 0.0 && self.shift_up && pedal > if seq { 0.2 } else { 0.6 };
         // the clutch's capacity (N m): the automatic's rises with the revs (it bites like a centrifugal clutch and slips at the launch), the manual's follows the pedal; none in neutral or in a shift
+        let auto_cap = (10.0 + (CLUTCH_MAX - 10.0) * smooth(1300.0, 3000.0, rpm0)).max(CLUTCH_MAX * smooth(2.0, 5.0, i.speed.abs())).min(CLUTCH_MAX);
+        let pedal_cap = CLUTCH_MAX * smooth(0.85, 0.30, self.clutch_pedal);
         let cap = if g == 0.0 || self.shift > 0.0 || i.airborne { 0.0 }
             // the automatic: the launch curve bites with the revs; on the move the lock-up closes (no slip, the engine and the wheels turn together)
-            else if auto { (10.0 + (CLUTCH_MAX - 10.0) * smooth(1300.0, 3000.0, rpm0)).max(CLUTCH_MAX * smooth(2.0, 5.0, i.speed.abs())).min(CLUTCH_MAX) }
-            else { CLUTCH_MAX * smooth(0.85, 0.30, self.clutch_pedal) };
+            else if auto { auto_cap }
+            // the sequential's electronic clutch bites by itself like the automatic's; the pedal, if pressed, can only open it more
+            else if seq { if self.clutch_pedal > 0.05 { pedal_cap.min(auto_cap) } else { auto_cap } }
+            else { pedal_cap };
         // the starter when the engine is off: it cranks after a pause (the clutch must be open or the box in neutral in the manual)
         if !self.running {
             self.stalled_for += dt;
-            let free = auto || self.gear == 0 || self.clutch_pedal > 0.6;
+            let free = auto || seq || self.gear == 0 || self.clutch_pedal > 0.6;
             if self.starting <= 0.0 && self.stalled_for > 0.8 && free { self.starting = 1.0; }
         }
         let w_in = (i.speed / i.wheel_r.max(0.05) * g * reverse_dir).max(-1e4);
@@ -206,7 +220,7 @@ impl Drivetrain {
             if self.starting > 0.0 && rpm < 650.0 { t_e += 140.0; }   // the starter turns it until it fires (about 450 rpm)
             let t_c = (GRIP_K * (self.omega - w_in)).clamp(-cap, cap);
             // a shift of the automatic matches the engine's revs to the new gear (the clutch-to-clutch change): the engine falls or rises to meet the wheels, so the clutch closes without a jerk
-            let t_s = if auto && self.shift > 0.0 && self.running && self.gear != 0 { (GRIP_K * 1.5 * (w_in.max(w_idle) - self.omega)).clamp(-220.0, 220.0) } else { 0.0 };
+            let t_s = if (auto || seq) && self.shift > 0.0 && self.running && self.gear != 0 { (GRIP_K * 1.5 * (w_in.max(w_idle) - self.omega)).clamp(-220.0, 220.0) } else { 0.0 };
             self.omega = (self.omega + h / INERTIA * (t_e - t_c + t_s)).max(0.0);
             tq_sum += t_e; tc_last = t_c;
             f_sum += t_c * g * reverse_dir * ETA / i.wheel_r.max(0.05);

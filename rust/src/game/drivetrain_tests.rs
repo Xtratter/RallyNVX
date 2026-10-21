@@ -5,6 +5,7 @@ const R: f32 = 0.326;
 struct Car { dt: Drivetrain, v: f32, t: f32, brake: bool }
 impl Car {
     fn new() -> Car { Car { dt: Drivetrain::new(), v: 0.0, t: 0.0, brake: false } }
+    fn h_manual() -> Car { let mut c = Car::new(); c.dt.box_type = BoxType::HPattern; c.dt.set_mode(Mode::Manual); c.dt.reset(); c }
     fn step(&mut self, thr: f32) -> DriveOut {
         let o = self.dt.step(1.0 / 60.0, &DriveIn { throttle: thr, speed: self.v, wheel_r: R, brake: self.brake, ..Default::default() });
         if self.brake && self.v > 0.0 { self.v = (self.v - 8.0 / 60.0).max(0.0); }   // the brakes: 8 m/s^2
@@ -56,14 +57,14 @@ impl Car {
     assert!(rpm > 3000.0 && f < -300.0, "a lift at {rpm} rpm: the engine brakes with {f} N");
 }
 #[test] fn the_manual_has_neutral_and_the_engine_revs_free_to_the_limiter() {
-    let mut c = Car::new(); c.dt.set_mode(Mode::Manual); c.dt.reset();
+    let mut c = Car::h_manual();
     assert_eq!(c.dt.gear, 0);
     let o = c.run(1.0, 3.0);
     assert!(o.rpm > LIMITER_RPM - 400.0 && o.rpm < LIMITER_RPM + 300.0 && o.force.abs() < 1.0, "{} rpm, {} N", o.rpm, o.force);
     assert!(c.run(1.0, 1.0).cut || c.dt.last.rpm < LIMITER_RPM + 300.0, "the limiter holds it");
 }
 #[test] fn the_manual_stalls_when_the_clutch_is_let_go_in_gear_at_a_standstill_and_restarts() {
-    let mut c = Car::new(); c.dt.set_mode(Mode::Manual); c.dt.reset();
+    let mut c = Car::h_manual();
     c.run(0.0, 2.0);
     c.dt.shift(1); c.run(0.0, 0.3); assert_eq!(c.dt.gear, 1);
     c.dt.set_clutch(0.0);              // the pedal up: the clutch closed, the wheels do not turn
@@ -74,7 +75,7 @@ impl Car {
     assert!(!o.stalled && o.rpm > 700.0, "restarted: {} rpm, stalled {}", o.rpm, o.stalled);
 }
 #[test] fn a_slipping_clutch_pulls_away_in_the_manual_and_a_full_release_follows() {
-    let mut c = Car::new(); c.dt.set_mode(Mode::Manual); c.dt.reset();
+    let mut c = Car::h_manual();
     c.run(0.0, 1.5); c.dt.set_clutch(1.0); c.dt.shift(1); c.run(0.0, 0.3);
     c.dt.set_clutch(0.55);
     let o = c.run(0.5, 3.0);
@@ -83,15 +84,15 @@ impl Car {
     assert!(c.v > 6.0 && !o.stalled && o.grip > 0.5, "clutch up: {} m/s", c.v);
 }
 #[test] fn manual_shifts_go_through_neutral_to_the_reverse_cut_the_spark_and_take_a_moment() {
-    let mut c = Car::new(); c.dt.set_mode(Mode::Manual); c.dt.reset();
-    c.dt.shift(-1); assert_eq!(c.dt.gear, -1); c.run(0.0, 0.2);
-    c.dt.shift(1); c.run(0.0, 0.2); assert_eq!(c.dt.gear, 0); c.run(0.0, 0.2);
-    for k in 1..=6 { c.dt.shift(1); c.run(0.0, 0.2); assert_eq!(c.dt.gear, k.min(6)); }
+    let mut c = Car::h_manual();
+    c.dt.shift(-1); assert_eq!(c.dt.gear, -1); c.run(0.0, 0.25);
+    c.dt.shift(1); c.run(0.0, 0.25); assert_eq!(c.dt.gear, 0); c.run(0.0, 0.25);
+    for k in 1..=6 { c.dt.shift(1); c.run(0.0, 0.25); assert_eq!(c.dt.gear, k.min(6)); }
     c.dt.shift(1); assert_eq!(c.dt.gear, 6, "no seventh gear");
     // a request in the middle of a shift is ignored
     c.dt.shift(-1); c.dt.shift(-1); assert_eq!(c.dt.gear, 5);
     // a hard up-shift cuts the spark
-    let mut d = Car::new(); d.dt.set_mode(Mode::Manual); d.dt.reset(); d.dt.shift(1); d.run(0.0, 0.2); d.dt.shift(1); d.run(0.0, 0.2); d.dt.set_clutch(0.5);
+    let mut d = Car::h_manual(); d.dt.shift(1); d.run(0.0, 0.25); d.dt.shift(1); d.run(0.0, 0.25); d.dt.set_clutch(0.5);
     d.run(1.0, 0.5); d.dt.shift(1); let o = d.step(1.0); assert!(o.cut, "the flat shift");
 }
 #[test] fn the_reverse_goes_backwards_in_the_automatic_and_stays_finite_through_abuse() {
@@ -198,4 +199,56 @@ impl Car {
     assert_eq!(c.dt.gear, -1);
     c.dt.reverse_sel = false; c.run(0.0, 1.0);
     assert!(c.dt.gear >= 1, "back in drive: {}", c.dt.gear);
+}
+
+fn seq_manual() -> Car { let mut c = Car::new(); c.dt.set_mode(Mode::Manual); c.dt.reset(); c }
+
+#[test] fn the_sequential_launches_without_a_clutch_pedal_and_does_not_stall() {
+    let mut c = seq_manual(); assert_eq!(c.dt.box_type, BoxType::Sequential);
+    c.run(0.0, 1.5); c.dt.shift(1); c.run(0.0, 0.3);
+    assert_eq!(c.dt.gear, 1);
+    let o = c.run(1.0, 3.0);
+    assert!(c.v > 10.0 && !o.stalled, "{} m/s, stalled {}", c.v, o.stalled);
+}
+#[test] fn the_sequential_idles_in_gear_without_stalling() {
+    let mut c = seq_manual(); c.run(0.0, 1.5); c.dt.shift(1); c.run(0.0, 0.3);
+    let o = c.run(0.0, 6.0);
+    assert!(!o.stalled && o.rpm > 600.0, "idle in gear: {} rpm", o.rpm);
+    assert!(c.v < 3.0, "creeps at most: {}", c.v);
+}
+#[test] fn the_sequential_upshift_cuts_the_spark_briefly_and_is_quick() {
+    let mut c = seq_manual(); c.run(0.0, 1.0); c.dt.shift(1); c.run(0.0, 0.3);
+    c.run(1.0, 2.0);
+    c.dt.shift(1); let o = c.step(1.0);
+    assert!(o.cut, "flat shift: the spark is cut");
+    let mut n = 0; while c.step(1.0).cut && n < 30 { n += 1; }
+    assert!(n >= 2 && n <= 8, "the cut lasts {} steps (about 0.08 s)", n);
+    assert_eq!(c.dt.gear, 2);
+}
+#[test] fn the_sequential_downshift_blips_the_throttle() {
+    let mut c = seq_manual(); c.run(0.0, 1.0); c.dt.shift(1); c.run(0.0, 0.3);
+    c.run(1.0, 2.5); c.dt.shift(1); c.run(1.0, 0.3);
+    c.run(0.0, 0.5);
+    c.dt.shift(-1); let o = c.step(0.0);
+    assert!(o.throttle >= 0.55, "the blip: {}", o.throttle);
+}
+#[test] fn the_h_pattern_shift_takes_twenty_hundredths_and_ignores_a_second_request() {
+    let mut c = Car::h_manual(); c.dt.set_clutch(1.0);
+    c.dt.shift(1); assert_eq!(c.dt.gear, 1);
+    c.run(0.0, 0.1); c.dt.shift(1); assert_eq!(c.dt.gear, 1, "still shifting");
+    c.run(0.0, 0.15); c.dt.shift(1); assert_eq!(c.dt.gear, 2);
+}
+#[test] fn the_clutch_pedal_still_overrides_the_sequential() {
+    let mut c = seq_manual(); c.run(0.0, 1.0); c.dt.shift(1); c.run(0.0, 0.3);
+    c.dt.set_clutch(1.0);                              // the pedal down: the clutch is open whatever the revs
+    let o = c.run(1.0, 1.5);
+    assert!(c.v < 0.5 && o.rpm > 5000.0, "free revs with the pedal down: {} m/s {} rpm", c.v, o.rpm);
+}
+#[test] fn switching_the_box_during_a_shift_is_safe() {
+    let mut c = seq_manual(); c.run(0.0, 1.0); c.dt.shift(1); c.run(0.0, 0.1);
+    for k in 0..600 {
+        if k % 17 == 0 { c.dt.box_type = if (k / 17) % 2 == 0 { BoxType::HPattern } else { BoxType::Sequential }; c.dt.shift(if k % 3 == 0 { -1 } else { 1 }); }
+        let o = c.step(if k % 5 < 3 { 1.0 } else { 0.0 });
+        assert!(o.force.is_finite() && o.rpm.is_finite() && o.rpm >= 0.0 && o.rpm < 12000.0, "step {k}: {o:?}");
+    }
 }
