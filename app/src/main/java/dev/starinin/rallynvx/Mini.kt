@@ -45,7 +45,7 @@ object Mini {
         val d = dp(ctx); setPadding((14 * d).toInt(), 0, (14 * d).toInt(), 0)
         val base = when (kind) {
             M3Widgets.ButtonKind.FILLED -> { setTextColor(INK); shape(ctx, 0xFFEDEFF2.toInt(), 0, 8f) }
-            M3Widgets.ButtonKind.TONAL -> { setTextColor(TEXT); shape(ctx, 0x1FFFFFFF, EDGE, 8f) }
+            M3Widgets.ButtonKind.TONAL -> { setTextColor(TEXT); shape(ctx, 0xB8101216.toInt(), EDGE, 8f) }
             M3Widgets.ButtonKind.OUTLINED -> { setTextColor(TEXT); shape(ctx, 0, EDGE_STRONG, 8f) }
             M3Widgets.ButtonKind.DANGER -> { setTextColor(DANGER); shape(ctx, 0, 0x80FF8A80.toInt(), 8f) }
         }

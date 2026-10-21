@@ -2,6 +2,13 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.81.0 - a tidy car menu, a plain look, the lamps and the exhaust
+- Changed: the **car menu** is in two panes: a rail of sections (Overview, Aids, Engine, Transmission, Brakes and tyres, Suspension) and the chosen section beside it. The Overview holds the state cards (tyres, heat, damage, fuel) with Service and Reset; the aids are switches; the box, the automatic, the differentials and the suspension are groups of connected buttons; the powers are steppers. The long readout that took 40 % of the height is gone
+- Changed: the **gear buttons** of the manual stand on the steering side (over the left steering button, beside the wheel in the wheel and tilt modes) and mirror with the pedals
+- Changed: the game's controls and panels have a **plain minimal look** of their own (flat dark panels with a hairline edge, white text, thin outlines, one accent) instead of the SDK's Material 3 pills; the steering buttons, the wheel, the pedals and the shift buttons are thin and light
+- Fixed: the **reverse lamps** burn only with the reverse gear engaged, not while the car rolls backwards in drive or neutral
+- Fixed: the **exhaust plume** was lumpy (the collector's strokes and the audio's blocks became separate puffs, like one cylinder); the gas flow is smoothed (about 0.2 s) into a steady stream
+- Tests: the lamps by gear (drive, neutral, reverse), the steadiness of the plume against alternating blocks of gas
 ## 2.80.0 - fuel, mass and the stability control
 - Added: the **fuel**: a 70 l tank that the engine empties by what it burns (0.4 g/s at idle plus 360 g for every kWh of shaft work: about 2 l/h at idle, 60 to 90 l/h at full power, a stage of hard driving 2 to 5 l), with the **fuel cut on an overrun** (nothing burns while the wheels drive the engine over 1500 rpm). The car starts with 40 l; an empty tank stops the engine and it does not start again until there is fuel (the Service button fills the tank). The fuel is **mass**: the car is lighter as it burns (70 l weigh 52 kg; the car's listed mass is true at half a tank), with its inertia
 - Added: the **stability control (ESC)**, a new aid in the car menu (**off by default**: a rally car slides on purpose). It compares the yaw rate with the one the steering asks for (the bicycle model, limited by the grip) and brakes single wheels against the difference: the outer front wheel against an oversteer, the inner rear wheel against an understeer, and cuts the engine (up to 70 %); below 8 m/s, with the handbrake and backwards it does nothing. After a kick of the yaw at 25 m/s the car is calm again in 1.5 s instead of 2.5 s on gravel (2.3 to 1.4 on sand, 1.1 to 0.6 on tarmac), with less side slip. The panel shows ESC while it brakes
