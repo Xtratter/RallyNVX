@@ -72,7 +72,7 @@ mod game {
         director: crate::audio::Director,
         car: crate::game::vehicle::VehicleSpec, garage: bool,
         dust_level: i32,
-        auto_fallback: bool, monitor: crate::game::rendermode::FallbackMonitor, fell_back: bool, manual: bool, clutch: f32, reverse: bool, assists: u32, tuning: [f32; crate::game::assists::TUNING_PARTS],
+        auto_fallback: bool, monitor: crate::game::rendermode::FallbackMonitor, fell_back: bool, manual: bool, clutch: f32, reverse: bool, assists: u32, tuning: [f32; crate::game::assists::TUNING_PARTS], gear_cfg: (i32, i32),
     }
 
     impl Game {
@@ -80,7 +80,7 @@ mod game {
             let seed = super::level_seed(seed);
             Game { world: World::with_roads(seed, crate::game::vehicle::VehicleSpec::default_car()), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::default_car(), garage: false, dust_level: 1, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false, manual: false, clutch: 0.0, reverse: false, assists: 0x7F, tuning: [1.0; crate::game::assists::TUNING_PARTS] }
+                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::default_car(), garage: false, dust_level: 1, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false, manual: false, clutch: 0.0, reverse: false, assists: 0x7F, tuning: [1.0; crate::game::assists::TUNING_PARTS], gear_cfg: (0, 1) }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }
@@ -105,6 +105,7 @@ mod game {
         /// The aids (bits, see `Assists::from_mask`) and one part of the tuning (see `Tuning::set`), from the game's menu.
         pub fn set_assists(&mut self, mask: u32) { self.assists = mask; self.world.assists = crate::game::assists::Assists::from_mask(mask); }
         pub fn set_tuning(&mut self, part: usize, v: f32) { if part < self.tuning.len() && v.is_finite() { self.tuning[part] = v; self.world.tuning.set(part, v); } }
+        pub fn set_gear_cfg(&mut self, boxt: i32, profile: i32) { self.gear_cfg = (boxt, profile); }
         pub fn set_clutch(&mut self, pedal: f32) { self.clutch = pedal; self.world.drivetrain.set_clutch(pedal); }
         pub fn camera_release(&mut self) { self.world.cam.set_dragging(false); }
         /// The camera view (see `CamView`), its distance scale or zoom and its height or tilt offset.
@@ -174,6 +175,7 @@ mod game {
                 self.world.step_garage(dt.clamp(0.0, 0.1));
             } else if !self.paused {
                 self.world.manual = self.manual; self.world.drivetrain.set_clutch(self.clutch); self.world.drivetrain.reverse_sel = self.reverse;
+                self.world.drivetrain.box_type = crate::game::drivetrain::BoxType::from_i32(self.gear_cfg.0); self.world.drivetrain.profile = crate::game::shiftlogic::Profile::from_i32(self.gear_cfg.1);
                 self.world.assists = crate::game::assists::Assists::from_mask(self.assists); for (i, v) in self.tuning.iter().enumerate() { self.world.tuning.set(i, *v); }   // a new level makes a new world: the driver's choice goes with the game
                 for _ in 0..step_budget(&mut self.acc, dt, 6) {
                     self.world.step(&self.input, STEP);

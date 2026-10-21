@@ -457,6 +457,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Native.gameSigns(Controls.signs(this))
         Native.gameCameraView(camView, camDist, camHeight)
         Native.gameGearMode(if (manual) 1 else 0)
+        Native.gameGearCfg(Controls.boxType(this), Controls.shiftProfile(this))
         Native.gameReverse(if (reverseSel && !manual) 1 else 0)
         Native.gameAssists(Controls.assists(this)); for (i in 0 until CarMath.PARTS) Native.gameTuning(i, Controls.tuning(this, i))
         if (intent.getBooleanExtra("testtrack", false)) Native.gameTestTrack()   // from the main menu: a flat sheet of tarmac to try the sound and the controls
@@ -564,6 +565,18 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             r.addView(b, LinearLayout.LayoutParams(px(90f), px(42f)))
             colA.addView(r, LinearLayout.LayoutParams(px(330f), -2).apply { topMargin = px(6f) })
         }
+        // the gearbox: the manual's type and the automatic's character; one button each, a tap goes to the next
+        fun cycleRow(title: String, value: () -> String, onTap: () -> Unit) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            r.addView(TextView(this).apply { text = title; textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+            val b = M3Widgets.button(this, value(), M3Widgets.ButtonKind.TONAL) {}
+            b.setOnClickListener { onTap(); (b as? TextView)?.text = value() }
+            refreshers.add { (b as? TextView)?.text = value() }
+            r.addView(b, LinearLayout.LayoutParams(px(150f), px(42f)))
+            colA.addView(r, LinearLayout.LayoutParams(px(330f), -2).apply { topMargin = px(6f) })
+        }
+        cycleRow(t("Manual box", "Ручная коробка"), { GearMath.boxName(Controls.boxType(this), en) }) { Controls.setBoxType(this, GearMath.next(Controls.boxType(this), GearMath.BOXES)); sendGearCfg() }
+        cycleRow(t("Automatic", "Автомат"), { GearMath.profileName(Controls.shiftProfile(this), en) }) { Controls.setShiftProfile(this, GearMath.next(Controls.shiftProfile(this), GearMath.PROFILES)); sendGearCfg() }
         for (i in 0 until CarMath.PARTS) {
             val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             r.addView(TextView(this).apply { text = CarMath.partName(i, en); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -601,6 +614,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         reverseBtn?.visibility = if (manual) View.GONE else View.VISIBLE
         reverseBtn?.alpha = if (reverseSel) 1f else 0.85f
     }
+
+    private fun sendGearCfg() { if (running) Native.gameGearCfg(Controls.boxType(this), Controls.shiftProfile(this)) }
 
     private fun gearLabel() = if (manual) t("Gearbox: manual", "Коробка: МКПП") else t("Gearbox: auto", "Коробка: АКПП")
 
