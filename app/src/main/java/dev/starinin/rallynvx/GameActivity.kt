@@ -96,7 +96,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                     }.also { root.addView(it, FrameLayout.LayoutParams((220f * dpx).toInt(), (52f * dpx).toInt(), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { setMargins(0, 0, 0, (40f * dpx).toInt()) }) }
                 }
             }
-            if (carPanel?.visibility == View.VISIBLE) { val en = t("en", "ru") == "en"; tyreText?.text = CarMath.tyreLine(floatArrayOf(s[88], s[89], s[90], s[91]), floatArrayOf(s[92], s[93], s[94], s[95]), en) + "\n" + CarMath.heatLine(s[96], s[97], en) + "\n" + CarMath.damageLine(s[98], s[99], floatArrayOf(s[100], s[101], s[102], s[103]), en) }
+            if (carPanel?.visibility == View.VISIBLE) { val en = t("en", "ru") == "en"; tyreText?.text = CarMath.tyreLine(floatArrayOf(s[88], s[89], s[90], s[91]), floatArrayOf(s[92], s[93], s[94], s[95]), en) + "\n" + CarMath.heatLine(s[96], s[97], en) + "\n" + CarMath.damageLine(s[98], s[99], floatArrayOf(s[100], s[101], s[102], s[103]), en) + "\n" + CarMath.fuelLine(s[104], en) + (if (s[105] > 0.5f) "  ESC" else "") }
             gearView?.update(s[80].toInt(), s[81], s[82] > 0.5f, s[83] > 0.5f, s[86])
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
@@ -629,7 +629,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         content.addView(M3Widgets.button(this, t("Reset tuning", "Сбросить настройки"), M3Widgets.ButtonKind.TONAL) {
             for (i in 0 until CarMath.PARTS) { Controls.setTuning(this, i, 1f); if (running) Native.gameTuning(i, 1f) }
             Controls.setDiffPreset(this, 1); Controls.setChassisPreset(this, 0)
-            Controls.setAssists(this, CarMath.ALL_AIDS); if (running) Native.gameAssists(CarMath.ALL_AIDS); refreshers.forEach { it() }
+            Controls.setAssists(this, CarMath.DEFAULT_AIDS); if (running) Native.gameAssists(CarMath.DEFAULT_AIDS); refreshers.forEach { it() }
         }, LinearLayout.LayoutParams(px(240f), px(44f)).apply { topMargin = px(8f) })
         content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(8f) })
         p.tag = { refreshers.forEach { it() } }

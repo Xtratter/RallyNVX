@@ -2,7 +2,9 @@ package dev.starinin.rallynvx
 
 /** The driver aids and the tuning of the car's parts (the game's "Car" menu); the bits and the ranges are those of `rust/src/game/assists.rs`. */
 object CarMath {
-    const val ALL_AIDS = 0xFF
+    /** All the aid bits, and the ones on by default (the stability control, bit 8, is off: a rally car slides on purpose). */
+    const val ALL_AIDS = 0x1FF
+    const val DEFAULT_AIDS = 0xFF
     /** The aids in the order of the bits: anti-lag, ABS, traction control, the blip, the flat shift, the limiter, the blow-off valve, launch control. */
     fun aidName(bit: Int, en: Boolean): String = when (bit) {
         0 -> if (en) "Anti-lag" else "Антилаг"
@@ -12,9 +14,10 @@ object CarMath {
         4 -> if (en) "Flat shift (spark cut)" else "Отсечка при переключении"
         5 -> if (en) "Rev limiter" else "Ограничитель оборотов"
         6 -> if (en) "Blow-off valve" else "Блоуофф"
-        else -> if (en) "Launch control" else "Launch control (старт)"
+        7 -> if (en) "Launch control" else "Launch control (старт)"
+        else -> if (en) "Stability control (ESC)" else "Стабилизация (ESC)"
     }
-    const val AIDS = 8
+    const val AIDS = 9
     fun aidOn(mask: Int, bit: Int) = mask and (1 shl bit) != 0
     fun toggle(mask: Int, bit: Int) = (mask xor (1 shl bit)) and ALL_AIDS
 
@@ -61,7 +64,7 @@ object CarMath {
     private fun degrees(d: Float, signed: Boolean): String { val r = Math.round(d * 10f) / 10f; return (if (signed && r > 0f) "+" else "") + String.format(java.util.Locale.ROOT, "%.1f", if (r == 0f) 0f else r) + "°" }
     /** The tyres in two lines: the temperature (degrees C) and the wear (percent) of FL, FR, RL, RR; garbage reads as zero. */
     fun tyreLine(temp: FloatArray, wear: FloatArray, en: Boolean): String {
-        val names = if (en) arrayOf("FL", "FR", "RL", "RR") else arrayOf("ПЛ", "ПП", "ЗЛ", "ЗП")
+        val names = if (en) arrayOf("FR", "FL", "RR", "RL") else arrayOf("ПП", "ПЛ", "ЗП", "ЗЛ")   // the wheels 0 and 2 are the right ones
         fun one(k: Int): String {
             val t = temp.getOrElse(k) { 0f }.let { if (it.isFinite()) Math.round(it) else 0 }
             val w = wear.getOrElse(k) { 0f }.let { if (it.isFinite()) Math.round(it.coerceIn(0f, 1f) * 100f) else 0 }
@@ -80,6 +83,13 @@ object CarMath {
         val sp = (0 until 4).joinToString(" ") { p(springs.getOrElse(it) { 0f }).toString() }
         return if (en) "Damage: body ${p(body)}%  engine ${p(engine)}%  springs $sp%" else "Повреждения: кузов ${p(body)}%  двигатель ${p(engine)}%  пружины $sp%"
     }
+    /** The fuel in a line (litres of the 70 l tank, and the share). */
+    fun fuelLine(litres: Float, en: Boolean): String {
+        val l = if (litres.isFinite()) litres.coerceIn(0f, 70f) else 0f
+        val pc = Math.round(l / 70f * 100f)
+        return (if (en) "Fuel " else "Топливо ") + String.format(java.util.Locale.ROOT, "%.1f", l) + (if (en) " l (" else " л (") + pc + "%)"
+    }
+    fun fuelLow(litres: Float) = litres.isFinite() && litres < 5f
     fun coolantHot(t: Float) = t.isFinite() && t > 105f
     fun clutchHot(t: Float) = t.isFinite() && t > 250f
     /** Suspension presets (the bars front and rear, the camber front and rear, the toe front and rear as multipliers): as built, tarmac (stiff, more camber, a little toe-out in front), gravel, snow (soft). */
