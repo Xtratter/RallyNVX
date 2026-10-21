@@ -6,6 +6,7 @@ use super::props::{Prop, PropKind};
 use super::surface::Surface;
 use super::terrain::Terrain;
 use super::wheel;
+use super::tyre::{self, Tyre};
 
 /// Which generated body the renderer builds for a car.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,6 +84,8 @@ pub struct Vehicle {
     pub abs_on: bool, pub tc_on: bool,
     /// The share of the brake force on the front axle (the rest on the rear); the car menu moves it.
     pub brake_bias: f32,
+    /// Each tyre's temperature and wear, the cold pressure as a multiplier of the set's default and the air's temperature (degrees C): they decide the grip (see `tyre`).
+    pub tyres: [Tyre; 4], pub tyre_bar: f32, pub air_c: f32,
     /// The surface under the first wheel in contact (the HUD shows it); tests can force one for every wheel.
     pub surface: Surface, pub force_surface: Option<Surface>,
     pub wheels: [WheelInfo; 4],
@@ -93,7 +96,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_torque: None, w: [0.0; 4], slip: [0.0; 4], spin_ready: false, last_vel: V3::ZERO, tyre_sum: 0.0, abs_on: true, tc_on: true, brake_bias: wheel::BRAKE_BIAS, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_torque: None, w: [0.0; 4], slip: [0.0; 4], spin_ready: false, last_vel: V3::ZERO, tyre_sum: 0.0, abs_on: true, tc_on: true, brake_bias: wheel::BRAKE_BIAS, tyres: [Tyre::warm(spec.wheel_set); 4], tyre_bar: 1.0, air_c: 15.0, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -204,7 +207,8 @@ impl Vehicle {
             if let Some((ri, s_along, side)) = cell { loose.wear(ri, s_along, side, vf.abs().max(vl.abs()), h); }
             let tf = grip::tyre_factor(s.wheel_set, surf);   // the wheel set: the right tyres for the surface grip more
             let wf = grip::wet_factor(surf, self.wet);       // the wet ground: less grip, everywhere
-            let (mu_s, lat_k, roll) = (s.mu * sg.mu * tf.0 * wf.0, s.lateral_k * sg.lateral * tf.1 * wf.1, s.rolling * sg.rolling);
+            let tyre_grip = tyre::grip(s.wheel_set, self.tyres[w].temp, self.tyres[w].wear, tyre::cold_default(s.wheel_set) * self.tyre_bar);
+            let (mu_s, lat_k, roll) = (s.mu * sg.mu * tf.0 * wf.0 * tyre_grip, s.lateral_k * sg.lateral * tf.1 * wf.1, s.rolling * sg.rolling);
             // a wheel placed with a speed starts turning with the ground
             if !self.spin_ready { self.w[w] = vf / s.radius; }
             let (kp, keep) = wheel::slip_params(surf);
@@ -236,6 +240,9 @@ impl Vehicle {
             }
             let excess = if fmax > 1e-3 { (fl_dem.hypot(o.fx.abs().max(drive_t.abs() / s.radius)) / fmax - 1.0).clamp(0.0, 1.5).max((o.slip.abs() / kp - 1.0).clamp(0.0, 1.5)) } else { 0.0 };
             self.wheels[w] = WheelInfo { grounded: true, surface: surf, contact, speed: vc.len(), lat_slip: vl.abs(), slide: excess, slip: o.slip };
+            // the friction work heats the tread and wears it (the force times the slip speed, along and across)
+            let work = (o.fx * (self.w[w] * s.radius - vf)).abs() + (fl_dem.clamp(-fmax, fmax) * vl).abs();
+            self.tyres[w].step(h, work, self.vel.len(), fs, self.air_c, tyre::abrasiveness(surf, tf.0));
             let mag = fl.hypot(fx);
             if mag > fmax && mag > 1e-6 { let k = fmax / mag; fl *= k; fx *= k; }
             let tire = rw * fl + fw * fx;
@@ -269,6 +276,9 @@ impl Vehicle {
 
     /// A wheel off the ground: it only turns under its drive torque and its brake.
     fn spin_free(&mut self, w: usize, drive: f32, brake: f32, h: f32) {
+        self.tyres[w].step(h, 0.0, self.vel.len(), 0.0, self.air_c, 0.0);
+        // a car with no drivetrain of its own has no clutch to open in the air: its throttle must not spin a wheel that touches nothing
+        let drive = if self.drive_torque.is_none() { 0.0 } else { drive };
         let o = wheel::step(&wheel::In { w: self.w[w], vf: 0.0, radius: self.spec.radius, fmax: 0.0, kp: 0.1, slide: 0.8, drive, brake, abs: false, h, inertia: wheel::INERTIA });
         self.w[w] = o.w; self.slip[w] = 0.0;
     }

@@ -18,7 +18,7 @@ class CarMathTest {
     }
     @Test fun labels() { assertEquals("110 %", CarMath.percent(1.1f)); assertEquals("ABS", CarMath.aidName(1, true)); assertEquals("Тормоза", CarMath.partName(2, false)) }
     @Test fun differentialPartsHaveNamesRangesAndTexts() {
-        assertEquals(12, CarMath.PARTS)
+        assertEquals(13, CarMath.PARTS)
         assertEquals("Front diff lock", CarMath.partName(7, true)); assertEquals("Задний дифференциал", CarMath.partName(8, false))
         assertEquals(0f, CarMath.lo(9), 0f); assertEquals(2f, CarMath.hi(9), 0f); assertEquals(0.6f, CarMath.lo(10), 1e-6f); assertEquals(1.4f, CarMath.hi(10), 1e-6f)
         assertEquals("50/50", CarMath.valueText(10, 1f)); assertEquals("70/30", CarMath.valueText(10, 1.4f)); assertEquals("30/70", CarMath.valueText(10, 0.6f))
@@ -31,9 +31,15 @@ class CarMathTest {
     @Test fun launchControlAndTheBrakeBias() {
         assertEquals(8, CarMath.AIDS); assertEquals(0xFF, CarMath.ALL_AIDS)
         assertEquals("Launch control", CarMath.aidName(7, true)); assertEquals("Launch control (старт)", CarMath.aidName(7, false))
-        assertEquals(12, CarMath.PARTS)
+        assertEquals(13, CarMath.PARTS)
         assertEquals("Brake bias (front/rear)", CarMath.partName(11, true)); assertEquals("Баланс тормозов (перед/зад)", CarMath.partName(11, false))
         assertEquals(0.7f, CarMath.lo(11), 1e-6f); assertEquals(1.25f, CarMath.hi(11), 1e-6f)
         assertEquals("62/38", CarMath.valueText(11, 1f)); assertEquals("68/32", CarMath.valueText(11, 1.1f)); assertEquals("43/57", CarMath.valueText(11, 0.7f))
+    }
+    @Test fun tyrePressurePartAndTheTyreLine() {
+        assertEquals("Tyre pressure (cold)", CarMath.partName(12, true)); assertEquals("Давление в шинах (холодных)", CarMath.partName(12, false))
+        assertEquals(0.8f, CarMath.lo(12), 1e-6f); assertEquals(1.25f, CarMath.hi(12), 1e-6f); assertEquals("110 %", CarMath.valueText(12, 1.1f))
+        assertEquals("FL 85°C 3%  FR 90°C 50%\nRL 70°C 0%  RR 60°C 100%", CarMath.tyreLine(floatArrayOf(85.4f, 90f, 70f, 60f), floatArrayOf(0.03f, 0.5f, 0f, 1.2f), true))
+        assertEquals("ПЛ -5°C 0%  ПП 0°C 0%\nЗЛ 0°C 0%  ЗП 0°C 0%", CarMath.tyreLine(floatArrayOf(-4.6f, Float.NaN, 0f, 0f), floatArrayOf(0f, Float.NaN, -1f, 0f), false))
     }
 }

@@ -28,3 +28,10 @@ use crate::game::{input::Input, world::World};
     fill_state(&mut s, &w, 0, 60.0, 4.0, 4);
     assert_eq!(s[28], 4.0, "gravel on the stage");
 }
+#[test] fn the_tyres_are_reported_in_the_state_slots() {
+    let mut w = World::new(7); let mut s = [0.0f32; STAT_LEN];
+    w.vehicle.tyres[0].temp = 101.0; w.vehicle.tyres[3].temp = 33.0; w.vehicle.tyres[1].wear = 0.25;
+    fill_state(&mut s, &w, 0, 60.0, 4.0, 7);
+    assert_eq!((s[88], s[91], s[93]), (101.0, 33.0, 0.25));
+    assert!(s[89] > 0.0 && s[90] > 0.0 && s[92] == 0.0 && s[94] == 0.0 && s[95] == 0.0);
+}
