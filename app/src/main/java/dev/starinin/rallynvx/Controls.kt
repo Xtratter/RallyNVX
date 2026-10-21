@@ -38,7 +38,7 @@ object Controls {
     fun setPaceMode(c: Context, v: Int) = p(c).edit().putInt("pace_mode", v.coerceIn(0, 2)).apply()
     /** Autopilot style: 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers. */
     const val AP_STYLES = 6
-    /** The numbers the autopilot taught itself (seven, see the engine's `train`) for the safe ("Learned") or the Time Attack style, or null before the first training. */
+    /** The numbers the autopilot taught itself (seven, see the engine's `train`) for the safe ("Learned") or the Max Attack style, or null before the first training. */
     fun learned(c: Context, attack: Boolean = false): FloatArray? = p(c).getString(if (attack) "ap_attack" else "ap_learned", null)?.split(',')?.mapNotNull { it.toFloatOrNull() }?.takeIf { it.size == 7 && it.all { x -> x.isFinite() } }?.toFloatArray()
     fun setLearned(c: Context, v: FloatArray, attack: Boolean = false) = p(c).edit().putString(if (attack) "ap_attack" else "ap_learned", v.joinToString(",")).apply()
     fun autopilotStyle(c: Context): Int = p(c).getInt("autopilot_style", 1).coerceIn(0, AP_STYLES - 1)

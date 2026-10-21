@@ -35,6 +35,8 @@ pub struct Autopilot {
     stuck: f32,
     /// The handbrake flick in progress (seconds left) and the time until the next one may start.
     flick: f32, cooldown: f32,
+    /// Max Attack's pendulum (the Scandinavian flick): seconds of steering away from the coming bend left, the side of that bend (+1 right) and the time until the next one may start.
+    pend: f32, pend_dir: f32, pend_cool: f32,
     /// The stage route and where to join it, while a field route is being driven.
     next: Option<(Route, usize)>,
     /// Route progress (m) where the stage was joined from the field: the speed is kept tame for 80 m after it.
@@ -110,7 +112,7 @@ impl Autopilot {
     /// The same with the numbers given (the self-training tries many sets at once, so they cannot come from the global style).
     pub fn on_route_cfg(route: Route, car: VehicleSpec, v: &Vehicle, style: i32, cfg: AutoCfg) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg, style: style.clamp(0, 5), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0 }
+        Autopilot { route, car, cfg, style: style.clamp(0, 5), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
@@ -153,7 +155,7 @@ impl Autopilot {
         let Some(m) = self.models.clone() else { return };
         let slip = v.wheels.iter().filter(|w| w.grounded).map(|w| w.lat_slip.abs()).fold(0.0f32, f32::max);
         let room = self.route.room(i, v.pos.x, v.pos.z);
-        let at = self.cfg.attack;   // Time Attack tolerates more: bigger slides, wandering off the line, the edge itself
+        let at = self.cfg.attack;   // Max Attack tolerates more: bigger slides, wandering off the line, the edge itself
         let ok = 1.0 + 2.0 * self.cfg.slide + at;
         let wide = self.route.half[i] > 1.0 && d > 1.2 + 2.0 * at;   // far off the planned line: it runs wide
         if slip > ok || wide || room.map_or(false, |r| r < 0.8 - 1.2 * at) { self.k -= 0.9 * dt; }
@@ -167,7 +169,7 @@ impl Autopilot {
         }
     }
 
-    /// 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers, 4 the learned ones, 5 Time Attack.
+    /// 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers, 4 the learned ones, 5 Max Attack.
     pub fn style(&self) -> i32 { self.style }
     pub fn route(&self) -> &Route { &self.route }
     pub fn progress(&self) -> f32 { self.route.s[self.idx] }
@@ -197,7 +199,7 @@ impl Autopilot {
         let want = want.min(tame) * wet_scale;
         // off the line: slow down in proportion to how far into the road's edge the car has drifted
         let half = self.route.half[i];
-        let want = if half > 1.0 && d > (0.55 + self.cfg.attack) * half { want * (1.0 - (d - 0.55 * half) / (0.6 * half)).clamp(0.45, 1.0) } else { want };
+        let want = if half > 1.0 && d > (0.55 + 0.6 * self.cfg.attack) * half { want * (1.0 - (d - 0.55 * half) / (0.6 * half)).clamp(0.45, 1.0) } else { want };
         if v.flipped() { cmd.reset = true; self.recoveries += 1; self.stuck = 0.0; }
         self.stuck = if speed.abs() < 1.0 && want > 3.0 { self.stuck + dt } else { 0.0 };
         if remaining < 25.0 && self.stuck > 2.0 { cmd.done = true; return cmd; }   // stopped just short of the line
@@ -229,13 +231,31 @@ impl Autopilot {
         let stanley = if self.models.is_some() { (e_line.signum() * (e_line.abs() - 0.8).max(0.0) * STANLEY).atan2(2.0 + v.vel.len()) } else { 0.0 };
         let delta = (2.0 * wheelbase * alpha.sin() / ld).atan() + beta + stanley;
         let max_a = self.car.steer_max / (1.0 + v.vel.len() / self.car.steer_speed_ref);
-        let steer = (delta / max_a).clamp(-1.0, 1.0);
+        let mut steer = (delta / max_a).clamp(-1.0, 1.0);
+        if self.cfg.attack > 0.5 {
+            // the Scandinavian flick: before a fast bend the car is thrown the other way for a moment, so the rear swings out and the turn-in is already a slide
+            self.pend_cool = (self.pend_cool - dt).max(0.0);
+            if self.pend > 0.0 { self.pend -= dt; steer = (-self.pend_dir * 0.5).clamp(-1.0, 1.0); }
+            else if self.pend_cool <= 0.0 && speed > 15.0 && speed < 20.0 && v.contacts >= 3 && steer.abs() < 0.35 && self.route.room(i, v.pos.x, v.pos.z).map_or(true, |r| r > 2.5) {
+                let d0 = 3.0 + 0.7 * speed;
+                let (j, _) = self.route.ahead(i, d0); let (j2, t2) = self.route.ahead(i, d0 + 22.0);
+                let k_ahead = self.route.kraw[j..=j2].iter().cloned().fold(0.0f32, f32::max);
+                if k_ahead > 0.015 && k_ahead < 0.04 {
+                    self.pend = 0.18; self.pend_cool = 5.0;
+                    self.pend_dir = ((t2.x - v.pos.x) * right.x + (t2.z - v.pos.z) * right.z).signum();
+                }
+            }
+            if v.contacts == 0 { steer *= 0.2; }   // in the air the wheels stay straight for the landing
+        }
 
         // speed: the profile's target a few points ahead, throttle and brake from the error
         let e = want - speed;
         let (throttle, brake, amt) = if self.cfg.attack > 0.5 {
-            // Time Attack: flat out until the plan says brake, then hard
-            if e > -0.5 { (1.0, false, 0.0) } else if e < -1.2 { (0.0, true, (-e * 0.4).clamp(0.2, 1.0)) } else { (0.0, false, 0.0) }
+            // Max Attack: flat out until the plan says brake, then hard
+            let air = v.contacts == 0;
+            if e > -0.5 { (if air { 0.4 } else { 1.0 }, false, 0.0) }
+            // braking into a bend with the throttle kept a little open (left-foot braking): the rear stays light and the car rotates
+            else if e < -1.2 { (if steer.abs() > 0.2 && speed > 8.0 { 0.3 } else { 0.0 }, true, (-e * 0.4).clamp(0.2, 1.0) * if steer.abs() > 0.2 { 0.8 } else { 1.0 }) } else { (0.0, false, 0.0) }
         } else if e > 0.3 { ((0.25 + 0.35 * e).clamp(0.0, 1.0), false, 0.0) }
             else if e < -0.7 { (0.0, true, (-e * 0.3).clamp(0.1, 1.0)) } else { (0.0, false, 0.0) };
         // handbrake flick: into a tight bend taken above the grip limit the rear is let go for a moment so the car rotates

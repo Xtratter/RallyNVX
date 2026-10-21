@@ -38,12 +38,12 @@ use super::*;
     reset_learned();
 }
 
-#[test] fn the_time_attack_style_is_the_files_until_it_is_taught_and_the_taught_numbers_are_bounded() {
+#[test] fn the_max_attack_style_is_the_files_until_it_is_taught_and_the_taught_numbers_are_bounded() {
     use super::super::train::{lo, hi, Mode};
     reset_attack();
     let a = cfg_style(5);
-    assert_eq!(a.attack, 1.0); assert!(a.slide > 0.5 && a.edge_margin < 0.5 && a.lat_factor > cfg().lat_factor * 0.8, "the style is all out: {a:?}");
-    assert_eq!(cfg().attack, 0.0); assert_eq!(cfg_style(0).attack + cfg_style(1).attack + cfg_style(2).attack, 0.0, "only Time Attack attacks");
+    assert_eq!(a.attack, 1.0); assert!(a.slide > 0.5 && a.edge_margin < 0.5 && a.lat_factor > cfg().lat_factor * 0.7, "the style is all out: {a:?}");
+    assert_eq!(cfg().attack, 0.0); assert_eq!(cfg_style(0).attack + cfg_style(1).attack + cfg_style(2).attack, 0.0, "only Max Attack attacks");
     set_attack(&[9.0, 9.0, 9.0, -9.0, 9.0, 9.0, 0.0]);
     let t = cfg_style(5);
     assert_eq!((t.lat_factor, t.brake_factor, t.edge_margin, t.slide), (hi(Mode::Attack)[0], hi(Mode::Attack)[1], lo(Mode::Attack)[3], lo(Mode::Attack)[6]));

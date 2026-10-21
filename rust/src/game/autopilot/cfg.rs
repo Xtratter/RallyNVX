@@ -11,7 +11,7 @@ pub struct AutoCfg {
     pub laps: u32,
     pub lat_factor: f32, pub brake_factor: f32, pub look_base: f32, pub look_gain: f32, pub offset_max: f32,
     pub crest_speed: f32, pub field_speed: f32, pub stuck_time: f32,
-    /// 1 for the Time Attack style: full throttle, the line may touch the edge and the shoulder, slides and the handbrake in the hairpins are all used; 0 otherwise.
+    /// 1 for the Max Attack style: full throttle, the line may touch the edge and the shoulder, slides and the handbrake in the hairpins are all used; 0 otherwise.
     pub attack: f32,
 }
 
@@ -67,7 +67,7 @@ pub fn learned() -> AutoCfg { (*LEARNED.read().unwrap_or_else(|e| e.into_inner()
 pub fn set_learned(g: &[f32]) { if let Some(c) = taught(g, super::train::Mode::Safe) { *LEARNED.write().unwrap_or_else(|e| e.into_inner()) = Some(c); } }
 pub fn reset_learned() { *LEARNED.write().unwrap_or_else(|e| e.into_inner()) = None; }
 
-/// The Time Attack style (5): the numbers the autopilot taught itself for it, or the file's `attack` style until then.
+/// The Max Attack style (5): the numbers the autopilot taught itself for it, or the file's `attack` style until then.
 static ATTACK: RwLock<Option<AutoCfg>> = RwLock::new(None);
 pub fn attack() -> AutoCfg { (*ATTACK.read().unwrap_or_else(|e| e.into_inner())).unwrap_or_else(|| styles().attack) }
 pub fn set_attack(g: &[f32]) { if let Some(c) = taught(g, super::train::Mode::Attack) { *ATTACK.write().unwrap_or_else(|e| e.into_inner()) = Some(c); } }

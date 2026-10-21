@@ -26,13 +26,13 @@
       "edge_margin": 1.1
     },
     "attack": {
-      "lat_factor": 1.134,
-      "brake_factor": 1.485,
-      "offset_max": 0.927,
-      "edge_margin": 0.006,
-      "look_base": 3.86,
-      "look_gain": 0.224,
-      "slide": 0.78,
+      "lat_factor": 1.0,
+      "brake_factor": 0.741,
+      "offset_max": 1.093,
+      "edge_margin": 0.136,
+      "look_base": 4.04,
+      "look_gain": 0.239,
+      "slide": 0.6,
       "attack": 1
     }
   }

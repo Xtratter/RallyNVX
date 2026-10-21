@@ -6,12 +6,12 @@ use crate::game::{input::Input, vehicle::VehicleSpec, world::World};
 
 /// The numbers searched, in the order of `to_cfg`: cornering grip, braking, how much of the free width the line may use, the margin to the edge, the look-ahead base and gain, sliding.
 pub const N: usize = 7;
-/// What the search is for: `Safe` (the "Learned" style: stay on the road, no slides) or `Attack` (the "Time Attack" style: slides, the line may touch the road's edge and the shoulder, a metre or two beyond costs little).
+/// What the search is for: `Safe` (the "Learned" style: stay on the road, no slides) or `Attack` (the "Max Attack" style: slides, the line may touch the road's edge and the shoulder, a metre or two beyond costs little).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode { Safe, Attack }
 /// The bounds of the seven numbers (the last is the share of sliding; fixed at 0 for `Safe`).
-pub fn lo(m: Mode) -> [f32; N] { match m { Mode::Safe => [0.8, 0.6, 0.4, 0.8, 3.0, 0.2, 0.0], Mode::Attack => [1.0, 0.8, 0.5, -0.8, 3.0, 0.2, 0.3] } }
-pub fn hi(m: Mode) -> [f32; N] { match m { Mode::Safe => [1.8, 1.2, 0.9, 2.0, 12.0, 0.8, 0.0], Mode::Attack => [2.4, 1.5, 1.1, 1.2, 12.0, 0.8, 1.0] } }
+pub fn lo(m: Mode) -> [f32; N] { match m { Mode::Safe => [0.8, 0.6, 0.4, 0.8, 3.0, 0.2, 0.0], Mode::Attack => [1.0, 0.7, 0.5, -0.8, 3.0, 0.2, 0.3] } }
+pub fn hi(m: Mode) -> [f32; N] { match m { Mode::Safe => [1.8, 1.2, 0.9, 2.0, 12.0, 0.8, 0.0], Mode::Attack => [2.4, 1.0, 1.1, 1.2, 12.0, 0.8, 1.0] } }
 
 /// The numbers `base` has, with the searched ones taken from `g` (each 0..1 over its bounds).
 pub fn to_cfg(base: AutoCfg, g: &[f32; N], m: Mode) -> AutoCfg {

@@ -406,7 +406,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             r.addView(btn, LinearLayout.LayoutParams(px(150f), px(44f)))
             list.addView(r, LinearLayout.LayoutParams(px(480f), -2).apply { topMargin = px(8f) })
         }
-        val names = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"), t("Learned", "Обученный"), t("Time Attack", "Time Attack"))
+        val names = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"), t("Learned", "Обученный"), t("Max Attack", "Max Attack"))
         row(t("Style", "Стиль"), { names[Controls.autopilotStyle(this)] }) { Controls.setAutopilotStyle(this, DriveMath.cycle(Controls.autopilotStyle(this), Controls.AP_STYLES)) }
         fun apRow(text: String, key: String, size: Int, show: (Int) -> String) =
             row(text, { show(Controls.apStep(this, key, size)) }) { Controls.setApStep(this, key, DriveMath.cycle(Controls.apStep(this, key, size), size)) }
@@ -416,7 +416,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         apRow(t("Own: corner cutting", "Свой: срезание поворотов"), "ap_cut", Controls.AP_CUT.size) { "${(Controls.AP_CUT[it] * 100).toInt()} %" }
         apRow(t("Own: slides", "Свой: заносы"), "ap_slide", 2) { if (it == 1) t("On", "Вкл") else t("Off", "Выкл") }
         apRow(t("Own: margin to the edge", "Свой: запас до края"), "ap_edge", Controls.AP_EDGE.size) { "${Controls.AP_EDGE[it]} ${t("m", "м")}" }
-        // the self-training: the autopilot drives the stage again and again in the simulation (a few minutes) and keeps the numbers that are faster: the safe ones ("Learned") or the all-out ones ("Time Attack")
+        // the self-training: the autopilot drives the stage again and again in the simulation (a few minutes) and keeps the numbers that are faster: the safe ones ("Learned") or the all-out ones ("Max Attack")
         val trainInfo = TextView(this).apply { textSize = 13f; setTextColor(Mini.TEXT2) }
         var wasTraining = false; var trainingMode = 0
         val trainBtns = ArrayList<Pair<Int, TextView>>()
@@ -424,7 +424,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             val st = Native.gameTrainState()
             val busy = st.size >= 4 && st[0] > 0.5f
             return if (busy && trainingMode == mode) t("Stop training", "Остановить обучение") + " (${(st[1] * 100).toInt()} %)"
-            else if (mode == 2) t("Teach Time Attack (all out, slides)", "Обучить Time Attack (на пределе, с заносами)") else t("Teach the autopilot (safe)", "Обучить автопилот (безопасно)")
+            else if (mode == 2) t("Teach Max Attack (all out, slides)", "Обучить Max Attack (на пределе, с заносами)") else t("Teach the autopilot (safe)", "Обучить автопилот (безопасно)")
         }
         fun pollTraining() {
             val st = Native.gameTrainState()
@@ -435,7 +435,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                     val attack = r[0] > 1.5f; val nums = r.copyOfRange(1, 8)
                     Controls.setLearned(this, nums, attack); Native.gameSetLearned(if (attack) 2 else 1, nums); Controls.setAutopilotStyle(this, if (attack) 5 else 4)
                     val gain = if (st[3] > 1f) ((st[3] - st[2]) / st[3] * 100f).toInt().coerceAtLeast(0) else 0
-                    trainInfo.text = t("Learned: the stage is about $gain % cheaper (time and mistakes). The style \"${if (attack) "Time Attack" else "Learned"}\" is on.", "Обучено: этап примерно на $gain % «дешевле» (время и ошибки). Включён стиль «${if (attack) "Time Attack" else "Обученный"}».")
+                    trainInfo.text = t("Learned: the stage is about $gain % cheaper (time and mistakes). The style \"${if (attack) "Max Attack" else "Learned"}\" is on.", "Обучено: этап примерно на $gain % «дешевле» (время и ошибки). Включён стиль «${if (attack) "Max Attack" else "Обученный"}».")
                     changed()
                 }
             }
@@ -468,7 +468,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         startPolling()
     }
     private fun showAutopilot() {
-        val name = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"), t("Learned", "Обученный"), t("Time Attack", "Time Attack"))[autopilotStyle.coerceIn(0, 5)]
+        val name = arrayOf(t("Calm", "Спокойный"), t("Normal", "Обычный"), t("Aggressive", "Агрессивный"), t("Own", "Свой"), t("Learned", "Обученный"), t("Max Attack", "Max Attack"))[autopilotStyle.coerceIn(0, 5)]
         (autopilotBtn as? android.widget.TextView)?.text = if (autopilotOn) "● $name" else t("Autopilot", "Автопилот")
         autopilotBtn?.alpha = if (autopilotOn) 1f else 0.85f
     }
