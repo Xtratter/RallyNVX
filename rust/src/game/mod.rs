@@ -17,6 +17,7 @@ pub mod drivetrain;
 pub mod shiftlogic;
 pub mod wheel;
 pub mod tyre;
+pub mod chassis;
 pub mod diff;
 pub mod driveline;
 #[cfg(test)] mod anchors_tests;

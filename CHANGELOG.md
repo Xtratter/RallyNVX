@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.78.0 - the suspension setup
+- Added: the **anti-roll bars** (front and rear), the **camber** (front and rear) and the **toe** (front and rear) in the car menu, with a **Suspension** row of presets (Standard, Tarmac, Gravel, Snow). The bars twist as the body rolls and move cornering load between the wheels: without them the body rolls 40 % more, with them three times as stiff 37 % less than as built; a stiff **front** bar loads the front tyres more and the car **understeers**, a stiff **rear** bar makes it **oversteer** (about 5 % in the yaw rate of a steady turn). The camber (the lean of the wheel, the menu shows degrees) has its best near -1 degree of the effective lean, which is the static camber plus the body's roll: too much of either way costs up to 8 % of the grip. The toe turns the two wheels of an axle together (toe-in) or apart (toe-out): it costs rolling drag and tyre heat and changes the turn-in
+- Changed: a tyre's grip now grows less than its load (a tyre with 50 % more load gives about 6 % less grip per newton), the way real tyres behave; this is what lets the bars move the car's balance. The rear axle has a little toe-in as built (0.1 degree)
+- Not yet: the ride height and the dampers (bump and rebound)
 ## 2.77.2 - the fire only after a lift
 - Fixed: the fire at the exhaust burned all the time the gas was shut (above 3000 rpm with the anti-lag on, which is the default): on a lift, on the engine brake, under braking. Found by measuring the fuel that burns in the exhaust of the engine model: 0.003 to 0.006 mol/s without a break (no fire at idle, at a steady throttle or at full throttle, and none with the anti-lag off)
 - Changed: the anti-lag now works like the real one: it fires after a lift while the turbo needs help, stops when the turbo is fast enough and starts again if it has slowed, and for three seconds at most; the fire comes in bursts after a lift (for 2 to 3 seconds, then none), not for as long as the throttle is shut. A new lift (a pulse of the throttle) arms it again
