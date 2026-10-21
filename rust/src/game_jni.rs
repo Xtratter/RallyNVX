@@ -33,7 +33,7 @@ mod android {
     use crate::game::{app::{Game, STAT_LEN}, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Train(bool), Rally(i32), Signs(bool), Camera(f32, f32), CameraUp, CameraReset, TestTrack, Reverse(bool), Assists(u32), Tuning(i32, f32), Shift(i32), Manual(bool), Clutch(f32), GearCfg(i32, i32), Service, CameraFly(f32, f32), CameraView(i32, f32, f32), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
+    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Train(i32), Rally(i32), Signs(bool), Camera(f32, f32), CameraUp, CameraReset, TestTrack, Reverse(bool), Assists(u32), Tuning(i32, f32), Shift(i32), Manual(bool), Clutch(f32), GearCfg(i32, i32), Service, CameraFly(f32, f32), CameraView(i32, f32, f32), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -82,7 +82,7 @@ mod android {
                             Ok(GCmd::OnRoad(m)) => { g.place_on_road(m); }
                             Ok(GCmd::Dust(l)) => g.set_dust(l),
                             Ok(GCmd::Autopilot(style)) => g.set_autopilot(style),
-                            Ok(GCmd::Train(on)) => g.train(on),
+                            Ok(GCmd::Train(mode)) => g.train(mode),
                             Ok(GCmd::Rally(stage)) => g.rally(stage),
                             Ok(GCmd::Signs(on)) => g.set_signs(on),
                             Ok(GCmd::Camera(y, p)) => g.camera_drag(y, p),
@@ -178,18 +178,20 @@ mod android {
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAutopilot(_e: JNIEnv, _c: JClass, style: jint) { send(GCmd::Autopilot(style)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameAutopilotTune(_e: JNIEnv, _c: JClass, lat: jfloat, brake: jfloat, offset: jfloat, speed: jfloat, slide: jfloat, edge: jfloat) { crate::game::autopilot::cfg::set_custom(lat, brake, offset, speed, slide, edge); }
     /// The self-training: start (1) or stop (0); its state `[running, progress, best cost]`; the finished numbers (six, or none); the learned numbers set from the saved ones.
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameTrain(_e: JNIEnv, _c: JClass, on: jboolean) { send(GCmd::Train(on != 0)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameTrain(_e: JNIEnv, _c: JClass, mode: jint) { send(GCmd::Train(mode)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameTrainState<'a>(e: JNIEnv<'a>, _c: JClass) -> jni::sys::jfloatArray {
         let s = crate::game::autopilot::job::state();
         match e.new_float_array(4) { Ok(a) => { let _ = e.set_float_array_region(&a, 0, &s); a.into_raw() } Err(_) => std::ptr::null_mut() }
     }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameTrainResult<'a>(e: JNIEnv<'a>, _c: JClass) -> jni::sys::jfloatArray {
-        let r = crate::game::autopilot::job::take_result().unwrap_or([f32::NAN; 6]);
-        match e.new_float_array(6) { Ok(a) => { let _ = e.set_float_array_region(&a, 0, &r); a.into_raw() } Err(_) => std::ptr::null_mut() }
+        // the mode (1 safe, 2 attack) and the seven numbers; NaN when there is none
+        let mut r = [f32::NAN; 8];
+        if let Some((m, g)) = crate::game::autopilot::job::take_result() { r[0] = if m == crate::game::autopilot::train::Mode::Attack { 2.0 } else { 1.0 }; r[1..].copy_from_slice(&g); }
+        match e.new_float_array(8) { Ok(a) => { let _ = e.set_float_array_region(&a, 0, &r); a.into_raw() } Err(_) => std::ptr::null_mut() }
     }
-    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameSetLearned(e: JNIEnv, _c: JClass, v: jni::objects::JFloatArray) {
-        let n = e.get_array_length(&v).unwrap_or(0) as usize; let mut b = vec![0.0f32; n.min(6)];
-        if e.get_float_array_region(&v, 0, &mut b).is_ok() { crate::game::autopilot::cfg::set_learned(&b); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameSetLearned(e: JNIEnv, _c: JClass, mode: jint, v: jni::objects::JFloatArray) {
+        let n = e.get_array_length(&v).unwrap_or(0) as usize; let mut b = vec![0.0f32; n.min(crate::game::autopilot::train::N)];
+        if e.get_float_array_region(&v, 0, &mut b).is_ok() { if mode == 2 { crate::game::autopilot::cfg::set_attack(&b); } else { crate::game::autopilot::cfg::set_learned(&b); } }
     }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameRally(_e: JNIEnv, _c: JClass, stage: jint) { send(GCmd::Rally(stage)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameNoteText<'a>(mut e: JNIEnv<'a>, _c: JClass, ru: jboolean) -> jni::sys::jstring {

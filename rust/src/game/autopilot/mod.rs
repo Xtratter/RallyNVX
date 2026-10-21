@@ -110,7 +110,7 @@ impl Autopilot {
     /// The same with the numbers given (the self-training tries many sets at once, so they cannot come from the global style).
     pub fn on_route_cfg(route: Route, car: VehicleSpec, v: &Vehicle, style: i32, cfg: AutoCfg) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg, style: style.clamp(0, 4), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0 }
+        Autopilot { route, car, cfg, style: style.clamp(0, 5), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
@@ -153,10 +153,11 @@ impl Autopilot {
         let Some(m) = self.models.clone() else { return };
         let slip = v.wheels.iter().filter(|w| w.grounded).map(|w| w.lat_slip.abs()).fold(0.0f32, f32::max);
         let room = self.route.room(i, v.pos.x, v.pos.z);
-        let ok = 1.0 + 2.0 * self.cfg.slide;
-        let wide = self.route.half[i] > 1.0 && d > 1.2;   // far off the planned line: it runs wide
-        if slip > ok || wide || room.map_or(false, |r| r < 0.8) { self.k -= 0.9 * dt; }
-        else if slip < 0.6 * ok && d < 0.7 { self.k += 0.03 * dt; }
+        let at = self.cfg.attack;   // Time Attack tolerates more: bigger slides, wandering off the line, the edge itself
+        let ok = 1.0 + 2.0 * self.cfg.slide + at;
+        let wide = self.route.half[i] > 1.0 && d > 1.2 + 2.0 * at;   // far off the planned line: it runs wide
+        if slip > ok || wide || room.map_or(false, |r| r < 0.8 - 1.2 * at) { self.k -= 0.9 * dt; }
+        else if slip < 0.6 * ok && d < 0.7 + at { self.k += 0.03 * dt; }
         self.k = self.k.clamp(0.6, K_MAX);
         if (self.k - self.k_planned).abs() > 0.03 {
             self.k_planned = self.k;
@@ -166,7 +167,7 @@ impl Autopilot {
         }
     }
 
-    /// 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers, 4 the learned ones.
+    /// 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers, 4 the learned ones, 5 Time Attack.
     pub fn style(&self) -> i32 { self.style }
     pub fn route(&self) -> &Route { &self.route }
     pub fn progress(&self) -> f32 { self.route.s[self.idx] }
@@ -196,7 +197,7 @@ impl Autopilot {
         let want = want.min(tame) * wet_scale;
         // off the line: slow down in proportion to how far into the road's edge the car has drifted
         let half = self.route.half[i];
-        let want = if half > 1.0 && d > 0.55 * half { want * (1.0 - (d - 0.55 * half) / (0.6 * half)).clamp(0.45, 1.0) } else { want };
+        let want = if half > 1.0 && d > (0.55 + self.cfg.attack) * half { want * (1.0 - (d - 0.55 * half) / (0.6 * half)).clamp(0.45, 1.0) } else { want };
         if v.flipped() { cmd.reset = true; self.recoveries += 1; self.stuck = 0.0; }
         self.stuck = if speed.abs() < 1.0 && want > 3.0 { self.stuck + dt } else { 0.0 };
         if remaining < 25.0 && self.stuck > 2.0 { cmd.done = true; return cmd; }   // stopped just short of the line
@@ -232,19 +233,22 @@ impl Autopilot {
 
         // speed: the profile's target a few points ahead, throttle and brake from the error
         let e = want - speed;
-        let (throttle, brake, amt) = if e > 0.3 { ((0.25 + 0.35 * e).clamp(0.0, 1.0), false, 0.0) }
+        let (throttle, brake, amt) = if self.cfg.attack > 0.5 {
+            // Time Attack: flat out until the plan says brake, then hard
+            if e > -0.5 { (1.0, false, 0.0) } else if e < -1.2 { (0.0, true, (-e * 0.4).clamp(0.2, 1.0)) } else { (0.0, false, 0.0) }
+        } else if e > 0.3 { ((0.25 + 0.35 * e).clamp(0.0, 1.0), false, 0.0) }
             else if e < -0.7 { (0.0, true, (-e * 0.3).clamp(0.1, 1.0)) } else { (0.0, false, 0.0) };
         // handbrake flick: into a tight bend taken above the grip limit the rear is let go for a moment so the car rotates
         self.cooldown = (self.cooldown - dt).max(0.0);
         let mut handbrake = false;
         if self.cfg.slide > 0.0 {
             if self.flick > 0.0 { self.flick -= dt; handbrake = true; }
-            else if self.cooldown <= 0.0 && speed > 6.0 && speed < 18.0 && steer.abs() > 0.8 {
+            else if self.cooldown <= 0.0 && speed > 6.0 && speed < 18.0 + 8.0 * self.cfg.attack && steer.abs() > 0.8 - 0.2 * self.cfg.attack {
                 // only in a hairpin the car cannot turn by itself: the bend ahead is tight, the steering is at its lock and the car turns less than the bend asks (understeer)
                 let (j, _) = self.route.ahead(i, 10.0 + 0.8 * speed);
                 let k_max = self.route.kraw[i..=j].iter().cloned().fold(0.0, f32::max);
                 let need = speed * k_max; let yaw = v.omega.dot(v.up()).abs();
-                if k_max > 0.045 && yaw < 0.7 * need && vf > 0.0 { self.flick = self.cfg.flick_time; self.cooldown = 3.0; handbrake = true; }
+                if k_max > 0.045 - 0.015 * self.cfg.attack && yaw < (0.7 + 0.15 * self.cfg.attack) * need && vf > 0.0 { self.flick = self.cfg.flick_time; self.cooldown = 3.0; handbrake = true; }
             }
         }
         if handbrake { cmd.input = Input { throttle: 0.0, steer, brake: false, handbrake: true, ..Default::default() }; return cmd; }

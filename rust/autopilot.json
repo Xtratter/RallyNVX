@@ -24,6 +24,16 @@
       "slide": 0.5,
       "offset_max": 0.85,
       "edge_margin": 1.1
+    },
+    "attack": {
+      "lat_factor": 1.134,
+      "brake_factor": 1.485,
+      "offset_max": 0.927,
+      "edge_margin": 0.006,
+      "look_base": 3.86,
+      "look_gain": 0.224,
+      "slide": 0.78,
+      "attack": 1
     }
   }
 }

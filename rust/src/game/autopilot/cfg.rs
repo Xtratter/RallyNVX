@@ -11,14 +11,16 @@ pub struct AutoCfg {
     pub laps: u32,
     pub lat_factor: f32, pub brake_factor: f32, pub look_base: f32, pub look_gain: f32, pub offset_max: f32,
     pub crest_speed: f32, pub field_speed: f32, pub stuck_time: f32,
+    /// 1 for the Time Attack style: full throttle, the line may touch the edge and the shoulder, slides and the handbrake in the hairpins are all used; 0 otherwise.
+    pub attack: f32,
 }
 
 pub const EMBEDDED: &str = include_str!("../../../autopilot.json");
 
 /// The three driving styles: calm, normal (the default numbers) and aggressive (slides allowed).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Styles { pub calm: AutoCfg, pub normal: AutoCfg, pub aggressive: AutoCfg }
-impl Styles { pub fn get(&self, style: i32) -> AutoCfg { match style { 0 => self.calm, 2 => self.aggressive, _ => self.normal } } }
+pub struct Styles { pub calm: AutoCfg, pub normal: AutoCfg, pub aggressive: AutoCfg, pub attack: AutoCfg }
+impl Styles { pub fn get(&self, style: i32) -> AutoCfg { match style { 0 => self.calm, 2 => self.aggressive, 5 => self.attack, _ => self.normal } } }
 
 impl AutoCfg {
     /// The base numbers of the file; `over` (a style object, may be empty) replaces the keys it names.
@@ -29,11 +31,12 @@ impl AutoCfg {
             Ok(x as f32)
         };
         Ok(AutoCfg {
-            laps: num("laps", 1.0, 5.0)? as u32, speed_cap: num("speed_cap", 0.3, 1.0)?, edge_margin: num("edge_margin", 0.0, 4.0)?,
+            laps: num("laps", 1.0, 5.0)? as u32, speed_cap: num("speed_cap", 0.3, 1.0)?, edge_margin: num("edge_margin", -1.0, 4.0)?,
             slide: num("slide", 0.0, 1.0)?, flick_ratio: num("flick_ratio", 1.0, 3.0)?, flick_time: num("flick_time", 0.1, 1.0)?,
             lat_factor: num("lat_factor", 0.2, 3.0)?, brake_factor: num("brake_factor", 0.2, 1.5)?, look_base: num("look_base", 2.0, 40.0)?, look_gain: num("look_gain", 0.0, 2.0)?,
-            offset_max: num("offset_max", 0.0, 0.9)?, crest_speed: num("crest_speed", 5.0, 60.0)?, field_speed: num("field_speed", 3.0, 40.0)?,
+            offset_max: num("offset_max", 0.0, 1.2)?, crest_speed: num("crest_speed", 5.0, 60.0)?, field_speed: num("field_speed", 3.0, 40.0)?,
             stuck_time: num("stuck_time", 1.0, 30.0)?,
+            attack: over.and_then(|o| o.get("attack")).or_else(|| v.get("attack")).and_then(|k| k.as_f64()).filter(|x| x.is_finite()).unwrap_or(0.0).clamp(0.0, 1.0) as f32,
         })
     }
     pub fn from_json(text: &str) -> Result<AutoCfg, String> { Ok(Styles::from_json(text)?.normal) }
@@ -47,7 +50,7 @@ impl Styles {
             let over = styles.and_then(|s| s.get(name)).filter(|o| o.is_object());
             AutoCfg::parse(&v, over, &format!("autopilot.{name}"))
         };
-        Ok(Styles { calm: one("calm")?, normal: AutoCfg::parse(&v, None, "autopilot")?, aggressive: one("aggressive")? })
+        Ok(Styles { calm: one("calm")?, normal: AutoCfg::parse(&v, None, "autopilot")?, aggressive: one("aggressive")?, attack: one("attack")? })
     }
 }
 
@@ -55,18 +58,28 @@ static CFG: RwLock<Option<Styles>> = RwLock::new(None);
 
 pub fn cfg() -> AutoCfg { styles().normal }
 /// The numbers of a driving style: 0 calm, 1 normal, 2 aggressive.
-pub fn cfg_style(style: i32) -> AutoCfg { if style >= 4 { learned() } else if style == 3 { custom() } else { styles().get(style) } }
+pub fn cfg_style(style: i32) -> AutoCfg { match style { 3 => custom(), 4 => learned(), 5 => attack(), _ => styles().get(style) } }
 
 /// The numbers the autopilot taught itself (style 4); the normal style until it has learned.
 static LEARNED: RwLock<Option<AutoCfg>> = RwLock::new(None);
 pub fn learned() -> AutoCfg { (*LEARNED.read().unwrap_or_else(|e| e.into_inner())).unwrap_or_else(cfg) }
 /// Sets the learned numbers (the searched six of `train`, in its order), clamped into the search's bounds; all-NaN or short input leaves them alone.
-pub fn set_learned(g: &[f32]) {
-    if g.len() < 6 || g.iter().take(6).any(|x| !x.is_finite()) { return; }
-    let mut a = [0.0f32; 6]; for i in 0..6 { a[i] = (g[i].clamp(super::train::LO[i], super::train::HI[i]) - super::train::LO[i]) / (super::train::HI[i] - super::train::LO[i]); }
-    *LEARNED.write().unwrap_or_else(|e| e.into_inner()) = Some(super::train::to_cfg(cfg(), &a));
-}
+pub fn set_learned(g: &[f32]) { if let Some(c) = taught(g, super::train::Mode::Safe) { *LEARNED.write().unwrap_or_else(|e| e.into_inner()) = Some(c); } }
 pub fn reset_learned() { *LEARNED.write().unwrap_or_else(|e| e.into_inner()) = None; }
+
+/// The Time Attack style (5): the numbers the autopilot taught itself for it, or the file's `attack` style until then.
+static ATTACK: RwLock<Option<AutoCfg>> = RwLock::new(None);
+pub fn attack() -> AutoCfg { (*ATTACK.read().unwrap_or_else(|e| e.into_inner())).unwrap_or_else(|| styles().attack) }
+pub fn set_attack(g: &[f32]) { if let Some(c) = taught(g, super::train::Mode::Attack) { *ATTACK.write().unwrap_or_else(|e| e.into_inner()) = Some(c); } }
+pub fn reset_attack() { *ATTACK.write().unwrap_or_else(|e| e.into_inner()) = None; }
+
+/// The numbers of a training (the searched seven, in their own units) clamped into the bounds of the mode; `None` for short or non-finite input.
+fn taught(g: &[f32], m: super::train::Mode) -> Option<AutoCfg> {
+    if g.len() < super::train::N || g.iter().take(super::train::N).any(|x| !x.is_finite()) { return None; }
+    let (l, h) = (super::train::lo(m), super::train::hi(m));
+    let a: [f32; super::train::N] = std::array::from_fn(|i| if h[i] > l[i] { (g[i].clamp(l[i], h[i]) - l[i]) / (h[i] - l[i]) } else { 0.0 });
+    Some(super::train::to_cfg(match m { super::train::Mode::Safe => cfg(), super::train::Mode::Attack => styles().attack }, &a, m))
+}
 
 /// The player's own numbers (style 3), set from the settings; the normal style until they are set.
 static CUSTOM: RwLock<Option<AutoCfg>> = RwLock::new(None);

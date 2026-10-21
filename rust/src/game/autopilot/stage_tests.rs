@@ -182,3 +182,18 @@ fn diagnose(seed: u64, style: i32) -> String {
     let hs: Vec<_> = seeds.iter().map(|&s| spawn_lim(move || diagnose(s, st))).collect();
     for h in hs { println!("{}", h.join().unwrap()); }
 }
+
+#[test] #[ignore] fn time_attack_is_faster_slides_and_cuts_the_corners_without_wrecking_the_car() {
+    let hs: Vec<_> = [3u64, 8].iter().flat_map(|&s| [1, 5].map(move |st| (s, st))).map(|(s, st)| spawn_lim(move || (s, st, run_from(s, false, false, st)))).collect();
+    let rs: Vec<(u64, i32, Report)> = hs.into_iter().map(|h| h.join().unwrap()).collect();
+    for seed in [3u64, 8] {
+        let get = |st: i32| rs.iter().find(|(s, t, _)| *s == seed && *t == st).map(|(_, _, r)| r).unwrap();
+        let (normal, attack) = (get(1), get(5));
+        print(attack);
+        assert!(normal.finished && attack.finished && attack.flips == 0, "seed {seed}");
+        assert!(attack.time < normal.time * 0.95, "seed {seed}: time attack {:.0} s, normal {:.0} s", attack.time, normal.time);
+        assert!(attack.slide_pct > 3.0 && attack.slide_pct > normal.slide_pct * 2.0, "seed {seed}: it slides ({:.1}% against {:.1}%)", attack.slide_pct, normal.slide_pct);
+        assert!(attack.worst_edge > normal.worst_edge && attack.worst_edge < 6.0, "seed {seed}: it cuts the corners (edge {:.1} m against {:.1} m) but stays near the road", attack.worst_edge, normal.worst_edge);
+        assert!(attack.damage < 0.15, "seed {seed}: damage {:.0}%", attack.damage * 100.0);
+    }
+}

@@ -100,7 +100,7 @@ impl World {
     /// Style -1 off, 0 calm, 1 normal, 2 aggressive (slides allowed), 3 custom (the numbers set in the settings), 4 learned (the self-training's).
     pub fn set_autopilot_style(&mut self, style: i32) -> bool {
         if style < 0 { self.autopilot = None; return false; }
-        let style = style.min(4);
+        let style = style.min(5);
         self.start_autopilot(style, super::autopilot::cfg::cfg_style(style))
     }
 
