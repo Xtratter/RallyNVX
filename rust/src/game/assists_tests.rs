@@ -8,7 +8,7 @@ use super::*;
     assert_eq!(Assists::from_mask(0xFFFF_FFFF), a, "extra bits are ignored");
 }
 #[test] fn tuning_is_clamped_to_its_range_ignores_garbage_and_scales_the_parts() {
-    let mut t = Tuning::default(); assert_eq!(t, Tuning { engine: 1.0, turbo: 1.0, brakes: 1.0, grip: 1.0, suspension: 1.0, downforce: 1.0, gearing: 1.0 });
+    let mut t = Tuning::default(); for i in 0..TUNING_PARTS { assert_eq!(t.get(i), 1.0, "part {i} starts as built"); }
     t.set(0, 9.0); assert_eq!(t.engine, 2.0); t.set(0, -1.0); assert_eq!(t.engine, 0.3);
     t.set(6, f32::NAN); assert_eq!(t.gearing, 1.0); t.set(99, 1.5);
     for i in 0..TUNING_PARTS { let (lo, hi) = Tuning::range(i); assert!(lo < 1.0 && hi > 1.0, "{i}: 1.0 is inside the range"); t.set(i, 1.0); assert_eq!(t.get(i), 1.0); }
@@ -18,6 +18,14 @@ use super::*;
     assert!((s.brake_force / spec.brake_force - 1.5).abs() < 1e-5 && (s.mu / spec.mu - 1.2).abs() < 1e-5 && (s.spring / spec.spring - 0.8).abs() < 1e-5);
     assert!((s.aero_base.cla_rear / spec.aero_base.cla_rear - 2.0).abs() < 1e-5 || spec.aero_base.cla_rear == 0.0);
     assert_eq!(Tuning::default().apply(&spec).mass, spec.mass);
+}
+
+#[test] fn the_differential_parts_are_tuning_parts_with_their_own_ranges() {
+    assert_eq!(TUNING_PARTS, 11);
+    let mut t = Tuning::default();
+    t.set(7, 9.0); assert_eq!(t.diff_front, 2.0); t.set(8, -1.0); assert_eq!(t.diff_rear, 0.0); t.set(9, 0.5); assert_eq!(t.diff_centre, 0.5);
+    t.set(10, 9.0); assert_eq!(t.split, 1.4); t.set(10, 0.0); assert_eq!(t.split, 0.6); t.set(10, f32::NAN); assert_eq!(t.split, 0.6, "garbage is ignored");
+    let d = t.diffs(); assert_eq!((d.front, d.rear, d.centre, d.split), (2.0, 0.0, 0.5, 0.6));
 }
 
 mod physics {
@@ -91,5 +99,19 @@ mod physics {
         let mean = t.iter().sum::<f32>() / t.len() as f32;
         let var = t.iter().map(|x| (x - mean) * (x - mean)).sum::<f32>() / t.len() as f32;
         assert!(var.sqrt() < mean.abs() * 0.35 + 50.0, "wheel torque mean {mean}, std {} N m", var.sqrt());
+    }
+    #[test] fn the_centre_split_sends_the_torque_where_the_driver_set_it() {
+        let share = |part10: f32| { let mut w = track(); w.tuning.set(10, part10);
+            for _ in 0..90 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+            let q = w.vehicle.drive_torque.unwrap(); (q[0] + q[1]) / q.iter().sum::<f32>() };
+        let (even, front, rear) = (share(1.0), share(1.4), share(0.6));
+        assert!((even - 0.5).abs() < 0.06 && (front - 0.7).abs() < 0.08 && (rear - 0.3).abs() < 0.08, "{even} {front} {rear}");
+    }
+    #[test] fn the_wheel_torques_add_up_to_the_engines_wheel_torque() {
+        let mut w = track();
+        for _ in 0..120 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+        let sum: f32 = w.vehicle.drive_torque.unwrap().iter().sum();
+        let mean = w.drivetrain.last.wheel_torque;
+        assert!((sum - mean).abs() < 0.2 * mean.abs().max(100.0), "the last substep {sum} against the frame's mean {mean}");
     }
 }
