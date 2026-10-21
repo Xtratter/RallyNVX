@@ -16,7 +16,7 @@ pub fn step_budget(acc: &mut f32, dt: f32, max_steps: usize) -> usize {
     n
 }
 
-pub const STAT_LEN: usize = 96;
+pub const STAT_LEN: usize = 104;
 
 fn surface_code(s: crate::game::surface::Surface) -> u8 {
     use crate::game::surface::Surface::*;
@@ -49,6 +49,9 @@ pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, fps: f32, fr
     { let d = &w.drivetrain; out[80] = d.gear as f32; out[81] = d.rpm(); out[82] = (d.mode == crate::game::drivetrain::Mode::Manual) as u8 as f32; out[83] = d.last.stalled as u8 as f32; out[84] = d.last.grip; out[85] = d.clutch_pedal; out[86] = d.last.boost_bar; }
     // the tyres: `[88..91]` the temperatures (degrees C) and `[92..95]` the wear (0 new, 1 worn out) of FL, FR, RL, RR
     for k in 0..4 { out[88 + k] = w.vehicle.tyres[k].temp; out[92 + k] = w.vehicle.tyres[k].wear; }
+    // the heat and the damage: `[96]` the coolant's and `[97]` the clutch's temperature (degrees C), `[98]` the body's and `[99]` the engine's damage, `[100..103]` the four springs' (0 new, 1 wrecked)
+    out[96] = w.drivetrain.coolant.temp; out[97] = w.drivetrain.clutch.temp; out[98] = w.vehicle.damage.body; out[99] = w.vehicle.damage.engine;
+    for k in 0..4 { out[100 + k] = w.vehicle.damage.susp[k]; }
     out[25] = w.vehicle.speed() * 3.6;   // signed: negative while rolling backwards (the brake pedal reverses below 3 km/h)
 }
 
@@ -107,6 +110,7 @@ mod game {
         /// The aids (bits, see `Assists::from_mask`) and one part of the tuning (see `Tuning::set`), from the game's menu.
         pub fn set_assists(&mut self, mask: u32) { self.assists = mask; self.world.assists = crate::game::assists::Assists::from_mask(mask); }
         pub fn set_tuning(&mut self, part: usize, v: f32) { if part < self.tuning.len() && v.is_finite() { self.tuning[part] = v; self.world.tuning.set(part, v); } }
+        pub fn service(&mut self) { self.world.service(); }
         pub fn set_gear_cfg(&mut self, boxt: i32, profile: i32) { self.gear_cfg = (boxt, profile); }
         pub fn set_clutch(&mut self, pedal: f32) { self.clutch = pedal; self.world.drivetrain.set_clutch(pedal); }
         pub fn camera_release(&mut self) { self.world.cam.set_dragging(false); }

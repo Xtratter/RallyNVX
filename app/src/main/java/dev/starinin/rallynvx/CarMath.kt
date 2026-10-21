@@ -69,6 +69,19 @@ object CarMath {
         }
         return one(0) + "  " + one(1) + "\n" + one(2) + "  " + one(3)
     }
+    /** The coolant's and the clutch's temperatures in a line. */
+    fun heatLine(coolant: Float, clutch: Float, en: Boolean): String {
+        fun d(v: Float) = if (v.isFinite()) Math.round(v) else 0
+        return (if (en) "Coolant " else "Охлаждающая жидкость ") + d(coolant) + "°C  " + (if (en) "Clutch " else "Сцепление ") + d(clutch) + "°C"
+    }
+    /** The damage in a line: the body, the engine (percent) and the four springs. */
+    fun damageLine(body: Float, engine: Float, springs: FloatArray, en: Boolean): String {
+        fun p(v: Float) = if (v.isFinite()) Math.round(v.coerceIn(0f, 1f) * 100f) else 0
+        val sp = (0 until 4).joinToString(" ") { p(springs.getOrElse(it) { 0f }).toString() }
+        return if (en) "Damage: body ${p(body)}%  engine ${p(engine)}%  springs $sp%" else "Повреждения: кузов ${p(body)}%  двигатель ${p(engine)}%  пружины $sp%"
+    }
+    fun coolantHot(t: Float) = t.isFinite() && t > 105f
+    fun clutchHot(t: Float) = t.isFinite() && t > 250f
     /** Suspension presets (the bars front and rear, the camber front and rear, the toe front and rear as multipliers): as built, tarmac (stiff, more camber, a little toe-out in front), gravel, snow (soft). */
     const val CHASSIS_PRESET_COUNT = 4
     val CHASSIS_PRESETS = arrayOf(floatArrayOf(1f, 1f, 1f, 1f, 1f, 1f), floatArrayOf(1.4f, 1f, 1.6f, 1.3f, 1.3f, 0.8f), floatArrayOf(0.8f, 0.7f, 0.6f, 0.6f, 1f, 1f), floatArrayOf(0.4f, 0.4f, 0.3f, 0.3f, 1f, 0.7f))

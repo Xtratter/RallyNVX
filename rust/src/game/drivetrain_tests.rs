@@ -325,3 +325,25 @@ fn spin_up(d: &mut Drivetrain, i_wheels: f32, tyre_of: impl Fn(f32) -> f32, secs
     let mut d = Car::new(); d.dt.opts.launch = true; d.brake = true; d.run(0.4, 2.0);
     assert!(d.dt.last.throttle >= 0.35, "a light pedal with the brake is not limited to the launch revs: {}", d.dt.last.throttle);
 }
+
+#[test] fn a_clutch_feathered_for_long_in_the_h_pattern_heats_and_loses_grip_but_the_automatic_does_not_burn() {
+    let mut c = Car::h_manual(); c.run(0.0, 1.5); c.dt.set_clutch(1.0); c.dt.shift(1); c.run(0.0, 0.3);
+    c.brake = true; c.dt.set_clutch(0.7);             // the clutch nearly out (it carries about 100 N m), the brake holding the car, the gas floored: it slips
+    c.run(1.0, 10.0);
+    assert!(c.dt.clutch.temp > 150.0, "10 s of slip: {}", c.dt.clutch.temp);
+    let held = c.dt.last.grip;
+    assert!(held < 1.0, "the grip fades: {held}");
+    let mut a = Car::new(); for _ in 0..6 { a.brake = false; a.run(1.0, 2.0); a.brake = true; a.run(0.0, 2.0); }
+    assert!(a.dt.clutch.temp < 60.0, "the automatic's converter does not burn the clutch: {}", a.dt.clutch.temp);
+}
+#[test] fn the_coolant_heats_when_the_engine_is_revved_for_long_without_the_air_and_an_overheated_engine_loses_torque() {
+    let after = |gas: f32| { let mut c = Car::h_manual(); c.run(0.0, 1.0); c.run(gas, 300.0); c.dt.coolant.temp };   // neutral, the car standing: no air through the radiator
+    let (idle, revved) = (after(0.0), after(1.0));
+    assert!(revved > idle + 5.0, "5 minutes at the limiter against idling: {revved} against {idle}");
+    let torque = |t: f32| { let mut e = Drivetrain::new(); e.gear = 3; e.coolant.temp = t; let mut o = e.last; for _ in 0..60 { o = e.step(1.0 / 60.0, &DriveIn { throttle: 1.0, speed: 15.0, wheel_r: R, ..Default::default() }); } o.torque };
+    assert!(torque(128.0) < torque(90.0) * 0.7, "{} against {}", torque(128.0), torque(90.0));
+}
+#[test] fn the_damage_of_the_engine_takes_power_through_the_power_factor() {
+    let torque = |k: f32| { let mut e = Drivetrain::new(); e.gear = 3; e.power_k = k; let mut o = e.last; for _ in 0..60 { o = e.step(1.0 / 60.0, &DriveIn { throttle: 1.0, speed: 15.0, wheel_r: R, ..Default::default() }); } o.torque };
+    assert!((torque(0.6) / torque(1.0) - 0.6).abs() < 0.05, "{} against {}", torque(0.6), torque(1.0));
+}

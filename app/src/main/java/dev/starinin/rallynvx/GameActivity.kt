@@ -96,7 +96,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                     }.also { root.addView(it, FrameLayout.LayoutParams((220f * dpx).toInt(), (52f * dpx).toInt(), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { setMargins(0, 0, 0, (40f * dpx).toInt()) }) }
                 }
             }
-            if (carPanel?.visibility == View.VISIBLE) tyreText?.text = CarMath.tyreLine(floatArrayOf(s[88], s[89], s[90], s[91]), floatArrayOf(s[92], s[93], s[94], s[95]), t("en", "ru") == "en")
+            if (carPanel?.visibility == View.VISIBLE) { val en = t("en", "ru") == "en"; tyreText?.text = CarMath.tyreLine(floatArrayOf(s[88], s[89], s[90], s[91]), floatArrayOf(s[92], s[93], s[94], s[95]), en) + "\n" + CarMath.heatLine(s[96], s[97], en) + "\n" + CarMath.damageLine(s[98], s[99], floatArrayOf(s[100], s[101], s[102], s[103]), en) }
             gearView?.update(s[80].toInt(), s[81], s[82] > 0.5f, s[83] > 0.5f, s[86])
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
@@ -625,6 +625,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         content.addView(TextView(this).apply { textSize = 13f; setTextColor(M3.TEXT); gravity = Gravity.CENTER; tyreText = this }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(4f) })   // the tyres: temperature and wear, live while the panel is open
         content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(250f)))
         val p = panel(content)
+        content.addView(M3Widgets.button(this, t("Service: repair, new tyres", "Сервис: ремонт и новые шины"), M3Widgets.ButtonKind.TONAL) { if (running) Native.gameService() }, LinearLayout.LayoutParams(px(260f), px(44f)).apply { topMargin = px(8f) })
         content.addView(M3Widgets.button(this, t("Reset tuning", "Сбросить настройки"), M3Widgets.ButtonKind.TONAL) {
             for (i in 0 until CarMath.PARTS) { Controls.setTuning(this, i, 1f); if (running) Native.gameTuning(i, 1f) }
             Controls.setDiffPreset(this, 1); Controls.setChassisPreset(this, 0)

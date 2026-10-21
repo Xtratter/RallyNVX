@@ -59,6 +59,19 @@ use super::*;
     assert!(c.camber_front == 0.0 && c.toe_front > crate::game::chassis::BASE.toe_front, "{c:?}");
     assert_eq!(Tuning::default().chassis(), crate::game::chassis::BASE);
 }
+#[test] fn the_service_repairs_the_car_and_gives_it_new_cool_tyres_and_the_damage_reaches_the_engine() {
+    let mut w = crate::game::world::World::test_track(VehicleSpec::default_car());
+    w.vehicle.damage = crate::game::damage::Damage { body: 1.0, susp: [1.0; 4], engine: 1.0 };
+    w.vehicle.tyres[0].wear = 0.7; w.vehicle.tyres[1].temp = 140.0; w.drivetrain.coolant.temp = 125.0; w.drivetrain.clutch.temp = 400.0;
+    w.step(&crate::game::input::Input::default(), 1.0 / 60.0);
+    assert!((w.drivetrain.power_k - 0.6).abs() < 1e-5, "the engine's damage reaches the drivetrain: {}", w.drivetrain.power_k);
+    assert!((w.drivetrain.air_c - w.vehicle.air_c).abs() < 1e-5);
+    w.service();
+    assert_eq!(w.vehicle.damage, crate::game::damage::Damage::default());
+    assert!(w.vehicle.tyres.iter().all(|y| y.wear == 0.0 && y.temp < 100.0) && w.drivetrain.coolant.temp < 100.0 && w.drivetrain.clutch.temp < 100.0);
+    w.step(&crate::game::input::Input::default(), 1.0 / 60.0);
+    assert_eq!(w.drivetrain.power_k, 1.0);
+}
 mod physics {
     use super::*;
     use crate::game::{input::Input, world::World};

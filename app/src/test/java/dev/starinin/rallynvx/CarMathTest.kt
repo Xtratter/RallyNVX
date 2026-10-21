@@ -56,4 +56,10 @@ class CarMathTest {
         assertEquals("Standard", CarMath.chassisPresetName(0, true)); assertEquals("Асфальт", CarMath.chassisPresetName(1, false)); assertEquals("Standard", CarMath.chassisPresetName(99, true))
         assertTrue(CarMath.CHASSIS_PRESETS[0].all { it == 1f })
     }
+    @Test fun heatAndDamageLines() {
+        assertEquals("Coolant 86°C  Clutch 12°C", CarMath.heatLine(86.4f, 11.6f, true)); assertEquals("Охлаждающая жидкость 130°C  Сцепление 0°C", CarMath.heatLine(130f, Float.NaN, false))
+        assertEquals("Damage: body 0%  engine 25%  springs 10 20 30 100%", CarMath.damageLine(0f, 0.25f, floatArrayOf(0.1f, 0.2f, 0.3f, 1.7f), true))
+        assertEquals("Повреждения: кузов 50%  двигатель 0%  пружины 0 0 0 0%", CarMath.damageLine(0.5f, Float.NaN, floatArrayOf(0f, 0f, 0f, -1f), false))
+        assertTrue(CarMath.coolantHot(112f) && !CarMath.coolantHot(100f) && CarMath.clutchHot(300f) && !CarMath.clutchHot(120f))
+    }
 }

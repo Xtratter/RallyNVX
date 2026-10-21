@@ -8,6 +8,7 @@ use super::terrain::Terrain;
 use super::wheel;
 use super::tyre::{self, Tyre};
 use super::chassis::{self, Chassis};
+use super::damage::Damage;
 
 /// Which generated body the renderer builds for a car.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -89,6 +90,8 @@ pub struct Vehicle {
     pub tyres: [Tyre; 4], pub tyre_bar: f32, pub air_c: f32,
     /// The suspension setup: the anti-roll bars, the camber and the toe (see `chassis`).
     pub chassis: Chassis,
+    /// What the crashes and the hard landings have done to the body, the springs and the engine (see `damage`).
+    pub damage: Damage,
     /// The surface under the first wheel in contact (the HUD shows it); tests can force one for every wheel.
     pub surface: Surface, pub force_surface: Option<Surface>,
     pub wheels: [WheelInfo; 4],
@@ -99,7 +102,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_torque: None, w: [0.0; 4], slip: [0.0; 4], spin_ready: false, last_vel: V3::ZERO, tyre_sum: 0.0, abs_on: true, tc_on: true, brake_bias: wheel::BRAKE_BIAS, tyres: [Tyre::warm(spec.wheel_set); 4], tyre_bar: 1.0, air_c: 15.0, chassis: Chassis::default(), surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_torque: None, w: [0.0; 4], slip: [0.0; 4], spin_ready: false, last_vel: V3::ZERO, tyre_sum: 0.0, abs_on: true, tc_on: true, brake_bias: wheel::BRAKE_BIAS, tyres: [Tyre::warm(spec.wheel_set); 4], tyre_bar: 1.0, air_c: 15.0, chassis: Chassis::default(), damage: Damage::default(), surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -128,7 +131,9 @@ impl Vehicle {
     /// Like `step_with`, with the driveline solved in the substeps: each one calls `drive(h, the wheels' spins, the torque the tyres put against them)` and puts what it returns on the wheels.
     pub fn step_driven(&mut self, t: &Terrain, props: &[Prop], inp: &Input, dt: f32, loose: &mut LooseMap, mut drive: Option<&mut dyn FnMut(f32, [f32; 4], f32) -> [f32; 4]>) {
         let inp = inp.sanitized();
-        if (self.vel - self.last_vel).len() > 2.0 { self.spin_ready = false; }
+        let jumped = (self.vel - self.last_vel).len() > 2.0;   // a speed set from outside (a reset, a teleport) is no crash
+        if jumped { self.spin_ready = false; }
+        let (v0, c0) = (self.vel, self.contacts);
         self.braking = inp.brake;   // the brake lights are for the pedal: a handbrake that is merely held does not light them
         self.parked = inp.handbrake;
         self.reverse_throttle = inp.throttle < -0.05;
@@ -150,7 +155,20 @@ impl Vehicle {
             let k = (1.0 - 3.0 * dt).max(0.0);
             self.vel.x *= k; self.vel.z *= k; self.omega = self.omega * k;
         }
+        // a crash is a sudden change of the horizontal velocity within one step, a hard landing a touchdown at speed
+        if !jumped {
+            self.register_hit(self.vel - v0);
+            if c0 == 0 && self.contacts > 0 { self.damage.landing(v0.y.min(0.0)); }
+        }
         self.last_vel = self.vel;
+    }
+
+    /// A hit that changed the velocity by `dv` (the car's own, from the world's collisions too): the damage by its size and by where on the car it came from.
+    pub fn register_hit(&mut self, dv: V3) {
+        let h = v3(dv.x, 0.0, dv.z);
+        if !(h.len() > 0.0) || !h.len().is_finite() { return; }
+        // the velocity changes against the side the obstacle is on: braked in the heading = hit in front, pushed to the right = hit on the left
+        self.damage.hit(h.len(), h.dot(self.forward()) < 0.0, h.dot(self.right()) > 0.0);
     }
 
     fn substep(&mut self, t: &Terrain, inp: &Input, h: f32, loose: &mut LooseMap) {
@@ -195,7 +213,7 @@ impl Vehicle {
             // the anti-roll bar of the axle: up on the more compressed wheel, down on the other (the other wheel's compression is the last substep's)
             let (pair, bar_k, track) = if front { (1 - w, self.chassis.arb_front, (s.wheels[0].x - s.wheels[1].x).abs()) } else { (5 - w, self.chassis.arb_rear, (s.wheels[2].x - s.wheels[3].x).abs()) };
             let bar = chassis::bar_force(bar_k, track, compress, self.comp[pair]);
-            let fs = (s.spring * compress - s.damper * vp.dot(n) + bar).clamp(0.0, max_susp);
+            let fs = (s.spring * self.damage.spring(w) * compress - s.damper * vp.dot(n) + bar).clamp(0.0, max_susp);
             let susp = n * fs;
             force = force + susp; torque = torque + r_att.cross(susp);
             // tyre
@@ -204,7 +222,7 @@ impl Vehicle {
             // the wheel's heading: the steering (the front) and the toe of its axle
             let left_wheel = s.wheels[w].x > 0.0;
             let toe = chassis::wheel_toe(if front { self.chassis.toe_front } else { self.chassis.toe_rear }, left_wheel);
-            let ang = (if front { self.steer } else { 0.0 }) + toe;
+            let ang = (if front { self.steer } else { 0.0 }) + toe + self.damage.heading(w);
             let base = fwd * ang.cos() + right * ang.sin();
             let fw = (base - n * base.dot(n)).norm();
             let rw = n.cross(fw);
@@ -270,7 +288,7 @@ impl Vehicle {
         let ride = s.aero_base.ride_ref;
         let clear = |m: f32| (ride - (m - static_comp)).clamp(0.3 * ride, 2.5 * ride);
         let af = super::aero::forces(&s, self.vel, fwd, right, clear(0.5 * (self.comp[0] + self.comp[1])), clear(0.5 * (self.comp[2] + self.comp[3])), &ac);
-        force = force + af.drag + af.side;
+        force = force + af.drag * self.damage.drag_factor() + af.side;
         let (zf, zr) = (0.5 * (s.wheels[0].z + s.wheels[1].z), 0.5 * (s.wheels[2].z + s.wheels[3].z));
         let (pf, pr) = (up * (-af.down_front), up * (-af.down_rear));
         force = force + pf + pr;

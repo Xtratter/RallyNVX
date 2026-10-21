@@ -33,7 +33,7 @@ mod android {
     use crate::game::{app::{Game, STAT_LEN}, input::Input};
     use crate::raster::Raster;
 
-    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Rally(i32), Signs(bool), Camera(f32, f32), CameraUp, CameraReset, TestTrack, Reverse(bool), Assists(u32), Tuning(i32, f32), Shift(i32), Manual(bool), Clutch(f32), GearCfg(i32, i32), CameraFly(f32, f32), CameraView(i32, f32, f32), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
+    enum GCmd { Input(Input), OnRoad(i32), Dust(i32), Autopilot(i32), Rally(i32), Signs(bool), Camera(f32, f32), CameraUp, CameraReset, TestTrack, Reverse(bool), Assists(u32), Tuning(i32, f32), Shift(i32), Manual(bool), Clutch(f32), GearCfg(i32, i32), Service, CameraFly(f32, f32), CameraView(i32, f32, f32), Reset, NewLevel(u64), Resize(u32, u32), Pause(bool), Quality(i32), InCity(i32), RenderMode(i32), AutoFallback(bool), GarageCar(i32), Stop }
 
     struct Engine { tx: Sender<GCmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; STAT_LEN]>> }
 
@@ -95,6 +95,7 @@ mod android {
                             Ok(GCmd::Manual(m)) => g.set_manual(m),
                             Ok(GCmd::Clutch(c)) => g.set_clutch(c),
                             Ok(GCmd::GearCfg(b, p)) => g.set_gear_cfg(b, p),
+                            Ok(GCmd::Service) => g.service(),
                             Ok(GCmd::CameraFly(f, u)) => g.camera_fly(f, u),
                             Ok(GCmd::CameraView(v, d, h)) => g.camera_view(v, d, h),
                             Ok(GCmd::Reset) => g.input.reset = true,
@@ -196,6 +197,7 @@ mod android {
     /// The manual transmission: a shift (+1 up, -1 down), the mode (0 automatic, 1 manual) and the clutch pedal (0 up .. 1 down).
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameShift(_e: JNIEnv, _c: JClass, dir: jint) { send(GCmd::Shift(dir)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameGearMode(_e: JNIEnv, _c: JClass, manual: jint) { send(GCmd::Manual(manual != 0)); }
+    #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameService(_e: JNIEnv, _c: JClass) { send(GCmd::Service); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameGearCfg(_e: JNIEnv, _c: JClass, boxt: jint, profile: jint) { send(GCmd::GearCfg(boxt, profile)); }
     #[no_mangle] pub extern "system" fn Java_dev_starinin_rallynvx_Native_gameClutch(_e: JNIEnv, _c: JClass, pedal: jfloat) { send(GCmd::Clutch(pedal)); }
     /// The aids as bits (anti-lag, ABS, traction control, the blip, the flat shift, the limiter, the blow-off valve) and one part of the tuning (0 engine, 1 turbo, 2 brakes, 3 tyres, 4 suspension, 5 downforce, 6 gearing) as a multiplier.
