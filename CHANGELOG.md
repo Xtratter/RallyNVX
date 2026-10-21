@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.75.0 - differentials
+- Added: a real four-wheel **driveline**: the engine's torque goes through a **centre differential** (a nominal 50/50 split, an **active** lock that closes on the power and at speed and opens for the turn-in and under the brake) to the front and the rear axle, and through a **limited-slip differential** on each axle (a clutch pack with a preload and different power and coast ramps) to its two wheels. A wheel that spins loses torque to the one with grip (one rear wheel on ice with an open differential barely moves the car; with the limited-slip one it pulls away), and the engine feels the wheels through the same chain
+- Added: in the car menu a **Differentials** row with the presets Tarmac / Gravel / Snow, and four parts to tune: the lock of the front, the rear and the centre differential (0 to 200 %) and the centre split (30/70 to 70/30 front/rear)
+- The Peugeot's numbers (a limited-slip differential on each axle, an electronically controlled centre one, a nominal 50/50) follow the layout of the real car; the values are approximations
+- Tests: the sums of the torques, the lock on power and coast, the viscous coupling, the active lock being continuous, the tuning staying sane, and a bench of the engine, the clutch, a differential and two wheels on grip and ice. Not seen on a device yet
+- Not yet: the brake bias in the menu, launch control
 ## 2.74.0 - the wheels turn on their own
 - Changed: **every wheel is a real spinning body** (an inertia, its own speed). The tyre's traction follows the **slip ratio** (it peaks at about 7 % on tarmac and 10 to 16 % on loose ground, then falls to 80 to 88 % of the peak when it slides); a launch on gravel really spins the wheels, the engine's revs run up with them and the **traction control** cuts the engine's torque when a wheel spins past the peak (the cut starts at 1.3 times the peak slip and takes 85 % at 2.3); a braked wheel without **ABS** locks and slides, and with ABS it is held at the slip where the grip is greatest, so the stop is shorter than with locked wheels
 - Changed: the engine, the clutch and the wheels are **solved together** in the car's physics steps (240 per second), so a spinning wheel cannot make the clutch chatter; the brake pedal opens the automatic's lock-up, so the engine neither holds the wheels back from locking nor gets dragged down by them
