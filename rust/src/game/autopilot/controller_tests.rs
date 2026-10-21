@@ -35,6 +35,7 @@ fn drive_in(pts: &[V3], kind: RoadKind, limit: f32, wet: f32) -> Run {
     let yaw = (pts[1].x - pts[0].x).atan2(pts[1].z - pts[0].z);
     let mut v = Vehicle::new(car, v3(pts[0].x, pts[0].y + 1.1, pts[0].z), yaw);
     let mut ap = Autopilot::on_route(route, car, &v);
+    ap.apply_models(&model::Models::measure(&crate::game::world::World::from_terrain(Terrain::flat(), car, (0.0, 0.0), 0.0)));   // as in the game: the car measures itself first
     let mut loose = crate::game::grip::LooseMap::new(t.roads().unwrap());
     let (mut max_off, mut time, mut flipped, mut finished) = (0.0f32, 0.0f32, false, false);
     let mut dist = 0.0f32;

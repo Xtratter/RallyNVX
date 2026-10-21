@@ -82,3 +82,41 @@ fn max_kappa(r: &Route) -> f32 { r.kappa.iter().cloned().fold(0.0, f32::max) }
     let a = c.brake_factor * 0.7 * 9.81;
     for i in 0..199 { assert!(r.speed[i] * r.speed[i] <= 2.0 * a * (r.length() - r.s[i]) * 1.05 + 1.0, "point {i}"); }
 }
+
+fn models() -> crate::game::autopilot::model::Models {
+    use crate::game::autopilot::model::{CarModel, Models};
+    Models { list: vec![(0.7, CarModel::nominal(5.0, 0.7, 40.0))], steer: (0.5, 20.0, 2.5) }
+}
+
+#[test] fn the_planned_speeds_follow_the_cars_own_pull_and_bite_with_the_grip_shared_with_the_bend() {
+    let c = cfg();
+    let mut pts = straight(60); pts.extend(arc(30.0, 90.0).iter().map(|p| v3(-p.x, 0.0, 236.0 + p.z)));
+    let w = vec![8.0; pts.len()];
+    let mut r = Route::build(&pts, &w, lim(), &c);
+    let before = r.speed.clone();
+    r.replan(&models(), &c);
+    let apex = r.kappa.iter().enumerate().fold((0, 0.0f32), |a, (i, k)| if *k > a.1 { (i, *k) } else { a }).0;
+    // the bend's own limit stays; the straight before it is driven faster than the corner and brakes smoothly into it
+    assert!(r.speed[apex] > 5.0 && r.speed[apex] < before[0], "the apex is slower than the straight: {} vs {}", r.speed[apex], before[0]);
+    for i in 0..r.len() - 1 {
+        let ds = r.s[i + 1] - r.s[i];
+        assert!(r.speed[i] * r.speed[i] <= r.speed[i + 1] * r.speed[i + 1] + 2.0 * 0.9 * 0.7 * 9.81 * ds * 1.01 + 1.0, "no braking harder than the model's at {i}");
+    }
+}
+
+#[test] fn the_steering_lock_limits_the_speed_in_a_tight_bend() {
+    let m = models();
+    assert_eq!(m.steer_speed(0.0, 35.0), 35.0);
+    let (a, b) = (m.steer_speed(0.1, 35.0), m.steer_speed(0.2, 35.0));
+    assert!(a > b && b >= 3.0, "a tighter bend, a lower speed: {a} {b}");
+    assert!(m.steer_speed(5.0, 35.0) == 3.0, "beyond the lock only a crawl");
+}
+
+#[test] fn the_sideways_distance_and_the_room_to_the_edge() {
+    let c = cfg();
+    let r = Route::build(&straight(60), &vec![8.0; 60], lim(), &c);
+    assert!((r.cross(30, 2.0, 120.0) - 2.0).abs() < 1e-3 && r.cross(30, 0.0, 130.0) < 1e-3, "across, not along");
+    assert!((r.room(30, 1.5, 120.0).unwrap() - 2.5).abs() < 1e-3 && r.room(30, 5.0, 120.0).unwrap() < 0.0);
+    let off = Route::build(&straight(60), &vec![0.0; 60], lim(), &c);
+    assert!(off.room(30, 0.0, 120.0).is_none(), "off the roads there is no edge");
+}

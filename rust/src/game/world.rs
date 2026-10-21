@@ -77,7 +77,7 @@ impl World {
         World::from_terrain(terrain, car, at, yaw)
     }
 
-    fn from_terrain(terrain: Terrain, car: VehicleSpec, at: (f32, f32), yaw: f32) -> World {
+    pub(crate) fn from_terrain(terrain: Terrain, car: VehicleSpec, at: (f32, f32), yaw: f32) -> World {
         let seed = terrain.seed;
         let vehicle = Vehicle::new(car, v3(at.0, terrain.height(at.0, at.1) + 1.1, at.1), yaw);
         let cam = FollowCam::new(&vehicle);
@@ -87,11 +87,20 @@ impl World {
     }
 
     /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
+    /// A copy of the car's setup on a flat, empty ground of one surface, for the autopilot's measurements (see `autopilot::model`).
+    pub fn probe(&self, surface: super::surface::Surface) -> World {
+        let mut p = World::from_terrain(Terrain::flat(), self.car_spec, (0.0, 0.0), 0.0);
+        p.tuning = self.tuning; p.assists = self.assists; p.drivetrain = self.drivetrain.clone(); p.manual = false;
+        p.vehicle.force_surface = Some(surface); p.vehicle.tyre_bar = self.vehicle.tyre_bar;
+        p
+    }
+
     /// Turns the autopilot on (it joins the stage from wherever the car is) or off; returns whether it is on afterwards.
     pub fn set_autopilot(&mut self, on: bool) -> bool { self.set_autopilot_style(if on { 1 } else { -1 }) }
     /// Style -1 off, 0 calm, 1 normal, 2 aggressive (slides allowed), 3 custom (the numbers set in the settings).
     pub fn set_autopilot_style(&mut self, style: i32) -> bool {
         self.autopilot = if style >= 0 { super::autopilot::Autopilot::start_with(&self.terrain, &self.vehicle, self.car_spec, style.min(3), self.rally.as_ref().map(|r| r.stage == 1)) } else { None };
+        if self.autopilot.is_some() && std::env::var("AP_NOMODEL").is_err() { let m = super::autopilot::model::Models::measure(self); if let Some(ap) = self.autopilot.as_mut() { ap.apply_models(&m); } }
         self.autopilot.is_some()
     }
     pub fn autopilot_on(&self) -> bool { self.autopilot.is_some() }

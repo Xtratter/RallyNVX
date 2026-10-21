@@ -4,14 +4,17 @@ use crate::game::math::{v3, V3};
 use crate::game::roads::shape::radius;
 
 const G: f32 = 9.81;
+/// The share of the measured pull the plan counts on (the rest is for the steering, the gear changes and the bumps).
+const ACC_K: f32 = 0.9;
 
 /// What the speed profile needs to know about the car and the ground (`stop_at_end`: the last point is a standstill).
 #[derive(Clone, Copy, Debug)]
 pub struct Limits { pub mu: f32, pub v_max: f32, pub accel: f32, pub stop_at_end: bool }
 
-/// `half`: the half width of the road at every point (0 off the roads).
+/// `half`: the half width of the road at every point (0 off the roads). `kraw` is the curvature at each point alone, `kappa` the worst of the neighbours
+/// (so the car brakes before the bend); `mu` the grip of the ground, `lim` what the profile was built with.
 #[derive(Clone, Debug)]
-pub struct Route { pub p: Vec<V3>, pub s: Vec<f32>, pub kappa: Vec<f32>, pub speed: Vec<f32>, pub half: Vec<f32> }
+pub struct Route { pub p: Vec<V3>, pub s: Vec<f32>, pub kappa: Vec<f32>, pub speed: Vec<f32>, pub half: Vec<f32>, pub kraw: Vec<f32>, pub mu: Vec<f32>, pub lim: Limits, pub c: Vec<V3> }
 
 fn xz(a: V3) -> (f32, f32) { (a.x, a.z) }
 
@@ -28,9 +31,21 @@ impl Route {
         let p = taut(centre, width, cfg.offset_max, cfg.edge_margin);
         let mut s = vec![0.0f32; n];
         for i in 1..n { s[i] = s[i - 1] + ((p[i].x - p[i - 1].x).hypot(p[i].z - p[i - 1].z)).max(1e-3); }
-        // curvature, widened to the worst of +-3 points so the car brakes before the bend
-        let raw: Vec<f32> = (0..n).map(|i| if i == 0 || i == n - 1 { 0.0 } else { let r = radius(xz(p[i - 1]), xz(p[i]), xz(p[i + 1])); if r.is_finite() { 1.0 / r } else { 0.0 } }).collect();
-        let kappa: Vec<f32> = (0..n).map(|i| raw[i.saturating_sub(3)..=(i + 3).min(n - 1)].iter().cloned().fold(0.0, f32::max)).collect();
+        let kraw: Vec<f32> = (0..n).map(|i| if i == 0 || i == n - 1 { 0.0 } else { let r = radius(xz(p[i - 1]), xz(p[i]), xz(p[i + 1])); if r.is_finite() { 1.0 / r } else { 0.0 } }).collect();
+        let kappa: Vec<f32> = (0..n).map(|i| kraw[i.saturating_sub(3)..=(i + 3).min(n - 1)].iter().cloned().fold(0.0, f32::max)).collect();
+        let mut r = Route { p, s, kappa, speed: Vec::new(), half: width.iter().map(|w| w * 0.5).collect(), kraw, mu: mu.to_vec(), lim, c: centre.to_vec() };
+        r.speed = r.profile(cfg, None);
+        r
+    }
+
+    /// The speed profile again, with what the car measured of itself (`models`): its real pull and bite at every speed, the grip shared between turning and
+    /// braking or accelerating (the friction ellipse) instead of the flat guesses of `build`.
+    pub fn replan(&mut self, models: &super::model::Models, cfg: &AutoCfg) { self.speed = self.profile(cfg, Some(models)); }
+
+    fn profile(&self, cfg: &AutoCfg, models: Option<&super::model::Models>) -> Vec<f32> {
+        let (n, p, s, mu, lim) = (self.len(), &self.p, &self.s, &self.mu, self.lim);
+        // with a model the passes below see the grip shared with the braking, so the bend is only widened by two points (8 m)
+        let kappa: Vec<f32> = if models.is_some() { (0..n).map(|i| self.kraw[i.saturating_sub(2)..=(i + 2).min(n - 1)].iter().cloned().fold(0.0, f32::max)).collect() } else { self.kappa.clone() };
         let mut speed: Vec<f32> = (0..n).map(|i| if kappa[i] > 1e-5 { (cfg.lat_factor * mu[i] * G / kappa[i]).sqrt().min(lim.v_max) } else { lim.v_max }).collect();
         // crests: where the profile is convex the car must stay planted (or at least land tamely)
         for i in 2..n - 2 {
@@ -39,19 +54,45 @@ impl Route {
             let curv = (slope1 - slope0) / (0.5 * (ds0 + ds1));
             if curv < -0.004 { speed[i] = speed[i].min(cfg.crest_speed).min((0.8 * G / -curv).sqrt()); }
         }
+        // the steering lock: a bend tighter than the wheels can turn at that speed (with 85 % of the lock kept in hand)
+        if let Some(m) = models { for i in 0..n { speed[i] = speed[i].min(m.steer_speed(kappa[i] / 0.85, lim.v_max)); } }
         if lim.stop_at_end { speed[n - 1] = 0.0; }
+        // the share of the grip a bend leaves for the pedals: the friction ellipse, `sqrt(1 - (lateral / limit)^2)`
+        let left = |i: usize, v: f32| { let cap = cfg.lat_factor * mu[i] * G; if cap <= 0.0 { 1.0 } else { let u = (v * v * kappa[i] / cap).clamp(0.0, 1.0); (1.0 - u * u).sqrt() } };
         // the braking distance (backward) and the engine (forward), with the slope
         for i in (0..n - 1).rev() {
             let ds = s[i + 1] - s[i]; let dy = p[i + 1].y - p[i].y;
-            let a = (cfg.brake_factor * mu[i].min(mu[i + 1]) * G + G * dy / ds).max(0.5);
+            let a = match models {
+                None => cfg.brake_factor * mu[i].min(mu[i + 1]) * G + G * dy / ds,
+                Some(m) => cfg.brake_factor * m.at(mu[i].min(mu[i + 1])).brake(speed[i + 1]) * left(i + 1, speed[i + 1]) + G * dy / ds,
+            }.max(0.5);
             speed[i] = speed[i].min((speed[i + 1] * speed[i + 1] + 2.0 * a * ds).sqrt());
         }
         for i in 0..n - 1 {
             let ds = s[i + 1] - s[i]; let dy = p[i + 1].y - p[i].y;
-            let a = (lim.accel - G * dy / ds).max(0.3);
+            let a = match models {
+                None => lim.accel - G * dy / ds,
+                Some(m) => ACC_K * m.at(mu[i]).accel(speed[i]) * left(i, speed[i]) - G * dy / ds,
+            }.max(0.3);
             speed[i + 1] = speed[i + 1].min((speed[i] * speed[i] + 2.0 * a * ds).sqrt());
         }
-        Route { p, s, kappa, speed, half: width.iter().map(|w| w * 0.5).collect() }
+        speed
+    }
+
+    /// How far the point (x, z) is from the road's edge by the centre line at index `i` (negative: beyond it); `None` off the roads (the half width is 0).
+    pub fn room(&self, i: usize, x: f32, z: f32) -> Option<f32> {
+        if self.half[i] <= 1.0 { return None; }
+        let (a, b) = (self.c[i.saturating_sub(1)], self.c[(i + 1).min(self.len() - 1)]);
+        let (tx, tz) = (b.x - a.x, b.z - a.z); let l = tx.hypot(tz).max(1e-3);
+        let off = ((x - self.c[i].x) * -tz + (z - self.c[i].z) * tx) / l;
+        Some(self.half[i] - off.abs())
+    }
+
+    /// The sideways distance (m) of (x, z) from the line at index `i`: across its direction, not along it (the points are 4 m apart).
+    pub fn cross(&self, i: usize, x: f32, z: f32) -> f32 {
+        let (a, b) = (self.p[i.saturating_sub(1)], self.p[(i + 1).min(self.len() - 1)]);
+        let (tx, tz) = (b.x - a.x, b.z - a.z); let l = tx.hypot(tz).max(1e-3);
+        (((x - self.p[i].x) * -tz + (z - self.p[i].z) * tx) / l).abs()
     }
 
     pub fn len(&self) -> usize { self.p.len() }
