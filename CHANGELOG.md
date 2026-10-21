@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.77.0 - tyres that heat, cool and wear
+- Added: every tyre has a **temperature**, a **wear** and a **pressure**, and they decide its grip. The tread heats with the friction work (the force times the slip speed, along and across) and a little with rolling, cools in the air faster the faster the car goes (the air's temperature follows the sun, the clouds and the rain) and grips best inside a thermal window of its wheel set (tarmac tyres about 85 degrees C, gravel 55, snow 10). Outside the window the grip falls (a cold tarmac tyre has about 70 %, an overheated one less), a worn tyre grips up to 40 % less, and a wrong pressure costs grip too: the gas inside heats with the tyre, so the hot pressure is what counts
+- Added: the **tyre pressure** (cold) in the car menu (80 to 125 % of the default) and a live line of the temperature and the wear of the four tyres at the top of the car panel
+- Added: wear runs faster on rough ground (gravel, rock, sand) and with the wrong wheel set. A whole stage of hard driving takes the tyres to 45 to 70 degrees C and 2 to 6 % of wear in the autopilot's runs; the tyres start warm, so a normal drive does not change at first
+- Fixed: the throttle of a car with no drivetrain of its own spun the wheels in the air up to hundreds of rad/s, and they tore at the landing; now they do not turn under the throttle in the air
+- Not yet: tyres carried between levels and the garage, a rain-cooled tread, a tyre change, tyre noise that follows the grip
 ## 2.76.0 - brake bias and launch control
 - Added: the **brake bias** in the car menu (the front share of the brake force, 43/57 to 78/22, 62/38 as built). It decides which axle locks first without ABS: more on the front and the nose washes out, more on the rear and the tail steps out
 - Added: **launch control** (a new aid in the car menu, on for new installs; if the car menu was changed in an older version, switch it on there): at a standstill in first gear with the brake down and the gas floored, the clutch is open and the engine is held at 4800 rpm (the boost builds); let the brake go and the clutch bites at once, the traction control looks after the wheels. It works in the automatic and in the sequential box, not in the H-pattern; below a full pedal, or when the car moves, it does nothing
