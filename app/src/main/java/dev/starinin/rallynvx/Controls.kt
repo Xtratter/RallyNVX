@@ -37,7 +37,10 @@ object Controls {
     fun paceMode(c: Context): Int = p(c).getInt("pace_mode", 2).coerceIn(0, 2)
     fun setPaceMode(c: Context, v: Int) = p(c).edit().putInt("pace_mode", v.coerceIn(0, 2)).apply()
     /** Autopilot style: 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers. */
-    const val AP_STYLES = 4
+    const val AP_STYLES = 5
+    /** The numbers the autopilot taught itself (six, see the engine's `train`), or null before the first training. */
+    fun learned(c: Context): FloatArray? = p(c).getString("ap_learned", null)?.split(',')?.mapNotNull { it.toFloatOrNull() }?.takeIf { it.size == 6 && it.all { x -> x.isFinite() } }?.toFloatArray()
+    fun setLearned(c: Context, v: FloatArray) = p(c).edit().putString("ap_learned", v.joinToString(",")).apply()
     fun autopilotStyle(c: Context): Int = p(c).getInt("autopilot_style", 1).coerceIn(0, AP_STYLES - 1)
     fun setAutopilotStyle(c: Context, v: Int) = p(c).edit().putInt("autopilot_style", v.coerceIn(0, AP_STYLES - 1)).apply()
     /** The own style's numbers as steps of these lists (cornering speed, braking, top speed, corner cutting, edge margin). */

@@ -97,9 +97,18 @@ impl World {
 
     /// Turns the autopilot on (it joins the stage from wherever the car is) or off; returns whether it is on afterwards.
     pub fn set_autopilot(&mut self, on: bool) -> bool { self.set_autopilot_style(if on { 1 } else { -1 }) }
-    /// Style -1 off, 0 calm, 1 normal, 2 aggressive (slides allowed), 3 custom (the numbers set in the settings).
+    /// Style -1 off, 0 calm, 1 normal, 2 aggressive (slides allowed), 3 custom (the numbers set in the settings), 4 learned (the self-training's).
     pub fn set_autopilot_style(&mut self, style: i32) -> bool {
-        self.autopilot = if style >= 0 { super::autopilot::Autopilot::start_with(&self.terrain, &self.vehicle, self.car_spec, style.min(3), self.rally.as_ref().map(|r| r.stage == 1)) } else { None };
+        if style < 0 { self.autopilot = None; return false; }
+        let style = style.min(4);
+        self.start_autopilot(style, super::autopilot::cfg::cfg_style(style))
+    }
+
+    /// Starts the autopilot with exactly these numbers (the self-training's candidates; style 3).
+    pub fn set_autopilot_cfg(&mut self, cfg: super::autopilot::cfg::AutoCfg) -> bool { self.start_autopilot(3, cfg) }
+
+    fn start_autopilot(&mut self, style: i32, cfg: super::autopilot::cfg::AutoCfg) -> bool {
+        self.autopilot = super::autopilot::Autopilot::start_cfg(&self.terrain, &self.vehicle, self.car_spec, style, cfg, self.rally.as_ref().map(|r| r.stage == 1));
         if self.autopilot.is_some() && std::env::var("AP_NOMODEL").is_err() { let m = super::autopilot::model::Models::measure(self); if let Some(ap) = self.autopilot.as_mut() { ap.apply_models(&m); } }
         self.autopilot.is_some()
     }

@@ -2,6 +2,8 @@
 pub mod cfg;
 pub mod join;
 pub mod model;
+pub mod train;
+pub mod job;
 pub mod route;
 pub mod streets;
 #[cfg(test)]
@@ -22,6 +24,7 @@ pub struct AutoCmd { pub input: Input, pub reset: bool, pub teleport: Option<(V3
 
 /// The gain of the line's sideways offset in the steering (1/s of the offset in metres over the speed).
 const STANLEY: f32 = 0.7;
+const K_MAX: f32 = 1.0;
 
 pub struct Autopilot {
     route: Route,
@@ -103,9 +106,11 @@ impl Autopilot {
     /// An autopilot for a car that is already on (or next to) `route`.
     pub fn on_route(route: Route, car: VehicleSpec, v: &Vehicle) -> Autopilot { Autopilot::on_route_styled(route, car, v, 1) }
     /// The same with a driving style: 0 calm, 1 normal, 2 aggressive.
-    pub fn on_route_styled(route: Route, car: VehicleSpec, v: &Vehicle, style: i32) -> Autopilot {
+    pub fn on_route_styled(route: Route, car: VehicleSpec, v: &Vehicle, style: i32) -> Autopilot { Autopilot::on_route_cfg(route, car, v, style, cfg_style(style)) }
+    /// The same with the numbers given (the self-training tries many sets at once, so they cannot come from the global style).
+    pub fn on_route_cfg(route: Route, car: VehicleSpec, v: &Vehicle, style: i32, cfg: AutoCfg) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg: cfg_style(style), style: style.clamp(0, 3), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0 }
+        Autopilot { route, car, cfg, style: style.clamp(0, 4), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
@@ -115,21 +120,23 @@ impl Autopilot {
 
     /// As `start`; `force_loop` decides between the city loop (`Some(true)`) and the road chain (`Some(false)`) instead of
     /// the distance (a rally stage knows which one it is).
-    pub fn start_with(t: &super::terrain::Terrain, v: &Vehicle, car: VehicleSpec, style: i32, force_loop: Option<bool>) -> Option<Autopilot> {
-        let c = cfg_style(style);
+    pub fn start_with(t: &super::terrain::Terrain, v: &Vehicle, car: VehicleSpec, style: i32, force_loop: Option<bool>) -> Option<Autopilot> { Autopilot::start_cfg(t, v, car, style, cfg_style(style), force_loop) }
+
+    /// As `start_with`, with the numbers given.
+    pub fn start_cfg(t: &super::terrain::Terrain, v: &Vehicle, car: VehicleSpec, style: i32, c: AutoCfg, force_loop: Option<bool>) -> Option<Autopilot> {
         let chain = chain_route(t, &car, &c);
         // on the city loop: its laps (the start/finish line is the end)
         if let Some(l) = t.city_loop() {
             let (k, dl) = l.pts.iter().enumerate().map(|(i, p)| (i, (p.x - v.pos.x).hypot(p.z - v.pos.z))).fold((0, f32::INFINITY), |a, b| if b.1 < a.1 { b } else { a });
             let dc = chain.as_ref().map_or(f32::INFINITY, |r| r.nearest(v.pos.x, v.pos.z).1);
-            if force_loop.unwrap_or(dl <= 20.0 && dl <= dc) { return Some(Autopilot::on_route_styled(loop_route(l, k, &car, &c), car, v, style)); }
+            if force_loop.unwrap_or(dl <= 20.0 && dl <= dc) { return Some(Autopilot::on_route_cfg(loop_route(l, k, &car, &c), car, v, style, c)); }
         }
         let chain = chain?;
         let (k, d) = chain.nearest(v.pos.x, v.pos.z);
-        if d <= 15.0 { return Some(Autopilot::on_route_styled(chain, car, v, style)); }
+        if d <= 15.0 { return Some(Autopilot::on_route_cfg(chain, car, v, style, c)); }
         let to = chain.p[k];
-        let Some(field) = join::field_route(t, &car, (v.pos.x, v.pos.z), (to.x, to.z), &c) else { return Some(Autopilot::on_route_styled(chain, car, v, style)) };
-        let mut ap = Autopilot::on_route_styled(field, car, v, style);
+        let Some(field) = join::field_route(t, &car, (v.pos.x, v.pos.z), (to.x, to.z), &c) else { return Some(Autopilot::on_route_cfg(chain, car, v, style, c)) };
+        let mut ap = Autopilot::on_route_cfg(field, car, v, style, c);
         ap.next = Some((chain, k));
         Some(ap)
     }
@@ -150,7 +157,7 @@ impl Autopilot {
         let wide = self.route.half[i] > 1.0 && d > 1.2;   // far off the planned line: it runs wide
         if slip > ok || wide || room.map_or(false, |r| r < 0.8) { self.k -= 0.9 * dt; }
         else if slip < 0.6 * ok && d < 0.7 { self.k += 0.03 * dt; }
-        self.k = self.k.clamp(0.6, 1.0);
+        self.k = self.k.clamp(0.6, K_MAX);
         if (self.k - self.k_planned).abs() > 0.03 {
             self.k_planned = self.k;
             let mut c = self.cfg; c.lat_factor *= self.k * self.k;
@@ -159,7 +166,7 @@ impl Autopilot {
         }
     }
 
-    /// 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers.
+    /// 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers, 4 the learned ones.
     pub fn style(&self) -> i32 { self.style }
     pub fn route(&self) -> &Route { &self.route }
     pub fn progress(&self) -> f32 { self.route.s[self.idx] }

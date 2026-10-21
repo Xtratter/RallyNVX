@@ -53,6 +53,11 @@ object Native {
     /** The clip ids of the last pace note, comma separated (see tools/voices/clips.json). */
     @JvmStatic external fun gameNoteClips(): String
     @JvmStatic external fun gameAutopilotTune(lat: Float, brake: Float, offset: Float, speed: Float, slide: Float, edge: Float)
+    /** The autopilot's self-training: start or stop; `[running, progress 0..1, best cost, start cost]`; the finished six numbers (NaN when none); the learned numbers (six) from the saved ones. */
+    @JvmStatic external fun gameTrain(on: Boolean)
+    @JvmStatic external fun gameTrainState(): FloatArray
+    @JvmStatic external fun gameTrainResult(): FloatArray
+    @JvmStatic external fun gameSetLearned(v: FloatArray)
     @JvmStatic external fun gameInCity(mode: Int)
     /** Debug/test: start every level at this time of day (0 midnight, 0.25 dawn, 0.5 noon, 0.75 dusk); negative = off. */
     @JvmStatic external fun gameTimeOfDay(phase: Float)
