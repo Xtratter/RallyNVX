@@ -481,7 +481,7 @@ impl Raster {
         });
         let pl_model_sh = mk("model_sh", &lay_shadow, "vs_model_shadow", None, &[model_layout, minst_layout], depth_state(true, wgpu::CompareFunction::Less, sh_bias));
         crate::loading::stage(crate::loading::SHADERS, 64);
-        let pl_sky = mk("sky", &lay_main, "vs_sky", Some("fs_sky"), &[], depth_state(false, wgpu::CompareFunction::Always, no_bias));
+        let pl_sky = mk("sky", &lay_main, "vs_sky", Some("fs_sky"), &[], depth_state(false, wgpu::CompareFunction::LessEqual, no_bias));   // at the far plane: only where nothing is drawn
 
         let car = vm::build_car(&crate::game::vehicle::VehicleSpec::offroader());
         let nat = nature_models::build_all();
@@ -919,11 +919,12 @@ impl Raster {
                     depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: if dust_low || blur_on { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard } }), stencil_ops: None }),
                 timestamp_writes: self.prof.as_ref().and_then(|p| p.pass_writes(8)), occlusion_query_set: None });
             rp.set_bind_group(0, &self.bg_main, &[]);
-            rp.set_pipeline(&self.pl_sky);
-            rp.draw(0..3, 0..1);
             let skip = prof_skip();   // debug: draw groups left out while profiling (file `skipmask` in the app's files dir: 1 terrain, 2 models, 4 instances, 8 roads, 16 water, 32 glass and rain)
             rp.set_pipeline(&self.pl_terrain);
-            for m in self.tiles.values().filter(|_| skip & 1 == 0) {
+            // nearest tiles first: the tile-based GPU rejects what a near hill hides before it shades it (a hash-map order shaded the far tiles first and the near ones over them)
+            let mut order: Vec<(i32, u32, &MeshBuf)> = self.tiles.iter().filter(|_| skip & 1 == 0).map(|(&(tx, tz, lod), m)| ((tx - cx) * (tx - cx) + (tz - cz) * (tz - cz), lod, m)).collect();
+            order.sort_unstable_by_key(|&(d, lod, _)| (d, lod));
+            for &(_, _, m) in &order {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 if let Some(w) = &m.wb { rp.set_vertex_buffer(1, w.slice(..)); }
                 rp.draw_indexed(0..m.n, 0, 0..1);
@@ -958,6 +959,9 @@ impl Raster {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
                 rp.draw_indexed(0..m.n, 0, 0..1);
             }
+            // the sky last: it shades only the pixels nothing opaque has covered (it used to fill the whole screen first and be painted over by the ground)
+            rp.set_pipeline(&self.pl_sky);
+            rp.draw(0..3, 0..1);
             rp.set_pipeline(&self.pl_water);
             for m in self.water.values().flatten().filter(|_| skip & 16 == 0) {
                 rp.set_vertex_buffer(0, m.vb.slice(..)); rp.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
