@@ -577,11 +577,25 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         }
         cycleRow(t("Manual box", "Ручная коробка"), { GearMath.boxName(Controls.boxType(this), en) }) { Controls.setBoxType(this, GearMath.next(Controls.boxType(this), GearMath.BOXES)); sendGearCfg() }
         cycleRow(t("Automatic", "Автомат"), { GearMath.profileName(Controls.shiftProfile(this), en) }) { Controls.setShiftProfile(this, GearMath.next(Controls.shiftProfile(this), GearMath.PROFILES)); sendGearCfg() }
+        run {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            r.addView(TextView(this).apply { text = t("Differentials", "Дифференциалы"); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+            fun lab() = CarMath.presetName(Controls.diffPreset(this), en)
+            val b = M3Widgets.button(this, lab(), M3Widgets.ButtonKind.TONAL) {}
+            b.setOnClickListener {
+                val n = GearMath.next(Controls.diffPreset(this), CarMath.PRESET_COUNT); Controls.setDiffPreset(this, n)
+                for (k in 0 until 4) { Controls.setTuning(this, 7 + k, CarMath.PRESETS[n][k]); if (running) Native.gameTuning(7 + k, CarMath.PRESETS[n][k]) }
+                (b as? TextView)?.text = lab(); refreshers.forEach { it() }
+            }
+            refreshers.add { (b as? TextView)?.text = lab() }
+            r.addView(b, LinearLayout.LayoutParams(px(110f), px(42f)))
+            colB.addView(r, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
+        }
         for (i in 0 until CarMath.PARTS) {
             val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             r.addView(TextView(this).apply { text = CarMath.partName(i, en); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
             val v = TextView(this).apply { textSize = 14f; setTextColor(M3.TEXT); gravity = Gravity.CENTER }
-            fun show() { v.text = CarMath.percent(Controls.tuning(this, i)) }
+            fun show() { v.text = CarMath.valueText(i, Controls.tuning(this, i)) }
             fun change(dir: Int) { val nv = CarMath.step(i, Controls.tuning(this, i), dir); Controls.setTuning(this, i, nv); if (running) Native.gameTuning(i, nv); show() }
             show(); refreshers.add { show() }
             r.addView(M3Widgets.button(this, "−", M3Widgets.ButtonKind.TONAL) { change(-1) }, LinearLayout.LayoutParams(px(44f), px(42f)))
@@ -596,6 +610,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val p = panel(content)
         content.addView(M3Widgets.button(this, t("Reset tuning", "Сбросить настройки"), M3Widgets.ButtonKind.TONAL) {
             for (i in 0 until CarMath.PARTS) { Controls.setTuning(this, i, 1f); if (running) Native.gameTuning(i, 1f) }
+            Controls.setDiffPreset(this, 1)
             Controls.setAssists(this, CarMath.ALL_AIDS); if (running) Native.gameAssists(CarMath.ALL_AIDS); refreshers.forEach { it() }
         }, LinearLayout.LayoutParams(px(240f), px(44f)).apply { topMargin = px(8f) })
         content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(8f) })
