@@ -299,8 +299,9 @@ impl World {
             if self.tuned_dirty || self.tuned.0 != self.tuning { self.tuned = (self.tuning, self.tuning.apply(&self.car_spec)); self.tuned_dirty = false; }
             self.vehicle.spec = self.tuned.1;
             let (a, t) = (self.assists, self.tuning);
-            self.drivetrain.opts = super::drivetrain::DriveOpts { engine: t.engine, turbo: t.turbo, gearing: t.gearing, flat_shift: a.flat_shift, blip: a.blip, limiter: a.limiter, tc: a.tc };
+            self.drivetrain.opts = super::drivetrain::DriveOpts { engine: t.engine, turbo: t.turbo, gearing: t.gearing, flat_shift: a.flat_shift, blip: a.blip, limiter: a.limiter, tc: a.tc, launch: a.launch };
             self.vehicle.abs_on = a.abs; self.vehicle.tc_on = a.tc;
+            self.vehicle.brake_bias = (super::wheel::BRAKE_BIAS * t.bias).clamp(0.4, 0.8);
         }
         // the drivetrain: the engine against the clutch and the gear, solved together with the wheels in the vehicle's substeps (the autopilot always drives the automatic)
         {

@@ -301,3 +301,27 @@ fn spin_up(d: &mut Drivetrain, i_wheels: f32, tyre_of: impl Fn(f32) -> f32, secs
     for _ in 0..90 { b.begin(1.0 / 60.0, &DriveIn { throttle: 0.6, speed: 20.0, wheel_r: R, ..Default::default() }); for _ in 0..4 { b.sub_coupled(1.0 / 240.0, w, 1e7, 0.0); } b.finish(); }
     assert!((a.rpm() / b.rpm() - 1.0).abs() < 0.03 && oa.gear == b.last.gear, "{} against {} rpm", a.rpm(), b.rpm());
 }
+
+#[test] fn launch_control_holds_the_revs_with_the_brake_and_the_gas_and_launches_when_the_brake_is_released() {
+    let go = |on: bool| {
+        let mut c = Car::new(); c.dt.opts.launch = on;
+        c.run(0.0, 1.0);
+        c.brake = true;
+        let held = c.run(1.0, 2.0).rpm;                  // full gas with the brake down at a standstill
+        c.brake = false;
+        let after = c.run(1.0, 3.0);
+        (held, after.rpm, c.v)
+    };
+    let (held, _, v_on) = go(true);
+    let (free, _, _) = go(false);
+    assert!(held > 4200.0 && held < 5400.0, "held at the launch revs: {held}");
+    assert!(free > 6500.0 || free < 1500.0 || (free - held).abs() > 300.0, "without it the revs are not held there: {free}");
+    assert!(v_on > 12.0, "the launch pulls away: {v_on} m/s after 3 s");
+}
+#[test] fn launch_control_is_for_the_standstill_with_the_brake_and_the_gas_only() {
+    // moving, or without the brake, or with a light pedal: the throttle goes through as it is
+    let mut c = Car::new(); c.dt.opts.launch = true; c.run(1.0, 8.0);
+    assert!(c.dt.last.rpm > 5500.0 || c.v > 15.0, "a normal launch is not held: {} rpm {} m/s", c.dt.last.rpm, c.v);
+    let mut d = Car::new(); d.dt.opts.launch = true; d.brake = true; d.run(0.4, 2.0);
+    assert!(d.dt.last.throttle >= 0.35, "a light pedal with the brake is not limited to the launch revs: {}", d.dt.last.throttle);
+}

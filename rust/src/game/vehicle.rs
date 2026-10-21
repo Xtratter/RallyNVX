@@ -81,6 +81,8 @@ pub struct Vehicle {
     pub tyre_sum: f32,
     /// The aids: with ABS (traction control) off a wheel braked (driven) past the peak of its grip locks (spins) and slides on the reduced grip of a slide.
     pub abs_on: bool, pub tc_on: bool,
+    /// The share of the brake force on the front axle (the rest on the rear); the car menu moves it.
+    pub brake_bias: f32,
     /// The surface under the first wheel in contact (the HUD shows it); tests can force one for every wheel.
     pub surface: Surface, pub force_surface: Option<Surface>,
     pub wheels: [WheelInfo; 4],
@@ -91,7 +93,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_torque: None, w: [0.0; 4], slip: [0.0; 4], spin_ready: false, last_vel: V3::ZERO, tyre_sum: 0.0, abs_on: true, tc_on: true, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_torque: None, w: [0.0; 4], slip: [0.0; 4], spin_ready: false, last_vel: V3::ZERO, tyre_sum: 0.0, abs_on: true, tc_on: true, brake_bias: wheel::BRAKE_BIAS, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -167,7 +169,7 @@ impl Vehicle {
             let drive_t = match self.drive_torque { Some(t) => t[w], None => inp.throttle * s.engine_force / 4.0 * taper * s.radius };
             let kb = if inp.brake_amt > 0.0 { inp.brake_amt.clamp(0.05, 1.0) } else { 1.0 };
             let pedal = if inp.brake { kb } else { 0.0 };
-            let part = if front { wheel::BRAKE_BIAS } else { 1.0 - wheel::BRAKE_BIAS };
+            let part = if front { self.brake_bias } else { 1.0 - self.brake_bias };
             let mut brake_t = s.brake_force * s.radius * 0.5 * part * pedal;
             if inp.handbrake && !front { brake_t = brake_t.max(s.brake_force * s.radius * 0.5); }
             // the discs cool all the time, faster the faster the car goes

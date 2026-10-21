@@ -464,3 +464,14 @@ fn slope_spot(t: &Terrain, grade: f32) -> Option<(V3, f32)> {
     assert!(v.slip[0] > 1.0 && v.slip[1] > 1.0, "spinning on gravel: {:?}", v.slip);
     assert!(v.wheels[0].slide > 0.0 && v.wheels[1].slide > 0.0, "the dust sees it: {:?}", v.wheels.iter().map(|w| w.slide).collect::<Vec<_>>());
 }
+
+#[test] fn the_brake_bias_decides_which_axle_locks_first() {
+    let go = |bias: f32| {
+        let (mut v, t) = flat_car(1.1); v.abs_on = false; v.brake_bias = bias;
+        run(&mut v, &t, Input::default(), 1.0); v.vel = v.forward() * 25.0; run(&mut v, &t, Input::default(), 0.3);
+        run(&mut v, &t, Input { brake: true, brake_amt: 0.6, ..Default::default() }, 0.35);
+        (v.w[0].abs() + v.w[1].abs()) * 0.5 - (v.w[2].abs() + v.w[3].abs()) * 0.5   // front spin minus rear spin
+    };
+    let (front_heavy, rear_heavy) = (go(0.85), go(0.35));
+    assert!(front_heavy < rear_heavy - 10.0, "with 85 % on the front the front slows more (front - rear spin {front_heavy}), with 35 % the rear does ({rear_heavy})");
+}
