@@ -347,3 +347,14 @@ fn spin_up(d: &mut Drivetrain, i_wheels: f32, tyre_of: impl Fn(f32) -> f32, secs
     let torque = |k: f32| { let mut e = Drivetrain::new(); e.gear = 3; e.power_k = k; let mut o = e.last; for _ in 0..60 { o = e.step(1.0 / 60.0, &DriveIn { throttle: 1.0, speed: 15.0, wheel_r: R, ..Default::default() }); } o.torque };
     assert!((torque(0.6) / torque(1.0) - 0.6).abs() < 0.05, "{} against {}", torque(0.6), torque(1.0));
 }
+
+#[test] fn the_engine_burns_fuel_by_its_work_and_an_empty_tank_stops_it_for_good() {
+    let burnt = |gas: f32| { let mut c = Car::new(); let l0 = c.dt.fuel.litres; c.run(gas, 20.0); l0 - c.dt.fuel.litres };
+    let (idle, hard) = (burnt(0.0), burnt(1.0));
+    assert!(idle > 0.0 && idle < 0.05 && hard > idle * 8.0, "idle {idle} l, 20 s of full throttle {hard} l");
+    let mut c = Car::new(); c.dt.fuel = crate::game::fuel::Fuel::with(0.0); c.run(0.5, 6.0);
+    assert!(c.dt.last.stalled && c.dt.rpm() < 300.0, "an empty tank: {} rpm", c.dt.rpm());
+    c.run(0.0, 6.0); assert!(c.dt.last.stalled, "it does not restart without fuel");
+    c.dt.fuel = crate::game::fuel::Fuel::with(10.0); c.run(0.0, 6.0);
+    assert!(!c.dt.last.stalled && c.dt.rpm() > 600.0, "with fuel it starts again: {}", c.dt.rpm());
+}

@@ -2,6 +2,7 @@
 //! (`engine_torque.json`: net torque over revs and throttle at the spooled boost, made by `generate_torque_table`), a turbo lag and an idle governor; it turns with its own inertia against
 //! the clutch, which carries torque to the wheels through the gear. Two modes: an automatic (the gear and the clutch are decided here) and a manual (the driver shifts the gears and works the clutch).
 use std::sync::OnceLock;
+use super::fuel::Fuel;
 use super::heat::{Clutch, Coolant};
 use super::shiftlogic::{choose, table as shift_table, Choice, Memory, Profile, Situation};
 
@@ -122,6 +123,8 @@ pub struct Drivetrain {
     mem: Memory, pub profile: Profile, pub box_type: BoxType,
     /// The clutch's and the coolant's temperatures, the air's temperature (set by the world) and the damage's share of the engine's power (1 = whole).
     pub clutch: Clutch, pub coolant: Coolant, pub air_c: f32, pub power_k: f32,
+    /// The tank: the engine burns it by its work, and stops when it is empty.
+    pub fuel: Fuel,
     fr: Frame,
     pub last: DriveOut,
 }
@@ -138,7 +141,7 @@ impl Drivetrain {
     pub fn new() -> Drivetrain {
         let rpm = IDLE_RPM;
         Drivetrain { opts: DriveOpts::default(), mode: Mode::Auto, gear: 1, omega: rpm * std::f32::consts::TAU / 60.0, clutch_pedal: 0.0, reverse_sel: false, auto_reverse: false, running: true, starting: 0.0, stalled_for: 0.0,
-            shift: 0.0, shift_up: true, limiter: false, boost: 0.0, idle_i: 0.1, mem: Memory::default(), profile: Profile::Sport, box_type: BoxType::Sequential, clutch: Clutch::new(15.0), coolant: Coolant::new(75.0), air_c: 15.0, power_k: 1.0, fr: Frame::default(),
+            shift: 0.0, shift_up: true, limiter: false, boost: 0.0, idle_i: 0.1, mem: Memory::default(), profile: Profile::Sport, box_type: BoxType::Sequential, clutch: Clutch::new(15.0), coolant: Coolant::new(75.0), air_c: 15.0, power_k: 1.0, fuel: Fuel::with(40.0), fr: Frame::default(),
             last: DriveOut { force: 0.0, wheel_torque: 0.0, rpm, gear: 1, grip: 0.0, torque: 0.0, throttle: 0.0, boost_bar: 0.0, cut: false, stalled: false } }
     }
 
@@ -146,7 +149,7 @@ impl Drivetrain {
     pub fn running(&self) -> bool { self.running }
 
     /// A new start (a reset, a new level): first gear, the engine at the idle.
-    pub fn reset(&mut self) { let mode = self.mode; let sel = self.reverse_sel; let opts = self.opts; let ar = self.auto_reverse; let profile = self.profile; let box_type = self.box_type; let (clutch, coolant, air_c, power_k) = (self.clutch, self.coolant, self.air_c, self.power_k); *self = Drivetrain::new(); self.reverse_sel = sel; self.opts = opts; self.auto_reverse = ar; self.profile = profile; self.box_type = box_type; self.clutch = clutch; self.coolant = coolant; self.air_c = air_c; self.power_k = power_k; self.mode = mode; if mode == Mode::Manual { self.gear = 0; } }
+    pub fn reset(&mut self) { let mode = self.mode; let sel = self.reverse_sel; let opts = self.opts; let ar = self.auto_reverse; let profile = self.profile; let box_type = self.box_type; let (clutch, coolant, air_c, power_k, fuel) = (self.clutch, self.coolant, self.air_c, self.power_k, self.fuel); *self = Drivetrain::new(); self.reverse_sel = sel; self.opts = opts; self.auto_reverse = ar; self.profile = profile; self.box_type = box_type; self.clutch = clutch; self.coolant = coolant; self.air_c = air_c; self.power_k = power_k; self.fuel = fuel; self.mode = mode; if mode == Mode::Manual { self.gear = 0; } }
 
     pub fn set_mode(&mut self, m: Mode) { if m != self.mode { self.mode = m; if m == Mode::Auto && self.gear == 0 { self.gear = 1; } } }
 
@@ -219,12 +222,12 @@ impl Drivetrain {
         if !self.running {
             self.stalled_for += dt;
             let free = auto || seq || self.gear == 0 || self.clutch_pedal > 0.6;
-            if self.starting <= 0.0 && self.stalled_for > 0.8 && free { self.starting = 1.0; }
+            if self.starting <= 0.0 && self.stalled_for > 0.8 && free && !self.fuel.empty() { self.starting = 1.0; }
         }
         let opts = self.opts;
         // the limiter: fuel cut above the limit until the revs fall a little
         if !opts.limiter { self.limiter = false; } else if rpm0 > LIMITER_RPM { self.limiter = true; } else if rpm0 < LIMITER_RPM - 150.0 { self.limiter = false; }
-        let cut = self.limiter || cut_shift || !self.running;
+        let cut = self.limiter || cut_shift || !self.running || self.fuel.empty();   // an empty tank cuts the engine
         // traction control: a wheel spinning past 1.3 times the slip of the peak cuts the engine's torque, to 15 % by 2.3 times
         let tc_k = if opts.tc && i.tc_slip > 1.3 { 1.0 - 0.85 * ((i.tc_slip - 1.3) / 1.0).clamp(0.0, 1.0) } else { 1.0 };
         let sync = (auto || seq) && self.shift > 0.0 && self.running && self.gear != 0;
@@ -295,6 +298,7 @@ impl Drivetrain {
         // the heat: the clutch's slip (not the automatic's converter) and the coolant's share of the shaft's power
         if !f.auto { self.clutch.step(f.dt, f.slip_w / n, self.air_c); } else { self.clutch.step(f.dt, 0.0, self.air_c); }
         self.coolant.step(f.dt, (t_e * self.omega).max(0.0), f.speed, self.air_c);
+        self.fuel.burn(f.dt, t_e * self.omega, self.rpm(), t_e < 0.0);   // an overrun (the engine driven by the wheels) burns nothing over 1500 rpm
         let rpm = self.rpm();
         if self.running && rpm < 280.0 && !(self.starting > 0.0) { self.running = false; self.stalled_for = 0.0; }
         if self.starting > 0.0 && rpm > 450.0 { self.starting = 0.0; self.running = true; self.stalled_for = 0.0; self.idle_i = 0.12; }

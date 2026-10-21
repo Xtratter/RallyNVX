@@ -72,6 +72,16 @@ use super::*;
     w.step(&crate::game::input::Input::default(), 1.0 / 60.0);
     assert_eq!(w.drivetrain.power_k, 1.0);
 }
+#[test] fn the_fuel_is_mass_the_car_gets_lighter_and_the_service_fills_the_tank() {
+    let mass_at = |l: f32| { let mut w = crate::game::world::World::test_track(VehicleSpec::default_car()); w.drivetrain.fuel = crate::game::fuel::Fuel::with(l); w.step(&crate::game::input::Input::default(), 1.0 / 60.0); (w.vehicle.spec.mass, w.vehicle.spec.inertia.y) };
+    let (full, empty, half) = (mass_at(70.0), mass_at(0.0), mass_at(35.0));
+    assert!((full.0 - empty.0 - 70.0 * crate::game::fuel::KG_PER_L).abs() < 0.5, "{} against {}", full.0, empty.0);
+    assert!((half.0 - VehicleSpec::default_car().mass).abs() < 0.5 && full.1 > empty.1, "the inertia follows the mass");
+    let mut w = crate::game::world::World::test_track(VehicleSpec::default_car());
+    for _ in 0..60 * 20 { w.step(&crate::game::input::Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+    assert!(w.drivetrain.fuel.litres < 40.0 - 0.3, "{}", w.drivetrain.fuel.litres);
+    w.service(); assert_eq!(w.drivetrain.fuel.litres, crate::game::fuel::TANK_L);
+}
 mod physics {
     use super::*;
     use crate::game::{input::Input, world::World};

@@ -298,6 +298,8 @@ impl World {
         {
             if self.tuned_dirty || self.tuned.0 != self.tuning { self.tuned = (self.tuning, self.tuning.apply(&self.car_spec)); self.tuned_dirty = false; }
             self.vehicle.spec = self.tuned.1;
+            // the fuel is mass: the car is lighter as the tank empties (its inertia follows)
+            { let m0 = self.tuned.1.mass; let k = ((m0 + self.drivetrain.fuel.mass_delta()) / m0.max(1.0)).clamp(0.5, 1.5); self.vehicle.spec.mass = m0 * k; self.vehicle.spec.inertia = self.tuned.1.inertia * k; }
             let (a, t) = (self.assists, self.tuning);
             self.drivetrain.opts = super::drivetrain::DriveOpts { engine: t.engine, turbo: t.turbo, gearing: t.gearing, flat_shift: a.flat_shift, blip: a.blip, limiter: a.limiter, tc: a.tc, launch: a.launch };
             self.vehicle.abs_on = a.abs; self.vehicle.tc_on = a.tc;
@@ -372,13 +374,14 @@ impl World {
     /// Unit vector towards the sun.
     pub fn sun_dir(&self) -> V3 { self.daylight().sun }
 
-    /// A service: the damage repaired, new tyres at their best temperature, the clutch and the coolant cooled down.
+    /// A service: the damage repaired, new tyres at their best temperature, the clutch and the coolant cooled down, the tank filled.
     pub fn service(&mut self) {
         self.vehicle.damage.repair();
         let set = self.vehicle.spec.wheel_set;
         self.vehicle.tyres = [super::tyre::Tyre::warm(set); 4];
         self.drivetrain.clutch = super::heat::Clutch::new(self.vehicle.air_c);
         self.drivetrain.coolant = super::heat::Coolant::new(85.0);
+        self.drivetrain.fuel = super::fuel::Fuel::with(super::fuel::TANK_L);
     }
 }
 
