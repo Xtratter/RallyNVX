@@ -20,3 +20,14 @@ Roads order (user, 2026-10-14): first A (stage relief: crests/jumps, ditches and
 Tech debt (user, 2026-10-14): the autopilot's further improvement: machine vision (the car sees the road through a camera/depth view instead of reading the route) and self-training (the car learns by itself how to drive faster and steadier: reinforcement learning or numeric tuning of the style numbers over many simulated runs). Not now; the current autopilot (`game/autopilot`, styles in `rust/autopilot.json`) stays as the baseline and the reference driver for tests.
 
 Tech debt (user, 2026-10-14): recording your own pace notes (the player records or edits the co-driver's calls for a stage); the generated notes with the system voice (R2, v2.23.0) come first.
+
+## Tech debt after the driveline stages (2026-10-21, versions 2.72 to 2.75)
+
+Left undone on purpose; each item is a candidate for its own small version.
+- **Tyres and wheels:** trail-braking understeer is not modelled (the side force has priority while the tyre grips; a real tyre loses side grip under braking); the wheel's inertia, the slip peaks and the sliding shares are constants in `rust/src/game/wheel.rs`, to move into `surfaces.json` / `vehicles.json`; tyre temperature, pressure and wear (planned 2.77.0).
+- **Driveline:** the Peugeot's differentials are code (`Driveline::peugeot()`), not in `vehicles.json`; no spool / locked differential kind (an LSD with the full ramp is nearly locked); the active centre lock is a formula, not a tunable 3D map; the numbers are approximations of the real car (the sources name the layout only); the car menu's preset label does not follow a manual change of the parts.
+- **Brakes:** the front/rear bias is a constant (`wheel::BRAKE_BIAS = 0.62`), the menu setting and launch control come in 2.76.0.
+- **Gearboxes:** the sequential's idle creep is the automatic's; the box type and the automatic's character are not shown on the driving screen; no clutch overheating; no H-pattern grinding when the clutch is not pressed.
+- **Engine and sound (older):** the tuning's turbo is not linked to the audio turbo whistle; the engine torque still comes from a table, not from the audio engine model; audio stage 4 (tyres on surfaces, water, rain, trees) not done; the shimmer of the hot air over the exhaust pipe is not done; ESC is not implemented.
+- **Verification:** none of the 2.72 to 2.75 feel (shifts, wheelspin, ABS, handbrake, the differentials) has been seen on a device; the second phone's loading hang and the Settings crash are waiting for its log.
+
