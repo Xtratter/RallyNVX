@@ -17,6 +17,7 @@ pub mod drivetrain;
 pub mod shiftlogic;
 pub mod wheel;
 pub mod diff;
+pub mod driveline;
 #[cfg(test)] mod anchors_tests;
 pub mod aero;
 pub mod assists;
