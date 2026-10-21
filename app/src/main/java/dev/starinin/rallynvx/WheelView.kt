@@ -11,9 +11,9 @@ class WheelView(ctx: Context) : View(ctx) {
     var angle = 0f
         set(v) { if (v != field) { field = v; invalidate() } }
     private val dp = ctx.resources.displayMetrics.density
-    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 14f * dp; color = M3.primary; alpha = 190 }
-    private val spoke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 9f * dp; strokeCap = Paint.Cap.ROUND; color = M3.primary; alpha = 190 }
-    private val hub = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = M3.primary; alpha = 220 }
+    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 4f * dp; color = 0xFFFFFFFF.toInt(); alpha = 170 }
+    private val spoke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f * dp; strokeCap = Paint.Cap.ROUND; color = 0xFFFFFFFF.toInt(); alpha = 170 }
+    private val hub = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0xFFFFFFFF.toInt(); alpha = 200 }
     private val mark = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 10f * dp; strokeCap = Paint.Cap.ROUND; color = 0xFFFFFFFF.toInt() }
     private val back = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0x33000000 }
 

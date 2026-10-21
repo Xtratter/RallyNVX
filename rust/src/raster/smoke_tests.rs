@@ -54,3 +54,16 @@ fn plume(moles: f32, fuel: f32, air: Air) -> Smoke { let mut s = Smoke::new(); s
     assert!(inst.windows(2).all(|w| d(&w[0]) >= d(&w[1]) - 1e-4), "far to near");
     assert!(inst.iter().all(|i| i.p.iter().chain(i.c.iter()).chain(i.e.iter()).all(|x| x.is_finite())));
 }
+
+#[test] fn the_collector_gives_a_steady_stream_not_a_puff_per_stroke() {
+    // the audio hands over its gas in blocks: a frame gets one block or three, and the stream must not follow that
+    let count = |chunks: &[f32]| {
+        let mut s = Smoke::new(); let mut per = Vec::new();
+        for m in chunks.iter().cycle().take(60) { s.emit(V3::ZERO, v3(0.0, 0.0, -1.0), *m, 800.0, 0.0, 1.0 / 30.0, V3::ZERO, COLD); per.push(s.parts.iter().filter(|p| p.age == 0.0).count() as f32); s.update(1.0 / 30.0, V3::ZERO, COLD); }
+        let tail = &per[20..]; let mean = tail.iter().sum::<f32>() / tail.len() as f32;
+        (mean, tail.iter().cloned().fold(0.0, f32::max) - tail.iter().cloned().fold(f32::MAX, f32::min))
+    };
+    let (mean, spread) = count(&[0.004, 0.04]);
+    assert!(mean > 3.0, "a stream: {mean}");
+    assert!(spread <= 7.0, "the puffs per frame stay about the same although the blocks alternate 1:10: spread {spread}");
+}

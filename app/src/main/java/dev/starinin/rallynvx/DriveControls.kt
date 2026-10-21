@@ -93,9 +93,11 @@ class DriveControls(ctx: Context) : FrameLayout(ctx) {
         gasView.layoutParams = lpe(pedalGrav, 0f, 0f)
         brakeView.layoutParams = lpe(pedalGrav, 80f, 0f)
         clutchView.layoutParams = lpe(pedalGrav, 188f, 0f)
-        shiftDown.layoutParams = lpe(pedalGrav, 188f, 124f); shiftUp.layoutParams = lpe(pedalGrav, 188f, 186f)
+        // the shift pair stands on the steering side: over the steering buttons, left of the cluster; beside the wheel when there is a wheel
+        val sb = if (buttonsMode) 128f else 20f; val sa = if (buttonsMode) 2f else 226f
+        shiftDown.layoutParams = lpe(wheelGrav, sa, sb); shiftUp.layoutParams = lpe(wheelGrav, sa, sb + 62f)
         // the cluster over the pair of steering buttons (a little above the wheel, in the wheel and tilt modes)
-        cluster.layoutParams = LayoutParams(-2, -2, wheelGrav).apply { val a = (62f * dp).toInt(); val bt = (130f * dp).toInt(); if (wheelGrav and Gravity.END == Gravity.END) setMargins(0, 0, a, bt) else setMargins(a, 0, 0, bt) }
+        cluster.layoutParams = LayoutParams(-2, -2, wheelGrav).apply { val a = (96f * dp).toInt(); val bt = (130f * dp).toInt(); if (wheelGrav and Gravity.END == Gravity.END) setMargins(0, 0, a, bt) else setMargins(a, 0, 0, bt) }
         wheelView.visibility = if (buttonsMode) GONE else VISIBLE
         wheelView.alpha = if (tiltMode) 0.55f else 1f   // in tilt mode the wheel only shows the steering
         requestLayout()

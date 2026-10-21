@@ -27,18 +27,21 @@ fn settled(spec: VehicleSpec) -> Vehicle {
 }
 #[test] fn the_headlights_follow_the_night_and_the_other_lamps_follow_the_driver() {
     let mut v = settled(VehicleSpec::offroader());
-    assert_eq!(state_with(u8::MAX, &v, 0.0), CarLights { head: false, brake: false, reverse: false });
-    assert!(state_with(u8::MAX, &v, 0.3).head && !state_with(u8::MAX, &v, 0.2).head);
+    assert_eq!(state_with(u8::MAX, &v, 0.0, 1), CarLights { head: false, brake: false, reverse: false });
+    assert!(state_with(u8::MAX, &v, 0.3, 1).head && !state_with(u8::MAX, &v, 0.2, 1).head);
     v.braking = true;
-    assert!(state_with(u8::MAX, &v, 0.0).brake && !state_with(u8::MAX, &v, 0.0).head, "braking in daylight: tail lights only");
+    assert!(state_with(u8::MAX, &v, 0.0, 1).brake && !state_with(u8::MAX, &v, 0.0, 1).head, "braking in daylight: tail lights only");
     v.braking = false; v.reversing = true;
-    assert!(state_with(u8::MAX, &v, 0.0).reverse);
+    assert!(!state_with(u8::MAX, &v, 0.0, 1).reverse, "rolling backwards in drive: no reverse lamps");
+    assert!(!state_with(u8::MAX, &v, 0.0, 0).reverse, "neutral: no reverse lamps");
+    v.reversing = false;
+    assert!(state_with(u8::MAX, &v, 0.0, -1).reverse, "the reverse gear lights them");
 }
 #[test] fn the_debug_modes_force_the_lamps() {
     let v = settled(VehicleSpec::offroader());
-    assert_eq!(state_with(1, &v, 0.0), CarLights { head: true, brake: true, reverse: false });
-    assert_eq!(state_with(2, &v, 0.0), CarLights { head: true, brake: false, reverse: true });
-    assert_eq!(state_with(0, &v, 0.0), CarLights { head: true, brake: false, reverse: false });
+    assert_eq!(state_with(1, &v, 0.0, 1), CarLights { head: true, brake: true, reverse: false });
+    assert_eq!(state_with(2, &v, 0.0, 1), CarLights { head: true, brake: false, reverse: true });
+    assert_eq!(state_with(0, &v, 0.0, 1), CarLights { head: true, brake: false, reverse: false });
 }
 #[test] fn the_vehicle_remembers_brake_and_reverse() {
     let t = Terrain::flat(); let mut v = Vehicle::new(VehicleSpec::offroader(), v3(0., 1.2, 0.), 0.0);

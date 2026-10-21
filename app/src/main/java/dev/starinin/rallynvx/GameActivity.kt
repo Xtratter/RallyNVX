@@ -39,7 +39,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var gearBtn: View? = null
     private var reverseBtn: View? = null
     private var carPanel: View? = null
-    private var tyreText: TextView? = null
+    private var carMenu: CarMenu? = null
     private var quickBtn: View? = null
     private var carBtn: View? = null
     private var soundBtn: View? = null
@@ -91,12 +91,12 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                 if (LoadMath.failed(packed)) lv.setNote(Native.gameLastError()) else if (slow) lv.setNote(t("Slow start: tap the button to copy the log", "Долгая загрузка: нажмите кнопку, чтобы скопировать журнал"))
                 if ((slow || LoadMath.failed(packed)) && diagBtn == null) {
                     val act = this@GameActivity; val dpx = resources.displayMetrics.density
-                    diagBtn = M3Widgets.button(act, t("Copy the log", "Скопировать журнал"), M3Widgets.ButtonKind.FILLED) {
+                    diagBtn = Mini.button(act, t("Copy the log", "Скопировать журнал"), M3Widgets.ButtonKind.FILLED) {
                         Diag.copy(act, Diag.report(act)); android.widget.Toast.makeText(act, t("Copied: paste it into the chat", "Скопировано: вставьте в чат"), android.widget.Toast.LENGTH_LONG).show()
                     }.also { root.addView(it, FrameLayout.LayoutParams((220f * dpx).toInt(), (52f * dpx).toInt(), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { setMargins(0, 0, 0, (40f * dpx).toInt()) }) }
                 }
             }
-            if (carPanel?.visibility == View.VISIBLE) { val en = t("en", "ru") == "en"; tyreText?.text = CarMath.tyreLine(floatArrayOf(s[88], s[89], s[90], s[91]), floatArrayOf(s[92], s[93], s[94], s[95]), en) + "\n" + CarMath.heatLine(s[96], s[97], en) + "\n" + CarMath.damageLine(s[98], s[99], floatArrayOf(s[100], s[101], s[102], s[103]), en) + "\n" + CarMath.fuelLine(s[104], en) + (if (s[105] > 0.5f) "  ESC" else "") }
+            if (carPanel?.visibility == View.VISIBLE) carMenu?.live(s)
             gearView?.update(s[80].toInt(), s[81], s[82] > 0.5f, s[83] > 0.5f, s[86])
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
@@ -133,23 +133,23 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         root.addView(drive, FrameLayout.LayoutParams(-1, -1))
         gearView = drive?.cluster   // the instrument cluster stands above the steering buttons (it is part of the controls)
         // the gearbox: a tap switches the automatic and the manual (the clutch pedal and the shift buttons appear); the choice is kept
-        gearBtn = M3Widgets.button(this, gearLabel(), M3Widgets.ButtonKind.TONAL) {
+        gearBtn = Mini.button(this, gearLabel(), M3Widgets.ButtonKind.TONAL) {
             manual = !manual; Controls.setManual(this, manual); drive?.setManual(manual); if (running) Native.gameGearMode(if (manual) 1 else 0)
             (gearBtn as? android.widget.TextView)?.text = gearLabel()
             reverseSel = false; Native.gameReverse(0); updateReverseBtn()
         }.also { root.addView(it, FrameLayout.LayoutParams(px(132f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(76f), px(140f), 0, 0) }) }
         // the automatic's selector: D (drive) or R (reverse): in R the gas pedal drives backwards, so a car rolling back can be pulled out at once
-        reverseBtn = M3Widgets.button(this, "D", M3Widgets.ButtonKind.TONAL) {
+        reverseBtn = Mini.button(this, "D", M3Widgets.ButtonKind.TONAL) {
             reverseSel = !reverseSel; if (running) Native.gameReverse(if (reverseSel) 1 else 0); updateReverseBtn()
         }.also { root.addView(it, FrameLayout.LayoutParams(px(88f), px(64f), Gravity.BOTTOM or Gravity.END)) }
         updateReverseBtn()
         // the car's menu: the driver aids on and off, and the power of every part
-        M3Widgets.button(this, t("Car", "Машина"), M3Widgets.ButtonKind.TONAL) { showCarPanel() }
+        Mini.button(this, t("Car", "Машина"), M3Widgets.ButtonKind.TONAL) { showCarPanel() }
             .also { carBtn = it; root.addView(it, FrameLayout.LayoutParams(px(108f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(280f), px(140f), 0, 0) }) }
         hud = Hud(this)
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(24f), 0, 0) })
         fun button(label: String, gravity: Int, top: Float, end: Float, w: Float = 120f, onClick: () -> Unit) =
-            M3Widgets.button(this, label, M3Widgets.ButtonKind.TONAL, onClick).also {
+            Mini.button(this, label, M3Widgets.ButtonKind.TONAL, onClick).also {
                 root.addView(it, FrameLayout.LayoutParams(px(w), px(48f), gravity).apply { setMargins(0, px(top), px(end), 0) })
             }
         button(t("Reset", "Сброс"), Gravity.TOP or Gravity.END, 24f, 16f) { autopilotOn = false; showAutopilot(); setHandbrake(false); Native.gameReset() }
@@ -161,21 +161,21 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         Native.gameWeather(Controls.weather(this))   // before the level is made: it starts in that weather
         camView = intent.getIntExtra("camview", Controls.camView(this)).coerceIn(0, CamMath.VIEWS - 1)   // debug/test: `camview`, `camdist`, `camheight` pick a view
         camDist = CamMath.clampDist(intent.getFloatExtra("camdist", Controls.camDist(this, camView))); camHeight = CamMath.clampHeight(camView, intent.getFloatExtra("camheight", Controls.camHeight(this, camView)))
-        camBtn = M3Widgets.button(this, camLabel(), M3Widgets.ButtonKind.TONAL) { selectCameraView(CamMath.next(camView)) }.also {
+        camBtn = Mini.button(this, camLabel(), M3Widgets.ButtonKind.TONAL) { selectCameraView(CamMath.next(camView)) }.also {
             root.addView(it, FrameLayout.LayoutParams(px(150f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(88f), 0, 0) })
             it.setOnLongClickListener { changeCamera(1f, 0f); true }
         }
         // the quick settings: a gear next to the View button opens a panel of the dust and effect options that applies at once, while driving
-        M3Widgets.button(this, "⚙", M3Widgets.ButtonKind.TONAL) { showSettingsPanel() }.also {
+        Mini.button(this, "⚙", M3Widgets.ButtonKind.TONAL) { showSettingsPanel() }.also {
             quickBtn = it
             root.addView(it, FrameLayout.LayoutParams(px(56f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(174f), px(88f), 0, 0) })
         }
         // the time of day: a tap cycles Auto, Day, Evening, Night at once (it freezes the sky at that phase; Auto gives the level's own clock back)
-        todBtn = M3Widgets.button(this, todLabel(), M3Widgets.ButtonKind.TONAL) {
+        todBtn = Mini.button(this, todLabel(), M3Widgets.ButtonKind.TONAL) {
             todMode = TimeOfDay.next(todMode); Native.gameTimeOfDay(TimeOfDay.phase(todMode)); (todBtn as? android.widget.TextView)?.text = todLabel()
         }.also { root.addView(it, FrameLayout.LayoutParams(px(150f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(240f), px(88f), 0, 0) }) }
         // the weather: a tap cycles Auto, Clear, Cloudy, Rain, Heavy rain, Fog (it blends in over a few seconds; saved like the Settings row)
-        weatherBtn = M3Widgets.button(this, weatherLabel(), M3Widgets.ButtonKind.TONAL) {
+        weatherBtn = Mini.button(this, weatherLabel(), M3Widgets.ButtonKind.TONAL) {
             Controls.setWeather(this, WeatherMode.next(Controls.weather(this))); Native.gameWeather(Controls.weather(this)); (weatherBtn as? android.widget.TextView)?.text = weatherLabel()
         }.also { root.addView(it, FrameLayout.LayoutParams(px(190f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(398f), px(88f), 0, 0) }) }
         button(t("Handbrake", "Ручник"), Gravity.TOP or Gravity.END, 0f, 40f) {}.apply {
@@ -191,12 +191,12 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         }
         if (rallyIdx > 0) {
             newLevelBtn?.visibility = View.GONE   // a rally has its fixed level
-            fun overlay(size: Float, bold: Boolean) = TextView(this).apply { textSize = size; gravity = Gravity.CENTER; setTextColor(M3.TEXT); if (bold) typeface = M3.medium; visibility = View.GONE }
-            rallyTimer = overlay(18f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)); fontFeatureSettings = "tnum"; visibility = View.VISIBLE }
+            fun overlay(size: Float, bold: Boolean) = TextView(this).apply { textSize = size; gravity = Gravity.CENTER; setTextColor(Mini.TEXT); if (bold) typeface = M3.medium; visibility = View.GONE }
+            rallyTimer = overlay(18f, true).apply { background = Mini.panel(this@GameActivity, 20f); setPadding(px(16f), px(8f), px(16f), px(8f)); fontFeatureSettings = "tnum"; visibility = View.VISIBLE }
             root.addView(rallyTimer, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = px(16f) })
             rallyCount = overlay(96f, true).apply { setTextColor(0xFFFFFFFF.toInt()); setShadowLayer(10f, 0f, 3f, 0xDD000000.toInt()) }
             root.addView(rallyCount, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-            rallyToast = overlay(18f, true).apply { background = M3Surface(this@GameActivity, 20f, M3.surface); setPadding(px(16f), px(8f), px(16f), px(8f)) }
+            rallyToast = overlay(18f, true).apply { background = Mini.panel(this@GameActivity, 20f); setPadding(px(16f), px(8f), px(16f), px(8f)) }
             paceStrip = PaceStrip(this).apply { visibility = View.GONE }
             root.addView(paceStrip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = px(21f) })
             val lang = if (java.util.Locale.getDefault().language == "ru") "ru" else "en"
@@ -218,7 +218,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         }
         // sound on/off (kept in SharedPreferences)
         audio = AudioEngine(this)
-        val soundB = M3Widgets.button(this, if (audio.muted) "🔇" else "🔊", M3Widgets.ButtonKind.TONAL) {}
+        val soundB = Mini.button(this, if (audio.muted) "🔇" else "🔊", M3Widgets.ButtonKind.TONAL) {}
         soundBtn = soundB
         soundB.setOnClickListener { audio.muted = !audio.muted; (soundB as? android.widget.TextView)?.text = if (audio.muted) "🔇" else "🔊" }
         root.addView(soundB, FrameLayout.LayoutParams(px(52f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(140f), 0, 0) })
@@ -226,7 +226,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         // the settings stay out of the way while driving: one menu button opens them
         menuItems = listOfNotNull(camBtn, quickBtn, todBtn, weatherBtn, soundBtn, gearBtn, carBtn, if (rallyIdx > 0) null else newLevelBtn)
         listOfNotNull(camBtn, quickBtn, todBtn, weatherBtn, soundBtn, gearBtn, carBtn, newLevelBtn).forEach { it.visibility = View.GONE }
-        M3Widgets.button(this, "☰", M3Widgets.ButtonKind.TONAL) { showMenuPanel() }
+        Mini.button(this, "☰", M3Widgets.ButtonKind.TONAL) { showMenuPanel() }
             .also { root.addView(it, FrameLayout.LayoutParams(px(56f), px(48f), Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(88f), 0, 0) }) }
         applyControlLayout()
         setContentView(root)
@@ -246,7 +246,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         lateinit var p: FrameLayout
         for (v in menuItems) {
             val tv = v as? TextView ?: continue
-            val btn = M3Widgets.button(this, tv.text.toString(), M3Widgets.ButtonKind.TONAL) {}
+            val btn = Mini.button(this, tv.text.toString(), M3Widgets.ButtonKind.TONAL) {}
             val opensPanel = v === quickBtn || v === carBtn || v === newLevelBtn
             btn.setOnClickListener { if (opensPanel) p.visibility = View.GONE; v.performClick(); (btn as? TextView)?.text = tv.text }
             refreshers.add { (btn as? TextView)?.text = tv.text }
@@ -257,7 +257,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         content.addView(label(t("Menu", "Меню"), 22f))
         content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(236f)))
         p = panel(content)
-        content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(8f) })
+        content.addView(Mini.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(8f) })
         p.tag = { refreshers.forEach { it() } }
         p.visibility = View.VISIBLE
         menuPanel = p
@@ -266,14 +266,14 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private fun panel(content: LinearLayout): FrameLayout {
         val dp = resources.displayMetrics.density
         val f = FrameLayout(this).apply { setBackgroundColor(0xAA000000.toInt()); visibility = View.GONE; isClickable = true }
-        content.background = M3Surface(this, 24f, M3.surface)
+        content.background = Mini.panel(this, 24f)
         content.setPadding((24 * dp).toInt(), (20 * dp).toInt(), (24 * dp).toInt(), (20 * dp).toInt())
         f.addView(content, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         root.addView(f, FrameLayout.LayoutParams(-1, -1))
         return f
     }
 
-    private fun label(text: String, size: Float = 16f) = TextView(this).apply { this.text = text; textSize = size; setTextColor(M3.TEXT); gravity = Gravity.CENTER }
+    private fun label(text: String, size: Float = 16f) = TextView(this).apply { this.text = text; textSize = size; setTextColor(Mini.TEXT); gravity = Gravity.CENTER }
 
     /** Turns the autopilot on or off (any touch of the wheel or pedals turns it off). */
     /** The handbrake latch: on it holds the car (the rear wheels locked) until the next tap. */
@@ -376,7 +376,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         if (last) {
             line(t("Rally total ", "Итог ралли ") + RallyData.time(sum) + (if (rallyRecord) "  " + t("New record!", "Новый рекорд!") else ""))
         }
-        fun add(text: String, kind: M3Widgets.ButtonKind, onClick: () -> Unit) = content.addView(M3Widgets.button(this, text, kind, onClick), LinearLayout.LayoutParams(px(260f), px(48f)).apply { topMargin = px(10f) })
+        fun add(text: String, kind: M3Widgets.ButtonKind, onClick: () -> Unit) = content.addView(Mini.button(this, text, kind, onClick), LinearLayout.LayoutParams(px(260f), px(48f)).apply { topMargin = px(10f) })
         if (!last) add(t("Next stage", "Следующий этап"), M3Widgets.ButtonKind.FILLED) { startRallyStage(rallyStage + 1) }
         add(t("Retry stage", "Повторить этап"), if (last) M3Widgets.ButtonKind.FILLED else M3Widgets.ButtonKind.TONAL) { startRallyStage(rallyStage) }
         if (last) add(t("Restart the rally", "Ралли заново"), M3Widgets.ButtonKind.TONAL) { startRallyStage(0) }
@@ -397,8 +397,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         fun changed() { autopilotStyle = Controls.autopilotStyle(this); sendAutopilotTune(); if (autopilotOn && running) Native.gameAutopilot(autopilotStyle); showAutopilot(); refreshers.forEach { it() } }
         fun row(text: String, value: () -> String, onClick: () -> Unit) {
             val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { this.text = text; textSize = 15f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            val btn = M3Widgets.button(this, value(), M3Widgets.ButtonKind.TONAL) {}
+            r.addView(TextView(this).apply { this.text = text; textSize = 15f; setTextColor(Mini.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+            val btn = Mini.button(this, value(), M3Widgets.ButtonKind.TONAL) {}
             btn.setOnClickListener { onClick(); changed() }
             refreshers.add { (btn as? TextView)?.text = value() }
             r.addView(btn, LinearLayout.LayoutParams(px(150f), px(44f)))
@@ -418,7 +418,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         content.addView(label(t("Autopilot", "Автопилот"), 22f))
         content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(230f)))
         val p = panel(content)
-        content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(12f) })
+        content.addView(Mini.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(12f) })
         p.tag = { refreshers.forEach { it() } }
         p.visibility = View.VISIBLE
         autopilotPanel = p
@@ -520,8 +520,8 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         fun applyLive() { if (running) { Native.gameDust(Controls.dust(this)); Native.gameAero(if (Controls.aero(this)) 1 else 0); Native.gameDustOpts(Controls.dustOpts(this)); Native.gameMotionBlur(Controls.motionBlur(this)); Native.gameShadows(Controls.shadows(this)); Native.gameWeather(Controls.weather(this)) }; refreshers.forEach { it() } }
         fun row(text: String, value: () -> String, onClick: () -> Unit) {
             val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { this.text = text; textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            val btn = M3Widgets.button(this, value(), M3Widgets.ButtonKind.TONAL) {}
+            r.addView(TextView(this).apply { this.text = text; textSize = 14f; setTextColor(Mini.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+            val btn = Mini.button(this, value(), M3Widgets.ButtonKind.TONAL) {}
             btn.setOnClickListener { onClick(); applyLive() }
             refreshers.add { (btn as? TextView)?.text = value() }
             r.addView(btn, LinearLayout.LayoutParams(px(120f), px(44f)))
@@ -541,98 +541,21 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         content.addView(label(t("Quick settings", "Быстрые настройки"), 22f))
         content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(230f)))
         val p = panel(content)
-        content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(12f) })
+        content.addView(Mini.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(12f) })
         p.tag = { refreshers.forEach { it() } }
         p.visibility = View.VISIBLE
         settingsPanel = p
     }
 
-    /** The car's menu: on the left the aids (a tap switches each on or off), on the right the power of every part (steps of 10 %, the tuning's range in the engine). */
+    /** The car's menu (see [CarMenu]): a rail of sections on the left, the chosen section on the right. */
     private fun showCarPanel() {
         carPanel?.let { it.visibility = View.VISIBLE; (it.tag as? () -> Unit)?.invoke(); return }
-        val dp = resources.displayMetrics.density
-        fun px(v: Float) = (v * dp).toInt()
-        val en = t("en", "ru") == "en"
-        val refreshers = ArrayList<() -> Unit>()
-        val colA = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val colB = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        colA.addView(label(t("Driver aids", "Системы"), 17f)); colB.addView(label(t("Power of the parts", "Мощность узлов"), 17f))
-        for (bit in 0 until CarMath.AIDS) {
-            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { text = CarMath.aidName(bit, en); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            fun lab() = if (CarMath.aidOn(Controls.assists(this), bit)) t("On", "Вкл") else t("Off", "Выкл")
-            val b = M3Widgets.button(this, lab(), M3Widgets.ButtonKind.TONAL) {}
-            b.setOnClickListener { val m = CarMath.toggle(Controls.assists(this), bit); Controls.setAssists(this, m); if (running) Native.gameAssists(m); (b as? TextView)?.text = lab() }
-            refreshers.add { (b as? TextView)?.text = lab() }
-            r.addView(b, LinearLayout.LayoutParams(px(90f), px(42f)))
-            colA.addView(r, LinearLayout.LayoutParams(px(330f), -2).apply { topMargin = px(6f) })
-        }
-        // the gearbox: the manual's type and the automatic's character; one button each, a tap goes to the next
-        fun cycleRow(title: String, value: () -> String, onTap: () -> Unit) {
-            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { text = title; textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            val b = M3Widgets.button(this, value(), M3Widgets.ButtonKind.TONAL) {}
-            b.setOnClickListener { onTap(); (b as? TextView)?.text = value() }
-            refreshers.add { (b as? TextView)?.text = value() }
-            r.addView(b, LinearLayout.LayoutParams(px(150f), px(42f)))
-            colA.addView(r, LinearLayout.LayoutParams(px(330f), -2).apply { topMargin = px(6f) })
-        }
-        cycleRow(t("Manual box", "Ручная коробка"), { GearMath.boxName(Controls.boxType(this), en) }) { Controls.setBoxType(this, GearMath.next(Controls.boxType(this), GearMath.BOXES)); sendGearCfg() }
-        cycleRow(t("Automatic", "Автомат"), { GearMath.profileName(Controls.shiftProfile(this), en) }) { Controls.setShiftProfile(this, GearMath.next(Controls.shiftProfile(this), GearMath.PROFILES)); sendGearCfg() }
-        run {
-            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { text = t("Differentials", "Дифференциалы"); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            fun lab() = CarMath.presetName(Controls.diffPreset(this), en)
-            val b = M3Widgets.button(this, lab(), M3Widgets.ButtonKind.TONAL) {}
-            b.setOnClickListener {
-                val n = GearMath.next(Controls.diffPreset(this), CarMath.PRESET_COUNT); Controls.setDiffPreset(this, n)
-                for (k in 0 until 4) { Controls.setTuning(this, 7 + k, CarMath.PRESETS[n][k]); if (running) Native.gameTuning(7 + k, CarMath.PRESETS[n][k]) }
-                (b as? TextView)?.text = lab(); refreshers.forEach { it() }
-            }
-            refreshers.add { (b as? TextView)?.text = lab() }
-            r.addView(b, LinearLayout.LayoutParams(px(110f), px(42f)))
-            colB.addView(r, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
-        }
-        run {
-            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { text = t("Suspension", "Подвеска"); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            fun lab() = CarMath.chassisPresetName(Controls.chassisPreset(this), en)
-            val b = M3Widgets.button(this, lab(), M3Widgets.ButtonKind.TONAL) {}
-            b.setOnClickListener {
-                val n = GearMath.next(Controls.chassisPreset(this), CarMath.CHASSIS_PRESET_COUNT); Controls.setChassisPreset(this, n)
-                for (k in 0 until 6) { Controls.setTuning(this, 13 + k, CarMath.CHASSIS_PRESETS[n][k]); if (running) Native.gameTuning(13 + k, CarMath.CHASSIS_PRESETS[n][k]) }
-                (b as? TextView)?.text = lab(); refreshers.forEach { it() }
-            }
-            refreshers.add { (b as? TextView)?.text = lab() }
-            r.addView(b, LinearLayout.LayoutParams(px(110f), px(42f)))
-            colB.addView(r, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
-        }
-        for (i in 0 until CarMath.PARTS) {
-            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            r.addView(TextView(this).apply { text = CarMath.partName(i, en); textSize = 14f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-            val v = TextView(this).apply { textSize = 14f; setTextColor(M3.TEXT); gravity = Gravity.CENTER }
-            fun show() { v.text = CarMath.valueText(i, Controls.tuning(this, i)) }
-            fun change(dir: Int) { val nv = CarMath.step(i, Controls.tuning(this, i), dir); Controls.setTuning(this, i, nv); if (running) Native.gameTuning(i, nv); show() }
-            show(); refreshers.add { show() }
-            r.addView(M3Widgets.button(this, "−", M3Widgets.ButtonKind.TONAL) { change(-1) }, LinearLayout.LayoutParams(px(44f), px(42f)))
-            r.addView(v, LinearLayout.LayoutParams(px(64f), -2))
-            r.addView(M3Widgets.button(this, "+", M3Widgets.ButtonKind.TONAL) { change(1) }, LinearLayout.LayoutParams(px(44f), px(42f)))
-            colB.addView(r, LinearLayout.LayoutParams(px(300f), -2).apply { topMargin = px(6f) })
-        }
-        val list = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; addView(colA, LinearLayout.LayoutParams(px(330f), -2)); addView(colB, LinearLayout.LayoutParams(px(300f), -2).apply { marginStart = px(20f) }) }
-        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
-        content.addView(label(t("Car", "Машина"), 22f))
-        content.addView(TextView(this).apply { textSize = 13f; setTextColor(M3.TEXT); gravity = Gravity.CENTER; tyreText = this }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(4f) })   // the tyres: temperature and wear, live while the panel is open
-        content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(250f)))
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val p = panel(content)
-        content.addView(M3Widgets.button(this, t("Service: repair, new tyres", "Сервис: ремонт и новые шины"), M3Widgets.ButtonKind.TONAL) { if (running) Native.gameService() }, LinearLayout.LayoutParams(px(260f), px(44f)).apply { topMargin = px(8f) })
-        content.addView(M3Widgets.button(this, t("Reset tuning", "Сбросить настройки"), M3Widgets.ButtonKind.TONAL) {
-            for (i in 0 until CarMath.PARTS) { Controls.setTuning(this, i, 1f); if (running) Native.gameTuning(i, 1f) }
-            Controls.setDiffPreset(this, 1); Controls.setChassisPreset(this, 0)
-            Controls.setAssists(this, CarMath.DEFAULT_AIDS); if (running) Native.gameAssists(CarMath.DEFAULT_AIDS); refreshers.forEach { it() }
-        }, LinearLayout.LayoutParams(px(240f), px(44f)).apply { topMargin = px(8f) })
-        content.addView(M3Widgets.button(this, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { p.visibility = View.GONE }, LinearLayout.LayoutParams(px(200f), px(48f)).apply { topMargin = px(8f) })
-        p.tag = { refreshers.forEach { it() } }
+        val menu = CarMenu(this, t("en", "ru") == "en", { running }, { sendGearCfg() }, { p.visibility = View.GONE })
+        carMenu = menu
+        content.addView(menu.view)
+        p.tag = { menu.refresh() }
         p.visibility = View.VISIBLE
         carPanel = p
     }
@@ -717,9 +640,9 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         }
         hintView?.let { root.removeView(it) }
         val tv = TextView(this).apply {
-            text = msg; textSize = 15f; setTextColor(M3.TEXT); gravity = Gravity.CENTER
+            text = msg; textSize = 15f; setTextColor(Mini.TEXT); gravity = Gravity.CENTER
             setPadding((16f * dp).toInt(), (10f * dp).toInt(), (16f * dp).toInt(), (10f * dp).toInt())
-            background = M3Surface(this@GameActivity, 16f, M3.surface)
+            background = Mini.panel(this@GameActivity, 16f)
         }
         hintView = tv
         root.addView(tv, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL or Gravity.BOTTOM).apply { setMargins(0, 0, 0, (250f * dp).toInt()) })
