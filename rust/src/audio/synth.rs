@@ -15,7 +15,7 @@ const SMOOTH: f32 = 0.08;    // parameter smoothing time constant, seconds
 struct Voice { kind: u8, t: f32, strength: f32, phase: f32, lp1: OnePole, lp2: OnePole, live: bool }
 
 #[derive(Clone, Copy, Default)]
-struct Smoothed { drive1: f32, drive2: f32, load: f32, roll: f32, water: f32, slip: f32, wind: f32, car: f32 }
+struct Smoothed { drive1: f32, drive2: f32, ramp_from: f32, ramp_to: f32, ramp_age: f32, ramp_len: f32, feed_age: f32, feed_ema: f32, load: f32, roll: f32, water: f32, slip: f32, wind: f32, car: f32 }
 
 pub struct Synth {
     target: AudioParams, s: Smoothed, master: f32, muted: bool, volume: f32, vol_s: f32,
@@ -40,7 +40,7 @@ impl Synth {
     pub fn new() -> Synth {
         let rate = RATE as f32;
         Synth {
-            target: AudioParams::default(), s: Smoothed::default(), master: 0.0, muted: false, volume: 1.0, vol_s: 1.0,
+            target: AudioParams::default(), s: Smoothed { feed_ema: 0.033 * RATE as f32, ramp_len: 0.033 * RATE as f32, ..Smoothed::default() }, master: 0.0, muted: false, volume: 1.0, vol_s: 1.0,
             noise: Noise::new(0x1234_5678), noise_w: [Noise::new(0x2345_6789), Noise::new(0x3456_789A), Noise::new(0x4567_89AB), Noise::new(0x5678_9ABC)], noise_wind: Noise::new(0x6789_ABCD),
             rate, a: 1.0 - (-1.0 / (SMOOTH * rate)).exp(),
             gurgle: 0.0, squeal: 0.0, voice: EngineVoice::new(EngineSpec::rally_four()),
@@ -54,6 +54,15 @@ impl Synth {
     pub fn set_params(&mut self, p: &AudioParams) {
         let c = |v: f32| if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 };
         let rpm = |v: f32| if v.is_finite() { v.clamp(0.0, 12000.0) } else { 0.0 };
+        // the game sends the revs once a frame: between two frames the engine glides linearly to the new value over the time the frames really take apart (measured), or it would rev in steps
+        let new_rpm = rpm(p.drive_rpm);
+        if new_rpm != self.s.ramp_to {
+            let lo = 0.012 * self.rate; let hi = 0.08 * self.rate;
+            self.s.feed_ema = self.s.feed_ema * 0.7 + self.s.feed_age.clamp(lo, hi) * 0.3;
+            self.s.ramp_len = self.s.feed_ema.clamp(lo, hi);
+            let cur = self.s.ramp_from + (self.s.ramp_to - self.s.ramp_from) * (self.s.ramp_age / self.s.ramp_len.max(1.0)).min(1.0);
+            self.s.ramp_from = cur; self.s.ramp_to = new_rpm; self.s.ramp_age = 0.0; self.s.feed_age = 0.0;
+        }
         self.target = AudioParams { machine: p.machine, als: p.als, cut: p.cut, stalled: p.stalled, no_bov: p.no_bov, drive_rpm: rpm(p.drive_rpm), clutch: c(p.clutch), load: c(p.load), roll: c(p.roll), surface: p.surface, slip: c(p.slip), wind: c(p.wind), active: p.active };
     }
 
@@ -67,6 +76,9 @@ impl Synth {
     /// The gas that has left the exhaust since the last call: (moles, mole-kelvins, moles of unburnt fuel).
     pub fn take_exhaust_delta(&mut self) -> (f64, f64, f64) { let e = &self.voice.engine; let (m, h, f) = (e.out_moles, e.out_heat, e.out_fuel); let d = ((m - self.out_pub.0).max(0.0), (h - self.out_pub.1).max(0.0), (f - self.out_pub.2).max(0.0)); self.out_pub = (m, h, f); d }
     pub fn take_burned_delta(&mut self) -> f64 { let b = self.voice.engine.exhaust_burned; let d = (b - self.burned_pub).max(0.0); self.burned_pub = b; d }
+
+    /// The revs the wheels ask of the engine right now, after the glide between the game's frames (rpm).
+    pub fn drive_now(&self) -> f32 { self.s.drive2 }
 
     /// The revs of the simulated engine (rpm).
     pub fn engine_rpm(&self) -> f32 { self.voice.rpm() }
@@ -116,9 +128,11 @@ impl Synth {
         let c_wind = coef(500.0, rate);
         let fade = 1.0 / (FADE * rate);
         let t = self.target;
-        self.s.load += (t.load - self.s.load) * a * 3.0;
-        // the revs the game asks for arrive 60 times a second, each a step: two cascaded smoothers (about 12 ms each) turn the stairs into a ramp, or the engine would rev in steps
-        { let k = 1.0 - (-1.0 / (0.012 * rate)).exp(); self.s.drive1 += (t.drive_rpm - self.s.drive1) * k; self.s.drive2 += (self.s.drive1 - self.s.drive2) * k; }
+        self.s.load += (t.load - self.s.load) * a * 1.8;   // about 45 ms: the pedal arrives once a frame
+        // the revs the game asks for arrive 60 times a second, each a step: the ramp between the frames (see set_params) and two light smoothers round its corners
+        self.s.feed_age += 1.0; self.s.ramp_age += 1.0;
+        let lin = self.s.ramp_from + (self.s.ramp_to - self.s.ramp_from) * (self.s.ramp_age / self.s.ramp_len.max(1.0)).min(1.0);
+        { let k = 1.0 - (-1.0 / (0.006 * rate)).exp(); self.s.drive1 += (lin - self.s.drive1) * k; self.s.drive2 += (self.s.drive1 - self.s.drive2) * k; }
         self.s.roll += (t.roll - self.s.roll) * a; self.s.slip += (t.slip - self.s.slip) * a; self.s.wind += (t.wind - self.s.wind) * a;
         self.s.water += ((t.surface == Surface::Water) as u8 as f32 - self.s.water) * a;
         self.s.car += ((t.machine == Machine::Car) as u8 as f32 - self.s.car) * a;
