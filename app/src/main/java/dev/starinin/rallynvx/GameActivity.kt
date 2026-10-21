@@ -39,6 +39,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
     private var gearBtn: View? = null
     private var reverseBtn: View? = null
     private var carPanel: View? = null
+    private var tyreText: TextView? = null
     private var quickBtn: View? = null
     private var carBtn: View? = null
     private var soundBtn: View? = null
@@ -95,6 +96,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                     }.also { root.addView(it, FrameLayout.LayoutParams((220f * dpx).toInt(), (52f * dpx).toInt(), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { setMargins(0, 0, 0, (40f * dpx).toInt()) }) }
                 }
             }
+            if (carPanel?.visibility == View.VISIBLE) tyreText?.text = CarMath.tyreLine(floatArrayOf(s[88], s[89], s[90], s[91]), floatArrayOf(s[92], s[93], s[94], s[95]), t("en", "ru") == "en")
             gearView?.update(s[80].toInt(), s[81], s[82] > 0.5f, s[83] > 0.5f, s[86])
             drive?.speedKmh = s[25]   // signed forward speed: negative while reversing
             handler.postDelayed(this, if (drive != null) 100 else 250)
@@ -606,6 +608,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
         val list = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; addView(colA, LinearLayout.LayoutParams(px(330f), -2)); addView(colB, LinearLayout.LayoutParams(px(300f), -2).apply { marginStart = px(20f) }) }
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
         content.addView(label(t("Car", "Машина"), 22f))
+        content.addView(TextView(this).apply { textSize = 13f; setTextColor(M3.TEXT); gravity = Gravity.CENTER; tyreText = this }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(4f) })   // the tyres: temperature and wear, live while the panel is open
         content.addView(android.widget.ScrollView(this).apply { addView(list) }, LinearLayout.LayoutParams(-2, px(250f)))
         val p = panel(content)
         content.addView(M3Widgets.button(this, t("Reset tuning", "Сбросить настройки"), M3Widgets.ButtonKind.TONAL) {
