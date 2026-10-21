@@ -8,7 +8,7 @@ const V0: f32 = 1.0;
 /// A wheel's inertia with its tyre, rim, disc and the half-shaft's share, kg m2.
 pub const INERTIA: f32 = 1.3;
 /// The share of the brake force on the front axle.
-pub const BRAKE_BIAS: f32 = 0.55;
+pub const BRAKE_BIAS: f32 = 0.62;
 
 /// The slip ratio at the peak of the grip and the share of the peak that is kept when the tyre slides, per surface: tarmac peaks early and holds well, loose ground peaks later.
 pub fn slip_params(s: Surface) -> (f32, f32) {
@@ -48,19 +48,28 @@ pub fn step(i: &In) -> Out {
     let k0 = (i.w * r - i.vf) / den;
     let f0 = fmax * curve(k0, i.kp, i.slide);
     let stiff = r * r * fmax * slope(k0, i.kp, i.slide) / den;
-    let mut w = i.w + i.h * (i.drive - r * f0) / (i.inertia + i.h * stiff);
-    // the brake only ever slows the wheel towards a stop; ABS will not take the slip beyond the band that holds the peak of the grip
-    let mut used = 0.0;
+    let denom = i.inertia + i.h * stiff;
+    let tq = i.drive - r * f0;                         // the torque on the wheel apart from the brake
+    let w_free = i.w + i.h * tq / denom;
+    let (mut w, mut used) = (w_free, 0.0);
     if i.brake > 0.0 {
-        let dw = i.h * i.brake / i.inertia;
-        let band = 1.2 * i.kp * den;
-        if w > 0.0 {
-            let floor = if i.abs && fmax > 0.0 && i.vf > 0.0 { ((i.vf - band) / r).max(0.0).min(w) } else { 0.0 };
-            let nw = (w - dw).max(floor); used = (w - nw) * i.inertia / i.h; w = nw;
-        } else if w < 0.0 {
-            let ceil = if i.abs && fmax > 0.0 && i.vf < 0.0 { ((i.vf + band) / r).min(0.0).max(w) } else { 0.0 };
-            let nw = (w + dw).min(ceil); used = (nw - w) * i.inertia / i.h; w = nw;
+        // the brake is dry friction inside the same implicit step (or the tyre would damp it away): it opposes the spin with up to `brake`, never turns the wheel round,
+        // and holds a wheel that stands still if the other torques are below it
+        let still = i.w.abs() < 1e-6;
+        let (w_b, locked) = if still && tq.abs() <= i.brake { (0.0, true) } else {
+            let dir = if still { tq.signum() } else { i.w.signum() };
+            let wb = i.w + i.h * (tq - dir * i.brake) / denom;
+            if wb * dir < 0.0 { (0.0, true) } else { (wb, false) }
+        };
+        w = w_b;
+        // ABS will not let the wheel fall behind the ground beyond the band that holds the peak of the grip
+        if i.abs && fmax > 0.0 {
+            let band = 1.0 * i.kp * den;
+            if i.vf > 0.0 { w = w.max(((i.vf - band) / r).max(0.0).min(w_free)); }
+            else if i.vf < 0.0 { w = w.min(((i.vf + band) / r).min(0.0).max(w_free)); }
         }
+        let span = w_free - w_b;
+        used = if span.abs() > 1e-9 { i.brake * ((w_free - w) / span).clamp(0.0, 1.0) } else if locked { i.brake.min(tq.abs()) } else { 0.0 };
     }
     let k1 = (w * r - i.vf) / den;
     Out { w, fx: fmax * curve(k1, i.kp, i.slide), slip: k1, brake_used: used }

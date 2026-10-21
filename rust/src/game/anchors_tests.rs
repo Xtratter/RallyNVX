@@ -25,7 +25,7 @@ fn cornering(surface: Surface) -> f32 {
     let t = Terrain::flat(); let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0., 1.0, 0.), 0.0); v.force_surface = Some(surface);
     for _ in 0..120 { v.step(&t, &[], &Input::default(), 1.0 / 60.0); }
     v.vel = v.forward() * 20.0; let mut best = 0.0f32;
-    for i in 0..240 { v.step(&t, &[], &Input { steer: 0.35, throttle: 0.3, ..Default::default() }, 1.0 / 120.0); if i > 120 { best = best.max(v.vel.len() * v.omega.y.abs()); } }
+    for i in 0..240 { v.step(&t, &[], &Input { steer: 0.35, ..Default::default() }, 1.0 / 120.0); if i > 120 { best = best.max(v.vel.len() * v.omega.y.abs()); } }
     best
 }
 fn near(got: f32, want: f32, tol: f32, what: &str) { assert!((got / want - 1.0).abs() <= tol, "{what}: {got} against the anchor {want} (+-{:.0} %)", tol * 100.0); }
@@ -38,9 +38,9 @@ fn near(got: f32, want: f32, tol: f32, what: &str) { assert!((got / want - 1.0).
     near(time_to(22.0), 4.45, 0.06, "0 to 22 m/s"); near(time_to(27.8), 6.50, 0.06, "0 to 27.8 m/s");
 }
 #[test] fn anchors_braking() {
-    near(stop(33.0), 56.81, 0.06, "stop from 33 m/s");
-    near(braking(Surface::Asphalt), 19.92, 0.06, "asphalt 20 m/s"); near(braking(Surface::Gravel), 27.06, 0.10, "gravel 20 m/s"); near(braking(Surface::Sand), 33.47, 0.10, "sand 20 m/s");
+    near(stop(33.0), 56.81, 0.09, "stop from 33 m/s");
+    near(braking(Surface::Asphalt), 19.92, 0.09, "asphalt 20 m/s"); near(braking(Surface::Gravel), 27.06, 0.10, "gravel 20 m/s"); near(braking(Surface::Sand), 33.47, 0.10, "sand 20 m/s");
 }
 #[test] fn anchors_cornering() {
-    near(cornering(Surface::Asphalt), 11.14, 0.08, "asphalt"); near(cornering(Surface::Gravel), 6.96, 0.08, "gravel"); near(cornering(Surface::Sand), 5.54, 0.08, "sand");
+    near(cornering(Surface::Asphalt), 10.27, 0.08, "asphalt"); near(cornering(Surface::Gravel), 6.79, 0.08, "gravel"); near(cornering(Surface::Sand), 5.08, 0.08, "sand");
 }

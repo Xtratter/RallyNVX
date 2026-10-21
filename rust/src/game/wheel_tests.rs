@@ -72,3 +72,14 @@ fn run(mut i: In, secs: f32) -> Out {
         assert!(o.w.is_finite() && o.fx.is_finite() && o.slip.is_finite() && o.w.abs() < 3000.0 && o.fx.abs() <= i.fmax + 1.0, "{i:?} -> {o:?}");
     }
 }
+#[test] fn a_brake_torque_below_the_grip_is_carried_by_the_tyre_one_to_one() {
+    // the wheel rolls at 20 m/s and a brake of 400 N m (well under what the tyre can hold): once it settles, the tyre's torque is that brake's, not a multiple of it
+    let mut i = base(20.0 / R, 20.0); i.brake = 400.0; i.abs = false;
+    let o = run(i, 0.6);
+    assert!((R * o.fx + 400.0).abs() < 25.0, "the tyre carries {} N m for a brake of 400", -R * o.fx);
+}
+#[test] fn a_soft_brake_and_a_hard_brake_differ_in_proportion() {
+    let go = |b: f32| { let mut i = base(20.0 / R, 20.0); i.brake = b; i.abs = true; -R * run(i, 0.6).fx };
+    let (soft, hard) = (go(300.0), go(900.0));
+    assert!(hard > soft * 2.5 && hard < soft * 3.5, "300 N m -> {soft}, 900 N m -> {hard}");
+}

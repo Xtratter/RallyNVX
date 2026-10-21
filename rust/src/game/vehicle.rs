@@ -5,6 +5,7 @@ use super::math::{v3, Q, V3};
 use super::props::{Prop, PropKind};
 use super::surface::Surface;
 use super::terrain::Terrain;
+use super::wheel;
 
 /// Which generated body the renderer builds for a car.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,8 +49,8 @@ impl VehicleSpec {
 
 /// What one wheel did in the last sub-step: for the dust (and later sound/tracks).
 #[derive(Clone, Copy, Debug)]
-pub struct WheelInfo { pub grounded: bool, pub surface: Surface, pub contact: V3, pub speed: f32, pub lat_slip: f32, pub slide: f32 }
-impl WheelInfo { pub const NONE: WheelInfo = WheelInfo { grounded: false, surface: Surface::Asphalt, contact: V3::ZERO, speed: 0.0, lat_slip: 0.0, slide: 0.0 }; }
+pub struct WheelInfo { pub grounded: bool, pub surface: Surface, pub contact: V3, pub speed: f32, pub lat_slip: f32, pub slide: f32, pub slip: f32 }
+impl WheelInfo { pub const NONE: WheelInfo = WheelInfo { grounded: false, surface: Surface::Asphalt, contact: V3::ZERO, speed: 0.0, lat_slip: 0.0, slide: 0.0, slip: 0.0 }; }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Vehicle {
@@ -69,8 +70,15 @@ pub struct Vehicle {
     pub wet: f32,
     /// The driver holds reverse (negative throttle), as opposed to merely rolling backwards.
     pub reverse_throttle: bool,
-    /// The force the drivetrain puts on the ground along the heading (N, all wheels); `None` falls back to the throttle times the spec's engine force.
-    pub drive_force: Option<f32>,
+    /// The torque the driveline puts on each wheel (N m at the wheel, positive pushes the car forward); `None` falls back to the throttle times the spec's engine force.
+    pub drive_torque: Option<[f32; 4]>,
+    /// Each wheel's spin (rad/s, positive rolls forward) and its slip ratio in shares of the slip at the peak of the grip (1 = at the peak, negative while braking or reversing).
+    pub w: [f32; 4], pub slip: [f32; 4],
+    /// The wheels have been set rolling with the ground (a car placed with a speed starts with turning wheels), and the velocity at the end of the last step:
+    /// a jump of more than 2 m/s that no force could make in one step (a car placed with a speed, a teleport) sets the wheels rolling with the ground again.
+    spin_ready: bool, last_vel: V3,
+    /// The torque the tyres put against the wheels' spin in the last substep (N m, summed over the wheels).
+    pub tyre_sum: f32,
     /// The aids: with ABS (traction control) off a wheel braked (driven) past the peak of its grip locks (spins) and slides on the reduced grip of a slide.
     pub abs_on: bool, pub tc_on: bool,
     /// The surface under the first wheel in contact (the HUD shows it); tests can force one for every wheel.
@@ -83,7 +91,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_force: None, abs_on: true, tc_on: true, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_torque: None, w: [0.0; 4], slip: [0.0; 4], spin_ready: false, last_vel: V3::ZERO, tyre_sum: 0.0, abs_on: true, tc_on: true, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -98,7 +106,7 @@ impl Vehicle {
         let yaw = if f.x.hypot(f.z) > 1e-3 { f.x.atan2(f.z) } else { 0.0 };
         self.rot = Q::axis_angle(v3(0., 1., 0.), yaw);
         self.pos.y = t.height(self.pos.x, self.pos.z) + 1.2;
-        self.vel = V3::ZERO; self.omega = V3::ZERO; self.steer = 0.0; self.comp = [0.0; 4];
+        self.vel = V3::ZERO; self.omega = V3::ZERO; self.steer = 0.0; self.comp = [0.0; 4]; self.w = [0.0; 4]; self.slip = [0.0; 4]; self.spin_ready = false; self.tyre_sum = 0.0;
     }
 
     pub fn step(&mut self, t: &Terrain, props: &[Prop], inp: &Input, dt: f32) {
@@ -107,8 +115,12 @@ impl Vehicle {
     }
 
     /// One step; `loose` is the level's loose gravel map, which the wheels on a stage wear.
-    pub fn step_with(&mut self, t: &Terrain, props: &[Prop], inp: &Input, dt: f32, loose: &mut LooseMap) {
+    pub fn step_with(&mut self, t: &Terrain, props: &[Prop], inp: &Input, dt: f32, loose: &mut LooseMap) { self.step_driven(t, props, inp, dt, loose, None); }
+
+    /// Like `step_with`, with the driveline solved in the substeps: each one calls `drive(h, the wheels' spins, the torque the tyres put against them)` and puts what it returns on the wheels.
+    pub fn step_driven(&mut self, t: &Terrain, props: &[Prop], inp: &Input, dt: f32, loose: &mut LooseMap, mut drive: Option<&mut dyn FnMut(f32, [f32; 4], f32) -> [f32; 4]>) {
         let inp = inp.sanitized();
+        if (self.vel - self.last_vel).len() > 2.0 { self.spin_ready = false; }
         self.braking = inp.brake;   // the brake lights are for the pedal: a handbrake that is merely held does not light them
         self.parked = inp.handbrake;
         self.reverse_throttle = inp.throttle < -0.05;
@@ -117,7 +129,10 @@ impl Vehicle {
         let rate = self.spec.steer_rate * dt;
         self.steer += (inp.steer * max_a - self.steer).clamp(-rate, rate);
         let h = dt / SUB as f32;
-        for _ in 0..SUB { self.substep(t, &inp, h, loose); }
+        for _ in 0..SUB {
+            if let Some(d) = drive.as_mut() { self.drive_torque = Some((*d)(h, self.w, self.tyre_sum)); }
+            self.substep(t, &inp, h, loose);
+        }
         self.collide_props(props);
         let g = t.height(self.pos.x, self.pos.z);
         if self.pos.y < g + 0.2 {
@@ -127,6 +142,7 @@ impl Vehicle {
             let k = (1.0 - 3.0 * dt).max(0.0);
             self.vel.x *= k; self.vel.z *= k; self.omega = self.omega * k;
         }
+        self.last_vel = self.vel;
     }
 
     fn substep(&mut self, t: &Terrain, inp: &Input, h: f32, loose: &mut LooseMap) {
@@ -138,12 +154,22 @@ impl Vehicle {
         self.contacts = 0;
         self.wheels = [WheelInfo::NONE; 4];
         let wheel_mass = s.mass / 4.0;
+        let mut tyre_sum = 0.0;
         let max_susp = s.max_susp_factor * G * wheel_mass;
         let level = t.water_level();
         let mut wet = 0;
         for w in 0..4 {
             self.comp[w] = 0.0;
             let front = w < 2;
+            // the torques at this wheel: the driveline's (with no drivetrain, the throttle's share of the engine force) and the brake's (the handbrake is a plain rear brake)
+            let lim_speed = if inp.throttle >= 0.0 { s.max_speed } else { s.max_speed * s.reverse_factor };
+            let taper = (1.0 - (fspeed * inp.throttle.signum()).max(0.0) / lim_speed).clamp(0.0, 1.0);
+            let drive_t = match self.drive_torque { Some(t) => t[w], None => inp.throttle * s.engine_force / 4.0 * taper * s.radius };
+            let kb = if inp.brake_amt > 0.0 { inp.brake_amt.clamp(0.05, 1.0) } else { 1.0 };
+            let pedal = if inp.brake { kb } else { 0.0 };
+            let part = if front { wheel::BRAKE_BIAS } else { 1.0 - wheel::BRAKE_BIAS };
+            let mut brake_t = s.brake_force * s.radius * 0.5 * part * pedal;
+            if inp.handbrake && !front { brake_t = brake_t.max(s.brake_force * s.radius * 0.5); }
             // the discs cool all the time, faster the faster the car goes
             self.brake_heat[w] *= (-h * (1.0 + self.vel.len() / 15.0) / 6.0).exp();
             let r_att = self.rot.rotate(s.wheels[w]);
@@ -151,10 +177,10 @@ impl Vehicle {
             let ground = t.height(attach.x, attach.z);
             let n = t.normal(attach.x, attach.z);
             if level.map_or(false, |l| ground < l - 0.05) { wet += 1; }
-            if up.dot(n) < 0.2 { continue; }
+            if up.dot(n) < 0.2 { self.spin_free(w, drive_t, brake_t, h); continue; }
             let d = (attach.y - ground) / up.y.max(0.2);
             let compress = s.rest + s.radius - d;
-            if compress <= 0.0 { continue; }
+            if compress <= 0.0 { self.spin_free(w, drive_t, brake_t, h); continue; }
             self.contacts += 1;
             self.comp[w] = compress.min(s.rest + s.radius);
             let vp = self.vel + self.omega.cross(r_att);
@@ -177,43 +203,44 @@ impl Vehicle {
             let tf = grip::tyre_factor(s.wheel_set, surf);   // the wheel set: the right tyres for the surface grip more
             let wf = grip::wet_factor(surf, self.wet);       // the wet ground: less grip, everywhere
             let (mu_s, lat_k, roll) = (s.mu * sg.mu * tf.0 * wf.0, s.lateral_k * sg.lateral * tf.1 * wf.1, s.rolling * sg.rolling);
-            // a locked rear tyre slides at the reduced grip of a slide, but a car that stands (or creeps) is held by the full static grip: the handbrake parks it on a slope
-            let slide = ((self.vel.x.hypot(self.vel.z) - 1.0) / 3.0).clamp(0.0, 1.0);
-            let lat_mu = if !front && inp.handbrake { mu_s * (1.0 + (s.handbrake_grip - 1.0) * slide) } else { mu_s };
-            let mut fl = -vl * wheel_mass * lat_k;
-            let lim_speed = if inp.throttle >= 0.0 { s.max_speed } else { s.max_speed * s.reverse_factor };
-            let taper = (1.0 - (fspeed * inp.throttle.signum()).max(0.0) / lim_speed).clamp(0.0, 1.0);
-            let locked = inp.handbrake && !front;   // the handbrake locks the rear wheels: no drive, and the tyre holds the ground like a block of rubber
-            let mut fx = if locked { 0.0 } else { match self.drive_force { Some(f) => f / 4.0, None => inp.throttle * s.engine_force / 4.0 * taper } } - vf * roll;
-            // brake pedal: scaled by how hard it is pressed (0 = legacy full force); the handbrake always bites the rear wheels fully
-            let kb = if inp.brake_amt > 0.0 { inp.brake_amt.clamp(0.05, 1.0) } else { 1.0 };
-            let k = if inp.handbrake && !front { 1.0 } else if inp.brake { kb } else { 0.0 };
-            if locked {
-                // a locked tyre is dry friction against the ground: it opposes the slide in whatever direction it goes with all the grip the tyre has (softened below 5 cm/s so the
-                // car comes to a stop instead of chattering), so the car also stays put on a slope
-                let slip = vf.hypot(vl);
-                let ramp = (slip / 0.05).clamp(0.0, 1.0);
-                let (ux, ul) = if slip > 1e-6 { (vf / slip, vl / slip) } else { (0.0, 0.0) };
-                fx = -ux * ramp * lat_mu * fs;
-                fl = -ul * ramp * lat_mu * fs;
-            } else if k > 0.0 {
-                fx -= (vf / 0.5).clamp(-1.0, 1.0) * s.brake_force / 4.0 * k;
-            }
-            if k > 0.0 {
+            // a wheel placed with a speed starts turning with the ground
+            if !self.spin_ready { self.w[w] = vf / s.radius; }
+            let (kp, keep) = wheel::slip_params(surf);
+            let fmax = mu_s * fs;
+            // the friction circle: while the tyre grips (up to about twice the peak of its slip) the side force comes first, the way the car and the autopilot were tuned, and the drive or the brake gets
+            // what is left; a tyre that slips far past the peak (locked or burning out) slides along its slip, so its force is the longitudinal one and the side keeps only what that leaves
+            let k_now = (self.w[w] * s.radius - vf) / vf.abs().max(1.0);
+            let t_sl = { let x = ((k_now.abs() / kp - 2.0) / 3.0).clamp(0.0, 1.0); x * x * (3.0 - 2.0 * x) };
+            let fl_dem = -vl * wheel_mass * lat_k;
+            let fl0 = fl_dem.clamp(-0.97 * fmax, 0.97 * fmax);
+            let fmax_long = { let first = (fmax * fmax - fl0 * fl0).max(0.0).sqrt(); first + (fmax - first) * t_sl };
+            // a car with no drivetrain of its own (the throttle times the engine force) gets an ideal traction control: it never asks the tyre for more than it can carry
+            let drive_w = if self.drive_torque.is_none() && self.tc_on { drive_t.clamp(-s.radius * fmax_long, s.radius * fmax_long) } else { drive_t };
+            let o = wheel::step(&wheel::In { w: self.w[w], vf, radius: s.radius, fmax: fmax_long, kp, slide: keep, drive: drive_w, brake: brake_t, abs: self.abs_on && !(inp.handbrake && !front), h, inertia: wheel::INERTIA });   // the handbrake is mechanical: no ABS on it
+            self.w[w] = o.w; self.slip[w] = o.slip / kp;
+            tyre_sum += s.radius * o.fx;
+            // the rolling resistance (a drag that grows with the speed) adds to the tyre's own force but shares the friction circle with the side force: when the tyre holds the side at its limit,
+            // it is squeezed out, as it always was; kept apart it drags the saturated front tyres and the car slides out of a long turn. The total cannot pass what the tyre has: its peak while
+            // it grips, its sliding share once it slides, so a locked wheel brakes less than one held at the peak by the ABS
+            let roll_f = -vf * roll;
+            let mut fx = o.fx + roll_f * (fmax / fl_dem.hypot(roll_f).max(1e-6)).min(1.0);
+            let cap_t = fmax * (1.0 - t_sl * (1.0 - keep));
+            fx = fx.clamp(-cap_t, cap_t);
+            let fl_cap = { let rest = (fmax * fmax - o.fx * o.fx).max(0.0).sqrt(); 0.97 * fmax + (rest - 0.97 * fmax) * t_sl };
+            let mut fl = fl_dem.clamp(-fl_cap, fl_cap);
+            if o.brake_used > 0.0 {
                 // the braking power heats the disc (the front brakes do more of the work)
-                self.brake_heat[w] = (self.brake_heat[w] + s.brake_force / 4.0 * k * vf.abs() * if front { 1.3 } else { 0.7 } * 4.5e-6 * h).min(1.0);
+                self.brake_heat[w] = (self.brake_heat[w] + o.brake_used / s.radius * vf.abs() * if front { 1.3 } else { 0.7 } * 4.5e-6 * h).min(1.0);
             }
-            let mut lim = lat_mu * fs;
-            // past the peak of the grip a braked wheel without ABS locks and a driven wheel without traction control spins: a locked wheel slides on 78 % of the peak, a spinning one on 62 %, in every direction
-            let braked = k > 0.0 && !locked;
-            if fx.abs() > 0.95 * lim && lim > 1e-3 && ((braked && !self.abs_on) || (!braked && fx * vf.signum() > 0.0 && !self.tc_on && self.drive_force.is_some())) { lim *= if braked { 0.78 } else { 0.62 }; }
+            let excess = if fmax > 1e-3 { (fl_dem.hypot(o.fx.abs().max(drive_t.abs() / s.radius)) / fmax - 1.0).clamp(0.0, 1.5).max((o.slip.abs() / kp - 1.0).clamp(0.0, 1.5)) } else { 0.0 };
+            self.wheels[w] = WheelInfo { grounded: true, surface: surf, contact, speed: vc.len(), lat_slip: vl.abs(), slide: excess, slip: o.slip };
             let mag = fl.hypot(fx);
-            let excess = if lim > 1e-3 { ((mag / lim) - 1.0).clamp(0.0, 1.5) } else { 0.0 };
-            self.wheels[w] = WheelInfo { grounded: true, surface: surf, contact, speed: vc.len(), lat_slip: vl.abs(), slide: excess };
-            if mag > lim && mag > 1e-6 { let k = lim / mag; fl *= k; fx *= k; }
+            if mag > fmax && mag > 1e-6 { let k = fmax / mag; fl *= k; fx *= k; }
             let tire = rw * fl + fw * fx;
             force = force + tire; torque = torque + r_c.cross(tire);
         }
+        self.spin_ready = true;
+        self.tyre_sum = tyre_sum;
         // aerodynamics: drag at the centre, downforce pressing the body down at the two axles (the springs load the tyres, so the grip
         // grows), the side force behind the centre (it turns the nose back into the flow); the clearance comes from the suspension
         let ac = super::aero::cfg();
@@ -236,6 +263,12 @@ impl Vehicle {
         self.omega = (self.omega + self.rot.rotate(acc_b) * h) * (1.0 - s.ang_damp * h);
         self.pos = self.pos + self.vel * h;
         self.rot = self.rot.integrate(self.omega, h);
+    }
+
+    /// A wheel off the ground: it only turns under its drive torque and its brake.
+    fn spin_free(&mut self, w: usize, drive: f32, brake: f32, h: f32) {
+        let o = wheel::step(&wheel::In { w: self.w[w], vf: 0.0, radius: self.spec.radius, fmax: 0.0, kp: 0.1, slide: 0.8, drive, brake, abs: false, h, inertia: wheel::INERTIA });
+        self.w[w] = o.w; self.slip[w] = 0.0;
     }
 
     fn collide_props(&mut self, props: &[Prop]) {

@@ -113,7 +113,7 @@ fn top_speed_run(spec: VehicleSpec, secs: f32) -> f32 {
     };
     let (a, b) = (compression(with(AeroKit::default())), compression(with(AeroKit { wing: 3, underbody: 3, splitter: 3, wing_angle: 1 })));
     assert!(b > a + 0.01, "the suspension should carry the downforce: {a} -> {b}");
-    // a steady turn at 35 m/s with full steering: the lateral acceleration is higher with the aero parts
+    // a steady turn at 35 m/s with full steering, the speed held (the aero parts add drag, which would slow the car and hide their grip): the lateral acceleration is higher with them
     let lateral = |spec: VehicleSpec| {
         let t = Terrain::flat();
         let mut v = Vehicle::new(spec, v3(0.0, 1.0, 0.0), 0.0);
@@ -121,8 +121,10 @@ fn top_speed_run(spec: VehicleSpec, secs: f32) -> f32 {
         v.vel = v.forward() * 35.0;
         let mut best = 0.0f32;
         for i in 0..240 {
-            v.step(&t, &[], &Input { throttle: 0.5, steer: 1.0, ..Default::default() }, 1.0 / 60.0);
-            if i > 120 { best = best.max(v.vel.dot(v.right()).abs() * v.omega.y.abs() + 0.0); }
+            let s = v3(v.vel.x, 0.0, v.vel.z).len();
+            if s > 1.0 { let k = 35.0 / s; v.vel = v3(v.vel.x * k, v.vel.y, v.vel.z * k); }
+            v.step(&t, &[], &Input { steer: 1.0, ..Default::default() }, 1.0 / 60.0);
+            if i > 120 { best = best.max(v.vel.len() * v.omega.y.abs()); }   // speed times yaw rate
         }
         best
     };

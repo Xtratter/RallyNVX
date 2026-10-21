@@ -35,16 +35,31 @@ mod physics {
         99.0
     }
     #[test] fn without_abs_a_hard_stop_is_longer() {
-        let (mut on, mut off) = (track(), track());
-        off.assists.abs = false;
-        let (a, b) = (stop_distance(&mut on, 33.0), stop_distance(&mut off, 33.0));
-        assert!(b > a * 1.08, "ABS on {a} m, off {b} m");
+        // on gravel the brakes are stronger than the grip, so a locked wheel costs distance (on tarmac the car's brakes are weaker than its tyres); the car gets to speed on its own,
+        // with its engine and its gear (a speed set by hand at the idle would drag the wheels back through the clutch)
+        let go = |abs: bool| {
+            let mut w = track(); w.vehicle.force_surface = Some(crate::game::surface::Surface::Gravel); w.assists.abs = abs;
+            for _ in 0..60 * 9 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+            let (p0, v0) = (w.vehicle.pos, w.vehicle.vel.len());
+            for _ in 0..60 * 20 { w.step(&Input { brake: true, brake_amt: 1.0, ..Default::default() }, 1.0 / 60.0); if w.vehicle.vel.len() < 0.2 { break; } }
+            ((w.vehicle.pos - p0).len(), v0)
+        };
+        let ((a, va), (b, vb)) = (go(true), go(false));
+        eprintln!("ABSNUM on {a} m from {va} off {b} m from {vb}");
+        assert!(va > 20.0 && (va - vb).abs() < 1.0, "the same speed to brake from: {va} {vb}");
+        assert!(b > a * 1.04, "ABS on {a} m, off {b} m");
     }
-    #[test] fn without_traction_control_the_launch_is_slower() {
-        let (mut on, mut off) = (track(), track());
-        off.assists.tc = false;
-        let (a, b) = (time_to(&mut on, 22.0), time_to(&mut off, 22.0));
-        assert!(b > a * 1.01, "TC on {a} s, off {b} s to 80 km/h");
+    /// The largest slip over the peak that any wheel reaches in a full-throttle launch.
+    fn peak_spin(tc: bool, surface: crate::game::surface::Surface, secs: f32) -> f32 {
+        let mut w = track(); w.vehicle.force_surface = Some(surface); w.assists.tc = tc;
+        let mut peak = 0.0f32;
+        for _ in 0..(secs * 60.0) as usize { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); peak = peak.max(w.vehicle.slip.iter().cloned().fold(0.0, f32::max)); }
+        peak
+    }
+    #[test] fn traction_control_limits_the_wheel_spin_of_a_launch_on_gravel() {
+        let (on, off) = (peak_spin(true, crate::game::surface::Surface::Gravel, 3.0), peak_spin(false, crate::game::surface::Surface::Gravel, 3.0));
+        eprintln!("TCNUM on {on} off {off}");
+        assert!(off > 1.5 && on < off * 0.8, "gravel launch: the wheels spin to {on} of the peak with TC, {off} without");
     }
     #[test] fn the_tuning_changes_how_the_car_goes_and_stops() {
         let (mut base, mut weak, mut strong) = (track(), track(), track());
@@ -65,5 +80,18 @@ mod physics {
         let o = w.drivetrain.opts;
         assert!(!o.limiter && !o.flat_shift && !o.blip && (o.gearing - 1.2).abs() < 1e-6 && o.turbo == 0.0);
         assert!(!w.vehicle.abs_on == false && w.vehicle.tc_on);
+    }
+    #[test] fn a_car_on_water_does_not_run_away() {
+        let mut w = track(); w.vehicle.force_surface = Some(crate::game::surface::Surface::Water);
+        for _ in 0..60 * 8 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+        assert!(w.vehicle.vel.len().is_finite() && w.vehicle.vel.len() < 40.0 && w.drivetrain.last.rpm < 8300.0 && w.vehicle.w.iter().all(|x| x.is_finite() && x.abs() < 600.0), "{} m/s {} rpm {:?}", w.vehicle.vel.len(), w.drivetrain.last.rpm, w.vehicle.w);
+    }
+    #[test] fn a_spinning_launch_does_not_chatter() {
+        let mut w = track(); w.vehicle.force_surface = Some(crate::game::surface::Surface::Gravel); w.assists.tc = false;
+        let mut t = Vec::new();
+        for k in 0..60 * 4 { w.step(&Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); if k > 60 { t.push(w.drivetrain.last.wheel_torque); } }
+        let mean = t.iter().sum::<f32>() / t.len() as f32;
+        let var = t.iter().map(|x| (x - mean) * (x - mean)).sum::<f32>() / t.len() as f32;
+        assert!(var.sqrt() < mean.abs() * 0.35 + 50.0, "wheel torque mean {mean}, std {} N m", var.sqrt());
     }
 }
