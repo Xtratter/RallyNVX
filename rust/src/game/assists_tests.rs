@@ -2,8 +2,8 @@ use super::*;
 
 #[test] fn the_mask_round_trips_and_everything_is_on_by_default() {
     let a = Assists::default();
-    assert!(a.als && a.abs && a.tc && a.blip && a.flat_shift && a.limiter && a.bov && a.mask() == 0x7F);
-    for m in 0..128 { assert_eq!(Assists::from_mask(m).mask(), m); }
+    assert!(a.als && a.abs && a.tc && a.blip && a.flat_shift && a.limiter && a.bov && a.launch && a.mask() == 0xFF);
+    for m in 0..256 { assert_eq!(Assists::from_mask(m).mask(), m); }
     let off = Assists::from_mask(0b1111101); assert!(!off.abs && off.als && off.tc);
     assert_eq!(Assists::from_mask(0xFFFF_FFFF), a, "extra bits are ignored");
 }
@@ -21,11 +21,22 @@ use super::*;
 }
 
 #[test] fn the_differential_parts_are_tuning_parts_with_their_own_ranges() {
-    assert_eq!(TUNING_PARTS, 11);
+    assert_eq!(TUNING_PARTS, 12);
     let mut t = Tuning::default();
     t.set(7, 9.0); assert_eq!(t.diff_front, 2.0); t.set(8, -1.0); assert_eq!(t.diff_rear, 0.0); t.set(9, 0.5); assert_eq!(t.diff_centre, 0.5);
     t.set(10, 9.0); assert_eq!(t.split, 1.4); t.set(10, 0.0); assert_eq!(t.split, 0.6); t.set(10, f32::NAN); assert_eq!(t.split, 0.6, "garbage is ignored");
     let d = t.diffs(); assert_eq!((d.front, d.rear, d.centre, d.split), (2.0, 0.0, 0.5, 0.6));
+}
+
+#[test] fn the_brake_bias_is_a_tuning_part_that_reaches_the_vehicle() {
+    assert_eq!(TUNING_PARTS, 12);
+    let mut t = Tuning::default();
+    t.set(11, 9.0); assert_eq!(t.bias, 1.25); t.set(11, 0.0); assert_eq!(t.bias, 0.7); t.set(11, f32::NAN); assert_eq!(t.bias, 0.7, "garbage is ignored");
+    let mut w = crate::game::world::World::test_track(VehicleSpec::default_car());
+    w.tuning.set(11, 1.1); w.step(&crate::game::input::Input::default(), 1.0 / 60.0);
+    assert!((w.vehicle.brake_bias - 0.62 * 1.1).abs() < 1e-4, "{}", w.vehicle.brake_bias);
+    w.tuning.set(11, 1.25); w.step(&crate::game::input::Input::default(), 1.0 / 60.0);
+    assert!(w.vehicle.brake_bias <= 0.8 && w.vehicle.brake_bias > 0.7, "{}", w.vehicle.brake_bias);
 }
 
 mod physics {

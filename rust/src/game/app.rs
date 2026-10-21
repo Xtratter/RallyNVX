@@ -80,7 +80,7 @@ mod game {
             let seed = super::level_seed(seed);
             Game { world: World::with_roads(seed, crate::game::vehicle::VehicleSpec::default_car()), raster, input: Input::default(), acc: 0.0, last: Instant::now(),
                 fps_n: 0, fps_t: Instant::now(), fps: 0.0, seed, frame_ms: 0.0, stats,
-                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::default_car(), garage: false, dust_level: 1, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false, manual: false, clutch: 0.0, reverse: false, assists: 0x7F, tuning: [1.0; crate::game::assists::TUNING_PARTS], gear_cfg: (0, 1) }
+                profile: None, profile_path: None, paused: false, director: crate::audio::Director::new(), car: crate::game::vehicle::VehicleSpec::default_car(), garage: false, dust_level: 1, auto_fallback: false, monitor: { let mut m = crate::game::rendermode::FallbackMonitor::new(); m.warm_up(6.0); m }, fell_back: false, manual: false, clutch: 0.0, reverse: false, assists: 0xFF, tuning: [1.0; crate::game::assists::TUNING_PARTS], gear_cfg: (0, 1) }
         }
 
         pub fn resize(&mut self, w: u32, h: u32) { self.raster.resize(w, h); }

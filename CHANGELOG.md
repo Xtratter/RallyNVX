@@ -2,6 +2,10 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.76.0 - brake bias and launch control
+- Added: the **brake bias** in the car menu (the front share of the brake force, 43/57 to 78/22, 62/38 as built). It decides which axle locks first without ABS: more on the front and the nose washes out, more on the rear and the tail steps out
+- Added: **launch control** (a new aid in the car menu, on for new installs; if the car menu was changed in an older version, switch it on there): at a standstill in first gear with the brake down and the gas floored, the clutch is open and the engine is held at 4800 rpm (the boost builds); let the brake go and the clutch bites at once, the traction control looks after the wheels. It works in the automatic and in the sequential box, not in the H-pattern; below a full pedal, or when the car moves, it does nothing
+- Tests: the axle that locks first follows the bias (ABS off), the bias reaches the vehicle through the tuning and stays between 40 and 80 %, launch control holds the revs, releases with the brake and leaves a normal launch and a light pedal alone
 ## 2.75.0 - differentials
 - Added: a real four-wheel **driveline**: the engine's torque goes through a **centre differential** (a nominal 50/50 split, an **active** lock that closes on the power and at speed and opens for the turn-in and under the brake) to the front and the rear axle, and through a **limited-slip differential** on each axle (a clutch pack with a preload and different power and coast ramps) to its two wheels. A wheel that spins loses torque to the one with grip (one rear wheel on ice with an open differential barely moves the car; with the limited-slip one it pulls away), and the engine feels the wheels through the same chain
 - Added: in the car menu a **Differentials** row with the presets Tarmac / Gravel / Snow, and four parts to tune: the lock of the front, the rear and the centre differential (0 to 200 %) and the centre split (30/70 to 70/30 front/rear)

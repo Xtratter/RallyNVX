@@ -17,6 +17,8 @@ const GRIP_K: f32 = 40.0;
 const CLUTCH_MAX: f32 = 520.0;
 pub const IDLE_RPM: f32 = 950.0;
 pub const LIMITER_RPM: f32 = 7800.0;
+/// The revs launch control holds at a standstill with the brake down and the gas floored.
+const LAUNCH_RPM: f32 = 4800.0;
 /// Seconds a shift takes in the automatic and in the sequential manual box.
 /// Seconds a shift takes in the sequential box (up with the spark cut, down with a blip) and in the H-pattern box (a synchro).
 const SEQ_UP: f32 = 0.08;
@@ -91,8 +93,8 @@ pub struct DriveOut {
 
 /// What the driver and the tuning change in the drivetrain: the engine's torque, the turbo's boost and the final drive as multipliers, and the aids.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct DriveOpts { pub engine: f32, pub turbo: f32, pub gearing: f32, pub flat_shift: bool, pub blip: bool, pub limiter: bool, pub tc: bool }
-impl Default for DriveOpts { fn default() -> DriveOpts { DriveOpts { engine: 1.0, turbo: 1.0, gearing: 1.0, flat_shift: true, blip: true, limiter: true, tc: true } } }
+pub struct DriveOpts { pub engine: f32, pub turbo: f32, pub gearing: f32, pub flat_shift: bool, pub blip: bool, pub limiter: bool, pub tc: bool, pub launch: bool }
+impl Default for DriveOpts { fn default() -> DriveOpts { DriveOpts { engine: 1.0, turbo: 1.0, gearing: 1.0, flat_shift: true, blip: true, limiter: true, tc: true, launch: true } } }
 
 /// What one frame fixes for the engine's substeps: the gear as a ratio and a direction, the clutch's capacity, the throttle the engine gets, the spark cut, the traction control's scale,
 /// whether the engine is being matched to the new gear, and the sums the substeps leave for `finish`.
@@ -191,6 +193,10 @@ impl Drivetrain {
             thr = thr.max((self.idle_i + 0.5 * err).clamp(0.0, 0.4));
         }
         if (auto || seq) && self.shift > 0.0 && !self.shift_up && self.opts.blip { thr = thr.max(0.55); }
+        // launch control (the automatic and the sequential): at a standstill in first with the brake down and the gas floored the clutch is open and the engine is held at the launch revs
+        // (the boost builds); the brake let go, the clutch bites at once and the traction control looks after the wheels
+        let hold = self.opts.launch && (auto || seq) && self.gear == 1 && i.brake && gas > 0.9 && i.speed.abs() < 1.5 && self.running;
+        if hold { thr = thr.min((0.55 + (LAUNCH_RPM - rpm0) / 1500.0).clamp(0.0, 1.0)); }
         let reverse_dir = if self.gear < 0 { -1.0 } else { 1.0 };
         let g = ratio(self.gear) * self.opts.gearing;
         let cut_shift = self.opts.flat_shift && self.shift > 0.0 && self.shift_up && pedal > if seq { 0.2 } else { 0.6 };
@@ -201,7 +207,7 @@ impl Drivetrain {
         let lock = if i.brake { 0.0 } else { CLUTCH_MAX * smooth(2.0, 5.0, i.speed.abs()) };
         let auto_cap = launch.max(lock).min(CLUTCH_MAX);
         let pedal_cap = CLUTCH_MAX * smooth(0.85, 0.30, self.clutch_pedal);
-        let cap = if g == 0.0 || self.shift > 0.0 || i.airborne { 0.0 }
+        let cap = if g == 0.0 || self.shift > 0.0 || i.airborne || hold { 0.0 }
             else if auto { auto_cap }
             else if seq { if self.clutch_pedal > 0.05 { pedal_cap.min(auto_cap) } else { auto_cap } }
             else { pedal_cap };
