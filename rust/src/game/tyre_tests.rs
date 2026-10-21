@@ -32,10 +32,10 @@ use super::*;
 #[test] fn a_tyre_heats_with_work_and_cools_in_the_air() {
     let mut t = Tyre { temp: 20.0, wear: 0.0 };
     for _ in 0..240 * 10 { t.step(1.0 / 240.0, 15000.0, 20.0, 3000.0, 15.0, 1.0); }
-    assert!(t.temp > 40.0, "10 s of hard work: {}", t.temp);
-    let hot = t.temp;
-    for _ in 0..240 * 10 { t.step(1.0 / 240.0, 0.0, 25.0, 3000.0, 15.0, 1.0); }
-    assert!(t.temp < hot - 3.0 && t.temp > 15.0, "10 s of cruising cools it: {hot} -> {}", t.temp);
+    assert!(t.temp > 30.0, "10 s of hard work: {}", t.temp);
+    let mut h = Tyre { temp: 120.0, wear: 0.0 };
+    for _ in 0..240 * 10 { h.step(1.0 / 240.0, 0.0, 25.0, 3000.0, 15.0, 1.0); }
+    assert!(h.temp < 112.0 && h.temp > 15.0, "10 s of cruising cools a hot tyre: 120 -> {}", h.temp);
 }
 #[test] fn a_standing_tyre_only_cools() {
     let mut t = Tyre { temp: 90.0, wear: 0.2 };
@@ -45,7 +45,7 @@ use super::*;
 #[test] fn the_balance_of_a_hard_steady_drive_is_a_hot_but_sane_tyre() {
     let mut t = Tyre { temp: 15.0, wear: 0.0 };
     for _ in 0..240 * 400 { t.step(1.0 / 240.0, 8000.0, 30.0, 3000.0, 15.0, 1.0); }
-    assert!(t.temp > 60.0 && t.temp < 120.0, "{}", t.temp);
+    assert!(t.temp > 70.0 && t.temp < 120.0, "{}", t.temp);
 }
 #[test] fn wear_grows_with_work_and_the_surface_and_stays_below_one() {
     let wear = |work: f32, ab: f32, secs: f32| { let mut t = Tyre { temp: 85.0, wear: 0.0 }; for _ in 0..(secs * 240.0) as usize { t.step(1.0 / 240.0, work, 25.0, 3000.0, 15.0, ab); } t.wear };

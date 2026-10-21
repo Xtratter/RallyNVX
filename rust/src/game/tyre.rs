@@ -4,7 +4,7 @@
 use super::surface::Surface;
 
 /// The heat capacity of the tread and the carcass layer that follows it (J/K) and the work (J) that wears a fresh tyre out on the base surface.
-const HEAT_CAP: f32 = 5000.0;
+const HEAT_CAP: f32 = 8000.0;
 const WEAR_J: f32 = 2.5e7;
 
 /// The best tread temperature and the half width of the window (degrees C) of the wheel set: 0 tarmac, 1 gravel, 2 snow.
@@ -50,8 +50,8 @@ impl Tyre {
         let speed = if v.is_finite() { v.abs().min(120.0) } else { 0.0 };
         let load = if fz.is_finite() { fz.clamp(0.0, 2.0e4) } else { 0.0 };
         let air = if air_c.is_finite() { air_c.clamp(-40.0, 50.0) } else { 15.0 };
-        let heat = work + 0.012 * load * speed;
-        let cool = (12.0 + 3.5 * speed) * (self.temp - air);
+        let heat = 0.8 * work + 0.012 * load * speed;   // most of the friction work goes into the tread, the rest into the ground
+        let cool = (10.0 + 3.0 * speed) * (self.temp - air);
         self.temp = (self.temp + h * (heat - cool) / HEAT_CAP).clamp(-60.0, 250.0);
         let ab = if abrasion.is_finite() { abrasion.clamp(0.0, 10.0) } else { 1.0 };
         self.wear = (self.wear + h * work * ab / WEAR_J).clamp(0.0, 1.0);

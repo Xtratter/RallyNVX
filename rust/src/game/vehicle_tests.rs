@@ -475,3 +475,59 @@ fn slope_spot(t: &Terrain, grade: f32) -> Option<(V3, f32)> {
     let (front_heavy, rear_heavy) = (go(0.85), go(0.35));
     assert!(front_heavy < rear_heavy - 10.0, "with 85 % on the front the front slows more (front - rear spin {front_heavy}), with 35 % the rear does ({rear_heavy})");
 }
+
+/// A steady turn at 25 m/s with the speed held; returns the lateral acceleration (speed times yaw rate) after settling, for a car whose tyres are set up by `prep`.
+fn turn_grip(prep: impl Fn(&mut Vehicle)) -> f32 {
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0., 1.0, 0.), 0.0);
+    for _ in 0..120 { v.step(&t, &[], &Input::default(), DT); }
+    prep(&mut v);
+    v.vel = v.forward() * 25.0;
+    let mut best = 0.0f32;
+    for i in 0..240 {
+        let s = v3(v.vel.x, 0.0, v.vel.z).len(); if s > 1.0 { let k = 25.0 / s; v.vel = v3(v.vel.x * k, v.vel.y, v.vel.z * k); }
+        v.step(&t, &[], &Input { steer: 0.35, ..Default::default() }, DT);
+        if i > 120 { best = best.max(v.vel.len() * v.omega.y.abs()); }
+    }
+    best
+}
+#[test] fn a_hard_slalom_heats_the_tyres_and_wears_them_a_little() {
+    let (mut v, t) = flat_car(1.1);
+    run(&mut v, &t, Input::default(), 1.0);
+    v.vel = v.forward() * 20.0;
+    let start = v.tyres[0].temp;
+    for k in 0..60 * 12 { v.step(&t, &[], &Input { steer: if (k / 60) % 2 == 0 { 1.0 } else { -1.0 }, throttle: 0.4, ..Default::default() }, DT); }
+    // the front tyres do the steering work and heat first; the rear ones follow and wear less
+    assert!(v.tyres[0].temp > start + 8.0 && v.tyres[1].temp > start + 8.0, "heated from {start}: {:?}", v.tyres.map(|y| y.temp));
+    assert!(v.tyres[0].wear > 0.0 && v.tyres.iter().all(|y| y.wear < 0.1), "worn a little: {:?}", v.tyres.map(|y| y.wear));
+    assert!(v.tyres[0].wear > v.tyres[2].wear, "the front wears more: {:?}", v.tyres.map(|y| y.wear));
+}
+#[test] fn a_hot_tyre_cools_on_a_straight_faster_than_standing_and_neither_wears() {
+    let cooled = |moving: bool| {
+        let (mut v, t) = flat_car(1.1);
+        run(&mut v, &t, Input::default(), 1.0);
+        for y in v.tyres.iter_mut() { y.temp = 130.0; }
+        for _ in 0..60 * 10 { if moving { let f = v.forward() * 25.0; v.vel = v3(f.x, v.vel.y, f.z); } v.step(&t, &[], &Input::default(), DT); }
+        (v.tyres[0].temp, v.tyres[0].wear)
+    };
+    let ((still, w0), (rolling, w1)) = (cooled(false), cooled(true));
+    assert!(still < 130.0 && rolling < still - 5.0, "standing {still}, rolling {rolling}");
+    assert!(w0 < 1e-6 && w1 < 1e-3, "a car that rolls straight or stands hardly wears: {w0} {w1}");
+}
+#[test] fn worn_cold_and_wrongly_inflated_tyres_corner_worse() {
+    let fresh = turn_grip(|_| {});
+    let worn = turn_grip(|v| for y in v.tyres.iter_mut() { y.wear = 0.9; });
+    let cold = turn_grip(|v| for y in v.tyres.iter_mut() { y.temp = 10.0; });
+    let flat = turn_grip(|v| v.tyre_bar = 0.8);
+    let hard = turn_grip(|v| v.tyre_bar = 1.25);
+    assert!(worn < fresh * 0.92, "worn {worn} against fresh {fresh}");
+    assert!(cold < fresh * 0.92, "cold {cold} against warm {fresh}");
+    assert!(flat < fresh * 0.99 && hard < fresh * 0.99, "the default pressure is the best: {flat} {fresh} {hard}");
+}
+
+#[test] fn the_throttle_does_not_spin_the_wheels_of_a_car_in_the_air() {
+    let (mut v, t) = flat_car(6.0);                       // dropped from six metres with the gas floored
+    let mut worst = 0.0f32;
+    for _ in 0..30 { v.step(&t, &[], &Input { throttle: 1.0, ..Default::default() }, DT); worst = worst.max(v.w.iter().cloned().fold(0.0, f32::max)); }
+    assert!(v.contacts == 0 && worst < 5.0, "airborne: wheels turn at {worst} rad/s with nothing to push against");
+}
