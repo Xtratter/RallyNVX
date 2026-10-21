@@ -2,10 +2,10 @@ use super::*;
 
 #[test] fn the_mask_round_trips_and_everything_is_on_by_default() {
     let a = Assists::default();
-    assert!(a.als && a.abs && a.tc && a.blip && a.flat_shift && a.limiter && a.bov && a.launch && a.mask() == 0xFF);
-    for m in 0..256 { assert_eq!(Assists::from_mask(m).mask(), m); }
+    assert!(a.als && a.abs && a.tc && a.blip && a.flat_shift && a.limiter && a.bov && a.launch && !a.esc && a.mask() == 0xFF);   // the stability control is the one aid that is off by default
+    for m in 0..512 { assert_eq!(Assists::from_mask(m).mask(), m); }
     let off = Assists::from_mask(0b1111101); assert!(!off.abs && off.als && off.tc);
-    assert_eq!(Assists::from_mask(0xFFFF_FFFF), a, "extra bits are ignored");
+    assert_eq!(Assists::from_mask(0xFFFF_FFFF), Assists::from_mask(0x1FF), "extra bits are ignored");
 }
 #[test] fn tuning_is_clamped_to_its_range_ignores_garbage_and_scales_the_parts() {
     let mut t = Tuning::default(); for i in 0..TUNING_PARTS { assert_eq!(t.get(i), 1.0, "part {i} starts as built"); }
@@ -71,6 +71,29 @@ use super::*;
     assert!(w.vehicle.tyres.iter().all(|y| y.wear == 0.0 && y.temp < 100.0) && w.drivetrain.coolant.temp < 100.0 && w.drivetrain.clutch.temp < 100.0);
     w.step(&crate::game::input::Input::default(), 1.0 / 60.0);
     assert_eq!(w.drivetrain.power_k, 1.0);
+}
+#[test] fn the_fuel_is_mass_the_car_gets_lighter_and_the_service_fills_the_tank() {
+    let mass_at = |l: f32| { let mut w = crate::game::world::World::test_track(VehicleSpec::default_car()); w.drivetrain.fuel = crate::game::fuel::Fuel::with(l); w.step(&crate::game::input::Input::default(), 1.0 / 60.0); (w.vehicle.spec.mass, w.vehicle.spec.inertia.y) };
+    let (full, empty, half) = (mass_at(70.0), mass_at(0.0), mass_at(35.0));
+    assert!((full.0 - empty.0 - 70.0 * crate::game::fuel::KG_PER_L).abs() < 0.5, "{} against {}", full.0, empty.0);
+    assert!((half.0 - VehicleSpec::default_car().mass).abs() < 0.5 && full.1 > empty.1, "the inertia follows the mass");
+    let mut w = crate::game::world::World::test_track(VehicleSpec::default_car());
+    for _ in 0..60 * 20 { w.step(&crate::game::input::Input { throttle: 1.0, ..Default::default() }, 1.0 / 60.0); }
+    assert!(w.drivetrain.fuel.litres < 40.0 - 0.3, "{}", w.drivetrain.fuel.litres);
+    w.service(); assert_eq!(w.drivetrain.fuel.litres, crate::game::fuel::TANK_L);
+}
+#[test] fn the_stability_control_is_off_by_default_and_its_switch_reaches_the_vehicle() {
+    assert!(!Assists::default().esc && Assists::from_mask(0x1FF).esc && Assists::from_mask(0x1FF).mask() == 0x1FF);
+    let mut w = crate::game::world::World::test_track(VehicleSpec::default_car());
+    w.assists.esc = true; w.vehicle.vel = w.vehicle.forward() * 25.0;
+    for _ in 0..30 { w.step(&crate::game::input::Input { steer: 0.0, ..Default::default() }, 1.0 / 60.0); }
+    w.vehicle.omega.y = 2.0;    // a spin
+    w.step(&crate::game::input::Input::default(), 1.0 / 60.0);
+    assert!(w.vehicle.esc_brake.iter().any(|b| *b > 0.0), "{:?}", w.vehicle.esc_brake);
+    let mut o = crate::game::world::World::test_track(VehicleSpec::default_car());
+    o.vehicle.vel = o.vehicle.forward() * 25.0; for _ in 0..30 { o.step(&crate::game::input::Input::default(), 1.0 / 60.0); }
+    o.vehicle.omega.y = 2.0; o.step(&crate::game::input::Input::default(), 1.0 / 60.0);
+    assert!(o.vehicle.esc_brake.iter().all(|b| *b == 0.0), "off: no brake");
 }
 mod physics {
     use super::*;
@@ -157,5 +180,21 @@ mod physics {
         let sum: f32 = w.vehicle.drive_torque.unwrap().iter().sum();
         let mean = w.drivetrain.last.wheel_torque;
         assert!((sum - mean).abs() < 0.2 * mean.abs().max(100.0), "the last substep {sum} against the frame's mean {mean}");
+    }
+    #[test] fn the_stability_control_calms_a_slide_faster_on_loose_ground_and_on_tarmac() {
+        use crate::game::surface::Surface::{Asphalt, Gravel};
+        // a kick of the yaw at 25 m/s: the seconds until the car points where it goes again (the yaw rate under 0.15 and the side slip under 1 m/s), with the control off and on
+        let calm = |esc: bool, surface| {
+            let mut w = track(); w.vehicle.force_surface = Some(surface); w.assists.esc = esc;
+            for _ in 0..60 * 6 { w.step(&Input { throttle: 0.6, ..Default::default() }, 1.0 / 60.0); }
+            w.vehicle.omega.y = 1.6;
+            let (mut t, mut side) = (0.0f32, 0.0f32);
+            for _ in 0..60 * 4 { w.step(&Input { throttle: 0.6, ..Default::default() }, 1.0 / 60.0); let s = w.vehicle.vel.dot(w.vehicle.right()).abs(); side = side.max(s); if w.vehicle.omega.y.abs() > 0.15 || s > 1.0 { t += 1.0 / 60.0; } }
+            (t, side)
+        };
+        for s in [Gravel, Asphalt] {
+            let (off, on) = (calm(false, s), calm(true, s));
+            assert!(on.0 < off.0 * 0.8 && on.1 < off.1, "{s:?}: calm in {:.2} s with the control, {:.2} s without; side slip {:.1} against {:.1} m/s", on.0, off.0, on.1, off.1);
+        }
     }
 }

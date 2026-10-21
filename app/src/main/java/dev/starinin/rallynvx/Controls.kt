@@ -62,7 +62,7 @@ object Controls {
     fun weather(c: Context): Int = p(c).getInt("weather", 0).coerceIn(0, WeatherMode.COUNT - 1)
     fun setWeather(c: Context, v: Int) = p(c).edit().putInt("weather", v.coerceIn(0, WeatherMode.COUNT - 1)).apply()
     /** The driver aids as bits (all on by default) and the tuning of each part as a multiplier (1 = as built). */
-    fun assists(c: Context): Int = p(c).getInt("assists", CarMath.ALL_AIDS) and CarMath.ALL_AIDS
+    fun assists(c: Context): Int = p(c).getInt("assists", CarMath.DEFAULT_AIDS) and CarMath.ALL_AIDS
     fun setAssists(c: Context, m: Int) = p(c).edit().putInt("assists", m and CarMath.ALL_AIDS).apply()
     fun tuning(c: Context, i: Int): Float = CarMath.clamp(i, p(c).getFloat("tuning_$i", 1f))
     fun setTuning(c: Context, i: Int, v: Float) = p(c).edit().putFloat("tuning_$i", CarMath.clamp(i, v)).apply()

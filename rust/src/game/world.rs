@@ -298,6 +298,8 @@ impl World {
         {
             if self.tuned_dirty || self.tuned.0 != self.tuning { self.tuned = (self.tuning, self.tuning.apply(&self.car_spec)); self.tuned_dirty = false; }
             self.vehicle.spec = self.tuned.1;
+            // the fuel is mass: the car is lighter as the tank empties (its inertia follows)
+            { let m0 = self.tuned.1.mass; let k = ((m0 + self.drivetrain.fuel.mass_delta()) / m0.max(1.0)).clamp(0.5, 1.5); self.vehicle.spec.mass = m0 * k; self.vehicle.spec.inertia = self.tuned.1.inertia * k; }
             let (a, t) = (self.assists, self.tuning);
             self.drivetrain.opts = super::drivetrain::DriveOpts { engine: t.engine, turbo: t.turbo, gearing: t.gearing, flat_shift: a.flat_shift, blip: a.blip, limiter: a.limiter, tc: a.tc, launch: a.launch };
             self.vehicle.abs_on = a.abs; self.vehicle.tc_on = a.tc;
@@ -318,12 +320,18 @@ impl World {
             if self.autopilot.is_some() { self.drivetrain.reverse_sel = false; }
             if want != self.drivetrain.mode { self.drivetrain.set_mode(want); }
             let fwd = self.vehicle.vel.dot(self.vehicle.forward());
+            // the stability control: single wheels braked against a slide, the engine cut (not with the handbrake, not backwards)
+            let e = if self.assists.esc && !inp.handbrake && fwd > 0.0 {
+                let sp = self.vehicle.spec;
+                super::esc::control(self.vehicle.omega.y, self.vehicle.steer, fwd, (sp.wheels[0].z - sp.wheels[2].z).abs(), sp.mu, sp.brake_force * sp.radius * 0.25)
+            } else { super::esc::Esc::default() };
+            self.vehicle.esc_brake = e.brake;
             let tc_slip = if self.drivetrain.gear < 0 { -self.vehicle.slip.iter().cloned().fold(0.0, f32::min) } else { self.vehicle.slip.iter().cloned().fold(0.0, f32::max) };
             let dl = super::driveline::Driveline::peugeot().tuned(&self.tuning.diffs());
             let ctl = super::driveline::Ctl { throttle: inp.throttle.abs(), brake: inp.brake, steer: inp.steer, speed: fwd.abs() };
             let dtr = &mut self.drivetrain;
             dtr.begin(dt, &DriveIn { throttle: inp.throttle, speed: fwd, wheel_r: self.vehicle.spec.radius, airborne: self.vehicle.contacts == 0, brake: inp.brake,
-                lat_g: self.vehicle.omega.dot(self.vehicle.up()) * fwd / 9.81, slope: self.vehicle.forward().y, tc_slip });
+                lat_g: self.vehicle.omega.dot(self.vehicle.up()) * fwd / 9.81, slope: self.vehicle.forward().y, tc_slip, esc_cut: e.cut });
             // the reverse gear of the manual: the pedal asks for backwards (the lamps and the camera follow it)
             if dtr.gear < 0 && (want == Mode::Manual || dtr.reverse_sel) { inp.throttle = -inp.throttle.abs(); } else if want == Mode::Manual { inp.throttle = inp.throttle.abs(); }
             let iw = 4.0 * super::wheel::INERTIA;
@@ -372,13 +380,14 @@ impl World {
     /// Unit vector towards the sun.
     pub fn sun_dir(&self) -> V3 { self.daylight().sun }
 
-    /// A service: the damage repaired, new tyres at their best temperature, the clutch and the coolant cooled down.
+    /// A service: the damage repaired, new tyres at their best temperature, the clutch and the coolant cooled down, the tank filled.
     pub fn service(&mut self) {
         self.vehicle.damage.repair();
         let set = self.vehicle.spec.wheel_set;
         self.vehicle.tyres = [super::tyre::Tyre::warm(set); 4];
         self.drivetrain.clutch = super::heat::Clutch::new(self.vehicle.air_c);
         self.drivetrain.coolant = super::heat::Coolant::new(85.0);
+        self.drivetrain.fuel = super::fuel::Fuel::with(super::fuel::TANK_L);
     }
 }
 

@@ -103,7 +103,7 @@ impl Car {
     for k in 0..6000 {
         seed = seed.wrapping_mul(1664525).wrapping_add(1013904223); let r = (seed >> 8) as f32 / 16_777_216.0;
         if k % 97 == 0 { a.shift(if r > 0.5 { 1 } else { -1 }); a.set_clutch(r); if k % 300 == 0 { a.set_mode(if r > 0.5 { Mode::Auto } else { Mode::Manual }); } }
-        let o = a.step(1.0 / 60.0, &DriveIn { throttle: r * 2.0 - 1.0, speed: (r - 0.3) * 80.0, wheel_r: R, airborne: k % 500 < 20, brake: k % 7 == 0, lat_g: r - 0.5, slope: r - 0.5, tc_slip: r * 3.0 });
+        let o = a.step(1.0 / 60.0, &DriveIn { throttle: r * 2.0 - 1.0, speed: (r - 0.3) * 80.0, wheel_r: R, airborne: k % 500 < 20, brake: k % 7 == 0, lat_g: r - 0.5, slope: r - 0.5, tc_slip: r * 3.0, esc_cut: r });
         assert!(o.force.is_finite() && o.rpm.is_finite() && o.rpm >= 0.0 && o.rpm < 12000.0 && o.torque.is_finite(), "step {k}: {o:?}");
     }
 }
@@ -346,4 +346,15 @@ fn spin_up(d: &mut Drivetrain, i_wheels: f32, tyre_of: impl Fn(f32) -> f32, secs
 #[test] fn the_damage_of_the_engine_takes_power_through_the_power_factor() {
     let torque = |k: f32| { let mut e = Drivetrain::new(); e.gear = 3; e.power_k = k; let mut o = e.last; for _ in 0..60 { o = e.step(1.0 / 60.0, &DriveIn { throttle: 1.0, speed: 15.0, wheel_r: R, ..Default::default() }); } o.torque };
     assert!((torque(0.6) / torque(1.0) - 0.6).abs() < 0.05, "{} against {}", torque(0.6), torque(1.0));
+}
+
+#[test] fn the_engine_burns_fuel_by_its_work_and_an_empty_tank_stops_it_for_good() {
+    let burnt = |gas: f32| { let mut c = Car::new(); let l0 = c.dt.fuel.litres; c.run(gas, 20.0); l0 - c.dt.fuel.litres };
+    let (idle, hard) = (burnt(0.0), burnt(1.0));
+    assert!(idle > 0.0 && idle < 0.05 && hard > idle * 8.0, "idle {idle} l, 20 s of full throttle {hard} l");
+    let mut c = Car::new(); c.dt.fuel = crate::game::fuel::Fuel::with(0.0); c.run(0.5, 6.0);
+    assert!(c.dt.last.stalled && c.dt.rpm() < 300.0, "an empty tank: {} rpm", c.dt.rpm());
+    c.run(0.0, 6.0); assert!(c.dt.last.stalled, "it does not restart without fuel");
+    c.dt.fuel = crate::game::fuel::Fuel::with(10.0); c.run(0.0, 6.0);
+    assert!(!c.dt.last.stalled && c.dt.rpm() > 600.0, "with fuel it starts again: {}", c.dt.rpm());
 }

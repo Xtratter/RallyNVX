@@ -20,14 +20,16 @@ pub struct Assists {
     pub bov: bool,
     /// Launch control: at a standstill with the brake down and the gas floored the engine is held at the launch revs; the brake let go, the car launches.
     pub launch: bool,
+    /// The electronic stability control: it brakes single wheels against a slide and cuts the engine (off by default: a rally car slides on purpose).
+    pub esc: bool,
 }
 
 impl Default for Assists { fn default() -> Assists { Assists::from_mask(0xFF) } }
 
 impl Assists {
-    /// The bits, in the order of the fields: als, abs, tc, blip, flat_shift, limiter, bov, launch.
-    pub fn from_mask(m: u32) -> Assists { let b = |k: u32| m & (1 << k) != 0; Assists { als: b(0), abs: b(1), tc: b(2), blip: b(3), flat_shift: b(4), limiter: b(5), bov: b(6), launch: b(7) } }
-    pub fn mask(&self) -> u32 { [self.als, self.abs, self.tc, self.blip, self.flat_shift, self.limiter, self.bov, self.launch].iter().enumerate().map(|(k, &v)| (v as u32) << k).sum() }
+    /// The bits, in the order of the fields: als, abs, tc, blip, flat_shift, limiter, bov, launch, esc.
+    pub fn from_mask(m: u32) -> Assists { let b = |k: u32| m & (1 << k) != 0; Assists { als: b(0), abs: b(1), tc: b(2), blip: b(3), flat_shift: b(4), limiter: b(5), bov: b(6), launch: b(7), esc: b(8) } }
+    pub fn mask(&self) -> u32 { [self.als, self.abs, self.tc, self.blip, self.flat_shift, self.limiter, self.bov, self.launch, self.esc].iter().enumerate().map(|(k, &v)| (v as u32) << k).sum() }
 }
 
 /// The power of every part of the car as a multiplier (1 = as the garage built it).

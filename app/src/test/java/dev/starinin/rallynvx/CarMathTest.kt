@@ -5,9 +5,9 @@ import org.junit.Test
 
 class CarMathTest {
     @Test fun aidsToggleOneBitEach() {
-        var m = CarMath.ALL_AIDS
-        for (b in 0 until CarMath.AIDS) { assertTrue(CarMath.aidOn(m, b)); m = CarMath.toggle(m, b); assertFalse(CarMath.aidOn(m, b)); m = CarMath.toggle(m, b); assertEquals(CarMath.ALL_AIDS, m) }
-        assertEquals(0x7F, CarMath.toggle(0x7F, 9) and 0x7F)
+        var m = CarMath.DEFAULT_AIDS
+        for (b in 0 until CarMath.AIDS) { val was = CarMath.aidOn(m, b); m = CarMath.toggle(m, b); assertEquals(!was, CarMath.aidOn(m, b)); m = CarMath.toggle(m, b); assertEquals(CarMath.DEFAULT_AIDS, m) }
+        assertEquals(0x7F, CarMath.toggle(0x7F, 12) and 0x7F)
     }
     @Test fun stepsStayInsideTheRangeAndOnTenths() {
         assertEquals(1.1f, CarMath.step(0, 1f, 1), 1e-6f); assertEquals(0.9f, CarMath.step(0, 1f, -1), 1e-6f)
@@ -29,7 +29,8 @@ class CarMathTest {
         assertEquals("Gravel", CarMath.presetName(1, true)); assertEquals("Снег", CarMath.presetName(2, false)); assertEquals("Tarmac", CarMath.presetName(99, true))
     }
     @Test fun launchControlAndTheBrakeBias() {
-        assertEquals(8, CarMath.AIDS); assertEquals(0xFF, CarMath.ALL_AIDS)
+        assertEquals(9, CarMath.AIDS); assertEquals(0x1FF, CarMath.ALL_AIDS); assertEquals(0xFF, CarMath.DEFAULT_AIDS); assertFalse(CarMath.aidOn(CarMath.DEFAULT_AIDS, 8))
+        assertEquals("Stability control (ESC)", CarMath.aidName(8, true)); assertEquals("Стабилизация (ESC)", CarMath.aidName(8, false))
         assertEquals("Launch control", CarMath.aidName(7, true)); assertEquals("Launch control (старт)", CarMath.aidName(7, false))
         assertEquals(19, CarMath.PARTS)
         assertEquals("Brake bias (front/rear)", CarMath.partName(11, true)); assertEquals("Баланс тормозов (перед/зад)", CarMath.partName(11, false))
@@ -39,8 +40,8 @@ class CarMathTest {
     @Test fun tyrePressurePartAndTheTyreLine() {
         assertEquals("Tyre pressure (cold)", CarMath.partName(12, true)); assertEquals("Давление в шинах (холодных)", CarMath.partName(12, false))
         assertEquals(0.8f, CarMath.lo(12), 1e-6f); assertEquals(1.25f, CarMath.hi(12), 1e-6f); assertEquals("110 %", CarMath.valueText(12, 1.1f))
-        assertEquals("FL 85°C 3%  FR 90°C 50%\nRL 70°C 0%  RR 60°C 100%", CarMath.tyreLine(floatArrayOf(85.4f, 90f, 70f, 60f), floatArrayOf(0.03f, 0.5f, 0f, 1.2f), true))
-        assertEquals("ПЛ -5°C 0%  ПП 0°C 0%\nЗЛ 0°C 0%  ЗП 0°C 0%", CarMath.tyreLine(floatArrayOf(-4.6f, Float.NaN, 0f, 0f), floatArrayOf(0f, Float.NaN, -1f, 0f), false))
+        assertEquals("FR 85°C 3%  FL 90°C 50%\nRR 70°C 0%  RL 60°C 100%", CarMath.tyreLine(floatArrayOf(85.4f, 90f, 70f, 60f), floatArrayOf(0.03f, 0.5f, 0f, 1.2f), true))
+        assertEquals("ПП -5°C 0%  ПЛ 0°C 0%\nЗП 0°C 0%  ЗЛ 0°C 0%", CarMath.tyreLine(floatArrayOf(-4.6f, Float.NaN, 0f, 0f), floatArrayOf(0f, Float.NaN, -1f, 0f), false))
     }
     @Test fun suspensionPartsHaveNamesRangesAndDegrees() {
         assertEquals("Front anti-roll bar", CarMath.partName(13, true)); assertEquals("Задний стабилизатор", CarMath.partName(14, false))
@@ -61,5 +62,9 @@ class CarMathTest {
         assertEquals("Damage: body 0%  engine 25%  springs 10 20 30 100%", CarMath.damageLine(0f, 0.25f, floatArrayOf(0.1f, 0.2f, 0.3f, 1.7f), true))
         assertEquals("Повреждения: кузов 50%  двигатель 0%  пружины 0 0 0 0%", CarMath.damageLine(0.5f, Float.NaN, floatArrayOf(0f, 0f, 0f, -1f), false))
         assertTrue(CarMath.coolantHot(112f) && !CarMath.coolantHot(100f) && CarMath.clutchHot(300f) && !CarMath.clutchHot(120f))
+    }
+    @Test fun fuelLine() {
+        assertEquals("Fuel 42.4 l (61%)", CarMath.fuelLine(42.4f, true)); assertEquals("Топливо 0.0 л (0%)", CarMath.fuelLine(Float.NaN, false)); assertEquals("Fuel 70.0 l (100%)", CarMath.fuelLine(500f, true))
+        assertTrue(CarMath.fuelLow(3f) && !CarMath.fuelLow(20f))
     }
 }

@@ -16,7 +16,7 @@ pub fn step_budget(acc: &mut f32, dt: f32, max_steps: usize) -> usize {
     n
 }
 
-pub const STAT_LEN: usize = 104;
+pub const STAT_LEN: usize = 108;
 
 fn surface_code(s: crate::game::surface::Surface) -> u8 {
     use crate::game::surface::Surface::*;
@@ -52,6 +52,8 @@ pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, fps: f32, fr
     // the heat and the damage: `[96]` the coolant's and `[97]` the clutch's temperature (degrees C), `[98]` the body's and `[99]` the engine's damage, `[100..103]` the four springs' (0 new, 1 wrecked)
     out[96] = w.drivetrain.coolant.temp; out[97] = w.drivetrain.clutch.temp; out[98] = w.vehicle.damage.body; out[99] = w.vehicle.damage.engine;
     for k in 0..4 { out[100 + k] = w.vehicle.damage.susp[k]; }
+    // the fuel and the stability control: `[104]` the litres in the tank, `[105]` 1 while the stability control brakes a wheel
+    out[104] = w.drivetrain.fuel.litres; out[105] = w.vehicle.esc_brake.iter().any(|b| *b > 0.0) as u8 as f32;
     out[25] = w.vehicle.speed() * 3.6;   // signed: negative while rolling backwards (the brake pedal reverses below 3 km/h)
 }
 

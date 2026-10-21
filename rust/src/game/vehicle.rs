@@ -92,6 +92,8 @@ pub struct Vehicle {
     pub chassis: Chassis,
     /// What the crashes and the hard landings have done to the body, the springs and the engine (see `damage`).
     pub damage: Damage,
+    /// The brake torque the stability control adds to each wheel (N m).
+    pub esc_brake: [f32; 4],
     /// The surface under the first wheel in contact (the HUD shows it); tests can force one for every wheel.
     pub surface: Surface, pub force_surface: Option<Surface>,
     pub wheels: [WheelInfo; 4],
@@ -102,7 +104,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_torque: None, w: [0.0; 4], slip: [0.0; 4], spin_ready: false, last_vel: V3::ZERO, tyre_sum: 0.0, abs_on: true, tc_on: true, brake_bias: wheel::BRAKE_BIAS, tyres: [Tyre::warm(spec.wheel_set); 4], tyre_bar: 1.0, air_c: 15.0, chassis: Chassis::default(), damage: Damage::default(), surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_torque: None, w: [0.0; 4], slip: [0.0; 4], spin_ready: false, last_vel: V3::ZERO, tyre_sum: 0.0, abs_on: true, tc_on: true, brake_bias: wheel::BRAKE_BIAS, tyres: [Tyre::warm(spec.wheel_set); 4], tyre_bar: 1.0, air_c: 15.0, chassis: Chassis::default(), damage: Damage::default(), esc_brake: [0.0; 4], surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -194,7 +196,7 @@ impl Vehicle {
             let kb = if inp.brake_amt > 0.0 { inp.brake_amt.clamp(0.05, 1.0) } else { 1.0 };
             let pedal = if inp.brake { kb } else { 0.0 };
             let part = if front { self.brake_bias } else { 1.0 - self.brake_bias };
-            let mut brake_t = s.brake_force * s.radius * 0.5 * part * pedal;
+            let mut brake_t = s.brake_force * s.radius * 0.5 * part * pedal + self.esc_brake[w];
             if inp.handbrake && !front { brake_t = brake_t.max(s.brake_force * s.radius * 0.5); }
             // the discs cool all the time, faster the faster the car goes
             self.brake_heat[w] *= (-h * (1.0 + self.vel.len() / 15.0) / 6.0).exp();
