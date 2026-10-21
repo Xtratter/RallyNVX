@@ -1,20 +1,29 @@
 {
-  "lat_factor": 0.9,
-  "brake_factor": 0.8,
+  "lat_factor": 1.3,
+  "brake_factor": 0.9,
   "look_base": 6.0,
   "look_gain": 0.45,
-  "offset_max": 0.55,
+  "offset_max": 0.8,
   "crest_speed": 30.0,
   "field_speed": 20.0,
   "stuck_time": 4.0,
   "laps": 2,
   "speed_cap": 1.0,
-  "edge_margin": 1.4,
+  "edge_margin": 1.3,
   "slide": 0,
   "flick_ratio": 1.15,
   "flick_time": 0.3,
   "styles": {
-    "calm":       { "lat_factor": 0.65, "brake_factor": 0.6 },
-    "aggressive": { "lat_factor": 1.4, "brake_factor": 1.0, "slide": 1 }
+    "calm": {
+      "lat_factor": 0.95,
+      "brake_factor": 0.7
+    },
+    "aggressive": {
+      "lat_factor": 1.5,
+      "brake_factor": 1.0,
+      "slide": 0.5,
+      "offset_max": 0.85,
+      "edge_margin": 1.1
+    }
   }
 }
