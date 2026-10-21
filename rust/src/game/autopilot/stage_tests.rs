@@ -197,3 +197,20 @@ fn diagnose(seed: u64, style: i32) -> String {
         assert!(attack.damage < 0.15, "seed {seed}: damage {:.0}%", attack.damage * 100.0);
     }
 }
+
+/// Which gears the automatic uses when the autopilot drives, and at what revs (diagnosis).
+#[test] #[ignore] fn diagnose_the_gears() {
+    let st = env_style();
+    let mut w = World::with_roads(2, car());
+    if let Ok(p) = std::env::var("AP_PROFILE") { w.drivetrain.profile = crate::game::shiftlogic::Profile::from_i32(p.parse().unwrap_or(1)); }
+    if let Ok(m) = std::env::var("AP_ASSISTS") { w.assists = crate::game::assists::Assists::from_mask(m.parse().unwrap_or(255)); }
+    assert!(w.place_on_road(2) && w.set_autopilot_style(st));
+    let (mut t, mut gears, mut rpm_sum, mut n) = (0.0f32, [0.0f32; 8], 0.0f32, 0.0f32);
+    let mut rows: Vec<String> = Vec::new();
+    while w.autopilot_on() && t < 200.0 {
+        w.step(&Input::default(), 1.0 / 60.0); t += 1.0 / 60.0;
+        let g = w.drivetrain.gear.clamp(-1, 6); gears[(g + 1) as usize] += 1.0 / 60.0; rpm_sum += w.drivetrain.rpm(); n += 1.0;
+        if ((t * 60.0) as u32) % 600 == 0 { rows.push(format!("t {:.0} v {:.1} m/s gear {} rpm {:.0} mode {:?}", t, w.vehicle.speed(), w.drivetrain.gear, w.drivetrain.rpm(), w.drivetrain.mode)); }
+    }
+    println!("seconds per gear (R,N,1..6): {:?}; mean rpm {:.0}\n{}", gears.iter().map(|x| x.round()).collect::<Vec<_>>(), rpm_sum / n.max(1.0), rows.join("\n"));
+}

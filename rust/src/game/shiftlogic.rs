@@ -90,9 +90,10 @@ pub fn choose(p: Profile, m: &Memory, s: &Situation) -> Choice {
         let target = (1..g).filter(|&h| at(h) <= t.over_rev - 600.0).min_by(|&a, &b| (at(a) - t.brake_rpm).abs().partial_cmp(&(at(b) - t.brake_rpm).abs()).unwrap_or(std::cmp::Ordering::Equal));
         if let Some(h) = target { return Choice::Down(h); }
     }
-    // up: only with the pedal down, not braking, not cornering, not coasting downhill, and only if the next gear still has the revs to pull
+    // up: only with the pedal down, not braking, not cornering, not coasting downhill, and only if the next gear still has the revs to pull (above the floor, but never above 62 % of the
+    // up-shift revs: a box that wants 5700 revs in the next gear could never leave first gear at the limiter, where the next gear gives 5000)
     let downhill_coast = slope < -0.04 && s.gas < 0.3;
-    if g < 6 && !braking && !lifted && lat_g.abs() <= 0.35 && !downhill_coast && s.rpm > up_at && at(g + 1) > floor + 500.0 && m.since_shift >= t.dwell_up { return Choice::Up(g + 1); }
+    if g < 6 && !braking && !lifted && lat_g.abs() <= 0.35 && !downhill_coast && s.rpm > up_at && at(g + 1) > (floor + 500.0).min(0.62 * up_at) && m.since_shift >= t.dwell_up { return Choice::Up(g + 1); }
     // down: under the floor (lugging ignores the pause)
     if g > 1 && s.rpm < floor && at(g - 1) < t.over_rev && (m.since_shift >= t.dwell_down || s.rpm < 1300.0) { return Choice::Down(g - 1); }
     Choice::Hold
