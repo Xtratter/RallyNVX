@@ -450,7 +450,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                 }
             }
             wasTraining = busy
-            if (busy) trainInfo.text = t("Training: the best result so far is ${st[2].toInt()} (was ${st[3].toInt()})", "Обучение: лучший результат ${st[2].toInt()} (было ${st[3].toInt()})")
+            if (busy) trainInfo.text = if (trainingMode == 3) t("The net is learning from the drives of the chosen style: ${(st[1] * 100).toInt()} %", "Нейросеть учится на заездах выбранного стиля: ${(st[1] * 100).toInt()} %") else t("Training: the best result so far is ${st[2].toInt()} (was ${st[3].toInt()})", "Обучение: лучший результат ${st[2].toInt()} (было ${st[3].toInt()})")
             trainBtns.forEach { (m, b) -> b.text = trainText(m) }
         }
         for (m in intArrayOf(1, 2, 3)) {
