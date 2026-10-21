@@ -39,8 +39,8 @@ Tests: the 2.72.0 set plus: pedal-speed memory, multi-gear kick-down choice, cor
 
 - Each wheel has a state `w` (rad/s) and an inertia `I_w` (wheel + tyre + disc + half-shaft share, ~1.3 kg m2 for 0.326 m at 7.5 kg wheel and tyre, tunable in `rust/wheels.json`).
 - Longitudinal force from the slip ratio `k = (w R - vf) / max(|vf|, v_min)` through a curve `Fx = Fz mu g(k)` with a peak at `k_peak` (0.06 tarmac, 0.10 to 0.15 loose surfaces) and a fall to 0.8 to 0.85 of the peak when sliding (per surface in `rust/surfaces.json`). The lateral force keeps today's model; the two are combined by the friction circle that `step_with` already applies, so the cornering feel is kept and the traction is new.
-- Integration: the wheel's equation is stiff at low speed (the slip stiffness is far above `I / dt`), so each frame integrates it **semi-implicitly** (one linearised implicit step per substep, the slope of the curve clamped), with 4 substeps; at |v| < 0.5 m/s with the brake or handbrake the wheel locks (`w = 0`) as a constraint, which also keeps the parked car still on a slope (today's handbrake behaviour).
-- Brake: a torque on the wheel, `brake_force x R / 4` split by the **brake bias** (front/rear, tunable, default 0.62 front), the handbrake on the rear; ABS releases a wheel's torque to hold `k` near -0.12; TC cuts the engine torque or brakes a spinning wheel to hold `k` near +0.10 (these replace today's "reduce the grip when beyond the peak" shortcut; with the aids off the wheel really locks or spins).
+- Integration: the wheel's equation is stiff at low speed (the slip stiffness is far above `I / dt`), so each substep (4 per frame, as the vehicle already has) integrates it **semi-implicitly** (one linearised implicit step, the slope of the curve kept positive). The engine and the clutch are solved **together with the wheels' inertia in the same substeps** by an implicit update of their relative speed (an explicit once-a-frame coupling would make the clutch chatter as soon as a wheel spins); at |v| < 0.5 m/s with the brake or handbrake the wheel locks (`w = 0`) as a constraint, which also keeps the parked car still on a slope (today's handbrake behaviour).
+- Brake: a torque on the wheel, `brake_force x R / 4` split by the **brake bias** (front/rear; default 0.55 front, closer to equal than first thought so that the stopping distance stays within the regression anchors; the setting comes in 2.76.0), the handbrake on the rear; ABS releases a wheel's torque to hold `k` near -0.12; TC cuts the engine torque or brakes a spinning wheel to hold `k` near +0.10 (these replace today's "reduce the grip when beyond the peak" shortcut; with the aids off the wheel really locks or spins).
 - `WheelInfo` gains `w`, `slip` (for the dust, the tyre noise, the squeal and the tracks, which today guess from the car's lateral speed).
 - Compatibility: the legacy path (`drive_force: None`, `engine_force / 4`) stays for any car without a drivetrain.
 - Tests: a free wheel under a driving torque reaches the slip peak and settles; a locked wheel slides at the reduced force; the braking distance and the 0 to 80 km/h time stay within 5 % of 2.72.0 on tarmac with the aids on (this is the regression anchor), and get worse by the measured margins with the aids off; energy is conserved through the clutch/wheel coupling; no NaN under abuse.
@@ -79,8 +79,8 @@ Out of scope for now: a real tyre brush/Pacejka model; the hybrid systems of the
 - Risk 4 (low): the second phone's loading hang is unrelated but must stay diagnosable; no changes to loading.
 - Unverified by the author on a device: the *feel*; the user judges it. Every version states what the tests cover.
 
-## 5. Decisions needed from the user before the plan
+## 5. Decisions (user, 2026-10-21)
 
-1. Default box of the Peugeot: sequential (recommended) or H-pattern.
-2. Whether the handbrake keeps a "slide assist" (today it locks the rear tyres to a lower grip) or becomes a plain rear brake in stage 2/4 (recommended: plain brake, because the wheels now really lock).
-3. Order after stage 3: tyres (2.77.0) before the chassis setup (2.78.0), as listed, or the other way round.
+1. The Peugeot's default box is the **sequential**, as on the real car **[decided]**.
+2. The handbrake works **as on the real car** **[decided]**: a plain rear brake that locks the rear wheels (no grip "assist"); the slide comes from the physics of the locked wheels.
+3. After stage 3 the **tyres** come first (2.77.0), then the chassis setup (2.78.0) **[decided]**.
