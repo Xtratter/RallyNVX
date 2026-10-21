@@ -45,7 +45,6 @@ mod physics {
             ((w.vehicle.pos - p0).len(), v0)
         };
         let ((a, va), (b, vb)) = (go(true), go(false));
-        eprintln!("ABSNUM on {a} m from {va} off {b} m from {vb}");
         assert!(va > 20.0 && (va - vb).abs() < 1.0, "the same speed to brake from: {va} {vb}");
         assert!(b > a * 1.04, "ABS on {a} m, off {b} m");
     }
@@ -58,7 +57,6 @@ mod physics {
     }
     #[test] fn traction_control_limits_the_wheel_spin_of_a_launch_on_gravel() {
         let (on, off) = (peak_spin(true, crate::game::surface::Surface::Gravel, 3.0), peak_spin(false, crate::game::surface::Surface::Gravel, 3.0));
-        eprintln!("TCNUM on {on} off {off}");
         assert!(off > 1.5 && on < off * 0.8, "gravel launch: the wheels spin to {on} of the peak with TC, {off} without");
     }
     #[test] fn the_tuning_changes_how_the_car_goes_and_stops() {
