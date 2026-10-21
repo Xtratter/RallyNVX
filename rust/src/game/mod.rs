@@ -20,6 +20,7 @@ pub mod tyre;
 pub mod diff;
 pub mod driveline;
 #[cfg(test)] mod anchors_tests;
+#[cfg(test)] mod bench_tests;
 pub mod aero;
 pub mod assists;
 pub mod autopilot;

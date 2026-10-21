@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 2.77.1 - a cheaper frame
+- Measured (on the phone, the GPU profile `gpuprof=1`, a parked car, 1080 x 2400): the main pass took 22.5 ms (the sky and the post-processing floor 3.9 ms, the terrain 10.8 ms, the models 5.5 ms, the instances, the roads, the water and the glass under 0.5 ms); the game's logic is almost free (a physics step 0.04 ms, the sound director's ray tracing 0.19 ms, the sound synthesis 17 % of one core on its own thread)
+- Changed: the terrain tiles are drawn **nearest first** (they came in a hash-map order, so the far tiles were shaded and then painted over by the near ones): the terrain costs 2.2 ms less
+- Changed: the **sky is drawn last** and only where nothing opaque has covered it (it used to fill the whole screen first): 4.3 ms less. Together the main pass takes 15.9 ms instead of 22.5 (a third less); clear, rain, fog and city scenes take 14 to 20 ms, a night with the headlights 21 ms
+- Added: cost benchmarks in the tests (`cargo test --release --lib bench_ -- --ignored --nocapture`: the physics step, the sound director, the sound synthesis) and the recipe for the GPU profile and the draw-group mask in `docs/game.md`
+- Tried and left out: fetching one ground texture instead of four for the wide scale of the terrain (no measurable gain)
 ## 2.77.0 - tyres that heat, cool and wear
 - Added: every tyre has a **temperature**, a **wear** and a **pressure**, and they decide its grip. The tread heats with the friction work (the force times the slip speed, along and across) and a little with rolling, cools in the air faster the faster the car goes (the air's temperature follows the sun, the clouds and the rain) and grips best inside a thermal window of its wheel set (tarmac tyres about 85 degrees C, gravel 55, snow 10). Outside the window the grip falls (a cold tarmac tyre has about 70 %, an overheated one less), a worn tyre grips up to 40 % less, and a wrong pressure costs grip too: the gas inside heats with the tyre, so the hot pressure is what counts
 - Added: the **tyre pressure** (cold) in the car menu (80 to 125 % of the default) and a live line of the temperature and the wear of the four tyres at the top of the car panel
