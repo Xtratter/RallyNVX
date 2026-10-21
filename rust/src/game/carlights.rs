@@ -16,14 +16,15 @@ pub struct Lamps { pub head: [V3; 2], pub pos: [V3; 2], pub tail: [V3; 2], pub r
 static DEBUG: AtomicU8 = AtomicU8::new(u8::MAX);
 pub fn set_debug(mode: Option<u8>) { DEBUG.store(mode.filter(|m| *m <= 2).unwrap_or(u8::MAX), Ordering::Relaxed); }
 
-pub fn state(v: &Vehicle, night: f32) -> CarLights { state_with(DEBUG.load(Ordering::Relaxed), v, night) }
+/// The reverse lamps burn with the reverse gear engaged (`gear` < 0), not while the car merely rolls backwards in drive or neutral.
+pub fn state(v: &Vehicle, night: f32, gear: i32) -> CarLights { state_with(DEBUG.load(Ordering::Relaxed), v, night, gear) }
 
-pub fn state_with(mode: u8, v: &Vehicle, night: f32) -> CarLights {
+pub fn state_with(mode: u8, v: &Vehicle, night: f32, gear: i32) -> CarLights {
     match mode {
         0 => CarLights { head: true, brake: false, reverse: false },
         1 => CarLights { head: true, brake: true, reverse: false },
         2 => CarLights { head: true, brake: false, reverse: true },
-        _ => CarLights { head: night > HEAD_ON_NIGHT, brake: v.braking, reverse: v.reversing },
+        _ => CarLights { head: night > HEAD_ON_NIGHT, brake: v.braking, reverse: gear < 0 },
     }
 }
 

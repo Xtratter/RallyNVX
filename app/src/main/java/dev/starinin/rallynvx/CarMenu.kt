@@ -5,10 +5,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Switch
 import android.widget.TextView
-import io.github.xtratter.uikit.Expressive
-import io.github.xtratter.uikit.M3
 import io.github.xtratter.uikit.M3Widgets
 
 /**
@@ -44,15 +41,15 @@ class CarMenu(private val ctx: Context, private val en: Boolean, private val run
 
     private fun build(): View {
         val head = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        head.addView(TextView(ctx).apply { text = t("Car", "Машина"); textSize = 20f; setTextColor(M3.TEXT); typeface = M3.medium }, LinearLayout.LayoutParams(0, -2, 1f))
-        head.addView(M3Widgets.button(ctx, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { close() }, LinearLayout.LayoutParams(px(120f), px(40f)))
+        head.addView(TextView(ctx).apply { text = t("Car", "Машина"); textSize = 18f; setTextColor(Mini.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(Mini.button(ctx, t("Close", "Закрыть"), M3Widgets.ButtonKind.FILLED) { close() }, LinearLayout.LayoutParams(px(100f), px(34f)))
 
         val names = listOf(t("Overview", "Обзор"), t("Aids", "Помощники"), t("Engine", "Двигатель"), t("Transmission", "Трансмиссия"), t("Brakes, tyres", "Тормоза и шины"), t("Suspension", "Подвеска"))
         sections.add(overview()); sections.add(aids()); sections.add(engine()); sections.add(transmission()); sections.add(brakesTyres()); sections.add(suspension())
         for ((i, n) in names.withIndex()) {
             val item = TextView(ctx).apply {
-                text = n; textSize = 14f; typeface = M3.medium; gravity = Gravity.CENTER_VERTICAL
-                setPadding(px(14f), 0, px(10f), 0); foreground = M3.ripple(ctx, 100f)
+                text = n; textSize = 14f; gravity = Gravity.CENTER_VERTICAL
+                setPadding(px(12f), 0, px(8f), 0)
                 setOnClickListener { select(i) }
             }
             railItems.add(item)
@@ -65,7 +62,7 @@ class CarMenu(private val ctx: Context, private val en: Boolean, private val run
 
         val main = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
         main.addView(ScrollView(ctx).apply { addView(rail); isVerticalScrollBarEnabled = false }, LinearLayout.LayoutParams(px(150f), -1))
-        main.addView(View(ctx).apply { setBackgroundColor(M3.ink(0x1A)) }, LinearLayout.LayoutParams(px(1f), -1).apply { marginStart = px(8f); marginEnd = px(14f) })
+        main.addView(View(ctx).apply { setBackgroundColor(Mini.EDGE) }, LinearLayout.LayoutParams(px(1f), -1).apply { marginStart = px(8f); marginEnd = px(14f) })
         main.addView(body, LinearLayout.LayoutParams(px(500f), -1))
 
         return LinearLayout(ctx).apply {
@@ -79,15 +76,14 @@ class CarMenu(private val ctx: Context, private val en: Boolean, private val run
         shown = i
         for ((k, item) in railItems.withIndex()) {
             val on = k == i
-            item.setTextColor(if (on) M3.onSecondaryContainer else M3.TEXT)
-            item.background = if (on) Expressive.pill(ctx, M3.secondaryContainer, 100f) else null
+            Mini.railItem(ctx, on, item)
             sections[k].visibility = if (on) View.VISIBLE else View.GONE
         }
     }
 
     private fun column(title: String): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
-        addView(TextView(ctx).apply { text = title; textSize = 15f; setTextColor(M3.primary); typeface = M3.medium }, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = px(6f) })
+        addView(TextView(ctx).apply { text = title; textSize = 15f; setTextColor(Mini.TEXT) }, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = px(6f) })
     }
     private fun LinearLayout.row(v: View, h: Float = -2f) = addView(v, LinearLayout.LayoutParams(-1, if (h < 0) -2 else px(h)).apply { topMargin = px(4f) })
 
@@ -95,12 +91,12 @@ class CarMenu(private val ctx: Context, private val en: Boolean, private val run
 
     /** A switch row for an aid bit. */
     private fun aidRow(bit: Int): View {
-        val r = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL; minimumHeight = px(44f); background = M3.ripple(ctx, 12f) }
-        r.addView(TextView(ctx).apply { text = CarMath.aidName(bit, en); textSize = 15f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-        val sw = Switch(ctx).apply { isClickable = false; M3Widgets.tint(this) }
-        fun load() { sw.isChecked = CarMath.aidOn(Controls.assists(ctx), bit) }
+        val r = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL; minimumHeight = px(44f) }
+        r.addView(TextView(ctx).apply { text = CarMath.aidName(bit, en); textSize = 15f; setTextColor(Mini.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+        val sw = Toggle(ctx)
+        fun load() { sw.on = CarMath.aidOn(Controls.assists(ctx), bit) }
         load(); refreshers.add { load() }
-        r.addView(sw)
+        r.addView(sw, LinearLayout.LayoutParams(px(38f), px(22f)))
         r.setOnClickListener {
             val m = CarMath.toggle(Controls.assists(ctx), bit); Controls.setAssists(ctx, m); if (running()) Native.gameAssists(m); load()
         }
@@ -110,18 +106,17 @@ class CarMenu(private val ctx: Context, private val en: Boolean, private val run
     /** A title over a connected group of [n] buttons: the chosen one is filled, a tap chooses. */
     private fun groupRow(title: String, n: Int, name: (Int) -> String, get: () -> Int, set: (Int) -> Unit): View {
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        col.addView(TextView(ctx).apply { text = title; textSize = 14f; setTextColor(M3.TEXT2) })
+        col.addView(TextView(ctx).apply { text = title; textSize = 14f; setTextColor(Mini.TEXT2) })
         val g = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
         val cells = ArrayList<TextView>()
         for (k in 0 until n) {
-            val c = TextView(ctx).apply { text = name(k); textSize = 14f; typeface = M3.medium; gravity = Gravity.CENTER; maxLines = 1; foreground = M3.ripple(ctx, 100f) }
+            val c = TextView(ctx).apply { text = name(k); textSize = 14f; gravity = Gravity.CENTER; maxLines = 1 }
             c.setOnClickListener { set(k); refresh() }
             cells.add(c); g.addView(c, LinearLayout.LayoutParams(0, px(40f), 1f).apply { if (k > 0) marginStart = px(3f) })
         }
         fun load() { val cur = get(); for ((k, c) in cells.withIndex()) {
             val on = k == cur
-            c.setTextColor(if (on) M3.onSecondaryContainer else M3.TEXT)
-            c.background = if (on) Expressive.pill(ctx, M3.secondaryContainer, 100f) else M3.pill(ctx, M3.surfaceContainer, M3.ink(0x26), 12f)
+            Mini.segment(ctx, on, c)
         } }
         load(); refreshers.add { load() }
         col.addView(g, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(4f) })
@@ -131,14 +126,14 @@ class CarMenu(private val ctx: Context, private val en: Boolean, private val run
     /** A part's power: title, minus, the value, plus. */
     private fun stepRow(i: Int): View {
         val r = LinearLayout(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        r.addView(TextView(ctx).apply { text = CarMath.partName(i, en); textSize = 15f; setTextColor(M3.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
-        val v = TextView(ctx).apply { textSize = 15f; setTextColor(M3.TEXT); gravity = Gravity.CENTER }
+        r.addView(TextView(ctx).apply { text = CarMath.partName(i, en); textSize = 15f; setTextColor(Mini.TEXT) }, LinearLayout.LayoutParams(0, -2, 1f))
+        val v = TextView(ctx).apply { textSize = 15f; setTextColor(Mini.TEXT); gravity = Gravity.CENTER }
         fun show() { v.text = CarMath.valueText(i, Controls.tuning(ctx, i)) }
         fun change(dir: Int) { val nv = CarMath.step(i, Controls.tuning(ctx, i), dir); Controls.setTuning(ctx, i, nv); if (running()) Native.gameTuning(i, nv); show() }
         show(); refreshers.add { show() }
-        r.addView(M3Widgets.button(ctx, "−", M3Widgets.ButtonKind.TONAL) { change(-1) }, LinearLayout.LayoutParams(px(46f), px(38f)))
+        r.addView(Mini.button(ctx, "−", M3Widgets.ButtonKind.TONAL) { change(-1) }, LinearLayout.LayoutParams(px(46f), px(38f)))
         r.addView(v, LinearLayout.LayoutParams(px(64f), -2))
-        r.addView(M3Widgets.button(ctx, "+", M3Widgets.ButtonKind.TONAL) { change(1) }, LinearLayout.LayoutParams(px(46f), px(38f)))
+        r.addView(Mini.button(ctx, "+", M3Widgets.ButtonKind.TONAL) { change(1) }, LinearLayout.LayoutParams(px(46f), px(38f)))
         return r
     }
 
@@ -150,9 +145,9 @@ class CarMenu(private val ctx: Context, private val en: Boolean, private val run
         val c = column(t("State of the car", "Состояние машины"))
         val titles = listOf(t("Tyres", "Шины"), t("Heat", "Нагрев"), t("Damage", "Повреждения"), t("Fuel", "Топливо"))
         fun card(k: Int) = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(px(12f), px(8f), px(12f), px(8f)); background = M3.pill(ctx, M3.surfaceContainer, M3.ink(0x26), 12f)
-            addView(TextView(ctx).apply { text = titles[k]; textSize = 12f; setTextColor(M3.TEXT2) })
-            cards[k].apply { textSize = 13f; setTextColor(M3.TEXT); text = "—" }
+            orientation = LinearLayout.VERTICAL; setPadding(px(12f), px(8f), px(12f), px(8f)); background = Mini.card(ctx)
+            addView(TextView(ctx).apply { text = titles[k]; textSize = 12f; setTextColor(Mini.TEXT2) })
+            cards[k].apply { textSize = 13f; setTextColor(Mini.TEXT); text = "—" }
             addView(cards[k])
         }
         for (rowIdx in 0..1) {
@@ -162,10 +157,10 @@ class CarMenu(private val ctx: Context, private val en: Boolean, private val run
             c.addView(r, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(6f) })
         }
         val b = LinearLayout(ctx)
-        b.addView(M3Widgets.button(ctx, t("Service", "Сервис"), M3Widgets.ButtonKind.TONAL) { if (running()) Native.gameService() }, LinearLayout.LayoutParams(0, px(42f), 1f))
-        b.addView(M3Widgets.button(ctx, t("Reset tuning", "Сбросить настройки"), M3Widgets.ButtonKind.OUTLINED) { resetAll() }, LinearLayout.LayoutParams(0, px(42f), 1.3f).apply { marginStart = px(8f) })
+        b.addView(Mini.button(ctx, t("Service", "Сервис"), M3Widgets.ButtonKind.TONAL) { if (running()) Native.gameService() }, LinearLayout.LayoutParams(0, px(42f), 1f))
+        b.addView(Mini.button(ctx, t("Reset tuning", "Сбросить настройки"), M3Widgets.ButtonKind.OUTLINED) { resetAll() }, LinearLayout.LayoutParams(0, px(42f), 1.3f).apply { marginStart = px(8f) })
         c.addView(b, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(12f) })
-        c.addView(TextView(ctx).apply { text = t("Service repairs the car, fits new tyres and fills the tank.", "Сервис чинит машину, ставит новые шины и заправляет бак."); textSize = 12f; setTextColor(M3.TEXT3) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(6f) })
+        c.addView(TextView(ctx).apply { text = t("Service repairs the car, fits new tyres and fills the tank.", "Сервис чинит машину, ставит новые шины и заправляет бак."); textSize = 12f; setTextColor(Mini.TEXT3) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(6f) })
         return c
     }
 
@@ -213,5 +208,21 @@ class CarMenu(private val ctx: Context, private val en: Boolean, private val run
         })
         c.steps(4, 13, 14, 15, 16, 17, 18, 5)
         return c
+    }
+}
+
+/** A small on/off switch: a hairline track with a dot, the dot and the track fill white when on. */
+private class Toggle(ctx: Context) : View(ctx) {
+    var on = false
+        set(v) { if (v != field) { field = v; invalidate() } }
+    private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    override fun onDraw(c: android.graphics.Canvas) {
+        val d = resources.displayMetrics.density; val w = width.toFloat(); val h = height.toFloat(); val r = h / 2f - d
+        val rect = android.graphics.RectF(d, d, w - d, h - d)
+        p.style = android.graphics.Paint.Style.STROKE; p.strokeWidth = d; p.color = if (on) Mini.TEXT else Mini.EDGE_STRONG
+        c.drawRoundRect(rect, r, r, p)
+        p.style = android.graphics.Paint.Style.FILL; p.color = if (on) Mini.TEXT else Mini.TEXT3
+        val cx = if (on) w - h / 2f else h / 2f
+        c.drawCircle(cx, h / 2f, h * 0.27f, p)
     }
 }

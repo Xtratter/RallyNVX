@@ -13,8 +13,8 @@ class Hud(ctx: Context) : TextView(ctx) {
         textSize = 13f; typeface = M3.medium; gravity = Gravity.CENTER
         fontFeatureSettings = "tnum"   // equal-width digits: the island does not jitter
         setPadding((14 * dp).toInt(), (7 * dp).toInt(), (14 * dp).toInt(), (7 * dp).toInt())
-        setTextColor(M3.TEXT)
-        background = M3Surface(ctx, 20f, M3.surface)
+        setTextColor(Mini.TEXT)
+        background = Mini.panel(ctx, 12f)
         text = "— fps"
     }
 

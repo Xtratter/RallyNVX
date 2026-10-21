@@ -20,7 +20,7 @@ class PedalView(ctx: Context, private val kind: Int, private val w: Float, priva
     private val dp = ctx.resources.displayMetrics.density
     private val fillP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-    private val accent = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = M3.primary }
+    private val accent = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL; color = 0xFFEDEFF2.toInt(); alpha = 215 }
 
     override fun onMeasure(wm: Int, hm: Int) { setMeasuredDimension((w * dp).toInt(), (h * dp).toInt()) }
 

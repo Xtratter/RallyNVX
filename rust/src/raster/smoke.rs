@@ -27,16 +27,27 @@ impl Air {
 }
 
 #[derive(Default)]
-pub struct Smoke { pub parts: Vec<Puff>, rng: u32 }
+pub struct Smoke { pub parts: Vec<Puff>, rng: u32, rate: f32, kelvin: f32, fuel_share: f32 }
 
 impl Smoke {
-    pub fn new() -> Smoke { Smoke { parts: Vec::new(), rng: 0x85EB_CA6B } }
+    pub fn new() -> Smoke { Smoke { parts: Vec::new(), rng: 0x85EB_CA6B, rate: 0.0, kelvin: 0.0, fuel_share: 0.0 } }
     fn rand(&mut self) -> f32 { self.rng ^= self.rng << 13; self.rng ^= self.rng >> 17; self.rng ^= self.rng << 5; (self.rng >> 8) as f32 / 16_777_216.0 }
 
     /// The gas that left the pipe in the last `dt` seconds: `moles` of it at the mean temperature `kelvin`, of which `fuel` moles were unburnt fuel. It comes out of `tip` along `dir` (unit,
     /// backwards), on top of the car's speed.
     pub fn emit(&mut self, tip: V3, dir: V3, moles: f32, kelvin: f32, fuel: f32, dt: f32, car_vel: V3, air: Air) {
-        if !(moles > 1e-6) || !moles.is_finite() || !(dt > 1e-4) { return; }
+        if !(dt > 1e-4) { return; }
+        // the collector merges the strokes of all the cylinders into one stream, and a frame sees the audio's blocks in whole numbers: the flow is smoothed (about 0.2 s) so the jet is steady, not a puff per stroke or per block
+        let a = 1.0 - (-dt / 0.2).exp();
+        let inflow = if moles.is_finite() { (moles / dt).max(0.0) } else { 0.0 };
+        if self.rate <= 0.0 { self.rate = inflow; } else { self.rate += (inflow - self.rate) * a; }
+        if moles > 1e-6 && moles.is_finite() {
+            let k = kelvin.clamp(300.0, 1500.0);
+            if self.kelvin <= 0.0 { self.kelvin = k; } else { self.kelvin += (k - self.kelvin) * a; }
+            self.fuel_share += ((fuel / moles).clamp(0.0, 1.0) - self.fuel_share) * a;
+        }
+        let (moles, kelvin, fuel) = (self.rate * dt, self.kelvin.max(300.0), self.rate * dt * self.fuel_share);
+        if !(moles > 1e-6) { return; }
         let vis = air.vapour();
         // soot: the share of the gas that is unburnt fuel, with a dark smoke at a few parts in a hundred
         let soot = (fuel / moles * 25.0).clamp(0.0, 1.0);
