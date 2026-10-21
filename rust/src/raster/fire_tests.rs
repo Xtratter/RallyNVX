@@ -63,3 +63,22 @@ fn burst(moles: f32) -> Fire { let mut f = Fire::new(); f.emit(v3(0.0, 0.3, -2.0
     let mut gone = burst(0.02); for _ in 0..200 { gone.update(1.0 / 60.0, V3::ZERO); }
     assert_eq!(gone.light().1[3], 0.0, "no fire, no light");
 }
+
+#[test] fn a_thin_steady_burn_comes_out_as_separate_pops_not_a_flicker_every_frame() {
+    let mut p = Puffs::default();
+    let (mut pops, mut total, mut fed) = (0, 0.0f32, 0.0f32);
+    for _ in 0..90 {                                  // three seconds at 30 fps of 0.005 mol/s
+        let burn = 0.005 / 30.0; fed += burn;
+        if let Some(m) = p.push(burn, 1.0 / 30.0) { pops += 1; total += m; assert!(m >= Puffs::MIN - 1e-6, "a pop is worth seeing: {m}"); }
+    }
+    assert!(pops >= 8 && pops <= 16, "{pops} pops in 3 s");
+    assert!((total - fed).abs() < Puffs::MIN * 1.01, "the fuel is conserved, less one unfinished pop: {total} of {fed}");
+}
+#[test] fn a_big_pop_comes_out_at_once_and_a_leftover_is_dropped_when_it_goes_quiet() {
+    let mut p = Puffs::default();
+    assert_eq!(p.push(0.02, 1.0 / 30.0), Some(0.02));
+    assert_eq!(p.push(0.0004, 1.0 / 30.0), None, "less than a pop waits");
+    for _ in 0..12 { assert_eq!(p.push(0.0, 1.0 / 30.0), None); }   // 0.4 s of quiet: the leftover is dropped
+    assert_eq!(p.push(0.0009, 1.0 / 30.0), None, "it does not add to the old leftover: {:?}", p);
+    assert_eq!(p.push(f32::NAN, 1.0 / 30.0), None);
+}

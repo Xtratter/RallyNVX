@@ -221,3 +221,59 @@ fn rms(v: &[f32]) -> f32 { (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f3
     let avg = |a: usize| engine[a..a + 6].iter().sum::<f32>() / 6.0;
     assert!(avg(180) > avg(120) + 150.0, "{} -> {}", avg(120), avg(180));
 }
+
+#[test] #[ignore] fn print_burn_rates() {
+    // mol/s of fuel burning in the exhaust in the states a driver meets
+    let burn = |label: &str, als: bool, steps: &[(f32, f32, f32)]| {   // (drive rpm, load, seconds)
+        let mut s = Synth::new();
+        s.set_params(&AudioParams { drive_rpm: 900.0, ..car(0.1) }); run(&mut s, 2.0);
+        let mut out = String::new();
+        for &(rpm, load, secs) in steps {
+            let _ = s.take_burned_delta();
+            s.set_params(&AudioParams { drive_rpm: rpm, load, als, ..car(0.5) });
+            run(&mut s, secs);
+            out += &format!(" [{rpm:.0} rpm load {load}: {:.4} mol/s]", s.take_burned_delta() / secs as f64);
+        }
+        eprintln!("BURN {label}:{out}");
+    };
+    for als in [true, false] {
+        let tag = if als { "als on " } else { "als off" };
+        burn(&format!("{tag} idle"), als, &[(950.0, 0.0, 3.0)]);
+        burn(&format!("{tag} cruise"), als, &[(2500.0, 0.25, 3.0), (3500.0, 0.35, 3.0), (4500.0, 0.5, 3.0)]);
+        burn(&format!("{tag} full throttle"), als, &[(3000.0, 1.0, 3.0), (5000.0, 1.0, 3.0), (7000.0, 1.0, 2.0)]);
+        burn(&format!("{tag} lift off 6000"), als, &[(6000.0, 1.0, 2.0), (5500.0, 0.0, 1.0), (4500.0, 0.0, 1.0), (3500.0, 0.0, 1.0), (2500.0, 0.0, 1.0)]);
+        burn(&format!("{tag} coast 3000"), als, &[(3000.0, 0.0, 4.0)]);
+    }
+}
+
+#[test] fn anti_lag_fires_after_a_lift_and_then_stops_instead_of_burning_all_the_time() {
+    let mut s = Synth::new();
+    s.set_params(&AudioParams { drive_rpm: 5500.0, load: 1.0, als: true, ..car(0.7) }); run(&mut s, 3.0);
+    let _ = s.take_burned_delta();
+    s.set_params(&AudioParams { drive_rpm: 4200.0, load: 0.0, als: true, ..car(0.5) });   // the lift
+    let mut per_sec = Vec::new();
+    for _ in 0..8 { run(&mut s, 1.0); per_sec.push(s.take_burned_delta()); }
+    let (first, last) = (per_sec[0] + per_sec[1], per_sec[5] + per_sec[6] + per_sec[7]);
+    assert!(first > 0.002, "the lift fires: {per_sec:?}");
+    assert!(last < first * 0.25, "and it stops within a few seconds instead of burning all the time: {per_sec:?}");
+}
+#[test] fn anti_lag_is_ready_again_after_the_next_throttle_pulse() {
+    let mut s = Synth::new();
+    for k in 0..3 {
+        s.set_params(&AudioParams { drive_rpm: 5200.0, load: 1.0, als: true, ..car(0.65) }); run(&mut s, 2.0);
+        let _ = s.take_burned_delta();
+        s.set_params(&AudioParams { drive_rpm: 4300.0, load: 0.0, als: true, ..car(0.5) }); run(&mut s, 2.0);
+        assert!(s.take_burned_delta() > 0.002, "lift {k} fires");
+    }
+}
+#[test] #[ignore] fn print_lift_profile() {
+    for (rpm_on, rpm_off) in [(6000.0, 5000.0), (5000.0, 3800.0), (4000.0, 3200.0)] {
+        let mut s = Synth::new();
+        s.set_params(&AudioParams { drive_rpm: rpm_on, load: 1.0, als: true, ..car(0.7) }); run(&mut s, 3.0);
+        let _ = s.take_burned_delta();
+        s.set_params(&AudioParams { drive_rpm: rpm_off, load: 0.0, als: true, ..car(0.5) });
+        let mut v = Vec::new();
+        for _ in 0..16 { run(&mut s, 0.5); v.push((s.take_burned_delta() * 1000.0).round() / 1000.0); }
+        eprintln!("LIFT {rpm_on}->{rpm_off} mol per 0.5 s: {v:?}");
+    }
+}
