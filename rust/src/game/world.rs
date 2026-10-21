@@ -302,6 +302,10 @@ impl World {
             self.drivetrain.opts = super::drivetrain::DriveOpts { engine: t.engine, turbo: t.turbo, gearing: t.gearing, flat_shift: a.flat_shift, blip: a.blip, limiter: a.limiter, tc: a.tc, launch: a.launch };
             self.vehicle.abs_on = a.abs; self.vehicle.tc_on = a.tc;
             self.vehicle.brake_bias = (super::wheel::BRAKE_BIAS * t.bias).clamp(0.4, 0.8);
+            // the tyres: the cold pressure from the menu and the air's temperature from the sky (the sun, the clouds, the rain, the fog)
+            self.vehicle.tyre_bar = t.tyre_bar;
+            let wz = self.climate.weather();
+            self.vehicle.air_c = crate::raster::smoke::Air::from_sky(self.sun_dir().y, wz.cloud, wz.rain, wz.fog).celsius;
         }
         // the drivetrain: the engine against the clutch and the gear, solved together with the wheels in the vehicle's substeps (the autopilot always drives the automatic)
         {

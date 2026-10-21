@@ -47,6 +47,8 @@ pub fn fill_state(out: &mut [f32; STAT_LEN], w: &World, money: u32, fps: f32, fr
     }
     // the drivetrain: `[80]` the gear (-1 reverse, 0 neutral), `[81]` the engine's revs, `[82]` 1 in the manual, `[83]` 1 when the engine has stalled, `[84]` how firmly the clutch grips, `[85]` the clutch pedal
     { let d = &w.drivetrain; out[80] = d.gear as f32; out[81] = d.rpm(); out[82] = (d.mode == crate::game::drivetrain::Mode::Manual) as u8 as f32; out[83] = d.last.stalled as u8 as f32; out[84] = d.last.grip; out[85] = d.clutch_pedal; out[86] = d.last.boost_bar; }
+    // the tyres: `[88..91]` the temperatures (degrees C) and `[92..95]` the wear (0 new, 1 worn out) of FL, FR, RL, RR
+    for k in 0..4 { out[88 + k] = w.vehicle.tyres[k].temp; out[92 + k] = w.vehicle.tyres[k].wear; }
     out[25] = w.vehicle.speed() * 3.6;   // signed: negative while rolling backwards (the brake pedal reverses below 3 km/h)
 }
 

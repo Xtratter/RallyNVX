@@ -21,7 +21,7 @@ use super::*;
 }
 
 #[test] fn the_differential_parts_are_tuning_parts_with_their_own_ranges() {
-    assert_eq!(TUNING_PARTS, 12);
+    assert_eq!(TUNING_PARTS, 13);
     let mut t = Tuning::default();
     t.set(7, 9.0); assert_eq!(t.diff_front, 2.0); t.set(8, -1.0); assert_eq!(t.diff_rear, 0.0); t.set(9, 0.5); assert_eq!(t.diff_centre, 0.5);
     t.set(10, 9.0); assert_eq!(t.split, 1.4); t.set(10, 0.0); assert_eq!(t.split, 0.6); t.set(10, f32::NAN); assert_eq!(t.split, 0.6, "garbage is ignored");
@@ -29,8 +29,9 @@ use super::*;
 }
 
 #[test] fn the_brake_bias_is_a_tuning_part_that_reaches_the_vehicle() {
-    assert_eq!(TUNING_PARTS, 12);
+    assert_eq!(TUNING_PARTS, 13);
     let mut t = Tuning::default();
+    t.set(12, 9.0); assert_eq!(t.tyre_bar, 1.25); t.set(12, 0.0); assert_eq!(t.tyre_bar, 0.8); t.set(12, f32::NAN); assert_eq!(t.tyre_bar, 0.8, "garbage is ignored");
     t.set(11, 9.0); assert_eq!(t.bias, 1.25); t.set(11, 0.0); assert_eq!(t.bias, 0.7); t.set(11, f32::NAN); assert_eq!(t.bias, 0.7, "garbage is ignored");
     let mut w = crate::game::world::World::test_track(VehicleSpec::default_car());
     w.tuning.set(11, 1.1); w.step(&crate::game::input::Input::default(), 1.0 / 60.0);
@@ -39,6 +40,14 @@ use super::*;
     assert!(w.vehicle.brake_bias <= 0.8 && w.vehicle.brake_bias > 0.7, "{}", w.vehicle.brake_bias);
 }
 
+#[test] fn the_tyre_pressure_and_the_air_reach_the_vehicle() {
+    let mut w = crate::game::world::World::test_track(VehicleSpec::default_car());
+    w.tuning.set(12, 0.9); w.step(&crate::game::input::Input::default(), 1.0 / 60.0);
+    assert!((w.vehicle.tyre_bar - 0.9).abs() < 1e-5, "{}", w.vehicle.tyre_bar);
+    let wv = w.climate.weather();
+    let air = crate::raster::smoke::Air::from_sky(w.sun_dir().y, wv.cloud, wv.rain, wv.fog).celsius;
+    assert!((w.vehicle.air_c - air).abs() < 1e-3 && w.vehicle.air_c > -30.0 && w.vehicle.air_c < 40.0, "{} against {air}", w.vehicle.air_c);
+}
 mod physics {
     use super::*;
     use crate::game::{input::Input, world::World};
