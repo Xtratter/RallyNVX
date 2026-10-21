@@ -4,6 +4,8 @@ pub mod join;
 pub mod model;
 pub mod train;
 pub mod job;
+pub mod nn;
+pub mod learn;
 pub mod route;
 pub mod streets;
 #[cfg(test)]
@@ -35,6 +37,8 @@ pub struct Autopilot {
     stuck: f32,
     /// The handbrake flick in progress (seconds left) and the time until the next one may start.
     flick: f32, cooldown: f32,
+    /// Max Attack's pendulum (the Scandinavian flick): seconds of steering away from the coming bend left, the side of that bend (+1 right) and the time until the next one may start.
+    pend: f32, pend_dir: f32, pend_cool: f32,
     /// The stage route and where to join it, while a field route is being driven.
     next: Option<(Route, usize)>,
     /// Route progress (m) where the stage was joined from the field: the speed is kept tame for 80 m after it.
@@ -44,6 +48,8 @@ pub struct Autopilot {
     /// What the car measured of itself, and how much of the planned cornering grip it dares to use (`k`, 0.6..1: it falls while the car slides or nears the road's edge, and
     /// recovers while all is calm); `k_planned` is the value the speed plan was last made with.
     models: Option<model::Models>, k: f32, k_planned: f32,
+    /// A neural policy that drives instead of the geometric controller (the controller still runs: it gives the labels and takes over when the car is lost), the seconds of the takeover left, and the recorded (features, expert action) pairs.
+    policy: Option<std::sync::Arc<nn::Mlp>>, nn_hold: f32, record: bool, samples: Vec<([f32; nn::F], [f32; nn::O])>, rec_step: u32,
 }
 
 /// The speed limits for a car on a road of the given kind (loose gravel is the worst case on the stage).
@@ -110,7 +116,7 @@ impl Autopilot {
     /// The same with the numbers given (the self-training tries many sets at once, so they cannot come from the global style).
     pub fn on_route_cfg(route: Route, car: VehicleSpec, v: &Vehicle, style: i32, cfg: AutoCfg) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg, style: style.clamp(0, 4), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0 }
+        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
@@ -141,6 +147,69 @@ impl Autopilot {
         Some(ap)
     }
 
+    /// One step: the geometric controller's command; with a policy set the net's command instead (the controller takes over for two seconds when the car is 6 m off the line or flipped); with recording on, the (features, controller's action) pair is kept (every third step).
+    pub fn drive(&mut self, v: &Vehicle, dt: f32) -> AutoCmd {
+        let mut cmd = self.drive_expert(v, dt);
+        if (self.policy.is_none() && !self.record) || cmd.teleport.is_some() || cmd.reset || cmd.done { return cmd; }
+        let f = self.features(v);
+        if self.record {
+            self.rec_step += 1;
+            if self.rec_step % 3 == 0 {
+                let i = cmd.input;
+                let accel = if i.brake { -(i.brake_amt.max(0.1)) } else { i.throttle };
+                self.samples.push((f, [i.steer, accel, if i.handbrake { 1.0 } else { -1.0 }]));
+            }
+        }
+        if let Some(p) = self.policy.clone() {
+            self.nn_hold = (self.nn_hold - dt).max(0.0);
+            if self.route.cross(self.idx, v.pos.x, v.pos.z) > 6.0 || v.flipped() { self.nn_hold = 2.0; }
+            if self.nn_hold <= 0.0 {
+                let o = p.forward(&f);
+                cmd.input = Input { steer: o[0], throttle: o[1].max(0.0), brake: o[1] < -0.1, brake_amt: if o[1] < -0.1 { (-o[1]).clamp(0.1, 1.0) } else { 0.0 }, handbrake: o[2] > 0.3, ..Default::default() }.sanitized();
+            }
+        }
+        cmd
+    }
+
+    /// Sets (or removes) the neural policy and turns recording on or off.
+    pub fn set_policy(&mut self, policy: Option<std::sync::Arc<nn::Mlp>>, record: bool) { self.policy = policy; self.record = record; self.nn_hold = 0.0; }
+    /// The recorded pairs since the last call.
+    pub fn take_samples(&mut self) -> Vec<([f32; nn::F], [f32; nn::O])> { std::mem::take(&mut self.samples) }
+
+    /// What the net sees: the speed, how the car sits on the line (offset, heading, yaw rate, side slip), the bend ahead as the chord's side at six distances, the planned speed at those distances and here,
+    /// the road's width and where the car is on it, the grip, the daring and whether it is on the ground.
+    pub fn features(&self, v: &Vehicle) -> [f32; nn::F] {
+        const D: [f32; 6] = [5.0, 10.0, 16.0, 24.0, 36.0, 52.0];
+        let i = self.idx.min(self.route.len() - 1);
+        let right = v.right(); let fwd = v.forward();
+        let mut f = [0.0f32; nn::F];
+        let speed = v.vel.len();
+        let (vf, vr) = (v.vel.x * fwd.x + v.vel.z * fwd.z, v.vel.x * right.x + v.vel.z * right.z);
+        f[0] = speed / 30.0;
+        let pi = self.route.p[i];
+        f[1] = (((pi.x - v.pos.x) * right.x + (pi.z - v.pos.z) * right.z) / 4.0).clamp(-1.5, 1.5);
+        let (_, t5) = self.route.ahead(i, 6.0);
+        f[2] = ((t5.x - pi.x) * right.x + (t5.z - pi.z) * right.z).atan2(((t5.x - pi.x) * fwd.x + (t5.z - pi.z) * fwd.z).max(0.1)).clamp(-1.5, 1.5);
+        f[3] = (v.omega.dot(v.up()) / 2.0).clamp(-2.0, 2.0);
+        f[4] = vr.atan2(vf.abs().max(1.0)).clamp(-1.5, 1.5);
+        for (k, d) in D.iter().enumerate() {
+            let (j, t) = self.route.ahead(i, *d);
+            let (dx, dz) = (t.x - v.pos.x, t.z - v.pos.z); let ld = dx.hypot(dz).max(1.0);
+            f[5 + k] = ((dx * right.x + dz * right.z) / ld).clamp(-1.5, 1.5);
+            f[11 + k] = self.route.speed[j] / 30.0;
+        }
+        f[17] = self.route.speed[i] / 30.0;
+        let half = self.route.half[i].max(1.0);
+        let c = self.route.c[i];
+        f[18] = (((c.x - v.pos.x) * right.x + (c.z - v.pos.z) * right.z) / half).clamp(-1.5, 1.5);
+        f[19] = half / 10.0;
+        f[20] = self.route.mu[i];
+        f[21] = self.k;
+        f[22] = if v.contacts >= 3 { 1.0 } else { 0.0 };
+        f[23] = (v.steer / self.car.steer_max.max(0.1)).clamp(-1.5, 1.5);
+        f
+    }
+
     /// Plans the speeds again with what the car measured of itself (see `model`): the route and, when a field route is being driven, the stage behind it.
     pub fn apply_models(&mut self, models: &model::Models) {
         self.models = Some(models.clone()); self.k = 1.0; self.k_planned = 1.0;
@@ -153,10 +222,11 @@ impl Autopilot {
         let Some(m) = self.models.clone() else { return };
         let slip = v.wheels.iter().filter(|w| w.grounded).map(|w| w.lat_slip.abs()).fold(0.0f32, f32::max);
         let room = self.route.room(i, v.pos.x, v.pos.z);
-        let ok = 1.0 + 2.0 * self.cfg.slide;
-        let wide = self.route.half[i] > 1.0 && d > 1.2;   // far off the planned line: it runs wide
-        if slip > ok || wide || room.map_or(false, |r| r < 0.8) { self.k -= 0.9 * dt; }
-        else if slip < 0.6 * ok && d < 0.7 { self.k += 0.03 * dt; }
+        let at = self.cfg.attack;   // Max Attack tolerates more: bigger slides, wandering off the line, the edge itself
+        let ok = 1.0 + 2.0 * self.cfg.slide + at;
+        let wide = self.route.half[i] > 1.0 && d > 1.2 + 2.0 * at;   // far off the planned line: it runs wide
+        if slip > ok || wide || room.map_or(false, |r| r < 0.8 - 1.2 * at) { self.k -= 0.9 * dt; }
+        else if slip < 0.6 * ok && d < 0.7 + at { self.k += 0.03 * dt; }
         self.k = self.k.clamp(0.6, K_MAX);
         if (self.k - self.k_planned).abs() > 0.03 {
             self.k_planned = self.k;
@@ -166,12 +236,12 @@ impl Autopilot {
         }
     }
 
-    /// 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers, 4 the learned ones.
+    /// 0 calm, 1 normal, 2 aggressive, 3 the player's own numbers, 4 the learned ones, 5 Max Attack, 6 the neural net.
     pub fn style(&self) -> i32 { self.style }
     pub fn route(&self) -> &Route { &self.route }
     pub fn progress(&self) -> f32 { self.route.s[self.idx] }
 
-    pub fn drive(&mut self, v: &Vehicle, dt: f32) -> AutoCmd {
+    fn drive_expert(&mut self, v: &Vehicle, dt: f32) -> AutoCmd {
         let wet_scale = wet_speed_scale(v.surface, v.wet);
         let mut cmd = AutoCmd::default();
         let (lo, hi) = (self.idx.saturating_sub(15), self.idx + 80);
@@ -184,7 +254,7 @@ impl Autopilot {
         if self.next.is_some() && self.route.length() - self.route.s[i] < 14.0 {
             let (stage, k) = self.next.take().unwrap();
             self.route = stage; self.idx = k; self.stuck = 0.0; self.joined_at = Some(self.route.s[k]);
-            return self.drive(v, dt);
+            return self.drive_expert(v, dt);
         }
         let remaining = self.route.length() - self.route.s[i];
         if remaining < 12.0 && speed.abs() < 1.5 { cmd.done = true; cmd.input = Input { brake: true, ..Default::default() }; return cmd; }
@@ -196,7 +266,7 @@ impl Autopilot {
         let want = want.min(tame) * wet_scale;
         // off the line: slow down in proportion to how far into the road's edge the car has drifted
         let half = self.route.half[i];
-        let want = if half > 1.0 && d > 0.55 * half { want * (1.0 - (d - 0.55 * half) / (0.6 * half)).clamp(0.45, 1.0) } else { want };
+        let want = if half > 1.0 && d > (0.55 + 0.6 * self.cfg.attack) * half { want * (1.0 - (d - 0.55 * half) / (0.6 * half)).clamp(0.45, 1.0) } else { want };
         if v.flipped() { cmd.reset = true; self.recoveries += 1; self.stuck = 0.0; }
         self.stuck = if speed.abs() < 1.0 && want > 3.0 { self.stuck + dt } else { 0.0 };
         if remaining < 25.0 && self.stuck > 2.0 { cmd.done = true; return cmd; }   // stopped just short of the line
@@ -228,23 +298,44 @@ impl Autopilot {
         let stanley = if self.models.is_some() { (e_line.signum() * (e_line.abs() - 0.8).max(0.0) * STANLEY).atan2(2.0 + v.vel.len()) } else { 0.0 };
         let delta = (2.0 * wheelbase * alpha.sin() / ld).atan() + beta + stanley;
         let max_a = self.car.steer_max / (1.0 + v.vel.len() / self.car.steer_speed_ref);
-        let steer = (delta / max_a).clamp(-1.0, 1.0);
+        let mut steer = (delta / max_a).clamp(-1.0, 1.0);
+        if self.cfg.attack > 0.5 {
+            // the Scandinavian flick: before a fast bend the car is thrown the other way for a moment, so the rear swings out and the turn-in is already a slide
+            self.pend_cool = (self.pend_cool - dt).max(0.0);
+            if self.pend > 0.0 { self.pend -= dt; steer = (-self.pend_dir * 0.5).clamp(-1.0, 1.0); }
+            else if self.pend_cool <= 0.0 && speed > 15.0 && speed < 20.0 && v.contacts >= 3 && steer.abs() < 0.35 && self.route.room(i, v.pos.x, v.pos.z).map_or(true, |r| r > 2.5) {
+                let d0 = 3.0 + 0.7 * speed;
+                let (j, _) = self.route.ahead(i, d0); let (j2, t2) = self.route.ahead(i, d0 + 22.0);
+                let k_ahead = self.route.kraw[j..=j2].iter().cloned().fold(0.0f32, f32::max);
+                if k_ahead > 0.015 && k_ahead < 0.04 {
+                    self.pend = 0.18; self.pend_cool = 5.0;
+                    self.pend_dir = ((t2.x - v.pos.x) * right.x + (t2.z - v.pos.z) * right.z).signum();
+                }
+            }
+            if v.contacts == 0 { steer *= 0.2; }   // in the air the wheels stay straight for the landing
+        }
 
         // speed: the profile's target a few points ahead, throttle and brake from the error
         let e = want - speed;
-        let (throttle, brake, amt) = if e > 0.3 { ((0.25 + 0.35 * e).clamp(0.0, 1.0), false, 0.0) }
+        let (throttle, brake, amt) = if self.cfg.attack > 0.5 {
+            // Max Attack: flat out until the plan says brake, then hard
+            let air = v.contacts == 0;
+            if e > -0.5 { (if air { 0.4 } else { 1.0 }, false, 0.0) }
+            // braking into a bend with the throttle kept a little open (left-foot braking): the rear stays light and the car rotates
+            else if e < -1.2 { (if steer.abs() > 0.2 && speed > 8.0 { 0.3 } else { 0.0 }, true, (-e * 0.4).clamp(0.2, 1.0) * if steer.abs() > 0.2 { 0.8 } else { 1.0 }) } else { (0.0, false, 0.0) }
+        } else if e > 0.3 { ((0.25 + 0.35 * e).clamp(0.0, 1.0), false, 0.0) }
             else if e < -0.7 { (0.0, true, (-e * 0.3).clamp(0.1, 1.0)) } else { (0.0, false, 0.0) };
         // handbrake flick: into a tight bend taken above the grip limit the rear is let go for a moment so the car rotates
         self.cooldown = (self.cooldown - dt).max(0.0);
         let mut handbrake = false;
         if self.cfg.slide > 0.0 {
             if self.flick > 0.0 { self.flick -= dt; handbrake = true; }
-            else if self.cooldown <= 0.0 && speed > 6.0 && speed < 18.0 && steer.abs() > 0.8 {
+            else if self.cooldown <= 0.0 && speed > 6.0 && speed < 18.0 + 8.0 * self.cfg.attack && steer.abs() > 0.8 - 0.2 * self.cfg.attack {
                 // only in a hairpin the car cannot turn by itself: the bend ahead is tight, the steering is at its lock and the car turns less than the bend asks (understeer)
                 let (j, _) = self.route.ahead(i, 10.0 + 0.8 * speed);
                 let k_max = self.route.kraw[i..=j].iter().cloned().fold(0.0, f32::max);
                 let need = speed * k_max; let yaw = v.omega.dot(v.up()).abs();
-                if k_max > 0.045 && yaw < 0.7 * need && vf > 0.0 { self.flick = self.cfg.flick_time; self.cooldown = 3.0; handbrake = true; }
+                if k_max > 0.045 - 0.015 * self.cfg.attack && yaw < (0.7 + 0.15 * self.cfg.attack) * need && vf > 0.0 { self.flick = self.cfg.flick_time; self.cooldown = 3.0; handbrake = true; }
             }
         }
         if handbrake { cmd.input = Input { throttle: 0.0, steer, brake: false, handbrake: true, ..Default::default() }; return cmd; }

@@ -98,3 +98,16 @@ fn mem(load: f32) -> Memory { Memory { load, ..Memory::default() } }
     m.since_shift = 0.2;
     assert_eq!(choose(Profile::Sport, &m, &s), Choice::Hold, "but not twice within a blink");
 }
+
+#[test] fn no_profile_stays_in_a_gear_at_the_limiter_with_the_pedal_floored() {
+    // at the revs of the engine's limiter, flat out on a straight road, every gear must give way to the next in every profile (the race profile once held first gear for ever)
+    for p in [Profile::Comfort, Profile::Sport, Profile::Race] {
+        for g in 1..6 {
+            let rpm = 7700.0; let r = 0.31;
+            let speed = rpm * std::f32::consts::TAU / 60.0 * r / (ratio(g) * 1.0);
+            let m = Memory { load: 1.0, aggr: 1.0, ..Memory::default() };
+            let s = Situation { gear: g, rpm, gas: 1.0, rate: 0.0, brake: false, speed, wheel_r: r, gearing: 1.0, lat_g: 0.0, slope: 0.0 };
+            assert_eq!(choose(p, &m, &s), Choice::Up(g + 1), "{p:?} gear {g} at the limiter");
+        }
+    }
+}

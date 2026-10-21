@@ -47,12 +47,12 @@ impl Route {
         // with a model the passes below see the grip shared with the braking, so the bend is only widened by two points (8 m)
         let kappa: Vec<f32> = if models.is_some() { (0..n).map(|i| self.kraw[i.saturating_sub(2)..=(i + 2).min(n - 1)].iter().cloned().fold(0.0, f32::max)).collect() } else { self.kappa.clone() };
         let mut speed: Vec<f32> = (0..n).map(|i| if kappa[i] > 1e-5 { (cfg.lat_factor * mu[i] * G / kappa[i]).sqrt().min(lim.v_max) } else { lim.v_max }).collect();
-        // crests: where the profile is convex the car must stay planted (or at least land tamely)
+        // crests: where the profile is convex the car must stay planted (or at least land tamely); Max Attack takes them flat out
         for i in 2..n - 2 {
             let (ds0, ds1) = (s[i] - s[i - 1], s[i + 1] - s[i]);
             let slope0 = (p[i].y - p[i - 1].y) / ds0; let slope1 = (p[i + 1].y - p[i].y) / ds1;
             let curv = (slope1 - slope0) / (0.5 * (ds0 + ds1));
-            if curv < -0.004 { speed[i] = speed[i].min(cfg.crest_speed).min((0.8 * G / -curv).sqrt()); }
+            if curv < -0.004 && cfg.attack < 0.5 { speed[i] = speed[i].min(cfg.crest_speed).min((0.8 * G / -curv).sqrt()); }
         }
         // the steering lock: a bend tighter than the wheels can turn at that speed (with 85 % of the lock kept in hand)
         if let Some(m) = models { for i in 0..n { speed[i] = speed[i].min(m.steer_speed(kappa[i] / 0.85, lim.v_max)); } }

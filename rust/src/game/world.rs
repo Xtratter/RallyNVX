@@ -100,7 +100,7 @@ impl World {
     /// Style -1 off, 0 calm, 1 normal, 2 aggressive (slides allowed), 3 custom (the numbers set in the settings), 4 learned (the self-training's).
     pub fn set_autopilot_style(&mut self, style: i32) -> bool {
         if style < 0 { self.autopilot = None; return false; }
-        let style = style.min(4);
+        let style = style.min(6);
         self.start_autopilot(style, super::autopilot::cfg::cfg_style(style))
     }
 
@@ -110,8 +110,11 @@ impl World {
     fn start_autopilot(&mut self, style: i32, cfg: super::autopilot::cfg::AutoCfg) -> bool {
         self.autopilot = super::autopilot::Autopilot::start_cfg(&self.terrain, &self.vehicle, self.car_spec, style, cfg, self.rally.as_ref().map(|r| r.stage == 1));
         if self.autopilot.is_some() && std::env::var("AP_NOMODEL").is_err() { let m = super::autopilot::model::Models::measure(self); if let Some(ap) = self.autopilot.as_mut() { ap.apply_models(&m); } }
+        if style == 6 { if let (Some(ap), Some((net, _))) = (self.autopilot.as_mut(), super::autopilot::cfg::net()) { ap.set_policy(Some(net), false); } }
         self.autopilot.is_some()
     }
+    /// Gives the running autopilot a neural policy (or none) and turns its recording on or off.
+    pub fn autopilot_policy(&mut self, p: Option<std::sync::Arc<super::autopilot::nn::Mlp>>, record: bool) { if let Some(ap) = self.autopilot.as_mut() { ap.set_policy(p, record); } }
     pub fn autopilot_on(&self) -> bool { self.autopilot.is_some() }
 
     /// Starts a rally stage (0 the special stage, 1 the city loop): the car is put before the start line facing along

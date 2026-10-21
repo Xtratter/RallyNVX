@@ -4,23 +4,29 @@
 use super::cfg::AutoCfg;
 use crate::game::{input::Input, vehicle::VehicleSpec, world::World};
 
-/// The numbers searched: lower and upper bound of each, in the order of `to_cfg`: cornering grip, braking, how much of the free width the line may use, the margin to the edge, the look-ahead base and gain.
-pub const LO: [f32; 6] = [0.8, 0.6, 0.4, 0.8, 3.0, 0.2];
-pub const HI: [f32; 6] = [1.8, 1.2, 0.9, 2.0, 12.0, 0.8];
+/// The numbers searched, in the order of `to_cfg`: cornering grip, braking, how much of the free width the line may use, the margin to the edge, the look-ahead base and gain, sliding.
+pub const N: usize = 7;
+/// What the search is for: `Safe` (the "Learned" style: stay on the road, no slides) or `Attack` (the "Max Attack" style: slides, the line may touch the road's edge and the shoulder, a metre or two beyond costs little).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode { Safe, Attack }
+/// The bounds of the seven numbers (the last is the share of sliding; fixed at 0 for `Safe`).
+pub fn lo(m: Mode) -> [f32; N] { match m { Mode::Safe => [0.8, 0.6, 0.4, 0.8, 3.0, 0.2, 0.0], Mode::Attack => [1.0, 0.7, 0.5, -0.8, 3.0, 0.2, 0.3] } }
+pub fn hi(m: Mode) -> [f32; N] { match m { Mode::Safe => [1.8, 1.2, 0.9, 2.0, 12.0, 0.8, 0.0], Mode::Attack => [2.4, 1.0, 1.1, 1.2, 12.0, 0.8, 1.0] } }
 
 /// The numbers `base` has, with the searched ones taken from `g` (each 0..1 over its bounds).
-pub fn to_cfg(base: AutoCfg, g: &[f32; 6]) -> AutoCfg {
-    let v = |i: usize| LO[i] + g[i].clamp(0.0, 1.0) * (HI[i] - LO[i]);
-    AutoCfg { lat_factor: v(0), brake_factor: v(1), offset_max: v(2), edge_margin: v(3), look_base: v(4), look_gain: v(5), ..base }
+pub fn to_cfg(base: AutoCfg, g: &[f32; N], m: Mode) -> AutoCfg {
+    let (l, h) = (lo(m), hi(m));
+    let v = |i: usize| l[i] + g[i].clamp(0.0, 1.0) * (h[i] - l[i]);
+    AutoCfg { lat_factor: v(0), brake_factor: v(1), offset_max: v(2), edge_margin: v(3), look_base: v(4), look_gain: v(5), slide: v(6), attack: if m == Mode::Attack { 1.0 } else { 0.0 }, ..base }
 }
 /// The inverse: where `cfg` lies in the 0..1 box.
-pub fn from_cfg(cfg: &AutoCfg) -> [f32; 6] {
-    let x = [cfg.lat_factor, cfg.brake_factor, cfg.offset_max, cfg.edge_margin, cfg.look_base, cfg.look_gain];
-    std::array::from_fn(|i| ((x[i] - LO[i]) / (HI[i] - LO[i])).clamp(0.0, 1.0))
+pub fn from_cfg(cfg: &AutoCfg, m: Mode) -> [f32; N] {
+    let x = from_cfg_values(cfg); let (l, h) = (lo(m), hi(m));
+    std::array::from_fn(|i| if h[i] > l[i] { ((x[i] - l[i]) / (h[i] - l[i])).clamp(0.0, 1.0) } else { 0.0 })
 }
 
-/// The six searched numbers of `cfg` in their own units (the order of `LO`).
-pub fn from_cfg_values(c: &AutoCfg) -> [f32; 6] { [c.lat_factor, c.brake_factor, c.offset_max, c.edge_margin, c.look_base, c.look_gain] }
+/// The searched numbers of `cfg` in their own units.
+pub fn from_cfg_values(c: &AutoCfg) -> [f32; N] { [c.lat_factor, c.brake_factor, c.offset_max, c.edge_margin, c.look_base, c.look_gain, c.slide] }
 
 /// How one drive of a stage went.
 #[derive(Clone, Copy, Debug, Default)]
@@ -28,9 +34,14 @@ pub struct Drive { pub finished: bool, pub time: f32, pub worst_edge: f32, pub f
 
 impl Drive {
     /// The cost of the drive in seconds: the time and what the mistakes are worth (a metre beyond the edge costs 40 s past 0.2 m, a flip 300 s, all the damage 800 s).
-    pub fn cost(&self) -> f32 {
+    pub fn cost(&self) -> f32 { self.cost_in(Mode::Safe) }
+    /// In `Attack` a metre or two beyond the edge is free, more costs 25 s per metre, a flip 400 s, all the damage 400 s.
+    pub fn cost_in(&self, m: Mode) -> f32 {
         if !self.finished { return 2000.0; }
-        self.time + 40.0 * (self.worst_edge - 0.2).max(0.0) + 300.0 * self.flips as f32 + 800.0 * self.damage + 20.0 * self.recoveries as f32
+        match m {
+            Mode::Safe => self.time + 40.0 * (self.worst_edge - 0.2).max(0.0) + 300.0 * self.flips as f32 + 800.0 * self.damage + 20.0 * self.recoveries as f32,
+            Mode::Attack => self.time + 25.0 * (self.worst_edge - 2.0).max(0.0) + 400.0 * self.flips as f32 + 400.0 * self.damage + 20.0 * self.recoveries as f32,
+        }
     }
 }
 
@@ -58,43 +69,43 @@ impl Rng {
 
 /// Separable CMA-ES in the 0..1 box (the candidates are clamped into it).
 pub struct Cma {
-    pub mean: [f32; 6], pub sigma: f32, diag: [f32; 6], ps: [f32; 6], pc: [f32; 6], pub lambda: usize, mu: usize, w: Vec<f32>, mueff: f32, rng: Rng, pub generation: u32,
+    pub mean: [f32; N], pub sigma: f32, diag: [f32; N], ps: [f32; N], pc: [f32; N], pub lambda: usize, mu: usize, w: Vec<f32>, mueff: f32, rng: Rng, pub generation: u32,
 }
 
 impl Cma {
-    pub fn new(start: [f32; 6], sigma: f32, seed: u64) -> Cma {
+    pub fn new(start: [f32; N], sigma: f32, seed: u64) -> Cma {
         let lambda = 8usize; let mu = lambda / 2;
         let mut w: Vec<f32> = (0..mu).map(|i| ((lambda as f32 + 1.0) / 2.0).ln() - ((i + 1) as f32).ln()).collect();
         let s: f32 = w.iter().sum(); for x in w.iter_mut() { *x /= s; }
         let mueff = 1.0 / w.iter().map(|x| x * x).sum::<f32>();
-        Cma { mean: start, sigma, diag: [1.0; 6], ps: [0.0; 6], pc: [0.0; 6], lambda, mu, w, mueff, rng: Rng::new(seed), generation: 0 }
+        Cma { mean: start, sigma, diag: [1.0; N], ps: [0.0; N], pc: [0.0; N], lambda, mu, w, mueff, rng: Rng::new(seed), generation: 0 }
     }
 
     /// The next candidates.
-    pub fn ask(&mut self) -> Vec<[f32; 6]> {
+    pub fn ask(&mut self) -> Vec<[f32; N]> {
         (0..self.lambda).map(|_| std::array::from_fn(|i| (self.mean[i] + self.sigma * self.diag[i].sqrt() * self.rng.normal()).clamp(0.0, 1.0))).collect()
     }
 
     /// Learns from the costs of the candidates `ask` returned (lower is better).
-    pub fn tell(&mut self, xs: &[[f32; 6]], costs: &[f32]) {
-        let n = 6.0f32;
+    pub fn tell(&mut self, xs: &[[f32; N]], costs: &[f32]) {
+        let n = N as f32;
         let mut order: Vec<usize> = (0..xs.len()).collect();
         order.sort_by(|&a, &b| costs[a].partial_cmp(&costs[b]).unwrap_or(std::cmp::Ordering::Equal));
         let old = self.mean;
-        for i in 0..6 { self.mean[i] = (0..self.mu).map(|k| self.w[k] * xs[order[k]][i]).sum(); }
+        for i in 0..N { self.mean[i] = (0..self.mu).map(|k| self.w[k] * xs[order[k]][i]).sum(); }
         let me = self.mueff;
         let cs = (me + 2.0) / (n + me + 5.0); let ds = 1.0 + 2.0 * (((me - 1.0) / (n + 1.0)).sqrt() - 1.0).max(0.0) + cs;
         let cc = (4.0 + me / n) / (n + 4.0 + 2.0 * me / n);
         let c1 = 2.0 / ((n + 1.3) * (n + 1.3) + me) * (n + 2.0) / 3.0;
         let cmu = (1.0 - c1).min(2.0 * (me - 2.0 + 1.0 / me) / ((n + 2.0) * (n + 2.0) + me) * (n + 2.0) / 3.0);
         let mut ps2 = 0.0;
-        for i in 0..6 {
+        for i in 0..N {
             let y = (self.mean[i] - old[i]) / (self.sigma * self.diag[i].sqrt());
             self.ps[i] = (1.0 - cs) * self.ps[i] + (cs * (2.0 - cs) * me).sqrt() * y; ps2 += self.ps[i] * self.ps[i];
         }
         let chi = n.sqrt() * (1.0 - 1.0 / (4.0 * n) + 1.0 / (21.0 * n * n));
         let hs = if ps2.sqrt() / (1.0 - (1.0 - cs).powi(2 * (self.generation as i32 + 1))).sqrt() < (1.4 + 2.0 / (n + 1.0)) * chi { 1.0 } else { 0.0 };
-        for i in 0..6 {
+        for i in 0..N {
             let d = self.diag[i].sqrt();
             self.pc[i] = (1.0 - cc) * self.pc[i] + hs * (cc * (2.0 - cc) * me).sqrt() * (self.mean[i] - old[i]) / self.sigma;
             let rank_mu: f32 = (0..self.mu).map(|k| { let y = (xs[order[k]][i] - old[i]) / self.sigma; self.w[k] * y * y }).sum();
@@ -108,23 +119,23 @@ impl Cma {
 
 /// The self-training of the autopilot for `car`: `generations` rounds of the search, every candidate driving `seeds`. `progress(done, best_cost)` is called after each round and
 /// returning `false` from `stop` ends the search early. Returns the best numbers found (the start's own when nothing beat it) and their cost.
-pub fn train(car: VehicleSpec, like: Option<&World>, start: AutoCfg, seeds: &[u64], generations: u32, mut progress: impl FnMut(f32, f32), stop: impl Fn() -> bool) -> (AutoCfg, f32) {
+pub fn train(car: VehicleSpec, like: Option<&World>, start: AutoCfg, mode: Mode, seeds: &[u64], generations: u32, mut progress: impl FnMut(f32, f32), stop: impl Fn() -> bool) -> (AutoCfg, f32) {
     let cost = |cfg: AutoCfg| -> f32 {
         let hs: Vec<_> = seeds.iter().map(|&s| { let tun = like.map(|l| (l.tuning, l.assists, l.drivetrain.clone())); std::thread::spawn(move || {
             let mut w = None::<World>;
             if let Some(t) = tun { let mut x = World::from_terrain(crate::game::terrain::Terrain::flat(), car, (0.0, 0.0), 0.0); x.tuning = t.0; x.assists = t.1; x.drivetrain = t.2; w = Some(x); }
-            drive_stage(s, car, w.as_ref(), cfg, 700.0).cost()
+            drive_stage(s, car, w.as_ref(), cfg, 700.0).cost_in(mode)
         }) }).collect();
         hs.into_iter().map(|h| h.join().unwrap_or(2000.0)).sum::<f32>() / seeds.len().max(1) as f32
     };
     let mut best = (start, cost(start));
     progress(0.0, best.1);
-    let mut cma = Cma::new(from_cfg(&start), 0.15, 7);
+    let mut cma = Cma::new(from_cfg(&start, mode), 0.15, 7);
     for g in 0..generations {
         if stop() { break; }
         let xs = cma.ask();
-        let cs: Vec<f32> = xs.iter().map(|x| cost(to_cfg(start, x))).collect();
-        for (x, c) in xs.iter().zip(&cs) { if *c < best.1 { best = (to_cfg(start, x), *c); } }
+        let cs: Vec<f32> = xs.iter().map(|x| cost(to_cfg(start, x, mode))).collect();
+        for (x, c) in xs.iter().zip(&cs) { if *c < best.1 { best = (to_cfg(start, x, mode), *c); } }
         cma.tell(&xs, &cs);
         progress((g + 1) as f32 / generations as f32, best.1);
     }
@@ -136,15 +147,16 @@ mod tests {
     use super::*;
     #[test] fn the_numbers_map_to_the_box_and_back() {
         let c = super::super::cfg::cfg();
-        let g = from_cfg(&c); assert!(g.iter().all(|x| (0.0..=1.0).contains(x)));
-        let back = to_cfg(c, &g);
+        let g = from_cfg(&c, Mode::Safe); assert!(g.iter().all(|x| (0.0..=1.0).contains(x)));
+        let back = to_cfg(c, &g, Mode::Safe);
         assert!((back.lat_factor - c.lat_factor).abs() < 1e-4 && (back.look_base - c.look_base).abs() < 1e-4 && back.slide == c.slide);
-        assert_eq!(to_cfg(c, &[5.0; 6]).lat_factor, HI[0]); assert_eq!(to_cfg(c, &[-1.0; 6]).edge_margin, LO[3]);
+        assert_eq!(to_cfg(c, &[5.0; N], Mode::Safe).lat_factor, hi(Mode::Safe)[0]); assert_eq!(to_cfg(c, &[-1.0; N], Mode::Safe).edge_margin, lo(Mode::Safe)[3]);
+        let a = to_cfg(c, &[0.5; N], Mode::Attack); assert!(a.attack == 1.0 && a.slide > 0.6 && a.edge_margin < 0.3 && to_cfg(c, &[1.0; N], Mode::Safe).slide == 0.0, "attack slides, safe does not");
     }
     #[test] fn the_search_finds_the_minimum_of_a_bowl() {
-        let target = [0.3, 0.7, 0.5, 0.2, 0.8, 0.4];
-        let f = |x: &[f32; 6]| x.iter().zip(&target).map(|(a, b)| (a - b) * (a - b)).sum::<f32>();
-        let mut cma = Cma::new([0.5; 6], 0.2, 1);
+        let target = [0.3, 0.7, 0.5, 0.2, 0.8, 0.4, 0.6];
+        let f = |x: &[f32; N]| x.iter().zip(&target).map(|(a, b)| (a - b) * (a - b)).sum::<f32>();
+        let mut cma = Cma::new([0.5; N], 0.2, 1);
         for _ in 0..80 { let xs = cma.ask(); let cs: Vec<f32> = xs.iter().map(f).collect(); cma.tell(&xs, &cs); }
         assert!(f(&cma.mean) < 0.01, "the mean ends near the minimum: {:?}", cma.mean);
     }
@@ -167,8 +179,10 @@ mod tests {
         let gens: u32 = std::env::var("AP_GEN").ok().and_then(|s| s.parse().ok()).unwrap_or(10);
         let seeds: Vec<u64> = std::env::var("AP_SEEDS").map(|s| s.split(',').filter_map(|x| x.parse().ok()).collect()).unwrap_or_else(|_| vec![2, 21]);
         let start = super::super::cfg::cfg();
-        let (best, cost) = train(car, None, start, &seeds, gens, |p, b| eprintln!("progress {:.0}% best cost {:.1}", p * 100.0, b), || false);
-        let c0 = { let hs: Vec<_> = seeds.iter().map(|&s| std::thread::spawn(move || drive_stage(s, car, None, start, 700.0).cost())).collect(); hs.into_iter().map(|h| h.join().unwrap()).sum::<f32>() / seeds.len() as f32 };
-        println!("START cost {c0:.1}\nBEST cost {cost:.1}\n{{\"lat_factor\":{:.3},\"brake_factor\":{:.3},\"offset_max\":{:.3},\"edge_margin\":{:.3},\"look_base\":{:.2},\"look_gain\":{:.3}}}", best.lat_factor, best.brake_factor, best.offset_max, best.edge_margin, best.look_base, best.look_gain);
+        let mode = if std::env::var("AP_MODE").map_or(false, |m| m == "attack") { Mode::Attack } else { Mode::Safe };
+        let start = if mode == Mode::Attack { super::super::cfg::attack() } else { start };
+        let (best, cost) = train(car, None, start, mode, &seeds, gens, |p, b| eprintln!("progress {:.0}% best cost {:.1}", p * 100.0, b), || false);
+        let c0 = { let hs: Vec<_> = seeds.iter().map(|&s| std::thread::spawn(move || drive_stage(s, car, None, start, 700.0).cost_in(mode))).collect(); hs.into_iter().map(|h| h.join().unwrap()).sum::<f32>() / seeds.len() as f32 };
+        println!("START cost {c0:.1}\nBEST cost {cost:.1}\n{{\"lat_factor\":{:.3},\"brake_factor\":{:.3},\"offset_max\":{:.3},\"edge_margin\":{:.3},\"look_base\":{:.2},\"look_gain\":{:.3},\"slide\":{:.2}}}", best.lat_factor, best.brake_factor, best.offset_max, best.edge_margin, best.look_base, best.look_gain, best.slide);
     }
 }

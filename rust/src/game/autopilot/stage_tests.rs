@@ -182,3 +182,35 @@ fn diagnose(seed: u64, style: i32) -> String {
     let hs: Vec<_> = seeds.iter().map(|&s| spawn_lim(move || diagnose(s, st))).collect();
     for h in hs { println!("{}", h.join().unwrap()); }
 }
+
+#[test] #[ignore] fn max_attack_is_faster_slides_and_cuts_the_corners_without_wrecking_the_car() {
+    let hs: Vec<_> = [3u64, 8].iter().flat_map(|&s| [1, 5].map(move |st| (s, st))).map(|(s, st)| spawn_lim(move || (s, st, run_from(s, false, false, st)))).collect();
+    let rs: Vec<(u64, i32, Report)> = hs.into_iter().map(|h| h.join().unwrap()).collect();
+    for seed in [3u64, 8] {
+        let get = |st: i32| rs.iter().find(|(s, t, _)| *s == seed && *t == st).map(|(_, _, r)| r).unwrap();
+        let (normal, attack) = (get(1), get(5));
+        print(attack);
+        assert!(normal.finished && attack.finished && attack.flips == 0, "seed {seed}");
+        assert!(attack.time < normal.time * 0.95, "seed {seed}: max attack {:.0} s, normal {:.0} s", attack.time, normal.time);
+        assert!(attack.slide_pct > 3.0 && attack.slide_pct > normal.slide_pct * 2.0, "seed {seed}: it slides ({:.1}% against {:.1}%)", attack.slide_pct, normal.slide_pct);
+        assert!(attack.worst_edge > normal.worst_edge && attack.worst_edge < 6.0, "seed {seed}: it cuts the corners (edge {:.1} m against {:.1} m) but stays near the road", attack.worst_edge, normal.worst_edge);
+        assert!(attack.damage < 0.15, "seed {seed}: damage {:.0}%", attack.damage * 100.0);
+    }
+}
+
+/// Which gears the automatic uses when the autopilot drives, and at what revs (diagnosis).
+#[test] #[ignore] fn diagnose_the_gears() {
+    let st = env_style();
+    let mut w = World::with_roads(2, car());
+    if let Ok(p) = std::env::var("AP_PROFILE") { w.drivetrain.profile = crate::game::shiftlogic::Profile::from_i32(p.parse().unwrap_or(1)); }
+    if let Ok(m) = std::env::var("AP_ASSISTS") { w.assists = crate::game::assists::Assists::from_mask(m.parse().unwrap_or(255)); }
+    assert!(w.place_on_road(2) && w.set_autopilot_style(st));
+    let (mut t, mut gears, mut rpm_sum, mut n) = (0.0f32, [0.0f32; 8], 0.0f32, 0.0f32);
+    let mut rows: Vec<String> = Vec::new();
+    while w.autopilot_on() && t < 200.0 {
+        w.step(&Input::default(), 1.0 / 60.0); t += 1.0 / 60.0;
+        let g = w.drivetrain.gear.clamp(-1, 6); gears[(g + 1) as usize] += 1.0 / 60.0; rpm_sum += w.drivetrain.rpm(); n += 1.0;
+        if ((t * 60.0) as u32) % 600 == 0 { rows.push(format!("t {:.0} v {:.1} m/s gear {} rpm {:.0} mode {:?}", t, w.vehicle.speed(), w.drivetrain.gear, w.drivetrain.rpm(), w.drivetrain.mode)); }
+    }
+    println!("seconds per gear (R,N,1..6): {:?}; mean rpm {:.0}\n{}", gears.iter().map(|x| x.round()).collect::<Vec<_>>(), rpm_sum / n.max(1.0), rows.join("\n"));
+}
