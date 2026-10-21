@@ -531,3 +531,61 @@ fn turn_grip(prep: impl Fn(&mut Vehicle)) -> f32 {
     for _ in 0..30 { v.step(&t, &[], &Input { throttle: 1.0, ..Default::default() }, DT); worst = worst.max(v.w.iter().cloned().fold(0.0, f32::max)); }
     assert!(v.contacts == 0 && worst < 5.0, "airborne: wheels turn at {worst} rad/s with nothing to push against");
 }
+
+/// A steady turn at 25 m/s (the speed held) for a car with the given setup: (yaw rate, the body's roll as the sine of the angle, speed times yaw rate).
+fn steady_turn(setup: crate::game::chassis::Chassis) -> (f32, f32, f32) {
+    let t = Terrain::flat();
+    let mut v = Vehicle::new(VehicleSpec::by_id("vulpes").unwrap(), v3(0., 1.0, 0.), 0.0);
+    v.chassis = setup;
+    for _ in 0..120 { v.step(&t, &[], &Input::default(), DT); }
+    v.vel = v.forward() * 25.0;
+    let (mut yaw, mut roll, mut lat) = (0.0f32, 0.0f32, 0.0f32);
+    for i in 0..300 {
+        let s = v3(v.vel.x, 0.0, v.vel.z).len(); if s > 1.0 { let k = 25.0 / s; v.vel = v3(v.vel.x * k, v.vel.y, v.vel.z * k); }
+        v.step(&t, &[], &Input { steer: 0.35, ..Default::default() }, DT);
+        if i > 200 { yaw = yaw.max(v.omega.y.abs()); roll = roll.max(v.right().y.abs()); lat = lat.max(v.vel.len() * v.omega.y.abs()); }
+    }
+    (yaw, roll, lat)
+}
+#[test] fn stiffer_anti_roll_bars_roll_the_body_less() {
+    use crate::game::chassis::BASE;
+    let soft = steady_turn(crate::game::chassis::Chassis { arb_front: 0.0, arb_rear: 0.0, ..BASE });
+    let stiff = steady_turn(crate::game::chassis::Chassis { arb_front: 3.0 * BASE.arb_front, arb_rear: 3.0 * BASE.arb_rear, ..BASE });
+    assert!(stiff.1 < soft.1 * 0.9, "the roll with the bars {} against without {}", stiff.1, soft.1);
+}
+#[test] fn the_front_bar_understeers_and_the_rear_bar_oversteers() {
+    use crate::game::chassis::BASE;
+    let front = steady_turn(crate::game::chassis::Chassis { arb_front: 3.0 * BASE.arb_front, arb_rear: 0.0, ..BASE });
+    let rear = steady_turn(crate::game::chassis::Chassis { arb_front: 0.0, arb_rear: 3.0 * BASE.arb_rear, ..BASE });
+    assert!(front.0 < rear.0 * 0.99, "yaw rate with the stiff front bar {} against the stiff rear bar {}", front.0, rear.0);
+}
+#[test] fn camber_has_an_optimum_and_the_default_is_near_it() {
+    use crate::game::chassis::{Chassis, BASE};
+    let at = |c: f32| steady_turn(Chassis { camber_front: c, camber_rear: c, ..BASE }).2;
+    let (best, flat, extreme) = (at(-1.5), at(2.0), at(-7.0));
+    assert!(best > flat * 1.005 && best > extreme * 1.005, "camber -1.5 {best}, +2 {flat}, -7 {extreme}");
+}
+#[test] fn toe_out_costs_tyre_work_on_a_straight() {
+    use crate::game::chassis::{Chassis, BASE};
+    let heat = |toe: f32| {
+        let (mut v, t) = flat_car(1.1); v.chassis = Chassis { toe_front: toe, toe_rear: toe, ..BASE };
+        run(&mut v, &t, Input::default(), 1.0);
+        for y in v.tyres.iter_mut() { y.temp = 40.0; y.wear = 0.0; }
+        for _ in 0..60 * 8 { let f = v.forward() * 25.0; v.vel = v3(f.x, v.vel.y, f.z); v.step(&t, &[], &Input::default(), DT); }
+        (v.tyres.iter().map(|y| y.temp).sum::<f32>() / 4.0, v.tyres.iter().map(|y| y.wear).sum::<f32>())
+    };
+    let (straight, out) = (heat(0.0), heat(1.5));
+    assert!(out.0 > straight.0 + 0.3 && out.1 > straight.1 * 1.5, "straight {straight:?}, toe-out {out:?}");
+}
+#[test] #[ignore] fn print_chassis_effects() {
+    use crate::game::chassis::{Chassis, BASE};
+    let row = |l: &str, c: Chassis| { let (y, r, a) = steady_turn(c); eprintln!("CH {l:28} yaw {y:.3} roll {r:.4} v*yaw {a:.2}"); };
+    row("as built", BASE);
+    row("no bars", Chassis { arb_front: 0.0, arb_rear: 0.0, ..BASE });
+    row("bars x3", Chassis { arb_front: 3.0 * BASE.arb_front, arb_rear: 3.0 * BASE.arb_rear, ..BASE });
+    row("front bar x3, rear 0", Chassis { arb_front: 3.0 * BASE.arb_front, arb_rear: 0.0, ..BASE });
+    row("front bar 0, rear x3", Chassis { arb_front: 0.0, arb_rear: 3.0 * BASE.arb_rear, ..BASE });
+    for c in [2.0, 0.0, -1.5, -3.0, -6.0] { row(&format!("camber {c}"), Chassis { camber_front: c, camber_rear: c, ..BASE }); }
+    row("toe-out 1.0 both", Chassis { toe_front: 1.0, toe_rear: 1.0, ..BASE });
+    row("toe-in 1.0 both", Chassis { toe_front: -1.0, toe_rear: -1.0, ..BASE });
+}

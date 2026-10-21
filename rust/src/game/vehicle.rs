@@ -7,6 +7,7 @@ use super::surface::Surface;
 use super::terrain::Terrain;
 use super::wheel;
 use super::tyre::{self, Tyre};
+use super::chassis::{self, Chassis};
 
 /// Which generated body the renderer builds for a car.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +87,8 @@ pub struct Vehicle {
     pub brake_bias: f32,
     /// Each tyre's temperature and wear, the cold pressure as a multiplier of the set's default and the air's temperature (degrees C): they decide the grip (see `tyre`).
     pub tyres: [Tyre; 4], pub tyre_bar: f32, pub air_c: f32,
+    /// The suspension setup: the anti-roll bars, the camber and the toe (see `chassis`).
+    pub chassis: Chassis,
     /// The surface under the first wheel in contact (the HUD shows it); tests can force one for every wheel.
     pub surface: Surface, pub force_surface: Option<Surface>,
     pub wheels: [WheelInfo; 4],
@@ -96,7 +99,7 @@ const G: f32 = 9.81;
 
 impl Vehicle {
     pub fn new(spec: VehicleSpec, pos: V3, yaw: f32) -> Vehicle {
-        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_torque: None, w: [0.0; 4], slip: [0.0; 4], spin_ready: false, last_vel: V3::ZERO, tyre_sum: 0.0, abs_on: true, tc_on: true, brake_bias: wheel::BRAKE_BIAS, tyres: [Tyre::warm(spec.wheel_set); 4], tyre_bar: 1.0, air_c: 15.0, surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
+        Vehicle { spec, pos, rot: Q::axis_angle(v3(0., 1., 0.), yaw), vel: V3::ZERO, omega: V3::ZERO, steer: 0.0, comp: [0.0; 4], contacts: 0, parked: false, braking: false, reversing: false, brake_heat: [0.0; 4], wet: 0.0, reverse_throttle: false, drive_torque: None, w: [0.0; 4], slip: [0.0; 4], spin_ready: false, last_vel: V3::ZERO, tyre_sum: 0.0, abs_on: true, tc_on: true, brake_bias: wheel::BRAKE_BIAS, tyres: [Tyre::warm(spec.wheel_set); 4], tyre_bar: 1.0, air_c: 15.0, chassis: Chassis::default(), surface: Surface::Asphalt, force_surface: None, wheels: [WheelInfo::NONE; 4] }
     }
     pub fn forward(&self) -> V3 { self.rot.rotate(v3(0., 0., 1.)) }
     pub fn up(&self) -> V3 { self.rot.rotate(v3(0., 1., 0.)) }
@@ -189,13 +192,20 @@ impl Vehicle {
             self.contacts += 1;
             self.comp[w] = compress.min(s.rest + s.radius);
             let vp = self.vel + self.omega.cross(r_att);
-            let fs = (s.spring * compress - s.damper * vp.dot(n)).clamp(0.0, max_susp);
+            // the anti-roll bar of the axle: up on the more compressed wheel, down on the other (the other wheel's compression is the last substep's)
+            let (pair, bar_k, track) = if front { (1 - w, self.chassis.arb_front, (s.wheels[0].x - s.wheels[1].x).abs()) } else { (5 - w, self.chassis.arb_rear, (s.wheels[2].x - s.wheels[3].x).abs()) };
+            let bar = chassis::bar_force(bar_k, track, compress, self.comp[pair]);
+            let fs = (s.spring * compress - s.damper * vp.dot(n) + bar).clamp(0.0, max_susp);
             let susp = n * fs;
             force = force + susp; torque = torque + r_att.cross(susp);
             // tyre
             let r_c = r_att - up * d;
             let vc = self.vel + self.omega.cross(r_c);
-            let base = if front { fwd * self.steer.cos() + right * self.steer.sin() } else { fwd };
+            // the wheel's heading: the steering (the front) and the toe of its axle
+            let left_wheel = s.wheels[w].x > 0.0;
+            let toe = chassis::wheel_toe(if front { self.chassis.toe_front } else { self.chassis.toe_rear }, left_wheel);
+            let ang = (if front { self.steer } else { 0.0 }) + toe;
+            let base = fwd * ang.cos() + right * ang.sin();
             let fw = (base - n * base.dot(n)).norm();
             let rw = n.cross(fw);
             let (vl, vf) = (vc.dot(rw), vc.dot(fw));
@@ -212,7 +222,10 @@ impl Vehicle {
             // a wheel placed with a speed starts turning with the ground
             if !self.spin_ready { self.w[w] = vf / s.radius; }
             let (kp, keep) = wheel::slip_params(surf);
-            let fmax = mu_s * fs;
+            // the grip a tyre gets from its load falls behind the load (so the bar that moves load onto an axle costs it grip), and the camber (static plus the body's roll) shifts it
+            let roll_left = right.y.clamp(-1.0, 1.0).asin().to_degrees();
+            let camber = chassis::camber_grip(if front { self.chassis.camber_front } else { self.chassis.camber_rear }, roll_left, if left_wheel { 1.0 } else { -1.0 });
+            let fmax = mu_s * fs * chassis::load_factor(fs, wheel_mass * G) * camber;
             // the friction circle: while the tyre grips (up to about twice the peak of its slip) the side force comes first, the way the car and the autopilot were tuned, and the drive or the brake gets
             // what is left; a tyre that slips far past the peak (locked or burning out) slides along its slip, so its force is the longitudinal one and the side keeps only what that leaves
             let k_now = (self.w[w] * s.radius - vf) / vf.abs().max(1.0);

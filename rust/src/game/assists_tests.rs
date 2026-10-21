@@ -21,7 +21,7 @@ use super::*;
 }
 
 #[test] fn the_differential_parts_are_tuning_parts_with_their_own_ranges() {
-    assert_eq!(TUNING_PARTS, 13);
+    assert_eq!(TUNING_PARTS, 19);
     let mut t = Tuning::default();
     t.set(7, 9.0); assert_eq!(t.diff_front, 2.0); t.set(8, -1.0); assert_eq!(t.diff_rear, 0.0); t.set(9, 0.5); assert_eq!(t.diff_centre, 0.5);
     t.set(10, 9.0); assert_eq!(t.split, 1.4); t.set(10, 0.0); assert_eq!(t.split, 0.6); t.set(10, f32::NAN); assert_eq!(t.split, 0.6, "garbage is ignored");
@@ -29,7 +29,7 @@ use super::*;
 }
 
 #[test] fn the_brake_bias_is_a_tuning_part_that_reaches_the_vehicle() {
-    assert_eq!(TUNING_PARTS, 13);
+    assert_eq!(TUNING_PARTS, 19);
     let mut t = Tuning::default();
     t.set(12, 9.0); assert_eq!(t.tyre_bar, 1.25); t.set(12, 0.0); assert_eq!(t.tyre_bar, 0.8); t.set(12, f32::NAN); assert_eq!(t.tyre_bar, 0.8, "garbage is ignored");
     t.set(11, 9.0); assert_eq!(t.bias, 1.25); t.set(11, 0.0); assert_eq!(t.bias, 0.7); t.set(11, f32::NAN); assert_eq!(t.bias, 0.7, "garbage is ignored");
@@ -47,6 +47,17 @@ use super::*;
     let wv = w.climate.weather();
     let air = crate::raster::smoke::Air::from_sky(w.sun_dir().y, wv.cloud, wv.rain, wv.fog).celsius;
     assert!((w.vehicle.air_c - air).abs() < 1e-3 && w.vehicle.air_c > -30.0 && w.vehicle.air_c < 40.0, "{} against {air}", w.vehicle.air_c);
+}
+#[test] fn the_chassis_parts_are_tuning_parts_and_reach_the_vehicle() {
+    let mut t = Tuning::default();
+    for i in 13..19 { assert_eq!(t.get(i), 1.0, "part {i} starts as built"); t.set(i, 9.0); assert_eq!(t.get(i), 2.0); t.set(i, -1.0); assert_eq!(t.get(i), 0.0); t.set(i, f32::NAN); assert_eq!(t.get(i), 0.0, "garbage is ignored"); t.set(i, 1.0); }
+    let mut w = crate::game::world::World::test_track(VehicleSpec::default_car());
+    w.tuning.set(13, 0.0); w.tuning.set(14, 2.0); w.tuning.set(15, 0.0); w.tuning.set(17, 2.0);
+    w.step(&crate::game::input::Input::default(), 1.0 / 60.0);
+    let c = w.vehicle.chassis;
+    assert_eq!((c.arb_front, c.arb_rear), (0.0, 2.0 * crate::game::chassis::BASE.arb_rear));
+    assert!(c.camber_front == 0.0 && c.toe_front > crate::game::chassis::BASE.toe_front, "{c:?}");
+    assert_eq!(Tuning::default().chassis(), crate::game::chassis::BASE);
 }
 mod physics {
     use super::*;
