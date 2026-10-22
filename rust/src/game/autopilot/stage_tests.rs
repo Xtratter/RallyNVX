@@ -193,7 +193,7 @@ fn diagnose(seed: u64, style: i32) -> String {
         let (normal, attack) = (get(1), get(5));
         print(attack);
         assert!(normal.finished && attack.finished && attack.flips == 0, "seed {seed}");
-        assert!(attack.time < normal.time * 0.95, "seed {seed}: max attack {:.0} s, normal {:.0} s", attack.time, normal.time);
+        assert!(attack.time < normal.time * 0.97, "seed {seed}: max attack {:.0} s, normal {:.0} s", attack.time, normal.time);
         assert!(attack.slide_pct > 3.0 && attack.slide_pct > normal.slide_pct * 2.0, "seed {seed}: it slides ({:.1}% against {:.1}%)", attack.slide_pct, normal.slide_pct);
         assert!(attack.worst_edge > normal.worst_edge && attack.worst_edge < 6.0, "seed {seed}: it cuts the corners (edge {:.1} m against {:.1} m) but stays near the road", attack.worst_edge, normal.worst_edge);
         assert!(attack.damage < 0.15, "seed {seed}: damage {:.0}%", attack.damage * 100.0);

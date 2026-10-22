@@ -3,7 +3,7 @@
 //! speed, with the gearbox, the traction control, ABS, the weight and the drag in them) instead of a guess from the spec.
 use crate::game::input::Input;
 use crate::game::surface::Surface;
-use crate::game::world::World;
+use crate::game::world::{ProbeSetup, World};
 
 /// The table step (m/s) and its length: speeds 0..=(N-1)*DV.
 pub const DV: f32 = 2.0;
@@ -31,10 +31,15 @@ impl CarModel {
     /// The old guess from the spec: a flat pull of half the engine force, a brake of the grip.
     pub fn nominal(accel: f32, mu: f32, top: f32) -> CarModel { CarModel { acc: [accel; N], brk: [mu * 9.81; N], lat: [mu * 9.81; N], top } }
     pub fn lateral(&self, v: f32) -> f32 { at(&self.lat, v) }
+    /// The cornering grip's plateau: the largest of the table (the low speeds are held down by the steering lock, which the plan counts separately).
+    pub fn lateral_plateau(&self) -> f32 { self.lat.iter().cloned().fold(0.0, f32::max) }
 
     /// Runs the two tests on `surface` in a copy of `w`'s setup.
-    pub fn measure(w: &World, surface: Surface) -> CarModel {
-        let mut p = w.probe(surface);
+    pub fn measure(w: &World, surface: Surface) -> CarModel { CarModel::measure_setup(&w.probe_setup(), surface) }
+
+    /// As `measure`, from a plain copy of the setup (it may run on another thread).
+    pub fn measure_setup(setup: &ProbeSetup, surface: Surface) -> CarModel {
+        let mut p = setup.world(surface);
         let dt = 1.0 / 60.0;
         let (mut sum, mut cnt) = ([0.0f32; N], [0u32; N]);
         let mut prev = (0.0f32, 0.0f32); let mut t = 0.0f32; let mut best = 0.0f32; let mut still = 0.0f32;
@@ -61,18 +66,18 @@ impl CarModel {
         let mut brk = [0.0f32; N];
         for k in 0..N { brk[k] = if cnt[k] > 0 { sum[k] / cnt[k] as f32 } else { f32::NAN }; }
         fill(&mut brk, 1.0);
-        let lat = measure_lat(w, surface, top);
+        let lat = measure_lat(setup, surface, top);
         CarModel { acc, brk, lat, top }
     }
 }
 
 /// The cornering grip at several speeds: at each a steering ramp from straight to full lock over 6 s with the speed held, the largest lateral acceleration (yaw rate x speed, smoothed over 0.4 s) kept.
-fn measure_lat(w: &World, surface: Surface, top: f32) -> [f32; N] {
+fn measure_lat(setup: &ProbeSetup, surface: Surface, top: f32) -> [f32; N] {
     const SPEEDS: [f32; 8] = [6.0, 10.0, 14.0, 18.0, 22.0, 26.0, 30.0, 34.0];
     let dt = 1.0 / 60.0;
     let mut pts: Vec<(f32, f32)> = Vec::new();
     for &vt in SPEEDS.iter().filter(|&&v| v < top * 0.92) {
-        let mut p = w.probe(surface);
+        let mut p = setup.world(surface);
         let f = p.vehicle.forward(); p.vehicle.vel = f * vt;
         let (mut t, mut peak, mut avg) = (0.0f32, 0.0f32, 0.0f32);
         while t < 8.0 {
@@ -114,10 +119,12 @@ pub struct Models { pub list: Vec<(f32, CarModel)>, /** the steering lock (rad),
 
 impl Models {
     /// Measures the car on asphalt and on gravel (the stage's worst case) in a copy of `w`'s setup.
-    pub fn measure(w: &World) -> Models {
-        let key = |s: Surface| w.car_spec.mu * crate::game::grip::grip(s, 1.0).mu;
-        let sp = &w.car_spec;
-        Models { list: [Surface::Asphalt, Surface::Gravel].iter().map(|&s| (key(s), CarModel::measure(w, s))).collect(), steer: (sp.steer_max, sp.steer_speed_ref, (sp.wheels[0].z - sp.wheels[2].z).abs().max(1.0)) }
+    pub fn measure(w: &World) -> Models { Models::measure_setup(&w.probe_setup()) }
+    /// As `measure`, from a plain copy of the setup (a measurement on another thread while the car drives).
+    pub fn measure_setup(setup: &ProbeSetup) -> Models {
+        let key = |s: Surface| setup.car.mu * crate::game::grip::grip(s, 1.0).mu;
+        let sp = &setup.car;
+        Models { list: [Surface::Asphalt, Surface::Gravel].iter().map(|&s| (key(s), CarModel::measure_setup(setup, s))).collect(), steer: (sp.steer_max, sp.steer_speed_ref, (sp.wheels[0].z - sp.wheels[2].z).abs().max(1.0)) }
     }
     /// The speed (m/s) up to which the steering can follow a bend of curvature `kappa` (the lock shrinks with speed): the largest `v` with `tan(lock / (1 + v / ref)) / wheelbase >= kappa`.
     pub fn steer_speed(&self, kappa: f32, v_max: f32) -> f32 {

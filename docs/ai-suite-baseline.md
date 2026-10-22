@@ -54,3 +54,22 @@ What it shows: the normal style loses 3 to 5 % in wet, worn and damaged cells an
 | offroader | damaged | 362 / -0.3 | 316 / 2.7 |
 
 The excursions of Max Attack in the worn, cold and wet cells fell from 7 to 9.5 m to 2 to 6 m (one cell, the Vulpes on cold tyres, is still 8.5 m); the offroader on cold tyres now finishes every level (505 s with two unfinished before). The times in the dry cells are the same: A1 makes the plan right for the state of the car, it is not yet faster in the clean case (A2 and A4 are for that).
+
+## After stage A3 (2.92.0, the car measured again every 12 s, the plateau of the measured grip)
+
+Time s / worst excursion m. **Normal style (1)** / **Max Attack (5)**:
+
+| car | condition | normal | Max Attack |
+|---|---|---|---|
+| vulpes | dry | 318 / -0.4 | 288 / 3.3 |
+| offroader | dry | 338 / -0.3 | 308 / 2.4 |
+| vulpes | wet | 333 / -0.3 | 297 / 3.1 |
+| offroader | wet | 352 / -0.3 | 316 / 1.7 |
+| vulpes | worn tyres | 342 / -0.4 | 308 / 2.9 |
+| offroader | worn tyres | 360 / -0.3 | 326 / 1.9 |
+| vulpes | cold tyres | 362 / -0.3 | 323 / 1.8 |
+| offroader | cold tyres | 381 / -0.3 | 337 / 1.7 |
+| vulpes | damaged | 345 / -0.4 | 288 / 3.5 |
+| offroader | damaged | 360 / -0.4 | 316 / 2.6 |
+
+No cell of Max Attack is beyond 3.5 m (the shoulder), no cell of the normal style leaves the road; the clean-case time did not change (that is for A2 and A4).
