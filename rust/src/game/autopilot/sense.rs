@@ -9,7 +9,9 @@ pub const RAY_DEG: [f32; 15] = [-80.0, -58.0, -40.0, -27.0, -17.0, -9.0, -3.5, 0
 /// How far a ray looks (m).
 pub const RANGE: f32 = 80.0;
 /// The size of the sensors' feature vector.
-pub const N: usize = 15 + 3 + 29 + 4;
+pub const N: usize = 15 + 3 + 29 + 4 + 16;
+/// The values kept as a short memory (the last 0.5 s, one every 0.1 s): speed, yaw rate, side and forward acceleration, side velocity, steering, throttle and brake.
+pub const MEM: usize = 8;
 
 /// What the engine side of the world tells the autopilot each step (the drivetrain is not a part of the vehicle).
 #[derive(Clone, Copy, Debug, Default)]
@@ -29,8 +31,16 @@ fn ray(t: &Terrain, x: f32, z: f32, dx: f32, dz: f32) -> f32 {
     RANGE
 }
 
+/// The key values of this step in the order of `MEM` (what the short memory keeps).
+pub fn key_values(v: &Vehicle, tel: &Telemetry) -> [f32; MEM] {
+    let fwd = v.forward(); let right = v.right();
+    let (vf, vr) = (v.vel.x * fwd.x + v.vel.z * fwd.z, v.vel.x * right.x + v.vel.z * right.z);
+    let _ = vf;
+    [v.vel.len() / 30.0, (v.omega.dot(v.up()) / 2.0).clamp(-2.0, 2.0), 0.0, 0.0, (vr / 10.0).clamp(-1.5, 1.5), (v.steer / v.spec.steer_max.max(0.1)).clamp(-1.5, 1.5), tel.throttle, tel.brake]
+}
+
 /// The feature vector of the sensors (see the module); `hint` are the car-frame (side, forward) unit components of the directions to the route points 40 m and 100 m ahead.
-pub fn features(t: &Terrain, v: &Vehicle, tel: &Telemetry, prev_vel: V3, dt: f32, hint: [f32; 4]) -> Vec<f32> {
+pub fn features(t: &Terrain, v: &Vehicle, tel: &Telemetry, prev_vel: V3, dt: f32, hint: [f32; 4], memory: &[f32; 2 * MEM]) -> Vec<f32> {
     let mut f = Vec::with_capacity(N);
     let (fwd, right) = (v.forward(), v.right());
     let (fx, fz) = { let l = fwd.x.hypot(fwd.z).max(1e-3); (fwd.x / l, fwd.z / l) };
@@ -64,6 +74,8 @@ pub fn features(t: &Terrain, v: &Vehicle, tel: &Telemetry, prev_vel: V3, dt: f32
     f.push(fwd.y.clamp(-1.0, 1.0) * 3.0); f.push(right.y.clamp(-1.0, 1.0) * 3.0);
     // the pedal and the steering the net gave last are in `tel` and `v.steer`; the route's coarse hint last
     f.extend_from_slice(&hint);
+    // the short memory: how the key values changed over the last 0.2 s and 0.5 s
+    f.extend_from_slice(memory);
     f.truncate(N); while f.len() < N { f.push(0.0); }
     f
 }
@@ -75,7 +87,7 @@ mod tests {
     #[test] fn the_feature_vector_has_its_size_and_is_finite_on_a_bare_ground() {
         let t = Terrain::flat();
         let v = Vehicle::new(VehicleSpec::offroader(), v3(0.0, 1.1, 0.0), 0.3);
-        let f = features(&t, &v, &Telemetry::default(), V3::ZERO, 1.0 / 60.0, [0.0; 4]);
+        let f = features(&t, &v, &Telemetry::default(), V3::ZERO, 1.0 / 60.0, [0.0; 4], &[0.0; 2 * MEM]);
         assert_eq!(f.len(), N);
         assert!(f.iter().all(|x| x.is_finite() && x.abs() <= 3.01), "{f:?}");
         assert!(f[..15].iter().all(|x| *x == 0.0), "no road: no usable ground in any direction");
@@ -85,7 +97,7 @@ mod tests {
         let pts: Vec<RoadPt> = (0..60).map(|i| RoadPt { pos: v3(0.0, 0.0, i as f32 * 4.0), width: 8.0, s: i as f32 * 4.0 }).collect();
         let t = Terrain::flat().with_net(RoadNet::new(vec![Road { kind: RoadKind::Stage, pts }]));
         let v = Vehicle::new(VehicleSpec::offroader(), v3(0.0, 1.1, 20.0), 0.0);   // heading +z, in the middle of the road
-        let f = features(&t, &v, &Telemetry::default(), V3::ZERO, 1.0 / 60.0, [0.0; 4]);
+        let f = features(&t, &v, &Telemetry::default(), V3::ZERO, 1.0 / 60.0, [0.0; 4], &[0.0; 2 * MEM]);
         assert!(f[7] > 0.9, "straight ahead the road runs on: {}", f[7]);
         assert!(f[0] < 0.15 && f[14] < 0.15, "to the sides it ends at once: {} {}", f[0], f[14]);
         for k in 0..7 { assert!((f[k] - f[14 - k]).abs() < 0.12, "ray {k} against its mirror: {} {}", f[k], f[14 - k]); }

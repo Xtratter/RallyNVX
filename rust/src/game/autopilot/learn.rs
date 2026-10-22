@@ -6,6 +6,9 @@ use super::train::Drive;
 use crate::game::{input::Input, vehicle::VehicleSpec, world::World};
 use std::sync::Arc;
 
+/// The hidden size of a net that reads the sensors (67 inputs).
+pub const SENSOR_HIDDEN: usize = 64;
+
 pub type Sample = (Vec<f32>, [f32; O]);
 
 /// One drive of a stage from its start with `cfg`, the net (when given) driving; the (features, controller's action) pairs recorded when asked.
@@ -43,7 +46,7 @@ pub fn to_set(samples: &[Sample]) -> (Vec<Vec<f32>>, Vec<[f32; O]>, Vec<f32>) {
 /// The imitation with DAgger: `iters` rounds after the first (the controller's own drive); the net drives, the controller labels, the net trains on everything so far.
 /// `progress` gets 0..1 after each round; returning `true` from `stop` ends it early with the net so far.
 pub fn dagger(car: VehicleSpec, cfg: AutoCfg, seeds: &[u64], iters: usize, sensor: bool, mut progress: impl FnMut(f32), stop: impl Fn() -> bool) -> Mlp {
-    let mut data: Vec<Sample> = Vec::new(); let mut net = Mlp::with_inputs(1, if sensor { super::sense::N } else { F });
+    let mut data: Vec<Sample> = Vec::new(); let mut net = if sensor { Mlp::with_shape(1, super::sense::N, SENSOR_HIDDEN) } else { Mlp::with_inputs(1, F) };
     for it in 0..=iters {
         if stop() { break; }
         let policy = if it == 0 { None } else { Some(Arc::new(net.clone())) };
@@ -107,7 +110,7 @@ mod tests {
         let sensor = std::env::var("AP_SENSOR").is_ok();
         let (train_seeds, test_seeds) = ([2u64, 3, 5, 8], [1u64, 21]);
         let base = rollouts(&test_seeds, car, cfg, None, false, sensor, 2); show("controller", &base, &test_seeds);
-        let mut data: Vec<Sample> = Vec::new(); let mut net = Mlp::with_inputs(1, if sensor { crate::game::autopilot::sense::N } else { F });
+        let mut data: Vec<Sample> = Vec::new(); let mut net = if sensor { Mlp::with_shape(1, crate::game::autopilot::sense::N, std::env::var("AP_HIDDEN").ok().and_then(|s| s.parse().ok()).unwrap_or(SENSOR_HIDDEN)) } else { Mlp::with_inputs(1, F) };
         for it in 0..=iters {
             let policy = if it == 0 { None } else { Some(Arc::new(net.clone())) };
             let rs = rollouts(&train_seeds, car, cfg, policy, true, sensor, 3);

@@ -6,6 +6,8 @@ use crate::game::roads::shape::radius;
 const G: f32 = 9.81;
 /// The share of the measured pull the plan counts on (the rest is for the steering, the gear changes and the bumps).
 const ACC_K: f32 = 0.9;
+/// The measured cornering grip over the nominal one of the Vulpes on gravel at speed (see `model::measure_the_cornering_of_the_cars`): the car the style numbers were tuned on.
+const LAT_REF: f32 = 0.89;
 
 /// What the speed profile needs to know about the car and the ground (`stop_at_end`: the last point is a standstill).
 #[derive(Clone, Copy, Debug)]
@@ -52,7 +54,18 @@ impl Route {
         let (n, p, s, mu, lim) = (self.len(), &self.p, &self.s, &self.mu, self.lim);
         // with a model the passes below see the grip shared with the braking, so the bend is only widened by two points (8 m)
         let kappa: Vec<f32> = if models.is_some() { (0..n).map(|i| self.kraw[i.saturating_sub(2)..=(i + 2).min(n - 1)].iter().cloned().fold(0.0, f32::max)).collect() } else { self.kappa.clone() };
-        let mut speed: Vec<f32> = (0..n).map(|i| if kappa[i] > 1e-5 { (cfg.lat_factor * mu[i] * G / kappa[i]).sqrt().min(lim.v_max) } else { lim.v_max }).collect();
+        // the lateral acceleration the plan allows at speed `v` on point `i`: the style's number times the nominal grip, with the shape the car measured of itself over the speed (the downforce, the
+        // steering lock) relative to `LAT_REF`, the measured share of the nominal grip of the car the style's numbers were tuned on (the Vulpes on gravel at speed)
+        let allow = |i: usize, v: f32| -> f32 {
+            let base = cfg.lat_factor * mu[i] * G;
+            match models { None => base, Some(m) => { let r = m.at(mu[i]).lateral(v) / (m.key_at(mu[i]).max(0.05) * G); base * (r / LAT_REF).clamp(0.8, 1.45) } }
+        };
+        let mut speed: Vec<f32> = (0..n).map(|i| {
+            if kappa[i] <= 1e-5 { return lim.v_max; }
+            let mut v = (cfg.lat_factor * mu[i] * G / kappa[i]).sqrt().min(lim.v_max);
+            if models.is_some() { for _ in 0..4 { v = (allow(i, v) / kappa[i]).sqrt().min(lim.v_max); } }
+            v
+        }).collect();
         // crests: where the profile is convex the car must stay planted (or at least land tamely); Max Attack takes them flat out
         for i in 2..n - 2 {
             let (ds0, ds1) = (s[i] - s[i - 1], s[i + 1] - s[i]);
@@ -64,7 +77,7 @@ impl Route {
         if let Some(m) = models { for i in 0..n { speed[i] = speed[i].min(m.steer_speed(kappa[i] / 0.85, lim.v_max)); } }
         if lim.stop_at_end { speed[n - 1] = 0.0; }
         // the share of the grip a bend leaves for the pedals: the friction ellipse, `sqrt(1 - (lateral / limit)^2)`
-        let left = |i: usize, v: f32| { let cap = cfg.lat_factor * mu[i] * G; if cap <= 0.0 { 1.0 } else { let u = (v * v * kappa[i] / cap).clamp(0.0, 1.0); (1.0 - u * u).sqrt() } };
+        let left = |i: usize, v: f32| { let cap = allow(i, v); if cap <= 0.0 { 1.0 } else { let u = (v * v * kappa[i] / cap).clamp(0.0, 1.0); (1.0 - u * u).sqrt() } };
         // the braking distance (backward) and the engine (forward), with the slope
         for i in (0..n - 1).rev() {
             let ds = s[i + 1] - s[i]; let dy = p[i + 1].y - p[i].y;

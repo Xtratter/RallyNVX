@@ -13,6 +13,8 @@ pub mod shoulder;
 pub mod streets;
 #[cfg(test)]
 mod stage_tests;
+#[cfg(test)]
+mod suite_tests;
 
 use self::cfg::{cfg, cfg_style, AutoCfg};
 use self::route::{Limits, Route};
@@ -50,7 +52,7 @@ pub struct Autopilot {
     /// Lift-off rotation: seconds of lifted throttle left and the time until the next one; the technique counters and the seconds in the air.
     lift: f32, lift_cool: f32, pub tech: Techniques, air_t: f32,
     /// The sensors' feature vector of this step (set by `sense`), the car's velocity of the step before, whether the samples recorded are the sensors' (not the route's) and the last command.
-    sensor: Option<Vec<f32>>, prev_vel: V3, sensor_mode: bool, last_cmd: (f32, f32),
+    sensor: Option<Vec<f32>>, prev_vel: V3, sensor_mode: bool, last_cmd: (f32, f32), mem: Vec<[f32; sense::MEM]>, mem_step: u32,
     /// The stage route and where to join it, while a field route is being driven.
     next: Option<(Route, usize)>,
     /// Route progress (m) where the stage was joined from the field: the speed is kept tame for 80 m after it.
@@ -130,7 +132,7 @@ impl Autopilot {
     /// The same with the numbers given (the self-training tries many sets at once, so they cannot come from the global style).
     pub fn on_route_cfg(route: Route, car: VehicleSpec, v: &Vehicle, style: i32, cfg: AutoCfg) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, lift: 0.0, lift_cool: 0.0, tech: Techniques::default(), air_t: 0.0, sensor: None, prev_vel: V3::ZERO, sensor_mode: false, last_cmd: (0.0, 0.0), next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, takeover_time: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
+        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, lift: 0.0, lift_cool: 0.0, tech: Techniques::default(), air_t: 0.0, sensor: None, prev_vel: V3::ZERO, sensor_mode: false, last_cmd: (0.0, 0.0), mem: Vec::new(), mem_step: 0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, takeover_time: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
@@ -200,7 +202,16 @@ impl Autopilot {
             let (dx, dz) = (p.x - v.pos.x, p.z - v.pos.z); let l = dx.hypot(dz).max(1.0);
             hint[2 * k] = (dx * right.x + dz * right.z) / l; hint[2 * k + 1] = (dx * fwd.x + dz * fwd.z) / l;
         }
-        self.sensor = Some(sense::features(t, v, &tel, self.prev_vel, dt, hint));
+        // the short memory: one set of key values every 0.1 s (kept for 0.6 s); the features carry how they changed over 0.2 s and 0.5 s
+        let mut now = sense::key_values(v, &tel);
+        if dt > 1e-4 { let acc = (v.vel - self.prev_vel) * (1.0 / dt); now[2] = ((acc.x * right.x + acc.z * right.z) / 10.0).clamp(-1.5, 1.5); now[3] = ((acc.x * fwd.x + acc.z * fwd.z) / 10.0).clamp(-1.5, 1.5); }
+        self.mem_step += 1;
+        if self.mem_step % 6 == 1 { self.mem.push(now); if self.mem.len() > 7 { self.mem.remove(0); } }
+        let mut memory = [0.0f32; 2 * sense::MEM];
+        for (slot, back) in [2usize, 5].iter().enumerate() {
+            if let Some(old) = self.mem.len().checked_sub(1 + back).and_then(|i| self.mem.get(i)) { for k in 0..sense::MEM { memory[slot * sense::MEM + k] = (now[k] - old[k]).clamp(-2.0, 2.0); } }
+        }
+        self.sensor = Some(sense::features(t, v, &tel, self.prev_vel, dt, hint, &memory));
         self.prev_vel = v.vel;
     }
     /// Makes the recorded samples the sensors' (for a net that reads them) instead of the route's.

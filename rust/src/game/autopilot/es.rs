@@ -71,9 +71,10 @@ pub fn utilities(costs: &[f32]) -> Vec<f32> {
 /// them from random start points. Returns the net after `generations` and the mean cost of the starting net and of the last one (on the same start points of the last round).
 pub fn evolve(car: VehicleSpec, cfg: AutoCfg, mode: Mode, start: &Mlp, pool: &mut Vec<Segment>, generations: usize, pairs: usize, sigma: f32, lr: f32, par: usize,
               mut progress: impl FnMut(f32, f32), stop: impl Fn() -> bool) -> Mlp {
-    let mut theta = start.to_vec(); let n = theta.len();
+    let (n_in, hid) = (start.n_in, start.h);
+    let mut theta = start.flat(); let n = theta.len();
     // only the output layer is searched (a few hundred numbers): with a handful of drives per round the whole net's thousands of numbers are far too many to find a direction in
-    let free = n - (super::nn::H * super::nn::O + super::nn::O);
+    let free = n - (hid * super::nn::O + super::nn::O);
     let mut rng = Rng::new(11);
     let (mut m, mut v, mut t) = (vec![0.0f32; n], vec![0.0f32; n], 0i32);
     // the best net so far on the stretches of the round it was measured in; a step that lands on a worse net (a cliff: the car no longer finishes) is taken back and the step size halved
@@ -82,8 +83,8 @@ pub fn evolve(car: VehicleSpec, cfg: AutoCfg, mode: Mode, start: &Mlp, pool: &mu
         if stop() { break; }
         let eps: Vec<Vec<f32>> = (0..pairs).map(|_| (0..n).map(|k| if k >= free { rng.normal() } else { 0.0 }).collect()).collect();
         let mut cands: Vec<Arc<Mlp>> = Vec::new();
-        for e in &eps { for sign in [1.0f32, -1.0] { let x: Vec<f32> = theta.iter().zip(e).map(|(a, b)| a + sign * sigma * b).collect(); cands.push(Arc::new(Mlp::from_vec(&x).expect("a net"))); } }
-        cands.push(Arc::new(Mlp::from_vec(&theta).expect("a net")));   // the current net on the same stretches, to watch the progress
+        for e in &eps { for sign in [1.0f32, -1.0] { let x: Vec<f32> = theta.iter().zip(e).map(|(a, b)| a + sign * sigma * b).collect(); cands.push(Arc::new(Mlp::from_flat(n_in, hid, &x).expect("a net"))); } }
+        cands.push(Arc::new(Mlp::from_flat(n_in, hid, &theta).expect("a net")));   // the current net on the same stretches, to watch the progress
         // the stretches change every five rounds (so the net does not learn six stretches by heart); inside a block they are the same, so the costs can be compared and a bad step taken back
         if gen % 5 == 0 { fracs = pool.iter().map(|_| rng.uniform()).collect(); best = None; }
         // costs[c][w]
@@ -113,7 +114,7 @@ pub fn evolve(car: VehicleSpec, cfg: AutoCfg, mode: Mode, start: &Mlp, pool: &mu
         for k in 0..n { m[k] = b1 * m[k] + (1.0 - b1) * g[k]; v[k] = b2 * v[k] + (1.0 - b2) * g[k] * g[k]; theta[k] += lr * (m[k] / c1) / ((v[k] / c2).sqrt() + 1e-8); }
         progress((gen + 1) as f32 / generations as f32, mean[2 * pairs]);
     }
-    Mlp::from_vec(&best.map_or(theta, |b| b.0)).expect("a net")
+    Mlp::from_flat(n_in, hid, &best.map_or(theta, |b| b.0)).expect("a net")
 }
 
 #[cfg(test)]
