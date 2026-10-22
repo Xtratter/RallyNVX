@@ -8,6 +8,7 @@ pub mod nn;
 pub mod learn;
 pub mod es;
 pub mod route;
+pub mod shoulder;
 pub mod streets;
 #[cfg(test)]
 mod stage_tests;
@@ -99,7 +100,9 @@ pub fn chain_route(t: &super::terrain::Terrain, car: &VehicleSpec, c: &AutoCfg) 
     for p in &stage.pts { push(p.pos, p.width, mu_of(stage.kind.surface())); }
     if centre.len() < 7 { return None; }
     let lim = Limits { mu: 1.0, v_max: car.max_speed * c.speed_cap, accel: 0.5 * car.engine_force / car.mass, stop_at_end: true };
-    Some(Route::build_with(&centre, &width, &mu, lim, c))
+    // Max Attack may use the shoulder where the ground allows
+    let ext = if c.attack > 0.5 { let half: Vec<f32> = width.iter().map(|w| w * 0.5).collect(); Some(shoulder::extents(t, &centre, &half)) } else { None };
+    Some(Route::build_ext(&centre, &width, &mu, lim, c, ext.as_deref()))
 }
 
 /// The city loop from its point `k` through `laps` laps, ending on the start/finish line.
@@ -263,7 +266,7 @@ impl Autopilot {
         self.idx = i;
         let cross = self.route.cross(i, v.pos.x, v.pos.z);
         self.adapt(v, i, cross, dt);
-        if self.cfg.attack > 0.5 { if let Some(r) = self.route.room(i, v.pos.x, v.pos.z) { if r < 0.0 { self.tech.cut_m += v.speed().abs() * dt; } } }
+        if self.cfg.attack > 0.5 { if let Some((r, shoulder)) = self.route.room_split(i, v.pos.x, v.pos.z) { if r - shoulder < 0.0 && shoulder > 0.0 { self.tech.cut_m += v.speed().abs() * dt; } } }
         let speed = v.speed();
         if self.next.is_some() && self.route.length() - self.route.s[i] < 14.0 {
             let (stage, k) = self.next.take().unwrap();
@@ -281,6 +284,8 @@ impl Autopilot {
         // off the line: slow down in proportion to how far into the road's edge the car has drifted
         let half = self.route.half[i];
         let want = if half > 1.0 && d > (0.55 + 0.6 * self.cfg.attack) * half { want * (1.0 - (d - 0.55 * half) / (0.6 * half)).clamp(0.45, 1.0) } else { want };
+        // well beyond the shoulder (more than a metre past what the ground allows): slow right down and come back
+        let want = if self.cfg.attack > 0.5 && self.route.room(i, v.pos.x, v.pos.z).map_or(false, |r| r < -1.0) { want * 0.5 } else { want };
         if v.flipped() { cmd.reset = true; self.recoveries += 1; self.stuck = 0.0; }
         self.stuck = if speed.abs() < 1.0 && want > 3.0 { self.stuck + dt } else { 0.0 };
         if remaining < 25.0 && self.stuck > 2.0 { cmd.done = true; return cmd; }   // stopped just short of the line
@@ -351,7 +356,7 @@ impl Autopilot {
             // Max Attack: flat out until the plan says brake, then hard
             let air = v.contacts == 0;
             let slip_angle = vr.atan2(vf.abs().max(1.0)).abs();
-            let thr = if air { 0.4 } else if self.lift > 0.0 { 0.1 } else if slip_angle > 0.45 && steer.abs() > 0.2 { 0.45 } else { 1.0 };
+            let thr = if air { 0.4 } else if self.lift > 0.0 { 0.1 } else if slip_angle > 0.5 && steer.abs() > 0.2 { 0.1 } else if slip_angle > 0.3 && steer.abs() > 0.2 { 0.4 } else { 1.0 };
             if e > -0.5 { (thr, false, 0.0) }
             // braking into a bend with the throttle kept a little open (left-foot braking): the rear stays light and the car rotates
             else if e < -1.2 { if steer.abs() > 0.2 && speed > 8.0 { self.tech.trail_s += dt; } (if steer.abs() > 0.2 && speed > 8.0 { 0.3 } else { 0.0 }, true, (-e * 0.4).clamp(0.2, 1.0) * if steer.abs() > 0.2 { 0.8 } else { 1.0 }) } else { (0.0, false, 0.0) }
