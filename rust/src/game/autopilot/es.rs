@@ -24,6 +24,8 @@ impl Segment {
         let w = &mut self.world;
         // every drive starts from the same world: the weather and the clock run on while a world is kept, and a rain that has set in would make every later drive slower than the first
         w.climate = crate::game::weather::Climate::new(self.seed); w.time = 0.0;
+        // and with a full tank, new tyres and a cool engine: the fuel of a kept world runs out after some hundred drives and then every drive fails (this was the collapse seen at first)
+        w.service();
         w.autopilot = None; w.loose = crate::game::grip::LooseMap::new(w.terrain.roads().expect("roads"));
         w.vehicle = Vehicle::new(car, v3(0.0, 0.0, 0.0), 0.0);
         if !w.place_on_road(2) || !w.set_autopilot_cfg(cfg) { return 2000.0; }
@@ -75,14 +77,15 @@ pub fn evolve(car: VehicleSpec, cfg: AutoCfg, mode: Mode, start: &Mlp, pool: &mu
     let mut rng = Rng::new(11);
     let (mut m, mut v, mut t) = (vec![0.0f32; n], vec![0.0f32; n], 0i32);
     // the best net so far on the stretches of the round it was measured in; a step that lands on a worse net (a cliff: the car no longer finishes) is taken back and the step size halved
-    let mut best: Option<(Vec<f32>, f32)> = None; let mut lr = lr;
+    let mut best: Option<(Vec<f32>, f32)> = None; let mut lr = lr; let mut fracs: Vec<f32> = Vec::new();
     for gen in 0..generations {
         if stop() { break; }
         let eps: Vec<Vec<f32>> = (0..pairs).map(|_| (0..n).map(|k| if k >= free { rng.normal() } else { 0.0 }).collect()).collect();
         let mut cands: Vec<Arc<Mlp>> = Vec::new();
         for e in &eps { for sign in [1.0f32, -1.0] { let x: Vec<f32> = theta.iter().zip(e).map(|(a, b)| a + sign * sigma * b).collect(); cands.push(Arc::new(Mlp::from_vec(&x).expect("a net"))); } }
         cands.push(Arc::new(Mlp::from_vec(&theta).expect("a net")));   // the current net on the same stretches, to watch the progress
-        let fracs: Vec<f32> = if std::env::var("AP_FIXED").is_ok() { [0.12f32, 0.3, 0.48, 0.66, 0.8, 0.9].iter().cloned().take(pool.len()).collect() } else { pool.iter().map(|_| rng.uniform()).collect() };
+        // the stretches change every five rounds (so the net does not learn six stretches by heart); inside a block they are the same, so the costs can be compared and a bad step taken back
+        if gen % 5 == 0 { fracs = pool.iter().map(|_| rng.uniform()).collect(); best = None; }
         // costs[c][w]
         let mut costs = vec![vec![0.0f32; pool.len()]; cands.len()];
         let idx: Vec<usize> = (0..pool.len()).collect();
@@ -132,7 +135,7 @@ mod tests {
         let mode = if style == 5 { Mode::Attack } else { Mode::Safe };
         let imit_path = format!("{}/net_imit_{style}.bin", std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".into()));
         let imit = load(&imit_path).unwrap_or_else(|| { let m = super::super::learn::dagger(car, cfg, &[2, 3, 5, 8], 4, |_| {}, || false); save(&imit_path, &m); m });
-        let mut pool: Vec<Segment> = [2u64, 3, 5, 8, 13, 21].iter().filter_map(|&s| Segment::new(s, car)).collect();
+        let mut pool: Vec<Segment> = [2u64, 3, 5, 8, 13, 34].iter().filter_map(|&s| Segment::new(s, car)).collect();
         let fixed = [0.12f32, 0.3, 0.48, 0.66, 0.8, 0.9];
         let eval = |pool: &mut Vec<Segment>, net: Option<Arc<Mlp>>| -> f32 { pool.iter_mut().zip(fixed).map(|(s, f)| s.run(car, cfg, net.clone(), f, mode)).sum::<f32>() / fixed.len() as f32 };
         let (teacher, before) = (eval(&mut pool, None), eval(&mut pool, Some(Arc::new(imit.clone()))));
