@@ -25,6 +25,11 @@ use super::vehicle::{Vehicle, VehicleSpec};
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AutoCmd { pub input: Input, pub reset: bool, pub teleport: Option<(V3, f32)>, pub done: bool }
 
+/// How often Max Attack used each rally technique in a drive (for the diagnosis and the tests): the Scandinavian flick (`pendulum`), the handbrake turn, lift-off rotation (`lift`),
+/// the seconds of left-foot braking (`trail_s`) and of a held power slide (`slide_s`), the jumps (airborne for over 0.3 s) and the metres cut beyond the road's edge (`cut_m`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Techniques { pub pendulum: u32, pub handbrake: u32, pub lift: u32, pub trail_s: f32, pub slide_s: f32, pub jumps: u32, pub cut_m: f32 }
+
 /// The gain of the line's sideways offset in the steering (1/s of the offset in metres over the speed).
 const STANLEY: f32 = 0.7;
 const K_MAX: f32 = 1.0;
@@ -40,6 +45,8 @@ pub struct Autopilot {
     flick: f32, cooldown: f32,
     /// Max Attack's pendulum (the Scandinavian flick): seconds of steering away from the coming bend left, the side of that bend (+1 right) and the time until the next one may start.
     pend: f32, pend_dir: f32, pend_cool: f32,
+    /// Lift-off rotation: seconds of lifted throttle left and the time until the next one; the technique counters and the seconds in the air.
+    lift: f32, lift_cool: f32, pub tech: Techniques, air_t: f32,
     /// The stage route and where to join it, while a field route is being driven.
     next: Option<(Route, usize)>,
     /// Route progress (m) where the stage was joined from the field: the speed is kept tame for 80 m after it.
@@ -117,7 +124,7 @@ impl Autopilot {
     /// The same with the numbers given (the self-training tries many sets at once, so they cannot come from the global style).
     pub fn on_route_cfg(route: Route, car: VehicleSpec, v: &Vehicle, style: i32, cfg: AutoCfg) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, takeover_time: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
+        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, lift: 0.0, lift_cool: 0.0, tech: Techniques::default(), air_t: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, takeover_time: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
@@ -175,6 +182,8 @@ impl Autopilot {
 
     /// Sets (or removes) the neural policy and turns recording on or off.
     pub fn set_policy(&mut self, policy: Option<std::sync::Arc<nn::Mlp>>, record: bool) { self.policy = policy; self.record = record; self.nn_hold = 0.0; }
+    /// The rally techniques used so far.
+    pub fn techniques(&self) -> Techniques { self.tech }
     /// The seconds the controller has driven in place of the policy (a measure of how often the net got lost).
     pub fn takeover_time(&self) -> f32 { self.takeover_time }
     /// The recorded pairs since the last call.
@@ -254,6 +263,7 @@ impl Autopilot {
         self.idx = i;
         let cross = self.route.cross(i, v.pos.x, v.pos.z);
         self.adapt(v, i, cross, dt);
+        if self.cfg.attack > 0.5 { if let Some(r) = self.route.room(i, v.pos.x, v.pos.z) { if r < 0.0 { self.tech.cut_m += v.speed().abs() * dt; } } }
         let speed = v.speed();
         if self.next.is_some() && self.route.length() - self.route.s[i] < 14.0 {
             let (stage, k) = self.next.take().unwrap();
@@ -312,21 +322,39 @@ impl Autopilot {
                 let (j, _) = self.route.ahead(i, d0); let (j2, t2) = self.route.ahead(i, d0 + 22.0);
                 let k_ahead = self.route.kraw[j..=j2].iter().cloned().fold(0.0f32, f32::max);
                 if k_ahead > 0.015 && k_ahead < 0.04 {
-                    self.pend = 0.18; self.pend_cool = 5.0;
+                    self.pend = 0.18; self.pend_cool = 5.0; self.tech.pendulum += 1;
                     self.pend_dir = ((t2.x - v.pos.x) * right.x + (t2.z - v.pos.z) * right.z).signum();
                 }
             }
             if v.contacts == 0 { steer *= 0.2; }   // in the air the wheels stay straight for the landing
         }
 
+        if self.cfg.attack > 0.5 {
+            // a jump: counted when the car has been in the air for 0.3 s
+            if v.contacts == 0 { self.air_t += dt; if self.air_t > 0.3 && self.air_t - dt <= 0.3 { self.tech.jumps += 1; } } else { self.air_t = 0.0; }
+            // lift-off rotation: a short lift of the throttle at the turn-in of a medium bend moves the weight to the front and lets the rear swing round (the flick covers 15 to 20 m/s)
+            self.lift_cool = (self.lift_cool - dt).max(0.0);
+            if self.lift > 0.0 { self.lift -= dt; }
+            else if self.lift_cool <= 0.0 && self.pend <= 0.0 && speed > 20.0 && speed < 32.0 && v.contacts >= 3 && steer.abs() < 0.3 && self.route.room(i, v.pos.x, v.pos.z).map_or(true, |r| r > 2.0) {
+                let d0 = 2.0 + 0.45 * speed;
+                let (j, _) = self.route.ahead(i, d0); let (j2, _) = self.route.ahead(i, d0 + 18.0);
+                let k_ahead = self.route.kraw[j..=j2].iter().cloned().fold(0.0f32, f32::max);
+                if k_ahead > 0.01 && k_ahead < 0.03 { self.lift = 0.3; self.lift_cool = 4.0; self.tech.lift += 1; }
+            }
+            // a power slide is held with the throttle: on while the car is not yet sideways, eased when the angle grows too large
+            let side = v.wheels.iter().filter(|w| w.grounded).map(|w| w.lat_slip.abs()).fold(0.0f32, f32::max);
+            if speed > 10.0 && side > 2.0 && v.contacts >= 3 { self.tech.slide_s += dt; }
+        }
         // speed: the profile's target a few points ahead, throttle and brake from the error
         let e = want - speed;
         let (throttle, brake, amt) = if self.cfg.attack > 0.5 {
             // Max Attack: flat out until the plan says brake, then hard
             let air = v.contacts == 0;
-            if e > -0.5 { (if air { 0.4 } else { 1.0 }, false, 0.0) }
+            let slip_angle = vr.atan2(vf.abs().max(1.0)).abs();
+            let thr = if air { 0.4 } else if self.lift > 0.0 { 0.1 } else if slip_angle > 0.45 && steer.abs() > 0.2 { 0.45 } else { 1.0 };
+            if e > -0.5 { (thr, false, 0.0) }
             // braking into a bend with the throttle kept a little open (left-foot braking): the rear stays light and the car rotates
-            else if e < -1.2 { (if steer.abs() > 0.2 && speed > 8.0 { 0.3 } else { 0.0 }, true, (-e * 0.4).clamp(0.2, 1.0) * if steer.abs() > 0.2 { 0.8 } else { 1.0 }) } else { (0.0, false, 0.0) }
+            else if e < -1.2 { if steer.abs() > 0.2 && speed > 8.0 { self.tech.trail_s += dt; } (if steer.abs() > 0.2 && speed > 8.0 { 0.3 } else { 0.0 }, true, (-e * 0.4).clamp(0.2, 1.0) * if steer.abs() > 0.2 { 0.8 } else { 1.0 }) } else { (0.0, false, 0.0) }
         } else if e > 0.3 { ((0.25 + 0.35 * e).clamp(0.0, 1.0), false, 0.0) }
             else if e < -0.7 { (0.0, true, (-e * 0.3).clamp(0.1, 1.0)) } else { (0.0, false, 0.0) };
         // handbrake flick: into a tight bend taken above the grip limit the rear is let go for a moment so the car rotates
@@ -339,7 +367,7 @@ impl Autopilot {
                 let (j, _) = self.route.ahead(i, 10.0 + 0.8 * speed);
                 let k_max = self.route.kraw[i..=j].iter().cloned().fold(0.0, f32::max);
                 let need = speed * k_max; let yaw = v.omega.dot(v.up()).abs();
-                if k_max > 0.045 - 0.015 * self.cfg.attack && yaw < (0.7 + 0.15 * self.cfg.attack) * need && vf > 0.0 { self.flick = self.cfg.flick_time; self.cooldown = 3.0; handbrake = true; }
+                if k_max > 0.045 - 0.015 * self.cfg.attack && yaw < (0.7 + 0.15 * self.cfg.attack) * need && vf > 0.0 { self.flick = self.cfg.flick_time; self.cooldown = 3.0; handbrake = true; self.tech.handbrake += 1; }
             }
         }
         if handbrake { cmd.input = Input { throttle: 0.0, steer, brake: false, handbrake: true, ..Default::default() }; return cmd; }

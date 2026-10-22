@@ -153,6 +153,7 @@ fn diagnose(seed: u64, style: i32) -> String {
     let mut w = World::with_roads(seed, car());
     assert!(w.place_on_road(2));
     assert!(w.set_autopilot_style(style));
+    let mut tech = crate::game::autopilot::Techniques::default();
     let (mut t, mut brake_t, mut hand_t, mut hand_n, mut was_hand) = (0.0f32, 0.0f32, 0.0f32, 0u32, false);
     let (mut brake_straight, mut slow_t, mut road_t, mut ratio_sum) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
     let mut events: Vec<String> = Vec::new();
@@ -160,6 +161,7 @@ fn diagnose(seed: u64, style: i32) -> String {
     while w.autopilot_on() && t < 1500.0 {
         w.step(&Input::default(), 1.0 / 60.0); t += 1.0 / 60.0;
         let Some(ap) = w.autopilot.as_ref() else { break };
+        tech = ap.techniques();
         let r = ap.route(); if r.length() < 3000.0 { continue; }
         let (i, _) = r.nearest(w.vehicle.pos.x, w.vehicle.pos.z);
         let v = w.vehicle.speed(); let plan = r.speed[i].max(1.0);
@@ -173,7 +175,7 @@ fn diagnose(seed: u64, style: i32) -> String {
         was_hand = w.vehicle.parked;
         if v < 0.6 * plan && plan > 12.0 { slow_t += 1.0 / 60.0; if t - last_event > 4.0 && events.len() < 18 { last_event = t; events.push(format!("slow at t {:.0} s {:.0} v {:.1} plan {:.1} kmax {:.4}", t, r.s[i], v, plan, kmax)); } }
     }
-    format!("seed {seed} style {style}: t {:.0}s brake {:.0}s (on straights {:.0}s) handbrake {:.1}s in {} flicks, under 60% of plan {:.0}s, v/plan {:.2}\n  {}", t, brake_t, brake_straight, hand_t, hand_n, slow_t, ratio_sum / road_t.max(1.0), events.join("\n  "))
+    format!("seed {seed} style {style}: techniques {:?}\n  t {:.0}s brake {:.0}s (on straights {:.0}s) handbrake {:.1}s in {} flicks, under 60% of plan {:.0}s, v/plan {:.2}\n  {}", tech, t, brake_t, brake_straight, hand_t, hand_n, slow_t, ratio_sum / road_t.max(1.0), events.join("\n  "))
 }
 
 #[test] #[ignore] fn diagnose_the_autopilot() {
@@ -213,4 +215,24 @@ fn diagnose(seed: u64, style: i32) -> String {
         if ((t * 60.0) as u32) % 600 == 0 { rows.push(format!("t {:.0} v {:.1} m/s gear {} rpm {:.0} mode {:?}", t, w.vehicle.speed(), w.drivetrain.gear, w.drivetrain.rpm(), w.drivetrain.mode)); }
     }
     println!("seconds per gear (R,N,1..6): {:?}; mean rpm {:.0}\n{}", gears.iter().map(|x| x.round()).collect::<Vec<_>>(), rpm_sum / n.max(1.0), rows.join("\n"));
+}
+
+#[test] #[ignore] fn max_attack_uses_the_whole_repertoire_of_rally_techniques() {
+    let hs: Vec<_> = [2u64, 3].iter().map(|&seed| spawn_lim(move || {
+        let mut w = World::with_roads(seed, car());
+        assert!(w.place_on_road(2) && w.set_autopilot_style(5));
+        let mut tech = crate::game::autopilot::Techniques::default(); let mut t = 0.0;
+        while w.autopilot_on() && t < 700.0 { w.step(&Input::default(), 1.0 / 60.0); t += 1.0 / 60.0; if let Some(a) = w.autopilot.as_ref() { tech = a.techniques(); } }
+        (seed, tech)
+    })).collect();
+    for h in hs {
+        let (seed, k) = h.join().unwrap();
+        println!("seed {seed}: {k:?}");
+        assert!(k.pendulum >= 5, "seed {seed}: the Scandinavian flick {}", k.pendulum);
+        assert!(k.lift >= 5, "seed {seed}: lift-off rotation {}", k.lift);
+        assert!(k.handbrake >= 1, "seed {seed}: the handbrake turn {}", k.handbrake);
+        assert!(k.trail_s >= 1.0, "seed {seed}: left-foot braking {:.1} s", k.trail_s);
+        assert!(k.slide_s >= 3.0, "seed {seed}: held slides {:.1} s", k.slide_s);
+        assert!(k.cut_m >= 20.0, "seed {seed}: corners cut beyond the edge {:.0} m", k.cut_m);
+    }
 }
