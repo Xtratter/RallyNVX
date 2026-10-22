@@ -86,16 +86,13 @@ impl World {
         World { terrain, vehicle, cam, drivetrain: super::drivetrain::Drivetrain::new(), manual: false, assists: Default::default(), tuning: Default::default(), tuned: (Default::default(), car), tuned_dirty: true, time: 0.0, cities, loose, dust: Dust::new(seed), climate: super::weather::Climate::new(seed), cloud_off: (0.0, 0.0), tracks: Tracks::new(), car_spec: car, orbit: None, autopilot: None, rally: None, signs_on: true, props: HashMap::new() }
     }
 
-    /// Swaps the car (a new spec) without regenerating the level: back at the same spot facing as before.
     /// A copy of the car's setup on a flat, empty ground of one surface, for the autopilot's measurements (see `autopilot::model`).
-    pub fn probe(&self, surface: super::surface::Surface) -> World {
-        let mut p = World::from_terrain(Terrain::flat(), self.car_spec, (0.0, 0.0), 0.0);
-        p.tuning = self.tuning; p.assists = self.assists; p.drivetrain = self.drivetrain.clone(); p.manual = false;
-        p.vehicle.force_surface = Some(surface); p.vehicle.tyre_bar = self.vehicle.tyre_bar;
-        // the state of the car goes with it: the tyres (wear, temperature), the damage, the air and the wet ground, so what is measured is what the car can do now
-        p.vehicle.tyres = self.vehicle.tyres; p.vehicle.damage = self.vehicle.damage; p.vehicle.air_c = self.vehicle.air_c; p.vehicle.wet = self.climate.weather().wet.max(self.vehicle.wet);
-        p.climate = self.climate;
-        p
+    pub fn probe(&self, surface: super::surface::Surface) -> World { self.probe_setup().world(surface) }
+
+    /// What a measurement needs of the car and the weather, as a plain value that can go to another thread.
+    pub fn probe_setup(&self) -> ProbeSetup {
+        ProbeSetup { car: self.car_spec, tuning: self.tuning, assists: self.assists, drivetrain: self.drivetrain.clone(), tyre_bar: self.vehicle.tyre_bar, tyres: self.vehicle.tyres, damage: self.vehicle.damage,
+            air_c: self.vehicle.air_c, wet: self.climate.weather().wet.max(self.vehicle.wet), climate: self.climate }
     }
 
     /// Turns the autopilot on (it joins the stage from wherever the car is) or off; returns whether it is on afterwards.
@@ -306,6 +303,9 @@ impl World {
             self.drivetrain.reset();
         }
         if counting { self.autopilot = None; }
+        // the car is measured again every few seconds (on another thread) in its present state: the tyres warm up and wear, the road dries
+        let due = self.autopilot.as_mut().map_or(false, |a| a.tick_remeasure(dt));
+        if due { let setup = self.probe_setup(); if let Some(a) = self.autopilot.as_mut() { a.start_remeasure(setup); } }
         if let Some(ap) = self.autopilot.as_mut() {
             if ap.wants_sensors() {
                 let d = &self.drivetrain;
@@ -472,6 +472,23 @@ impl World {
 
 /// What a render backend may read; gameplay never touches the GPU.
 /// What the GPU dust needs of a frame: the particles the wheels emitted, the car's pose and velocity, the wind, the ground under the car.
+/// The state of the car and the weather that a measurement copies (see `World::probe_setup`).
+#[derive(Clone)]
+pub struct ProbeSetup { pub car: VehicleSpec, pub tuning: super::assists::Tuning, pub assists: super::assists::Assists, pub drivetrain: super::drivetrain::Drivetrain, pub tyre_bar: f32,
+    pub tyres: [super::tyre::Tyre; 4], pub damage: super::damage::Damage, pub air_c: f32, pub wet: f32, pub climate: super::weather::Climate }
+
+impl ProbeSetup {
+    /// A flat, empty world of one surface with this setup (the tyres, the damage, the air and the wet ground go with it, so what is measured is what the car can do now).
+    pub fn world(&self, surface: super::surface::Surface) -> World {
+        let mut p = World::from_terrain(Terrain::flat(), self.car, (0.0, 0.0), 0.0);
+        p.tuning = self.tuning; p.assists = self.assists; p.drivetrain = self.drivetrain.clone(); p.manual = false;
+        p.vehicle.force_surface = Some(surface); p.vehicle.tyre_bar = self.tyre_bar;
+        p.vehicle.tyres = self.tyres; p.vehicle.damage = self.damage; p.vehicle.air_c = self.air_c; p.vehicle.wet = self.wet;
+        p.climate = self.climate;
+        p
+    }
+}
+
 pub struct DustGpuIn { pub emits: Vec<super::dust_ref::GP>, pub car_pos: V3, pub yaw: f32, pub car_vel: V3, pub wind: V3, pub ground_y: f32, pub cap: usize, pub time: f32, pub sun: V3, pub body: [f32; 3],
     /// The garage's aero parts strengthen the car's wake: 1 for the bare car.
     pub vortex_scale: f32,

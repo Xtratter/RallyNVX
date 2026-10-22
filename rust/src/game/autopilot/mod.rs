@@ -34,6 +34,9 @@ pub struct AutoCmd { pub input: Input, pub reset: bool, pub teleport: Option<(V3
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Techniques { pub pendulum: u32, pub handbrake: u32, pub lift: u32, pub trail_s: f32, pub slide_s: f32, pub jumps: u32, pub cut_m: f32 }
 
+/// The seconds between two measurements of the car while it drives.
+const REMEASURE_S: f32 = 12.0;
+
 /// The gain of the line's sideways offset in the steering (1/s of the offset in metres over the speed).
 const STANLEY: f32 = 0.7;
 const K_MAX: f32 = 1.0;
@@ -52,6 +55,8 @@ pub struct Autopilot {
     /// Lift-off rotation: seconds of lifted throttle left and the time until the next one; the technique counters and the seconds in the air.
     lift: f32, lift_cool: f32, pub tech: Techniques, air_t: f32,
     /// The sensors' feature vector of this step (set by `sense`), the car's velocity of the step before, whether the samples recorded are the sensors' (not the route's) and the last command.
+    /// A measurement of the car's present state under way on another thread, and the seconds since the last one: the models are measured again every 12 s (the tyres warm up, wear, the road dries).
+    remeasure: Option<std::sync::mpsc::Receiver<model::Models>>, since_measure: f32,
     sensor: Option<Vec<f32>>, prev_vel: V3, sensor_mode: bool, last_cmd: (f32, f32), mem: Vec<[f32; sense::MEM]>, mem_step: u32,
     /// The stage route and where to join it, while a field route is being driven.
     next: Option<(Route, usize)>,
@@ -132,7 +137,7 @@ impl Autopilot {
     /// The same with the numbers given (the self-training tries many sets at once, so they cannot come from the global style).
     pub fn on_route_cfg(route: Route, car: VehicleSpec, v: &Vehicle, style: i32, cfg: AutoCfg) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, lift: 0.0, lift_cool: 0.0, tech: Techniques::default(), air_t: 0.0, sensor: None, prev_vel: V3::ZERO, sensor_mode: false, last_cmd: (0.0, 0.0), mem: Vec::new(), mem_step: 0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, takeover_time: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
+        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, lift: 0.0, lift_cool: 0.0, tech: Techniques::default(), air_t: 0.0, remeasure: None, since_measure: 0.0, sensor: None, prev_vel: V3::ZERO, sensor_mode: false, last_cmd: (0.0, 0.0), mem: Vec::new(), mem_step: 0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, takeover_time: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
@@ -190,6 +195,35 @@ impl Autopilot {
         cmd
     }
 
+    /// Counts the time since the car was last measured; `true` when it is time to measure it again (and no measurement is under way).
+    pub fn tick_remeasure(&mut self, dt: f32) -> bool {
+        if self.models.is_none() { return false; }
+        self.since_measure += dt;
+        self.since_measure >= REMEASURE_S && self.remeasure.is_none()
+    }
+    /// Measures the car again on another thread from a copy of its present state; `drive` takes the result when it is ready.
+    pub fn start_remeasure(&mut self, setup: super::world::ProbeSetup) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new().name("autopilot-measure".into()).spawn(move || { let _ = tx.send(model::Models::measure_setup(&setup)); });
+        if spawned.is_ok() { self.remeasure = Some(rx); }
+        self.since_measure = 0.0;
+    }
+    /// Takes a finished measurement and plans the speeds again with it (the daring `k` as it is).
+    fn poll_remeasure(&mut self) {
+        let Some(rx) = self.remeasure.as_ref() else { return };
+        match rx.try_recv() {
+            Ok(m) => {
+                self.remeasure = None;
+                let mut c = self.cfg; c.lat_factor *= self.k * self.k;
+                self.route.replan(&m, &c);
+                if let Some((r, _)) = self.next.as_mut() { r.replan(&m, &c); }
+                self.models = Some(m); self.k_planned = self.k;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(_) => { self.remeasure = None; }
+        }
+    }
+
     /// Whether the net (or the recording) needs the sensors' vector this step.
     pub fn wants_sensors(&self) -> bool { self.policy.as_ref().map_or(self.sensor_mode, |p| p.n_in != nn::F) }
     /// Reads the sensors for this step (call before `drive`): the rays and the car's own metrics, with the route's coarse direction hints.
@@ -223,6 +257,8 @@ impl Autopilot {
     pub fn daring(&self) -> f32 { self.k }
     /// The rally techniques used so far.
     pub fn techniques(&self) -> Techniques { self.tech }
+    /// The cornering grip (m/s^2) of the latest measurement on gravel, at its plateau; `None` before there is a measurement.
+    pub fn measured_grip(&self) -> Option<f32> { self.models.as_ref().map(|m| m.list.last().map_or(0.0, |x| x.1.lateral_plateau())) }
     /// The seconds the controller has driven in place of the policy (a measure of how often the net got lost).
     pub fn takeover_time(&self) -> f32 { self.takeover_time }
     /// The recorded pairs since the last call.
@@ -294,6 +330,7 @@ impl Autopilot {
     pub fn progress(&self) -> f32 { self.route.s[self.idx] }
 
     fn drive_expert(&mut self, v: &Vehicle, dt: f32) -> AutoCmd {
+        self.poll_remeasure();
         let wet_scale = wet_speed_scale(v.surface, v.wet);
         let mut cmd = AutoCmd::default();
         let (lo, hi) = (self.idx.saturating_sub(15), self.idx + 80);

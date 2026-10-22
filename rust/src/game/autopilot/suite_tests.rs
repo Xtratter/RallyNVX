@@ -28,7 +28,7 @@ pub fn drive(car_id: &str, cond: Cond, seed: u64, style: i32) -> Cell {
     let (mut t, mut worst, mut flips, mut was) = (0.0f32, f32::MIN, 0u32, false);
     while w.autopilot_on() && t < 700.0 {
         w.step(&Input::default(), 1.0 / 60.0); t += 1.0 / 60.0;
-        if t > 8.0 { if let Some(e) = w.terrain.road_edge_distance(w.vehicle.pos.x, w.vehicle.pos.z) { worst = worst.max(e); } }
+        if t > 8.0 { if let Some(e) = w.terrain.road_edge_distance(w.vehicle.pos.x, w.vehicle.pos.z) { worst = worst.max(e); if e > 3.0 && std::env::var("SUITE_LOG").is_ok() && ((t * 60.0) as u32) % 60 == 0 { let a = w.autopilot.as_ref().unwrap(); eprintln!("OUT seed {seed} t {:.0} edge {:.1} v {:.1} daring {:.2} tyres {:.0} C {:.0} C", t, e, w.vehicle.speed(), a.daring(), w.vehicle.tyres[0].temp, w.vehicle.tyres[1].temp); } } }
         let f = w.vehicle.flipped(); if f && !was { flips += 1; } was = f;
     }
     Cell { finished: !w.autopilot_on(), time: t, edge: worst.max(-5.0), flips, damage: w.vehicle.damage.total() }

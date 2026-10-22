@@ -70,6 +70,17 @@ mod tests {
         for _ in 0..120 { w.step(&Input::default(), 1.0 / 60.0); }
         w
     }
+    #[test] fn the_car_is_measured_again_while_it_drives_and_the_plan_follows_its_state() {
+        let mut w = started();
+        let before = w.autopilot.as_ref().unwrap().measured_grip().expect("measured at the start");
+        for t in w.vehicle.tyres.iter_mut() { t.temp = 0.0; t.wear = 0.8; }   // the tyres turn cold and worn: a new measurement must see it
+        assert!(w.autopilot.as_mut().unwrap().tick_remeasure(13.0), "after 12 s it is time again");
+        let setup = w.probe_setup(); w.autopilot.as_mut().unwrap().start_remeasure(setup);
+        assert!(!w.autopilot.as_mut().unwrap().tick_remeasure(13.0), "not again while one is under way");
+        let mut after = before;
+        for _ in 0..600 { w.step(&Input::default(), 1.0 / 60.0); after = w.autopilot.as_ref().unwrap().measured_grip().unwrap(); if (after - before).abs() > 1e-3 { break; } std::thread::sleep(std::time::Duration::from_millis(5)); }
+        assert!(after < before * 0.97, "the new measurement of cold, worn tyres is lower: {before} then {after}");
+    }
     #[test] fn the_features_are_finite_and_in_range_on_the_road() {
         let w = started();
         let f = w.autopilot.as_ref().unwrap().features(&w.vehicle);

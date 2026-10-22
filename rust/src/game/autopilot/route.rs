@@ -58,7 +58,7 @@ impl Route {
         // steering lock) relative to `LAT_REF`, the measured share of the nominal grip of the car the style's numbers were tuned on (the Vulpes on gravel at speed)
         let allow = |i: usize, v: f32| -> f32 {
             let base = cfg.lat_factor * mu[i] * G;
-            match models { None => base, Some(m) => { let r = m.at(mu[i]).lateral(v) / (m.key_at(mu[i]).max(0.05) * G); base * (r / LAT_REF).clamp(0.8, 1.45) } }
+            match models { None => base, Some(m) => { let cm = m.at(mu[i]); let r = cm.lateral(v).max(0.75 * cm.lateral_plateau()) / (m.key_at(mu[i]).max(0.05) * G); base * (r / LAT_REF).clamp(0.4, 1.45) } }
         };
         let mut speed: Vec<f32> = (0..n).map(|i| {
             if kappa[i] <= 1e-5 { return lim.v_max; }
