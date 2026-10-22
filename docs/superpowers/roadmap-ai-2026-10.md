@@ -80,3 +80,12 @@ Racing-game AI: [Forza's Drivatar](https://www.gamedeveloper.com/design/how-forz
 **Порядок.** Сначала A0 (без чисел ничего не оценить). A1, A2, A3 независимы, начать лучше с **A1**, потом A3 и A2, потом A4. B1 нужны A1–A3, B2 нужен B1, C1 можно после A1, C2 требует ноутбука и C1, C3 в любое время после A0.
 
 **Риски.** Правила переобучаются на шести уровнях: в наборе три уровня, которых никогда не было в обучении, они меняются. Стили «на показ» (Max Attack) оцениваются той же таблицей без «эффектности». Длинное обучение — на ноутбуке, телефон только измеряет и учит коротко. Поиск на горизонте идёт в своём потоке (5–10 Гц) и контроллер его не ждёт. Цифры из статей — не обещания: у каждого этапа свой порог, и если этап его не взял, это будет сказано как есть.
+
+
+## Status log / Ход работ
+- **A0 (2.91.0), A1 (2.91.0), A3 (2.92.0): done**, numbers in `docs/ai-suite-baseline.md`.
+- **A2 (2.93.0): measured, no gain.** The blend of the line of least curvature with the shortest line and a later apex, chosen bend by bend by the time of the whole profile, found 0.0 s on a stage (300.6 s before and after): the line of least curvature is already the optimum of this plan. The threshold of the roadmap (2 % lower time) was not met, the code was dropped. The lap-time reference will come from the horizon search (B1).
+- **A4 (2.93.0), first part:** the tracking is good sideways (rms 0.41 m in the normal style); the throttle response was weak and is stronger now (cold and worn cells 1 to 4 % faster, the clean case the same). What is left of the clean-case time is in the plan's own limits.
+- **Next:** B1, the horizon search with the game's own physics, which can choose per situation how late to brake and how hard to take a bend, and can give stronger labels to the nets (B2).
+
+**По-русски:** A0, A1, A3 выполнены. A2 измерен, выигрыша нет: линия наименьшей кривизны уже оптимальна для этого плана (300,6 с до и после), порог 2 % не достигнут, код убран. A4, первая часть: боковое следование хорошее, газ был слабым и стал строже (холодные и изношенные ячейки на 1–4 % быстрее, чистый случай тот же). Дальше B1: поиск на горизонте на физике самой игры.

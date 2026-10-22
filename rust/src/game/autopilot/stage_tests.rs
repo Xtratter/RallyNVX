@@ -271,3 +271,20 @@ fn diagnose(seed: u64, style: i32) -> String {
     println!("style {st}: t {:.0}s, mean daring {:.2}, {:.0}% of the time under 0.9, speed/plan {:.2}, in bends (>0.01 /m) the mean lateral acceleration {:.2} g, the largest {:.2} g (the surface's mu x the car's = {:.2})", t, k_sum / n.max(1.0), 100.0 * k_low / n.max(1.0), v_plan / n.max(1.0), lat_sum / bend_n.max(1.0), lat_max,
         w.car_spec.mu * crate::game::grip::grip(crate::game::surface::Surface::Gravel, 1.0).mu);
 }
+
+/// How well the car follows its plan (diagnosis): the sideways error from the line and the speed error, over a whole stage.
+#[test] #[ignore] fn diagnose_the_tracking() {
+    let st = env_style();
+    let mut w = World::with_roads(2, car());
+    assert!(w.place_on_road(2) && w.set_autopilot_style(st));
+    let (mut t, mut n, mut cross2, mut cross_max, mut ev2, mut over, mut under) = (0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
+    while w.autopilot_on() && t < 700.0 {
+        w.step(&Input::default(), 1.0 / 60.0); t += 1.0 / 60.0;
+        let Some(a) = w.autopilot.as_ref() else { break };
+        let r = a.route(); if r.length() < 3000.0 { continue; }
+        let i = r.nearest(w.vehicle.pos.x, w.vehicle.pos.z).0;
+        let c = r.cross(i, w.vehicle.pos.x, w.vehicle.pos.z); let e = w.vehicle.speed() - r.speed[i];
+        n += 1.0; cross2 += c * c; cross_max = cross_max.max(c); ev2 += e * e; if e > 0.0 { over += e; } else { under -= e; }
+    }
+    println!("style {st}: cross-track rms {:.2} m (max {:.1} m), speed error rms {:.2} m/s, mean over the plan {:.2}, mean under {:.2}", (cross2 / n).sqrt(), cross_max, (ev2 / n).sqrt(), over / n, under / n);
+}
