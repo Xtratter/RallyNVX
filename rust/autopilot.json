@@ -19,7 +19,7 @@
       "brake_factor": 0.7
     },
     "aggressive": {
-      "lat_factor": 1.5,
+      "lat_factor": 1.35,
       "brake_factor": 1.0,
       "slide": 0.5,
       "offset_max": 0.85,

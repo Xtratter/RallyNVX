@@ -92,6 +92,9 @@ impl World {
         let mut p = World::from_terrain(Terrain::flat(), self.car_spec, (0.0, 0.0), 0.0);
         p.tuning = self.tuning; p.assists = self.assists; p.drivetrain = self.drivetrain.clone(); p.manual = false;
         p.vehicle.force_surface = Some(surface); p.vehicle.tyre_bar = self.vehicle.tyre_bar;
+        // the state of the car goes with it: the tyres (wear, temperature), the damage, the air and the wet ground, so what is measured is what the car can do now
+        p.vehicle.tyres = self.vehicle.tyres; p.vehicle.damage = self.vehicle.damage; p.vehicle.air_c = self.vehicle.air_c; p.vehicle.wet = self.climate.weather().wet.max(self.vehicle.wet);
+        p.climate = self.climate;
         p
     }
 

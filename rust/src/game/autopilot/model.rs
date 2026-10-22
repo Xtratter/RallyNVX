@@ -7,12 +7,14 @@ use crate::game::world::World;
 
 /// The table step (m/s) and its length: speeds 0..=(N-1)*DV.
 pub const DV: f32 = 2.0;
-const N: usize = 26;
+pub const N: usize = 26;
 
 #[derive(Clone, Debug)]
 pub struct CarModel {
     /// The acceleration (m/s^2) the engine gives at the speed `i * DV` straight on, and the deceleration the brakes give.
     pub acc: [f32; N], pub brk: [f32; N],
+    /// The largest lateral acceleration (m/s^2) the car holds at the speed `i * DV` (a steering ramp at a held speed: the tyres, the downforce and the steering lock are all in it).
+    pub lat: [f32; N],
     /// The speed the full-throttle run ended at (the top speed on this ground).
     pub top: f32,
 }
@@ -27,7 +29,8 @@ impl CarModel {
     pub fn brake(&self, v: f32) -> f32 { at(&self.brk, v) }
 
     /// The old guess from the spec: a flat pull of half the engine force, a brake of the grip.
-    pub fn nominal(accel: f32, mu: f32, top: f32) -> CarModel { CarModel { acc: [accel; N], brk: [mu * 9.81; N], top } }
+    pub fn nominal(accel: f32, mu: f32, top: f32) -> CarModel { CarModel { acc: [accel; N], brk: [mu * 9.81; N], lat: [mu * 9.81; N], top } }
+    pub fn lateral(&self, v: f32) -> f32 { at(&self.lat, v) }
 
     /// Runs the two tests on `surface` in a copy of `w`'s setup.
     pub fn measure(w: &World, surface: Surface) -> CarModel {
@@ -58,8 +61,39 @@ impl CarModel {
         let mut brk = [0.0f32; N];
         for k in 0..N { brk[k] = if cnt[k] > 0 { sum[k] / cnt[k] as f32 } else { f32::NAN }; }
         fill(&mut brk, 1.0);
-        CarModel { acc, brk, top }
+        let lat = measure_lat(w, surface, top);
+        CarModel { acc, brk, lat, top }
     }
+}
+
+/// The cornering grip at several speeds: at each a steering ramp from straight to full lock over 6 s with the speed held, the largest lateral acceleration (yaw rate x speed, smoothed over 0.4 s) kept.
+fn measure_lat(w: &World, surface: Surface, top: f32) -> [f32; N] {
+    const SPEEDS: [f32; 8] = [6.0, 10.0, 14.0, 18.0, 22.0, 26.0, 30.0, 34.0];
+    let dt = 1.0 / 60.0;
+    let mut pts: Vec<(f32, f32)> = Vec::new();
+    for &vt in SPEEDS.iter().filter(|&&v| v < top * 0.92) {
+        let mut p = w.probe(surface);
+        let f = p.vehicle.forward(); p.vehicle.vel = f * vt;
+        let (mut t, mut peak, mut avg) = (0.0f32, 0.0f32, 0.0f32);
+        while t < 8.0 {
+            let v = p.vehicle.speed();
+            let throttle = (0.45 + 0.3 * (vt - v)).clamp(0.0, 1.0); let brake = v > vt + 2.0;
+            let steer = if t < 1.5 { 0.0 } else { ((t - 1.5) / 6.0).min(1.0) };
+            p.step(&Input { throttle, steer, brake, ..Default::default() }, dt); t += dt;
+            let a = (p.vehicle.omega.dot(p.vehicle.up()) * p.vehicle.speed()).abs();
+            avg += (a - avg) * (dt / 0.4).min(1.0);
+            if t > 2.0 { peak = peak.max(avg); }
+        }
+        pts.push((vt, peak));
+    }
+    let mut lat = [f32::NAN; N];
+    for (k, x) in lat.iter_mut().enumerate() {
+        let v = k as f32 * DV;
+        let lo = pts.iter().rev().find(|p| p.0 <= v); let hi = pts.iter().find(|p| p.0 >= v);
+        *x = match (lo, hi) { (Some(a), Some(b)) if b.0 > a.0 => a.1 + (b.1 - a.1) * (v - a.0) / (b.0 - a.0), (Some(a), _) => a.1, (None, Some(b)) => b.1, _ => f32::NAN };
+    }
+    fill(&mut lat, 2.0);
+    lat
 }
 
 /// Fills the unmeasured (NaN) entries from their neighbours, and raises every entry to at least `floor`.
@@ -96,6 +130,10 @@ impl Models {
         lo.max(3.0)
     }
 
+    /// The nominal grip (car x ground) the model nearest to `mu` was measured at.
+    pub fn key_at(&self, mu: f32) -> f32 {
+        self.list.iter().min_by(|a, b| (a.0 - mu).abs().partial_cmp(&(b.0 - mu).abs()).unwrap_or(std::cmp::Ordering::Equal)).map_or(mu, |x| x.0)
+    }
     pub fn at(&self, mu: f32) -> &CarModel {
         &self.list.iter().min_by(|a, b| (a.0 - mu).abs().partial_cmp(&(b.0 - mu).abs()).unwrap_or(std::cmp::Ordering::Equal)).expect("a model").1
     }
@@ -112,6 +150,30 @@ mod tests {
     #[test] fn the_gaps_are_filled_and_the_floor_holds() {
         let mut t = [f32::NAN; N]; t[2] = 4.0; t[6] = 8.0; t[10] = -3.0; fill(&mut t, 0.3);
         assert!((t[4] - 6.0).abs() < 1e-5 && t[0] == 4.0 && t[10] == 0.3 && t[N - 1] == 0.3 && t.iter().all(|x| x.is_finite() && *x >= 0.3));
+    }
+    #[test] fn the_cornering_grip_is_measured_and_follows_the_state_of_the_car() {
+        let car = VehicleSpec::by_id("vulpes").unwrap();
+        let mk = || World::from_terrain(crate::game::terrain::Terrain::flat(), car, (0.0, 0.0), 0.0);
+        let clean = CarModel::measure(&mk(), Surface::Asphalt);
+        assert!(clean.lateral(20.0) > 0.4 * 9.81 && clean.lateral(20.0) < 2.0 * 9.81, "a plausible cornering grip: {} m/s2", clean.lateral(20.0));
+        let gravel = CarModel::measure(&mk(), Surface::Gravel);
+        assert!(gravel.lateral(20.0) < clean.lateral(20.0), "gravel grips less than asphalt");
+        let mut worn = mk(); for t in worn.vehicle.tyres.iter_mut() { t.wear = 0.8; }
+        assert!(CarModel::measure(&worn, Surface::Asphalt).lateral(20.0) < clean.lateral(20.0) * 0.97, "worn tyres measure less grip");
+        let mut cold = mk(); for t in cold.vehicle.tyres.iter_mut() { t.temp = 0.0; }
+        assert!(CarModel::measure(&cold, Surface::Asphalt).lateral(20.0) < clean.lateral(20.0) * 0.97, "cold tyres measure less grip");
+        let mut wet = mk(); wet.vehicle.wet = 1.0; wet.climate = crate::game::weather::Climate::with_mode(1, 4);   // heavy rain: the world sets the car's wetness from its climate
+        assert!(CarModel::measure(&wet, Surface::Asphalt).lateral(20.0) < clean.lateral(20.0) * 0.97, "a wet road measures less grip");
+    }
+    #[test] #[ignore] fn measure_the_cornering_of_the_cars() {
+        for id in ["offroader", "vulpes"] {
+            let w = World::from_terrain(crate::game::terrain::Terrain::flat(), VehicleSpec::by_id(id).unwrap(), (0.0, 0.0), 0.0);
+            for s in [Surface::Asphalt, Surface::Gravel] {
+                let t0 = std::time::Instant::now(); let m = CarModel::measure(&w, s);
+                let key = w.car_spec.mu * crate::game::grip::grip(s, 1.0).mu;
+                println!("{id} {s:?} ({} ms) nominal mu {key:.2}\n  lat g {:?}\n  ratio {:?}", t0.elapsed().as_millis(), (0..N).step_by(3).map(|i| (m.lat[i] / 9.81 * 100.0).round() / 100.0).collect::<Vec<_>>(), (0..N).step_by(3).map(|i| (m.lat[i] / (key * 9.81) * 100.0).round() / 100.0).collect::<Vec<_>>());
+            }
+        }
     }
     #[test] #[ignore] fn measure_the_cars() {
         for id in ["offroader", "vulpes"] {

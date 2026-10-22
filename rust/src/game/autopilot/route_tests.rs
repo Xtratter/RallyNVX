@@ -120,3 +120,15 @@ fn models() -> crate::game::autopilot::model::Models {
     let off = Route::build(&straight(60), &vec![0.0; 60], lim(), &c);
     assert!(off.room(30, 0.0, 120.0).is_none(), "off the roads there is no edge");
 }
+
+#[test] fn the_corner_speed_follows_the_cornering_grip_the_car_measured() {
+    use crate::game::autopilot::model::{CarModel, Models, N};
+    let c = cfg();
+    let mut pts = straight(40); pts.extend(arc(60.0, 90.0).iter().skip(1).map(|p| v3(-p.x, 0.0, 156.0 + p.z)));   // no doubled point at the join
+    let w = vec![12.0; pts.len()];
+    let key = 0.7;
+    let model = |ratio: f32| { let mut m = CarModel::nominal(5.0, key, 40.0); m.lat = [ratio * key * 9.81; N]; Models { list: vec![(key, m)], steer: (0.6, 20.0, 2.5) } };
+    let speed_at_apex = |ratio: f32| { let mut r = Route::build(&pts, &w, lim(), &c); r.replan(&model(ratio), &c); let k = 40 + (pts.len() - 40) / 2; r.speed[k] };   // the middle of the arc
+    let (low, high) = (speed_at_apex(0.7), speed_at_apex(1.1));
+    assert!(high > low * 1.1, "a car that grips more takes the bend faster: {low} against {high}");
+}

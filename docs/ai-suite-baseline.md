@@ -35,3 +35,22 @@ Measured 2026-10-22 on 2.90.0 (the Vulpes and the old offroader, four levels 1, 
 What it shows: the normal style loses 3 to 5 % in wet, worn and damaged cells and goes 2 to 3 m beyond the edge on cold tyres; Max Attack is 9 % faster dry but in wet, worn and cold cells it leaves the usable ground by 7 to 9.5 m, and the offroader on cold tyres does not finish two levels out of four. The plan does not know the state of the car (the measurement of the pull and the brake is made on a clean car): this is the work of A1 and A3.
 
 **Кратко по-русски.** Базовые цифры 2.90.0 на двух машинах, пяти условиях и четырёх уровнях. Обычный стиль теряет 3–5 % на мокром, с изношенными шинами и с повреждениями и уходит за край на 2–3 м на холодных шинах. Max Attack на сухом быстрее на 9 %, но на мокром, с изношенными и с холодными шинами уходит с пригодной земли на 7–9,5 м, а старый внедорожник на холодных шинах не финиширует на двух уровнях из четырёх. План не знает состояния машины (разгон и торможение измеряются на «чистой» машине): это работа этапов A1 и A3.
+
+## After stage A1 (2.91.0, the measured cornering grip, the state of the car in the measurement)
+
+**Normal style (1)** / **Max Attack (5)**: time s / worst excursion m
+
+| car | condition | normal | Max Attack |
+|---|---|---|---|
+| vulpes | dry | 316 / -0.4 | 287 / 3.1 |
+| offroader | dry | 338 / -0.2 | 306 / 2.2 |
+| vulpes | wet | 329 / -0.4 | 296 / 5.7 |
+| offroader | wet | 349 / -0.3 | 315 / 1.8 |
+| vulpes | worn tyres | 339 / -0.4 | 305 / 2.3 |
+| offroader | worn tyres | 356 / -0.3 | 325 / 1.9 |
+| vulpes | cold tyres | 365 / 2.0 | 323 / 8.5 |
+| offroader | cold tyres | 382 / 0.9 | 342 / 2.6 |
+| vulpes | damaged | 340 / -0.4 | 291 / 3.2 |
+| offroader | damaged | 362 / -0.3 | 316 / 2.7 |
+
+The excursions of Max Attack in the worn, cold and wet cells fell from 7 to 9.5 m to 2 to 6 m (one cell, the Vulpes on cold tyres, is still 8.5 m); the offroader on cold tyres now finishes every level (505 s with two unfinished before). The times in the dry cells are the same: A1 makes the plan right for the state of the car, it is not yet faster in the clean case (A2 and A4 are for that).
