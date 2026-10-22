@@ -134,7 +134,7 @@ mod tests {
         let cfg = super::super::cfg::cfg_style(style);
         let mode = if style == 5 { Mode::Attack } else { Mode::Safe };
         let imit_path = format!("{}/net_imit_{style}.bin", std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".into()));
-        let imit = load(&imit_path).unwrap_or_else(|| { let m = super::super::learn::dagger(car, cfg, &[2, 3, 5, 8], 4, |_| {}, || false); save(&imit_path, &m); m });
+        let imit = load(&imit_path).unwrap_or_else(|| { let m = super::super::learn::dagger(car, cfg, &[2, 3, 5, 8], 4, std::env::var("AP_SENSOR").is_ok(), |_| {}, || false); save(&imit_path, &m); m });
         let mut pool: Vec<Segment> = [2u64, 3, 5, 8, 13, 34].iter().filter_map(|&s| Segment::new(s, car)).collect();
         let fixed = [0.12f32, 0.3, 0.48, 0.66, 0.8, 0.9];
         let eval = |pool: &mut Vec<Segment>, net: Option<Arc<Mlp>>| -> f32 { pool.iter_mut().zip(fixed).map(|(s, f)| s.run(car, cfg, net.clone(), f, mode)).sum::<f32>() / fixed.len() as f32 };
@@ -146,7 +146,7 @@ mod tests {
         let after = eval(&mut pool, Some(Arc::new(evolved.clone())));
         println!("segments after: {after:.1} (the controller {teacher:.1}, the imitating net {before:.1})");
         for (tag, net) in [("imitating", &imit), ("evolved", &evolved)] {
-            let rs = super::super::learn::rollouts(&[1, 21], car, cfg, Some(Arc::new(net.clone())), false, 2);
+            let rs = super::super::learn::rollouts(&[1, 21], car, cfg, Some(Arc::new(net.clone())), false, false, 2);
             for (r, s) in rs.iter().zip([1u64, 21]) { println!("{tag} net, full stage {s}: finished {} t {:.0}s edge {:.1} m flips {} damage {:.0}%", r.0.finished, r.0.time, r.0.worst_edge, r.0.flips, r.0.damage * 100.0); }
         }
     }

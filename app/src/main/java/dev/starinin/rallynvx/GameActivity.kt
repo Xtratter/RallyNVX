@@ -428,6 +428,7 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
             return if (busy && trainingMode == mode) t("Stop training", "Остановить обучение") + " (${(st[1] * 100).toInt()} %)"
             else if (mode == 3) t("Teach the neural net (copies the chosen style)", "Обучить нейросеть (повторяет выбранный стиль)")
             else if (mode == 4) t("Improve the net by rewards (about 15 min)", "Дообучить нейросеть по награде (около 15 мин)")
+            else if (mode == 5) t("Teach the vision net (sensors, no route line, about 10 min)", "Обучить нейросеть-«зрение» (датчики, без линии трассы, около 10 мин)")
             else if (mode == 2) t("Teach Max Attack (all out, slides)", "Обучить Max Attack (на пределе, с заносами)") else t("Teach the autopilot (safe)", "Обучить автопилот (безопасно)")
         }
         fun pollTraining() {
@@ -451,13 +452,13 @@ class GameActivity : Activity(), SurfaceHolder.Callback {
                 }
             }
             wasTraining = busy
-            if (busy) trainInfo.text = if (trainingMode == 3 || trainingMode == 4) t("The net is learning from the drives of the chosen style: ${(st[1] * 100).toInt()} %", "Нейросеть учится на заездах выбранного стиля: ${(st[1] * 100).toInt()} %") else t("Training: the best result so far is ${st[2].toInt()} (was ${st[3].toInt()})", "Обучение: лучший результат ${st[2].toInt()} (было ${st[3].toInt()})")
+            if (busy) trainInfo.text = if (trainingMode == 3 || trainingMode == 5) t("The net is learning from the drives of the chosen style: ${(st[1] * 100).toInt()} %", "Нейросеть учится на заездах выбранного стиля: ${(st[1] * 100).toInt()} %") else t("Training: the best result so far is ${st[2].toInt()} (was ${st[3].toInt()})", "Обучение: лучший результат ${st[2].toInt()} (было ${st[3].toInt()})")
             trainBtns.forEach { (m, b) -> b.text = trainText(m) }
         }
-        for (m in intArrayOf(1, 2, 3, 4)) {
+        for (m in intArrayOf(1, 2, 3, 4, 5)) {
             val b = Mini.button(this, trainText(m), M3Widgets.ButtonKind.OUTLINED) {
                 val st = Native.gameTrainState(); val busy = st.size >= 4 && st[0] > 0.5f
-                if (busy) { if (trainingMode == m) Native.gameTrain(0) } else if (running) { trainingMode = m; Native.gameTrain(if (m == 3) (if (Controls.autopilotStyle(this) == 5) 4 else 3) else if (m == 4) (if (Controls.autopilotStyle(this) == 5) 6 else 5) else m); wasTraining = true }
+                if (busy) { if (trainingMode == m) Native.gameTrain(0) } else if (running) { trainingMode = m; Native.gameTrain(if (m == 3) (if (Controls.autopilotStyle(this) == 5) 4 else 3) else if (m == 4) (if (Controls.autopilotStyle(this) == 5) 6 else 5) else if (m == 5) (if (Controls.autopilotStyle(this) == 5) 8 else 7) else m); wasTraining = true }
                 pollTraining()
             }
             trainBtns.add(m to b)

@@ -115,6 +115,8 @@ impl World {
     }
     /// Gives the running autopilot a neural policy (or none) and turns its recording on or off.
     pub fn autopilot_policy(&mut self, p: Option<std::sync::Arc<super::autopilot::nn::Mlp>>, record: bool) { if let Some(ap) = self.autopilot.as_mut() { ap.set_policy(p, record); } }
+    /// Makes the autopilot record the sensors' vectors (for a net that reads them) or the route's.
+    pub fn autopilot_sensor_mode(&mut self, on: bool) { if let Some(ap) = self.autopilot.as_mut() { ap.set_sensor_mode(on); } }
     pub fn autopilot_on(&self) -> bool { self.autopilot.is_some() }
 
     /// Starts a rally stage (0 the special stage, 1 the city loop): the car is put before the start line facing along
@@ -302,6 +304,10 @@ impl World {
         }
         if counting { self.autopilot = None; }
         if let Some(ap) = self.autopilot.as_mut() {
+            if ap.wants_sensors() {
+                let d = &self.drivetrain;
+                ap.sense(&self.terrain, &self.vehicle, super::autopilot::sense::Telemetry { rpm: d.rpm(), gear: d.gear, fuel_l: d.fuel.litres, coolant_c: d.coolant.temp, clutch_c: d.clutch.temp, throttle: 0.0, brake: 0.0 }, dt);
+            }
             let cmd = ap.drive(&self.vehicle, dt);
             inp = cmd.input.sanitized();
             if cmd.reset { self.vehicle.reset_upright(&self.terrain); }

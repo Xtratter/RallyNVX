@@ -14,7 +14,9 @@ pub struct Limits { pub mu: f32, pub v_max: f32, pub accel: f32, pub stop_at_end
 /// `half`: the half width of the road at every point (0 off the roads). `kraw` is the curvature at each point alone, `kappa` the worst of the neighbours
 /// (so the car brakes before the bend); `mu` the grip of the ground, `lim` what the profile was built with.
 #[derive(Clone, Debug)]
-pub struct Route { pub p: Vec<V3>, pub s: Vec<f32>, pub kappa: Vec<f32>, pub speed: Vec<f32>, pub half: Vec<f32>, pub kraw: Vec<f32>, pub mu: Vec<f32>, pub lim: Limits, pub c: Vec<V3> }
+pub struct Route { pub p: Vec<V3>, pub s: Vec<f32>, pub kappa: Vec<f32>, pub speed: Vec<f32>, pub half: Vec<f32>, pub kraw: Vec<f32>, pub mu: Vec<f32>, pub lim: Limits, pub c: Vec<V3>,
+    /// The usable width beyond the road's edge at every point (see `shoulder`): along the normal `(-tz, tx)` and against it.
+    pub ext: Vec<(f32, f32)> }
 
 fn xz(a: V3) -> (f32, f32) { (a.x, a.z) }
 
@@ -25,15 +27,19 @@ impl Route {
     }
 
     /// As `build`, with the grip `mu` of the ground at every point (asphalt, city streets, gravel on one route).
-    pub fn build_with(centre: &[V3], width: &[f32], mu: &[f32], lim: Limits, cfg: &AutoCfg) -> Route {
+    pub fn build_with(centre: &[V3], width: &[f32], mu: &[f32], lim: Limits, cfg: &AutoCfg) -> Route { Route::build_ext(centre, width, mu, lim, cfg, None) }
+
+    /// As `build_with`, with the usable shoulder beyond the road's edge at every point (`None`: none): the line may use it, so a corner can be cut over the edge where the ground allows.
+    pub fn build_ext(centre: &[V3], width: &[f32], mu: &[f32], lim: Limits, cfg: &AutoCfg, ext: Option<&[(f32, f32)]>) -> Route {
         let n = centre.len();
         assert!(n >= 3 && width.len() == n && mu.len() == n, "a route needs at least three points");
-        let p = taut(centre, width, cfg.offset_max, cfg.edge_margin);
+        let ext: Vec<(f32, f32)> = match ext { Some(e) if e.len() == n => e.to_vec(), _ => vec![(0.0, 0.0); n] };
+        let p = taut(centre, width, cfg.offset_max, cfg.edge_margin, &ext);
         let mut s = vec![0.0f32; n];
         for i in 1..n { s[i] = s[i - 1] + ((p[i].x - p[i - 1].x).hypot(p[i].z - p[i - 1].z)).max(1e-3); }
         let kraw: Vec<f32> = (0..n).map(|i| if i == 0 || i == n - 1 { 0.0 } else { let r = radius(xz(p[i - 1]), xz(p[i]), xz(p[i + 1])); if r.is_finite() { 1.0 / r } else { 0.0 } }).collect();
         let kappa: Vec<f32> = (0..n).map(|i| kraw[i.saturating_sub(3)..=(i + 3).min(n - 1)].iter().cloned().fold(0.0, f32::max)).collect();
-        let mut r = Route { p, s, kappa, speed: Vec::new(), half: width.iter().map(|w| w * 0.5).collect(), kraw, mu: mu.to_vec(), lim, c: centre.to_vec() };
+        let mut r = Route { p, s, kappa, speed: Vec::new(), half: width.iter().map(|w| w * 0.5).collect(), kraw, mu: mu.to_vec(), lim, c: centre.to_vec(), ext };
         r.speed = r.profile(cfg, None);
         r
     }
@@ -79,13 +85,17 @@ impl Route {
         speed
     }
 
-    /// How far the point (x, z) is from the road's edge by the centre line at index `i` (negative: beyond it); `None` off the roads (the half width is 0).
-    pub fn room(&self, i: usize, x: f32, z: f32) -> Option<f32> {
+    /// How far the point (x, z) is from the edge of the usable ground by the centre line at index `i` (negative: beyond it; the shoulder counts as usable); `None` off the roads (the half width is 0).
+    pub fn room(&self, i: usize, x: f32, z: f32) -> Option<f32> { self.room_split(i, x, z).map(|(r, _)| r) }
+
+    /// The room as `room` gives it, and how much of it is the shoulder (so `room - shoulder` is the room by the road alone, negative while the car is beyond the road's edge).
+    pub fn room_split(&self, i: usize, x: f32, z: f32) -> Option<(f32, f32)> {
         if self.half[i] <= 1.0 { return None; }
         let (a, b) = (self.c[i.saturating_sub(1)], self.c[(i + 1).min(self.len() - 1)]);
         let (tx, tz) = (b.x - a.x, b.z - a.z); let l = tx.hypot(tz).max(1e-3);
         let off = ((x - self.c[i].x) * -tz + (z - self.c[i].z) * tx) / l;
-        Some(self.half[i] - off.abs())
+        let side = if off > 0.0 { self.ext[i].0 } else { self.ext[i].1 };
+        Some((self.half[i] + side - off.abs(), side))
     }
 
     /// The sideways distance (m) of (x, z) from the line at index `i`: across its direction, not along it (the points are 4 m apart).
@@ -119,18 +129,20 @@ impl Route {
 /// The line of least curvature inside the corridor `+-offset_max * (width / 2 - margin)`: Gauss-Seidel sweeps of the
 /// biharmonic smoothing (every point goes to `(4 (p-1 + p+1) - (p-2 + p+2)) / 6`, projected on its own normal and clamped
 /// to the corridor), the first and last two points stay on the centre line. Outside-inside-outside comes out by itself.
-fn taut(c: &[V3], width: &[f32], offset_max: f32, edge_margin: f32) -> Vec<V3> {
+fn taut(c: &[V3], width: &[f32], offset_max: f32, edge_margin: f32, ext: &[(f32, f32)]) -> Vec<V3> {
     let n = c.len();
     let nor: Vec<V3> = (0..n).map(|i| { let (a, b) = (c[i.saturating_sub(1)], c[(i + 1).min(n - 1)]); let (tx, tz) = (b.x - a.x, b.z - a.z); let l = tx.hypot(tz).max(1e-3); v3(-tz / l, 0.0, tx / l) }).collect();
-    let lim: Vec<f32> = (0..n).map(|i| offset_max * (width[i] * 0.5 - edge_margin).max(0.0)).collect();
+    // the corridor: along the normal up to `hi`, against it down to `lo` (the shoulder widens it where the ground allows)
+    let hi: Vec<f32> = (0..n).map(|i| offset_max * (width[i] * 0.5 + ext[i].0 - edge_margin).max(0.0)).collect();
+    let lo: Vec<f32> = (0..n).map(|i| offset_max * (width[i] * 0.5 + ext[i].1 - edge_margin).max(0.0)).collect();
     let mut d = vec![0.0f32; n];
-    if n < 7 || lim.iter().all(|l| *l <= 0.0) { return c.to_vec(); }
+    if n < 7 || (hi.iter().all(|l| *l <= 0.0) && lo.iter().all(|l| *l <= 0.0)) { return c.to_vec(); }
     let pos = |d: &[f32], i: usize| (c[i].x + nor[i].x * d[i], c[i].z + nor[i].z * d[i]);
     for _ in 0..1500 {
         for i in 2..n - 2 {
             let (a, b, e, f) = (pos(&d, i - 1), pos(&d, i + 1), pos(&d, i - 2), pos(&d, i + 2));
             let q = ((4.0 * (a.0 + b.0) - (e.0 + f.0)) / 6.0, (4.0 * (a.1 + b.1) - (e.1 + f.1)) / 6.0);
-            d[i] = ((q.0 - c[i].x) * nor[i].x + (q.1 - c[i].z) * nor[i].z).clamp(-lim[i], lim[i]);
+            d[i] = ((q.0 - c[i].x) * nor[i].x + (q.1 - c[i].z) * nor[i].z).clamp(-lo[i], hi[i]);
         }
     }
     (0..n).map(|i| { let q = c[i] + nor[i] * d[i]; v3(q.x, c[i].y, q.z) }).collect()
