@@ -70,6 +70,7 @@ impl Mlp {
     }
 
     pub fn forward(&self, x: &[f32]) -> [f32; O] {
+        if x.len() != self.n_in { return [0.0; O]; }   // an input of another size is no input (the net stays quiet instead of reading outside its weights)
         let h = self.h;
         let (mut h1, mut h2) = ([0.0f32; HMAX], [0.0f32; HMAX]);
         Mlp::layer(&self.w1, &self.b1, x, h, &mut h1[..h]); Mlp::layer(&self.w2, &self.b2, &h1[..h], h, &mut h2[..h]);

@@ -173,7 +173,10 @@ impl Autopilot {
         let mut cmd = self.drive_expert(v, dt);
         if (self.policy.is_none() && !self.record) || cmd.teleport.is_some() || cmd.reset || cmd.done { return cmd; }
         let sensor_net = self.policy.as_ref().map_or(self.sensor_mode, |p| p.n_in != nn::F);
-        let f: Vec<f32> = if sensor_net { match &self.sensor { Some(s) => s.clone(), None => return cmd } } else { self.features(v).to_vec() };
+        // a net saved before the short memory was added reads the first 51 sensor values only: the vector is cut to the net's own input size; a net of a size that fits nothing is not used
+        let n_in = self.policy.as_ref().map_or(0, |p| p.n_in);
+        let mut f: Vec<f32> = if sensor_net { match &self.sensor { Some(s) => s.clone(), None => return cmd } } else { self.features(v).to_vec() };
+        if self.policy.is_some() && sensor_net { if n_in > f.len() { return cmd; } f.truncate(n_in); }
         if self.record {
             self.rec_step += 1;
             if self.rec_step % 3 == 0 {
