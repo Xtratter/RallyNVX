@@ -13,6 +13,8 @@ pub mod shoulder;
 pub mod streets;
 #[cfg(test)]
 mod stage_tests;
+#[cfg(test)]
+mod suite_tests;
 
 use self::cfg::{cfg, cfg_style, AutoCfg};
 use self::route::{Limits, Route};
