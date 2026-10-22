@@ -6,6 +6,7 @@ pub mod train;
 pub mod job;
 pub mod nn;
 pub mod learn;
+pub mod es;
 pub mod route;
 pub mod streets;
 #[cfg(test)]
@@ -49,7 +50,7 @@ pub struct Autopilot {
     /// recovers while all is calm); `k_planned` is the value the speed plan was last made with.
     models: Option<model::Models>, k: f32, k_planned: f32,
     /// A neural policy that drives instead of the geometric controller (the controller still runs: it gives the labels and takes over when the car is lost), the seconds of the takeover left, and the recorded (features, expert action) pairs.
-    policy: Option<std::sync::Arc<nn::Mlp>>, nn_hold: f32, record: bool, samples: Vec<([f32; nn::F], [f32; nn::O])>, rec_step: u32,
+    policy: Option<std::sync::Arc<nn::Mlp>>, nn_hold: f32, takeover_time: f32, record: bool, samples: Vec<([f32; nn::F], [f32; nn::O])>, rec_step: u32,
 }
 
 /// The speed limits for a car on a road of the given kind (loose gravel is the worst case on the stage).
@@ -116,7 +117,7 @@ impl Autopilot {
     /// The same with the numbers given (the self-training tries many sets at once, so they cannot come from the global style).
     pub fn on_route_cfg(route: Route, car: VehicleSpec, v: &Vehicle, style: i32, cfg: AutoCfg) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
+        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, takeover_time: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
@@ -162,6 +163,7 @@ impl Autopilot {
         }
         if let Some(p) = self.policy.clone() {
             self.nn_hold = (self.nn_hold - dt).max(0.0);
+            if self.nn_hold > 0.0 { self.takeover_time += dt; }
             if self.route.cross(self.idx, v.pos.x, v.pos.z) > 6.0 || v.flipped() { self.nn_hold = 2.0; }
             if self.nn_hold <= 0.0 {
                 let o = p.forward(&f);
@@ -173,6 +175,8 @@ impl Autopilot {
 
     /// Sets (or removes) the neural policy and turns recording on or off.
     pub fn set_policy(&mut self, policy: Option<std::sync::Arc<nn::Mlp>>, record: bool) { self.policy = policy; self.record = record; self.nn_hold = 0.0; }
+    /// The seconds the controller has driven in place of the policy (a measure of how often the net got lost).
+    pub fn takeover_time(&self) -> f32 { self.takeover_time }
     /// The recorded pairs since the last call.
     pub fn take_samples(&mut self) -> Vec<([f32; nn::F], [f32; nn::O])> { std::mem::take(&mut self.samples) }
 

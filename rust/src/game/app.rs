@@ -125,7 +125,7 @@ mod game {
         pub fn set_signs(&mut self, on: bool) { self.world.signs_on = on; }
         pub fn set_autopilot(&mut self, style: i32) { self.world.set_autopilot_style(style); }
         /// Starts (or stops) the autopilot's self-training for the car in the world.
-        pub fn train(&mut self, mode: i32) { match mode { 1 => { crate::game::autopilot::job::start(self.world.car_spec, 10, crate::game::autopilot::train::Mode::Safe); } 2 => { crate::game::autopilot::job::start(self.world.car_spec, 10, crate::game::autopilot::train::Mode::Attack); } 3 => { crate::game::autopilot::job::start_net(self.world.car_spec, 1); } 4 => { crate::game::autopilot::job::start_net(self.world.car_spec, 5); } _ => crate::game::autopilot::job::stop() } }
+        pub fn train(&mut self, mode: i32) { match mode { 1 => { crate::game::autopilot::job::start(self.world.car_spec, 10, crate::game::autopilot::train::Mode::Safe); } 2 => { crate::game::autopilot::job::start(self.world.car_spec, 10, crate::game::autopilot::train::Mode::Attack); } 3 => { crate::game::autopilot::job::start_net(self.world.car_spec, 1); } 5 => { crate::game::autopilot::job::start_es(self.world.car_spec, 1, 30); } 6 => { crate::game::autopilot::job::start_es(self.world.car_spec, 5, 30); } 4 => { crate::game::autopilot::job::start_net(self.world.car_spec, 5); } _ => crate::game::autopilot::job::stop() } }
         pub fn place_on_road(&mut self, mode: i32) -> bool { self.world.place_on_road(mode) }
         pub fn place_near_city(&mut self) -> bool { self.world.place_near_city() }
         pub fn place_in_city(&mut self) -> bool { self.world.place_in_city() }

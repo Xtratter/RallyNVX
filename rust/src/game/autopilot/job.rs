@@ -47,6 +47,27 @@ pub fn start_net(car: VehicleSpec, src: i32) -> bool {
     if spawned.is_err() { RUNNING.store(false, Relaxed); return false; }
     true
 }
+/// Starts the net's reward training for `car`: from the net already made for the style `src` (or a fresh imitation when there is none), `generations` rounds of the evolution
+/// strategy over a few levels kept built; the result is a net like `start_net`'s.
+pub fn start_es(car: VehicleSpec, src: i32, generations: usize) -> bool {
+    if RUNNING.swap(true, Relaxed) { return false; }
+    STOP.store(false, Relaxed); PROGRESS.store(0, Relaxed); BEST_COST.store(0, Relaxed); START_COST.store(0, Relaxed);
+    *NET_RESULT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    let spawned = std::thread::Builder::new().name("autopilot-es".into()).spawn(move || {
+        lower_priority();
+        let style = if src == 5 { 5 } else { 1 };
+        let cfg = super::cfg::cfg_style(style);
+        let mode = if style == 5 { train::Mode::Attack } else { train::Mode::Safe };
+        // the start: the net the player has for this style, else a quick imitation (half of the progress bar)
+        let start = match super::cfg::net() { Some((n, s)) if s == style => (*n).clone(), _ => super::learn::dagger(car, cfg, &[2, 3, 5, 8], 3, |p| PROGRESS.store((p * 0.4).to_bits(), Relaxed), || STOP.load(Relaxed)) };
+        let mut pool: Vec<super::es::Segment> = [2u64, 3, 5].iter().filter_map(|&s| super::es::Segment::new(s, car)).collect();
+        let best = super::es::evolve(car, cfg, mode, &start, &mut pool, generations, 8, 0.02, 0.002, 3, |p, _| PROGRESS.store((0.4 + 0.6 * p).to_bits(), Relaxed), || STOP.load(Relaxed));
+        if !STOP.load(Relaxed) { *NET_RESULT.lock().unwrap_or_else(|e| e.into_inner()) = Some((style, best.to_vec())); }
+        RUNNING.store(false, Relaxed);
+    });
+    if spawned.is_err() { RUNNING.store(false, Relaxed); return false; }
+    true
+}
 /// The finished net's source style and parameters, once.
 pub fn take_net() -> Option<(i32, Vec<f32>)> { NET_RESULT.lock().unwrap_or_else(|e| e.into_inner()).take() }
 pub fn stop() { STOP.store(true, Relaxed); }
