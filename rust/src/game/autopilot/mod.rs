@@ -436,7 +436,7 @@ impl Autopilot {
             if e > -0.5 { (thr, false, 0.0) }
             // braking into a bend with the throttle kept a little open (left-foot braking): the rear stays light and the car rotates
             else if e < -1.2 { if steer.abs() > 0.2 && speed > 8.0 { self.tech.trail_s += dt; } (if steer.abs() > 0.2 && speed > 8.0 { 0.3 } else { 0.0 }, true, (-e * 0.4).clamp(0.2, 1.0) * if steer.abs() > 0.2 { 0.8 } else { 1.0 }) } else { (0.0, false, 0.0) }
-        } else if e > 0.3 { ((0.25 + 0.35 * e).clamp(0.0, 1.0), false, 0.0) }
+        } else if e > 0.3 { ((0.7 + 1.0 * e).clamp(0.0, 1.0), false, 0.0)}
             else if e < -0.7 { (0.0, true, (-e * 0.3).clamp(0.1, 1.0)) } else { (0.0, false, 0.0) };
         // handbrake flick: into a tight bend taken above the grip limit the rear is let go for a moment so the car rotates
         self.cooldown = (self.cooldown - dt).max(0.0);
