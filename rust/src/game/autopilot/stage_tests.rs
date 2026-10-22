@@ -236,3 +236,19 @@ fn diagnose(seed: u64, style: i32) -> String {
         assert!(k.cut_m >= 20.0, "seed {seed}: corners cut beyond the edge {:.0} m", k.cut_m);
     }
 }
+
+/// How fast the autopilot goes on the liaison and the city streets (diagnosis): the top speed, and the planned top speed.
+#[test] #[ignore] fn diagnose_the_top_speed() {
+    let st = env_style();
+    let mut w = World::with_roads(1, car());
+    assert!(w.set_autopilot_style(st));
+    let (mut t, mut top, mut sum, mut n) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+    let mut plan_top = 0.0f32;
+    while w.autopilot_on() && t < 90.0 {
+        w.step(&Input::default(), 1.0 / 60.0); t += 1.0 / 60.0;
+        let v = w.vehicle.speed(); top = top.max(v); sum += v; n += 1.0;
+        if let Some(a) = w.autopilot.as_ref() { let r = a.route(); let i = r.nearest(w.vehicle.pos.x, w.vehicle.pos.z).0; plan_top = plan_top.max(r.speed[i]); }
+        if ((t * 60.0) as u32) % 300 == 0 { let a = w.autopilot.as_ref().unwrap(); let r = a.route(); let i = r.nearest(w.vehicle.pos.x, w.vehicle.pos.z).0; println!("t {:.0} v {:.1} ({:.0} km/h) plan {:.1} gear {} kraw {:.4}", t, w.vehicle.speed(), w.vehicle.speed() * 3.6, r.speed[i], w.drivetrain.gear, r.kraw[i]); }
+    }
+    println!("top {:.1} m/s ({:.0} km/h), mean {:.1} m/s, the plan's top at the car {:.1} m/s", top, top * 3.6, sum / n.max(1.0), plan_top);
+}
