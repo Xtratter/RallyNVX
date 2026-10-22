@@ -252,3 +252,22 @@ fn diagnose(seed: u64, style: i32) -> String {
     }
     println!("top {:.1} m/s ({:.0} km/h), mean {:.1} m/s, the plan's top at the car {:.1} m/s", top, top * 3.6, sum / n.max(1.0), plan_top);
 }
+
+/// How careful the autopilot is on the gravel stage (diagnosis): the daring `k`, the speed against the plan and the grip used in the bends.
+#[test] #[ignore] fn diagnose_the_gravel() {
+    let st = env_style();
+    let mut w = World::with_roads(2, car());
+    assert!(w.place_on_road(2) && w.set_autopilot_style(st));
+    let (mut t, mut k_sum, mut k_low, mut n, mut bend_n, mut lat_sum, mut lat_max, mut v_plan) = (0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
+    while w.autopilot_on() && t < 700.0 {
+        w.step(&Input::default(), 1.0 / 60.0); t += 1.0 / 60.0;
+        let Some(a) = w.autopilot.as_ref() else { break };
+        let r = a.route(); if r.length() < 3000.0 { continue; }
+        let i = r.nearest(w.vehicle.pos.x, w.vehicle.pos.z).0;
+        n += 1.0; k_sum += a.daring(); if a.daring() < 0.9 { k_low += 1.0; }
+        v_plan += w.vehicle.speed() / r.speed[i].max(1.0);
+        if r.kraw[i] > 0.01 { bend_n += 1.0; let lat = (w.vehicle.speed().powi(2) * r.kraw[i]) / 9.81; lat_sum += lat; lat_max = lat_max.max(lat); }
+    }
+    println!("style {st}: t {:.0}s, mean daring {:.2}, {:.0}% of the time under 0.9, speed/plan {:.2}, in bends (>0.01 /m) the mean lateral acceleration {:.2} g, the largest {:.2} g (the surface's mu x the car's = {:.2})", t, k_sum / n.max(1.0), 100.0 * k_low / n.max(1.0), v_plan / n.max(1.0), lat_sum / bend_n.max(1.0), lat_max,
+        w.car_spec.mu * crate::game::grip::grip(crate::game::surface::Surface::Gravel, 1.0).mu);
+}

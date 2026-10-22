@@ -185,6 +185,8 @@ impl Autopilot {
 
     /// Sets (or removes) the neural policy and turns recording on or off.
     pub fn set_policy(&mut self, policy: Option<std::sync::Arc<nn::Mlp>>, record: bool) { self.policy = policy; self.record = record; self.nn_hold = 0.0; }
+    /// The daring (0.6..1) the autopilot dares to use of the planned cornering grip now.
+    pub fn daring(&self) -> f32 { self.k }
     /// The rally techniques used so far.
     pub fn techniques(&self) -> Techniques { self.tech }
     /// The seconds the controller has driven in place of the policy (a measure of how often the net got lost).
