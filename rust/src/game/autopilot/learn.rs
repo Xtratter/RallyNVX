@@ -6,14 +6,15 @@ use super::train::Drive;
 use crate::game::{input::Input, vehicle::VehicleSpec, world::World};
 use std::sync::Arc;
 
-pub type Sample = ([f32; F], [f32; O]);
+pub type Sample = (Vec<f32>, [f32; O]);
 
 /// One drive of a stage from its start with `cfg`, the net (when given) driving; the (features, controller's action) pairs recorded when asked.
-pub fn rollout(seed: u64, car: VehicleSpec, cfg: AutoCfg, policy: Option<Arc<Mlp>>, record: bool, limit: f32) -> (Drive, Vec<Sample>) {
+pub fn rollout(seed: u64, car: VehicleSpec, cfg: AutoCfg, policy: Option<Arc<Mlp>>, record: bool, sensor: bool, limit: f32) -> (Drive, Vec<Sample>) {
     let mut w = World::with_roads(seed, car);
     let mut out = Vec::new();
     if !w.place_on_road(2) || !w.set_autopilot_cfg(cfg) { return (Drive::default(), out); }
     w.autopilot_policy(policy, record);
+    w.autopilot_sensor_mode(sensor);
     let (mut t, mut worst, mut flips, mut was) = (0.0f32, f32::MIN, 0u32, false);
     while w.autopilot_on() && t < limit {
         w.step(&Input::default(), 1.0 / 60.0); t += 1.0 / 60.0;
@@ -25,30 +26,33 @@ pub fn rollout(seed: u64, car: VehicleSpec, cfg: AutoCfg, policy: Option<Arc<Mlp
 }
 
 /// Rollouts of several seeds, at most `par` at a time.
-pub fn rollouts(seeds: &[u64], car: VehicleSpec, cfg: AutoCfg, policy: Option<Arc<Mlp>>, record: bool, par: usize) -> Vec<(Drive, Vec<Sample>)> {
+pub fn rollouts(seeds: &[u64], car: VehicleSpec, cfg: AutoCfg, policy: Option<Arc<Mlp>>, record: bool, sensor: bool, par: usize) -> Vec<(Drive, Vec<Sample>)> {
     let mut all = Vec::new();
     for chunk in seeds.chunks(par.max(1)) {
-        let hs: Vec<_> = chunk.iter().map(|&s| { let p = policy.clone(); std::thread::spawn(move || rollout(s, car, cfg, p, record, 700.0)) }).collect();
+        let hs: Vec<_> = chunk.iter().map(|&s| { let p = policy.clone(); std::thread::spawn(move || rollout(s, car, cfg, p, record, sensor, 700.0)) }).collect();
         all.extend(hs.into_iter().map(|h| h.join().unwrap_or_else(|_| (Drive::default(), Vec::new()))));
     }
     all
 }
 
 /// The training set from samples.
-pub fn to_set(samples: &[Sample]) -> (Vec<[f32; F]>, Vec<[f32; O]>, Vec<f32>) {
-    (samples.iter().map(|s| s.0).collect(), samples.iter().map(|s| s.1).collect(), vec![1.0; samples.len()])
+pub fn to_set(samples: &[Sample]) -> (Vec<Vec<f32>>, Vec<[f32; O]>, Vec<f32>) {
+    (samples.iter().map(|s| s.0.clone()).collect(), samples.iter().map(|s| s.1).collect(), vec![1.0; samples.len()])
 }
 
 /// The imitation with DAgger: `iters` rounds after the first (the controller's own drive); the net drives, the controller labels, the net trains on everything so far.
 /// `progress` gets 0..1 after each round; returning `true` from `stop` ends it early with the net so far.
-pub fn dagger(car: VehicleSpec, cfg: AutoCfg, seeds: &[u64], iters: usize, mut progress: impl FnMut(f32), stop: impl Fn() -> bool) -> Mlp {
-    let mut data: Vec<Sample> = Vec::new(); let mut net = Mlp::new(1);
+pub fn dagger(car: VehicleSpec, cfg: AutoCfg, seeds: &[u64], iters: usize, sensor: bool, mut progress: impl FnMut(f32), stop: impl Fn() -> bool) -> Mlp {
+    let mut data: Vec<Sample> = Vec::new(); let mut net = Mlp::with_inputs(1, if sensor { super::sense::N } else { F });
     for it in 0..=iters {
         if stop() { break; }
         let policy = if it == 0 { None } else { Some(Arc::new(net.clone())) };
-        for (_, s) in rollouts(seeds, car, cfg, policy, true, 3) { data.extend(s); }
+        for (_, s) in rollouts(seeds, car, cfg, policy, true, sensor, 3) { data.extend(s); }
         let (xs, ys, ws) = to_set(&data);
-        net.train(&xs, &ys, &ws, if it == 0 { 60 } else { 25 }, 0.002, it as u64 + 3);
+        // a net that reads the sensors has a harder job (no line, no planned speeds): more passes over the data
+        let epochs = match (sensor, it) { (false, 0) => 60, (false, _) => 25, (true, 0) => 80, (true, _) => 50 };
+        net.train(&xs, &ys, &ws, epochs, 0.002, it as u64 + 3);
+        if sensor && it == iters && !stop() { net.train(&xs, &ys, &ws, 120, 0.001, 99); }
         progress((it + 1) as f32 / (iters + 1) as f32);
     }
     net
@@ -100,17 +104,19 @@ mod tests {
         let car = VehicleSpec::by_id(&std::env::var("AP_CAR").unwrap_or_else(|_| "vulpes".into())).unwrap();
         let iters: usize = std::env::var("AP_ITER").ok().and_then(|s| s.parse().ok()).unwrap_or(4);
         let cfg = super::super::cfg::cfg_style(std::env::var("AP_STYLE").ok().and_then(|s| s.parse().ok()).unwrap_or(1));
+        let sensor = std::env::var("AP_SENSOR").is_ok();
         let (train_seeds, test_seeds) = ([2u64, 3, 5, 8], [1u64, 21]);
-        let base = rollouts(&test_seeds, car, cfg, None, false, 2); show("controller", &base, &test_seeds);
-        let mut data: Vec<Sample> = Vec::new(); let mut net = Mlp::new(1);
+        let base = rollouts(&test_seeds, car, cfg, None, false, sensor, 2); show("controller", &base, &test_seeds);
+        let mut data: Vec<Sample> = Vec::new(); let mut net = Mlp::with_inputs(1, if sensor { crate::game::autopilot::sense::N } else { F });
         for it in 0..=iters {
             let policy = if it == 0 { None } else { Some(Arc::new(net.clone())) };
-            let rs = rollouts(&train_seeds, car, cfg, policy, true, 3);
+            let rs = rollouts(&train_seeds, car, cfg, policy, true, sensor, 3);
             for (_, s) in rs { data.extend(s); }
             let (xs, ys, ws) = to_set(&data);
-            let loss = net.train(&xs, &ys, &ws, if it == 0 { 60 } else { 25 }, 0.002, it as u64 + 3);
+            let loss = net.train(&xs, &ys, &ws, match (sensor, it) { (false, 0) => 60, (false, _) => 25, (true, 0) => 80, (true, _) => 50 }, 0.002, it as u64 + 3);
+            let loss = if sensor && it == iters { net.train(&xs, &ys, &ws, 120, 0.001, 99) } else { loss };
             println!("iteration {it}: {} samples, loss {loss:.4}", data.len());
-            let ev = rollouts(&test_seeds, car, cfg, Some(Arc::new(net.clone())), false, 2); show(&format!("net@{it}"), &ev, &test_seeds);
+            let ev = rollouts(&test_seeds, car, cfg, Some(Arc::new(net.clone())), false, sensor, 2); show(&format!("net@{it}"), &ev, &test_seeds);
         }
         let _ = (F, O);
     }

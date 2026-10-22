@@ -5,6 +5,7 @@ pub mod model;
 pub mod train;
 pub mod job;
 pub mod nn;
+pub mod sense;
 pub mod learn;
 pub mod es;
 pub mod route;
@@ -48,6 +49,8 @@ pub struct Autopilot {
     pend: f32, pend_dir: f32, pend_cool: f32,
     /// Lift-off rotation: seconds of lifted throttle left and the time until the next one; the technique counters and the seconds in the air.
     lift: f32, lift_cool: f32, pub tech: Techniques, air_t: f32,
+    /// The sensors' feature vector of this step (set by `sense`), the car's velocity of the step before, whether the samples recorded are the sensors' (not the route's) and the last command.
+    sensor: Option<Vec<f32>>, prev_vel: V3, sensor_mode: bool, last_cmd: (f32, f32),
     /// The stage route and where to join it, while a field route is being driven.
     next: Option<(Route, usize)>,
     /// Route progress (m) where the stage was joined from the field: the speed is kept tame for 80 m after it.
@@ -58,7 +61,7 @@ pub struct Autopilot {
     /// recovers while all is calm); `k_planned` is the value the speed plan was last made with.
     models: Option<model::Models>, k: f32, k_planned: f32,
     /// A neural policy that drives instead of the geometric controller (the controller still runs: it gives the labels and takes over when the car is lost), the seconds of the takeover left, and the recorded (features, expert action) pairs.
-    policy: Option<std::sync::Arc<nn::Mlp>>, nn_hold: f32, takeover_time: f32, record: bool, samples: Vec<([f32; nn::F], [f32; nn::O])>, rec_step: u32,
+    policy: Option<std::sync::Arc<nn::Mlp>>, nn_hold: f32, takeover_time: f32, record: bool, samples: Vec<(Vec<f32>, [f32; nn::O])>, rec_step: u32,
 }
 
 /// The speed limits for a car on a road of the given kind (loose gravel is the worst case on the stage).
@@ -127,7 +130,7 @@ impl Autopilot {
     /// The same with the numbers given (the self-training tries many sets at once, so they cannot come from the global style).
     pub fn on_route_cfg(route: Route, car: VehicleSpec, v: &Vehicle, style: i32, cfg: AutoCfg) -> Autopilot {
         let idx = route.nearest(v.pos.x, v.pos.z).0;
-        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, lift: 0.0, lift_cool: 0.0, tech: Techniques::default(), air_t: 0.0, next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, takeover_time: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
+        Autopilot { route, car, cfg, style: style.clamp(0, 6), idx, stuck: 0.0, flick: 0.0, cooldown: 0.0, pend: 0.0, pend_dir: 0.0, pend_cool: 0.0, lift: 0.0, lift_cool: 0.0, tech: Techniques::default(), air_t: 0.0, sensor: None, prev_vel: V3::ZERO, sensor_mode: false, last_cmd: (0.0, 0.0), next: None, joined_at: None, recoveries: 0, models: None, k: 1.0, k_planned: 1.0, policy: None, nn_hold: 0.0, takeover_time: 0.0, record: false, samples: Vec::new(), rec_step: 0 }
     }
 
     /// Starts from wherever the car is: on the road network it joins at the nearest point of the whole chain (liaison,
@@ -162,13 +165,14 @@ impl Autopilot {
     pub fn drive(&mut self, v: &Vehicle, dt: f32) -> AutoCmd {
         let mut cmd = self.drive_expert(v, dt);
         if (self.policy.is_none() && !self.record) || cmd.teleport.is_some() || cmd.reset || cmd.done { return cmd; }
-        let f = self.features(v);
+        let sensor_net = self.policy.as_ref().map_or(self.sensor_mode, |p| p.n_in != nn::F);
+        let f: Vec<f32> = if sensor_net { match &self.sensor { Some(s) => s.clone(), None => return cmd } } else { self.features(v).to_vec() };
         if self.record {
             self.rec_step += 1;
             if self.rec_step % 3 == 0 {
                 let i = cmd.input;
                 let accel = if i.brake { -(i.brake_amt.max(0.1)) } else { i.throttle };
-                self.samples.push((f, [i.steer, accel, if i.handbrake { 1.0 } else { -1.0 }]));
+                self.samples.push((f.clone(), [i.steer, accel, if i.handbrake { 1.0 } else { -1.0 }]));
             }
         }
         if let Some(p) = self.policy.clone() {
@@ -180,8 +184,27 @@ impl Autopilot {
                 cmd.input = Input { steer: o[0], throttle: o[1].max(0.0), brake: o[1] < -0.1, brake_amt: if o[1] < -0.1 { (-o[1]).clamp(0.1, 1.0) } else { 0.0 }, handbrake: o[2] > 0.3, ..Default::default() }.sanitized();
             }
         }
+        self.last_cmd = (cmd.input.throttle, if cmd.input.brake { cmd.input.brake_amt.max(0.1) } else { 0.0 });
         cmd
     }
+
+    /// Whether the net (or the recording) needs the sensors' vector this step.
+    pub fn wants_sensors(&self) -> bool { self.policy.as_ref().map_or(self.sensor_mode, |p| p.n_in != nn::F) }
+    /// Reads the sensors for this step (call before `drive`): the rays and the car's own metrics, with the route's coarse direction hints.
+    pub fn sense(&mut self, t: &super::terrain::Terrain, v: &Vehicle, mut tel: sense::Telemetry, dt: f32) {
+        tel.throttle = self.last_cmd.0; tel.brake = self.last_cmd.1;
+        let (fwd, right) = (v.forward(), v.right());
+        let mut hint = [0.0f32; 4];
+        for (k, d) in [40.0f32, 100.0].iter().enumerate() {
+            let (_, p) = self.route.ahead(self.idx, *d);
+            let (dx, dz) = (p.x - v.pos.x, p.z - v.pos.z); let l = dx.hypot(dz).max(1.0);
+            hint[2 * k] = (dx * right.x + dz * right.z) / l; hint[2 * k + 1] = (dx * fwd.x + dz * fwd.z) / l;
+        }
+        self.sensor = Some(sense::features(t, v, &tel, self.prev_vel, dt, hint));
+        self.prev_vel = v.vel;
+    }
+    /// Makes the recorded samples the sensors' (for a net that reads them) instead of the route's.
+    pub fn set_sensor_mode(&mut self, on: bool) { self.sensor_mode = on; }
 
     /// Sets (or removes) the neural policy and turns recording on or off.
     pub fn set_policy(&mut self, policy: Option<std::sync::Arc<nn::Mlp>>, record: bool) { self.policy = policy; self.record = record; self.nn_hold = 0.0; }
@@ -192,7 +215,7 @@ impl Autopilot {
     /// The seconds the controller has driven in place of the policy (a measure of how often the net got lost).
     pub fn takeover_time(&self) -> f32 { self.takeover_time }
     /// The recorded pairs since the last call.
-    pub fn take_samples(&mut self) -> Vec<([f32; nn::F], [f32; nn::O])> { std::mem::take(&mut self.samples) }
+    pub fn take_samples(&mut self) -> Vec<(Vec<f32>, [f32; nn::O])> { std::mem::take(&mut self.samples) }
 
     /// What the net sees: the speed, how the car sits on the line (offset, heading, yaw rate, side slip), the bend ahead as the chord's side at six distances, the planned speed at those distances and here,
     /// the road's width and where the car is on it, the grip, the daring and whether it is on the ground.
